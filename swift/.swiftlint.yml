@@ -1,0 +1,41 @@
+disabled_rules: []
+opt_in_rules: []
+
+line_length:
+  warning: 120
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+
+# SwiftUI view bodies and init methods regularly exceed 40 lines.
+# Raise warning to 60–80 for UI-heavy projects.
+function_body_length:
+  warning: 40
+  error: 100
+
+# Large SwiftUI views, view models, and feature controllers often approach 250 lines.
+# Raise to 300–400 if exceeded often by intentional, well-structured types.
+type_body_length:
+  warning: 250
+  error: 350
+
+# Files with many view components, extensions, or protocol conformances grow quickly.
+# Raise warning to 600–800 for SwiftUI-heavy codebases.
+file_length:
+  warning: 400
+  error: 1000
+
+# Short names like `i`, `id`, `x`, `y` are idiomatic in Swift.
+# Add them to `excluded` to allow them:
+#   excluded:
+#     - id
+#     - i
+#     - x
+#     - y
+identifier_name:
+  min_length:
+    warning: 3
+    error: 2
+  max_length:
+    warning: 40
+    error: 60
