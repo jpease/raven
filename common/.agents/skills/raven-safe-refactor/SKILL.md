@@ -1,0 +1,30 @@
+---
+name: raven-safe-refactor
+description: Use for renames, shared abstraction changes, API changes, moved code, or broad mechanical edits.
+---
+
+# Safe Refactor
+
+## Skip When
+
+- The edit is isolated, internal, and does not rename, move, or change a contract.
+- The task is a behavior change rather than a structure-preserving refactor.
+
+## Required Constraints
+
+- Do not combine refactor and behavior change unless asked.
+- Capture reference or dependency evidence before editing public or shared symbols.
+- Use syntax-aware tools for broad mechanical changes when available.
+- Verify textual leftovers with `rg` after renames, moves, or API changes.
+- Do not reformat unrelated files.
+- Run targeted tests or explain why no targeted verification exists.
+
+## Process
+
+1. Identify public surface area.
+2. Use LSP references before editing.
+3. Use GitNexus for dependency and blast-radius analysis.
+4. Use ast-grep or Semgrep for mechanical syntax-aware rewrites.
+5. Use `rg` to verify no textual leftovers.
+6. Run targeted tests.
+7. Summarize contract changes.

@@ -1,0 +1,19 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Claude Code local permissions/settings
+.claude/settings.local.json
+
+# Destination repo state, not used by this template repo root
+.raven/
+
+# Local working notes
+SCRATCH*.md
+TODO.md
+
+# Local Claude session memory
+.remember/
+
+# Tool-installed local agent skills; regenerate with GitNexus when needed
+.agents/skills/gitnexus/

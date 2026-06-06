@@ -1,0 +1,5 @@
+#!/bin/sh
+# Add this repository's scripts directory to PATH if you want to run `raven install`
+# or `raven upgrade` from destination repositories without typing the full path.
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec python3 "$SCRIPT_DIR/raven.py" "$@"
