@@ -731,6 +731,16 @@ tool_configs = false
         self.assertIn("tool_configs = true", text)
         self.assertIn("[exclude]", text)
 
+    def test_default_config_includes_lifecycle_section(self):
+        config = raven.default_config_text("python", False)
+        self.assertIn("[lifecycle]", config)
+        self.assertIn("checkpoint_enforcement = true", config)
+
+    def test_default_config_includes_issue_tracker_section(self):
+        config = raven.default_config_text("python", False)
+        self.assertIn("[issue_tracker]", config)
+        self.assertIn('platform = "none"', config)
+
     def test_config_can_disable_agent_specific_components(self):
         config_path = self.destination / ".raven" / "config.toml"
         config_path.parent.mkdir()
