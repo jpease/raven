@@ -404,6 +404,22 @@ def default_config_text(template_name: str, include_readme: bool) -> str:
         #     ".claude/agents/raven-security-reviewer.md",
         #   ]
         paths = []
+
+        [lifecycle]
+        # Enable checkpoint enforcement hook for raven-project-lifecycle.
+        # When true, the PreToolUse hook validates each unit checkpoint before
+        # allowing raven-session.py --complete to proceed.
+        # Set to false to fall back to instructional-only enforcement.
+        checkpoint_enforcement = true
+
+        [issue_tracker]
+        # External issue tracker for this project. Controls which issue-tracker
+        # workflow skill is active and which CLI raven-tool-bootstrap checks for.
+        # This is independent of local session tracking (governed by [lifecycle]).
+        #
+        # platform = "github"   # use raven-github-issues + gh CLI
+        # platform = "gitlab"   # use raven-gitlab-issues + glab CLI
+        platform = "none"        # no external issue tracker
         """
     )
 
