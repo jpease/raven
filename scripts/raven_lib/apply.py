@@ -7,26 +7,32 @@ from pathlib import Path
 
 from .blocks import block_managed_state, update_raven_block
 from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH, _any_exists
-from .hashing import same_content
+from .hashing import destination_fingerprint, same_content
 from .manifest import load_manifest, manifest_allows_upgrade
 from .models import Classification, RavenConfig, TemplateEntry
 from .template import entries_for_destination, iter_template_entries
 
 
-def _classify_entry(entry: TemplateEntry, destination: Path, manifest: dict) -> str:
-    target = destination / entry.relative
-    if not _any_exists(target):
+def _classify_entry(
+    entry: TemplateEntry,
+    manifest: dict,
+    *,
+    target_exists: bool,
+    content_matches: bool,
+    block_state: str | None,
+    fingerprint: dict | None,
+) -> str:
+    if not target_exists:
         return "will_copy"
-    if same_content(entry, target):
+    if content_matches:
         return "identical"
-    block_state = block_managed_state(entry, target)
     if block_state == "identical":
         return "identical"
     if block_state == "upgradeable":
         return "will_upgrade"
     if block_state == "modified":
         return "needs_merge"
-    if manifest_allows_upgrade(manifest, entry.relative, target):
+    if manifest_allows_upgrade(manifest, entry.relative, fingerprint):
         return "will_upgrade"
     if entry.relative in manifest.get("files", {}):
         return "needs_merge"
@@ -57,7 +63,25 @@ def classify(
         "unknown_existing": [],
     }
     for entry in entry_iter:
-        groups[_classify_entry(entry, destination, manifest)].append(entry.relative)
+        target = destination / entry.relative
+        target_exists = _any_exists(target)
+        content_matches = False
+        block_state = None
+        fingerprint = None
+        if target_exists:
+            content_matches = same_content(entry, target)
+            block_state = block_managed_state(entry, target)
+            fingerprint = destination_fingerprint(target)
+        groups[
+            _classify_entry(
+                entry,
+                manifest,
+                target_exists=target_exists,
+                content_matches=content_matches,
+                block_state=block_state,
+                fingerprint=fingerprint,
+            )
+        ].append(entry.relative)
 
     return Classification(
         **groups,
