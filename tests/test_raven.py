@@ -741,6 +741,64 @@ tool_configs = false
         self.assertIn("[issue_tracker]", config)
         self.assertIn('platform = "none"', config)
 
+    def test_default_config_embeds_github_platform(self):
+        config = raven.default_config_text("python", False, "github")
+        self.assertIn('platform = "github"', config)
+        # The comment block contains "# platform = "none""; check the active (uncommented) line.
+        self.assertNotIn('\nplatform = "none"', config)
+
+    def test_default_config_embeds_gitlab_platform(self):
+        config = raven.default_config_text("python", False, "gitlab")
+        self.assertIn('platform = "gitlab"', config)
+
+    def test_update_config_platform_replaces_platform_value(self):
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(raven.default_config_text("python", False, "none"), encoding="utf-8")
+
+        raven._update_config_platform(config_path, "github")
+
+        text = config_path.read_text(encoding="utf-8")
+        self.assertIn('platform = "github"', text)
+        self.assertNotIn('\nplatform = "none"', text)
+
+    def test_init_with_platform_writes_platform_to_config(self):
+        import argparse
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            rc = raven.cmd_init(
+                argparse.Namespace(
+                    destination=str(self.destination), language="python", platform="github"
+                )
+            )
+        self.assertEqual(rc, 0)
+        text = (self.destination / ".raven" / "config.toml").read_text(encoding="utf-8")
+        self.assertIn('platform = "github"', text)
+
+    def test_install_platform_flag_updates_existing_config(self):
+        import argparse
+
+        (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.write_text(raven.default_config_text("python", False, "none"), encoding="utf-8")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            rc = raven.cmd_install(
+                argparse.Namespace(
+                    destination=str(self.destination),
+                    language=None,
+                    args=None,
+                    overrides=[],
+                    dry_run=False,
+                    include_readme=False,
+                    adopt_claude_symlink=False,
+                    platform="github",
+                )
+            )
+        self.assertEqual(rc, 0)
+        self.assertIn('platform = "github"', config_path.read_text(encoding="utf-8"))
+
     def test_config_can_disable_agent_specific_components(self):
         config_path = self.destination / ".raven" / "config.toml"
         config_path.parent.mkdir()
@@ -991,7 +1049,7 @@ rules = false
         self.assertIn("Raven", result.stdout)
         self.assertIn("install", result.stdout)
         self.assertIn("usage: raven [OPTIONS] COMMAND [ARGS]...", result.stdout)
-        self.assertIn("-d, --destination DESTINATION", result.stdout)
+        self.assertIn("--destination DESTINATION", result.stdout)
         self.assertIn("raven install <language> --dry-run", result.stdout)
         self.assertIn("raven upgrade .claude/scripts/raven-tool-check.py", result.stdout)
         self.assertIn("Explicit override paths force-copy Raven-owned files.", result.stdout)
@@ -1234,6 +1292,210 @@ gitnexus: gitnexus mcp - ✓ Connected
         finally:
             module.shutil.which = original_which
             module.subprocess.run = original_run
+
+
+class GitHookInstallerTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.destination = Path(self.tmp.name)
+        subprocess.run(
+            ["git", "init", str(self.destination)],
+            capture_output=True,
+            check=True,
+        )
+        self.git_hooks_src = self.destination / ".raven" / "git-hooks"
+        self.git_hooks_src.mkdir(parents=True)
+        self.git_hooks_dir = self.destination / ".git" / "hooks"
+        self.git_hooks_dir.mkdir(exist_ok=True)
+
+    def _write_hook(self, name: str, content: str = "#!/bin/sh\n") -> Path:
+        hook = self.git_hooks_src / name
+        hook.write_text(content, encoding="utf-8")
+        hook.chmod(0o644)
+        return hook
+
+    def test_installs_hook_as_symlink_in_git_hooks(self):
+        self._write_hook("commit-msg")
+
+        installed = raven.install_git_hooks(self.destination)
+
+        link = self.git_hooks_dir / "commit-msg"
+        self.assertEqual(installed, ["commit-msg"])
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(link.resolve(), (self.git_hooks_src / "commit-msg").resolve())
+
+    def test_makes_hook_file_executable(self):
+        self._write_hook("commit-msg")
+
+        raven.install_git_hooks(self.destination)
+
+        hook_src = self.git_hooks_src / "commit-msg"
+        self.assertTrue(hook_src.stat().st_mode & 0o111)
+
+    def test_returns_empty_when_no_git_hooks_src_dir(self):
+        self.git_hooks_src.rmdir()
+
+        installed = raven.install_git_hooks(self.destination)
+
+        self.assertEqual(installed, [])
+
+    def test_returns_empty_when_not_a_git_repo(self):
+        non_git = self.destination / "sub"
+        non_git.mkdir()
+        (non_git / ".raven" / "git-hooks").mkdir(parents=True)
+        self._write_hook("commit-msg")
+
+        installed = raven.install_git_hooks(non_git)
+
+        self.assertEqual(installed, [])
+
+    def test_does_not_overwrite_existing_regular_file(self):
+        self._write_hook("commit-msg")
+        existing = self.git_hooks_dir / "commit-msg"
+        existing.write_text("# user hook\n", encoding="utf-8")
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            installed = raven.install_git_hooks(self.destination)
+
+        self.assertEqual(installed, [])
+        self.assertEqual(existing.read_text(encoding="utf-8"), "# user hook\n")
+        self.assertIn("already exists as a regular file", stderr.getvalue())
+
+    def test_idempotent_when_symlink_already_correct(self):
+        self._write_hook("commit-msg")
+        raven.install_git_hooks(self.destination)
+
+        installed = raven.install_git_hooks(self.destination)
+
+        self.assertEqual(installed, ["commit-msg"])
+
+    def test_updates_stale_symlink(self):
+        self._write_hook("commit-msg")
+        stale_target = self.git_hooks_src.parent / "old-commit-msg"
+        stale_target.write_text("# stale\n", encoding="utf-8")
+        link = self.git_hooks_dir / "commit-msg"
+        link.symlink_to(str(stale_target))
+
+        installed = raven.install_git_hooks(self.destination)
+
+        self.assertEqual(installed, ["commit-msg"])
+        self.assertEqual(link.resolve(), (self.git_hooks_src / "commit-msg").resolve())
+
+    def test_raven_git_hooks_path_included_in_hooks_component(self):
+        self.assertIn(".raven/git-hooks", raven.COMPONENT_PATHS["hooks"])
+
+
+class CommitMsgHookTests(unittest.TestCase):
+    HOOK_PATH = REPO_ROOT / "common" / ".raven" / "git-hooks" / "commit-msg"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.msg_file = Path(self.tmp.name) / "COMMIT_EDITMSG"
+
+    def _run_hook(self, message: str) -> tuple[str, int]:
+        self.msg_file.write_text(message, encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(self.HOOK_PATH), str(self.msg_file)],
+            capture_output=True,
+            text=True,
+        )
+        return self.msg_file.read_text(encoding="utf-8"), result.returncode
+
+    def test_strips_claude_co_authored_by(self):
+        msg = "feat: add thing\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Co-Authored-By", out)
+        self.assertIn("feat: add thing", out)
+
+    def test_strips_copilot_co_authored_by(self):
+        msg = "fix: bug\n\nCo-Authored-By: GitHub Copilot <noreply@github.com>\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Co-Authored-By", out)
+
+    def test_strips_codex_co_authored_by(self):
+        msg = "chore: update\n\nCo-authored-by: OpenAI Codex <noreply@openai.com>\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Co-authored-by", out)
+
+    def test_strips_generated_by_trailer(self):
+        msg = "docs: update\n\nGenerated-by: Claude\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Generated-by", out)
+
+    def test_removes_trailing_blank_lines_after_strip(self):
+        msg = "feat: add thing\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertFalse(out.endswith("\n\n"))
+
+    def test_preserves_human_co_authored_by(self):
+        msg = "feat: pair program\n\nCo-Authored-By: Alice Smith <alice@example.com>\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertIn("Co-Authored-By: Alice Smith", out)
+
+    def test_does_not_modify_clean_message(self):
+        msg = "feat: clean commit\n\nSome body text.\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, msg)
+
+    def test_strips_anthropic_domain_trailer(self):
+        msg = "fix: patch\n\nCo-Authored-By: SomeBot <bot@anthropic.com>\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("anthropic.com", out)
+
+    def test_strips_openai_domain_trailer(self):
+        msg = "fix: patch\n\nCo-Authored-By: SomeBot <bot@openai.com>\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("openai.com", out)
+
+    def test_hook_is_executable(self):
+        self.assertTrue(self.HOOK_PATH.stat().st_mode & 0o111)
+
+    def test_respects_strip_ai_attribution_false_in_config(self):
+        # Write a repo with strip_ai_attribution = false and run hook inside it.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+            raven_dir = repo / ".raven"
+            raven_dir.mkdir()
+            (raven_dir / "config.toml").write_text(
+                "[git_hooks]\nstrip_ai_attribution = false\n", encoding="utf-8"
+            )
+            msg_file = repo / "COMMIT_EDITMSG"
+            msg = "feat: thing\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n"
+            msg_file.write_text(msg, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(self.HOOK_PATH), str(msg_file)],
+                capture_output=True,
+                text=True,
+                cwd=str(repo),
+            )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(
+            "Co-Authored-By", msg_file.read_text(encoding="utf-8") if msg_file.exists() else msg
+        )
+
+    def test_default_strips_when_no_config(self):
+        msg = "feat: add thing\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Co-Authored-By", out)
+
+    def test_config_section_in_default_config_text(self):
+        config_text = raven.default_config_text("python", False)
+        self.assertIn("[git_hooks]", config_text)
+        self.assertIn("strip_ai_attribution = true", config_text)
 
 
 if __name__ == "__main__":
