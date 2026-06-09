@@ -91,17 +91,14 @@ def update_manifest(
     save_manifest(destination, manifest)
 
 
-def manifest_allows_upgrade(manifest: dict, relative: str, target: Path) -> bool:
+def manifest_allows_upgrade(manifest: dict, relative: str, fingerprint: dict | None) -> bool:
     record = manifest.get("files", {}).get(relative)
     if not isinstance(record, dict):
         return False
-    current_state = destination_fingerprint(target)
-    if not current_state:
+    if not fingerprint:
         return False
-    if current_state.get("kind") != record.get("kind"):
+    if fingerprint.get("kind") != record.get("kind"):
         return False
-    if current_state["kind"] == KIND_SYMLINK and current_state.get("target") != record.get(
-        "target"
-    ):
+    if fingerprint["kind"] == KIND_SYMLINK and fingerprint.get("target") != record.get("target"):
         return False
-    return current_state["sha256"] == record.get("installedSha256")
+    return fingerprint["sha256"] == record.get("installedSha256")

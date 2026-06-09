@@ -4,9 +4,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from .apply import classify
+from .apply import classify, claude_symlink_adoption_needed
 from .config import _update_config_platform, default_config_text, load_config
-from .constants import CONFIG_PATH, DEFAULT_EXCLUDES, NON_TEMPLATE_DIRS, REPO_ROOT
+from .constants import CONFIG_PATH, DEFAULT_EXCLUDES, NON_TEMPLATE_DIRS, REPO_ROOT, _any_exists
 from .git_hooks import install_git_hooks
 from .manifest import load_manifest
 from .plan import (
@@ -98,12 +98,15 @@ def _run(
     classification = classify(
         template, destination, excludes, config, manifest=manifest, entries=entries
     )
+    existing_overrides = {p for p in requested_overrides_norm if _any_exists(destination / p)}
+    symlink_adoption_needed = claude_symlink_adoption_needed(destination, entries)
     plan = build_apply_plan(
         destination,
         classification,
         requested_overrides_norm,
+        existing_overrides,
+        symlink_adoption_needed,
         adopt_claude_symlink_requested,
-        entries,
         dry_run=dry_run,
         prompt_claude_symlink=prompt_claude_symlink,
     )

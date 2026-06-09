@@ -10,7 +10,7 @@ from .apply import (
     prompt_for_claude_symlink_adoption,
 )
 from .blocks import write_guided_merge_artifacts
-from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH, ROOT_INSTRUCTION_FILES, _any_exists
+from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH, ROOT_INSTRUCTION_FILES
 from .manifest import update_manifest
 from .models import ApplyPlan, Classification, RavenConfig, TemplateEntry
 
@@ -96,14 +96,15 @@ def build_apply_plan(
     destination: Path,
     classification: Classification,
     requested_overrides: list[str],
+    existing_overrides: set[str],
+    symlink_adoption_needed: bool,
     adopt_claude_symlink_requested: bool,
-    entries: dict[str, TemplateEntry],
     *,
     dry_run: bool,
     prompt_claude_symlink: bool,
 ) -> ApplyPlan:
     override_set = set(requested_overrides)
-    overwritten = sorted(path for path in requested_overrides if _any_exists(destination / path))
+    overwritten = sorted(path for path in requested_overrides if path in existing_overrides)
     newly_copied_overrides = sorted(path for path in requested_overrides if path not in overwritten)
     will_copy = _without(classification.will_copy, override_set)
     will_upgrade = _without(classification.will_upgrade, override_set)
@@ -113,7 +114,7 @@ def build_apply_plan(
 
     adopt_symlink = False
     claude_conflicts = set(needs_merge) | set(unknown_existing)
-    if CLAUDE_PATH in claude_conflicts and claude_symlink_adoption_needed(destination, entries):
+    if CLAUDE_PATH in claude_conflicts and symlink_adoption_needed:
         if adopt_claude_symlink_requested:
             adopt_symlink = True
         elif not dry_run and prompt_claude_symlink:
