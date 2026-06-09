@@ -1,11 +1,15 @@
 import importlib.util
+import io
+import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-session.py"
+HOOK_PATH = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-session-checkpoint.py"
 
 
 def load_session():
@@ -204,3 +208,100 @@ class SessionArchiveTests(unittest.TestCase):
         archive = self.archive_file.read_text()
         self.assertIn("unit-a", archive)
         self.assertIn("unit-b", archive)
+
+
+def load_hook():
+    spec = importlib.util.spec_from_file_location("raven_session_checkpoint", HOOK_PATH)
+    assert spec is not None
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+def _claude_payload(command: str) -> str:
+    return json.dumps({"tool_input": {"command": command}})
+
+
+class CheckpointHookTests(unittest.TestCase):
+    def setUp(self):
+        import shutil
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.raven_dir = self.root / ".raven"
+        self.raven_dir.mkdir()
+        self.config_file = self.raven_dir / "config.toml"
+        # Simulate an installed project: the hook calls the script at this path
+        scripts_dir = self.root / ".claude" / "scripts"
+        scripts_dir.mkdir(parents=True)
+        shutil.copy(SCRIPT_PATH, scripts_dir / "raven-session.py")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run_hook(self, payload_str: str) -> int:
+        mod = load_hook()
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            with patch("sys.stdin", io.StringIO(payload_str)):
+                return mod.main()
+        finally:
+            os.chdir(orig)
+
+    def test_hook_allows_when_enforcement_disabled(self):
+        self.config_file.write_text(
+            "[lifecycle]\ncheckpoint_enforcement = false\n", encoding="utf-8"
+        )
+        rc = self._run_hook(
+            _claude_payload("python .claude/scripts/raven-session.py --complete unit-a")
+        )
+        self.assertEqual(rc, 0)
+
+    def test_hook_denies_when_no_session(self):
+        self.config_file.write_text(
+            "[lifecycle]\ncheckpoint_enforcement = true\n", encoding="utf-8"
+        )
+        rc = self._run_hook(
+            _claude_payload("python .claude/scripts/raven-session.py --complete unit-a")
+        )
+        self.assertNotEqual(rc, 0)
+
+    def test_hook_allows_valid_checkpoint(self):
+        self.config_file.write_text(
+            "[lifecycle]\ncheckpoint_enforcement = true\n", encoding="utf-8"
+        )
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            mod = load_session()
+            mod.main(["--init", "greenfield", "unit-a", "unit-b"])
+        finally:
+            os.chdir(orig)
+        rc = self._run_hook(
+            _claude_payload("python .claude/scripts/raven-session.py --complete unit-a")
+        )
+        self.assertEqual(rc, 0)
+
+    def test_hook_denies_wrong_unit(self):
+        self.config_file.write_text(
+            "[lifecycle]\ncheckpoint_enforcement = true\n", encoding="utf-8"
+        )
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            mod = load_session()
+            mod.main(["--init", "greenfield", "unit-a", "unit-b"])
+        finally:
+            os.chdir(orig)
+        rc = self._run_hook(
+            _claude_payload("python .claude/scripts/raven-session.py --complete unit-b")
+        )
+        self.assertNotEqual(rc, 0)
