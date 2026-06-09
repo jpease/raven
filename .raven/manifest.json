@@ -292,7 +292,7 @@
       "sourceSha256": "5953156d7e0c564a427251316eaf26f8870e6483ae2197f916b630e4f93e31ae"
     },
     "AGENTS.md": {
-      "installedSha256": "3ff090d21111f41153facd98b8a71506edc419916d7a45bc74fa45f896532deb",
+      "installedSha256": "79dc58b8cf6668cb27321911e07191293d88f6fd86d1722de6535f1782a46b33",
       "kind": "file",
       "sourceSha256": "145c087189c655d48457f2cc2cef5db08773b6b3a7a81d41a5c979e78f49224c"
     },
@@ -313,8 +313,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "ce88393ccb81",
+  "ravenVersion": "d122329e23cf",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-06-09T08:46:08.972494+00:00"
+  "updatedAt": "2026-06-09T09:06:57.738597+00:00"
 }
