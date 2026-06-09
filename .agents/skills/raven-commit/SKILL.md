@@ -43,8 +43,9 @@ Breaking changes trigger a MAJOR SemVer bump regardless of type.
 
 ## Rules
 
-- **Description**: lowercase, imperative mood, no trailing period, immediately after `type: `; 50 characters is a soft limit
-- **Body**: separated from description by one blank line; state the problem in present tense (what the code does _without_ this change), explain why this solution is better, and note alternatives considered and discarded
+- **Description**: lowercase, imperative mood, no trailing period, immediately after `type: `; aim for 50 characters, hard limit 72 (including `type(scope): ` prefix); test with "when applied, this change will…"
+- **Body**: separated from description by one blank line; wrap lines at 72 columns (`git log` indents 4 spaces, keeping total ≤76 and within RFC 2822's 78-char limit); state the problem in present tense (what the code does _without_ this change), explain why this solution is better, and note alternatives considered and discarded; if you find yourself explaining a tricky implementation detail, consider whether a code comment would serve future readers better
+- **Self-contained**: include all relevant context directly — external links (PRs, issues, benchmarks) may disappear; the message must stand alone
 - **Footers**: one blank line after body; format `Token: value` or `Token #value`; multi-word tokens use `-` (e.g. `Reviewed-by`); exception: `BREAKING CHANGE` (with space) is valid
 - **`BREAKING CHANGE`** footer token must be uppercase
 - **`BREAKING-CHANGE`** is synonymous with `BREAKING CHANGE` in footers
