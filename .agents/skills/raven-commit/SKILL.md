@@ -43,8 +43,8 @@ Breaking changes trigger a MAJOR SemVer bump regardless of type.
 
 ## Rules
 
-- **Description**: lowercase, imperative mood, no trailing period, immediately after `type: `
-- **Body**: separated from description by one blank line; free-form; explain _what_ and _why_
+- **Description**: lowercase, imperative mood, no trailing period, immediately after `type: `; 50 characters is a soft limit
+- **Body**: separated from description by one blank line; state the problem in present tense (what the code does _without_ this change), explain why this solution is better, and note alternatives considered and discarded
 - **Footers**: one blank line after body; format `Token: value` or `Token #value`; multi-word tokens use `-` (e.g. `Reviewed-by`); exception: `BREAKING CHANGE` (with space) is valid
 - **`BREAKING CHANGE`** footer token must be uppercase
 - **`BREAKING-CHANGE`** is synonymous with `BREAKING CHANGE` in footers
@@ -82,6 +82,18 @@ revert: let us never again speak of the noodle incident
 
 Refs: 676104e, a215868
 ```
+
+## Referencing commits
+
+When a body references another commit, use `abbrev-hash (subject, YYYY-MM-DD)`:
+
+```
+fix: correct off-by-one in pagination
+
+Regressed in f86a374 (pagination: switch to cursor-based offset, 2024-11-03).
+```
+
+Obtain this format with `git show -s --date=short --pretty='format:%h (%s, %ad)' <commit>`.
 
 ## Workflow guidance
 
