@@ -53,8 +53,9 @@ For projects with an external issue tracker, check `[issue_tracker].platform` in
 3. Execute that skill for the current unit
 4. Run `python .claude/scripts/raven-session.py --complete <unit-name>`
    - The checkpoint hook validates this before allowing it to succeed
-5. If the context block in `session.md` grows large, the script will warn — run `--archive` after user confirmation
-6. Advance to the next unit
+5. Invoke `raven-context-hygiene`.
+6. If the context block in `session.md` grows large, the script will warn — run `--archive` after user confirmation
+7. Advance to the next unit
 
 ## Phase 4 — Wrap-up
 
