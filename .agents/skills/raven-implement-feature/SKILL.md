@@ -22,7 +22,7 @@ description: Use when adding a new feature or behavior to an existing codebase.
 
 ## Process
 
-1. Discover existing patterns with Semble or `rg`.
+1. Discover existing patterns with Semble or `rg`. If a similar pattern is already known, use Semble `find_related` on it for a more targeted result than a fresh search.
 2. Use LSP to inspect relevant definitions and types.
 3. Identify the smallest integration point.
 4. Check GitNexus if the feature crosses module boundaries.

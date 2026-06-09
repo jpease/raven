@@ -21,7 +21,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=57eb746fdb9ca68b607bb23651faca8a3095c4ce264d27cdd4ad714ab38074cd -->
+<!-- RAVEN:BEGIN sha256=98defca54129ebc2d37a1204619cc84dc6662b28505c272d4875f70980bcb183 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -46,7 +46,7 @@ Be effective while preserving context. Prefer targeted retrieval, summaries, and
 - Do not read whole files until targeted retrieval has failed or the file is small.
 - Prefer snippets, symbol ranges, diagnostics, and summaries.
 - Batch independent reads, searches, and inspections in a single turn when possible.
-- Use subagents for noisy exploration, broad searches, long logs, or specialized audits.
+- Delegate or ask when scope exceeds what targeted retrieval can resolve — see Delegation.
 - Return concise findings before editing.
 - Avoid pasting raw command output unless essential.
 
@@ -75,6 +75,28 @@ Semble is for conceptual discovery when names are unclear. Do not use Semble as 
 - Read the full file only when it is small, the whole structure matters, targeted reads are ambiguous, or the user explicitly requests it.
 - For files over 500 lines, summarize structure first.
 - After semantic or conceptual retrieval, verify the result with deterministic tools before making changes.
+
+## Delegation
+
+Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context.
+
+When to delegate:
+
+- An architecture or "how does X work" question would take many retrieval steps to answer directly.
+- The expected output is noisy relative to what the main context needs — large diffs, long logs, or many candidate files where only a summary or a few facts matter.
+- The work is a specialized audit with its own checklist, such as a security review, test coverage analysis, or type design review.
+- The Context Retrieval Ladder has been tried and the integration point or root cause is still unclear after reasonable effort.
+
+How to delegate:
+
+- Frame the task as a self-contained question: state the goal, what has already been ruled out, and the expected output shape (a list of files, a yes/no with evidence, a root-cause summary).
+- Do not pass the full conversation history — delegation should reduce context, not duplicate it.
+- If no delegation mechanism is available, pause and ask the user instead of expanding retrieval indefinitely.
+
+Platform notes:
+
+- Claude Code: use the Agent tool with an appropriate subagent type, or a project-defined subagent if one matches the audit.
+- Other harnesses: fall back to asking the user to scope the task further, or use any equivalent delegation mechanism the harness provides.
 
 ## Shell Command Policy
 
