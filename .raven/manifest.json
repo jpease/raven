@@ -10,6 +10,11 @@
       "kind": "file",
       "sourceSha256": "51e094d7eef33722a9957afd4973cbd62f20093c91b39db1939b57b938fbc34d"
     },
+    ".agents/skills/raven-context-hygiene/SKILL.md": {
+      "installedSha256": "b4c8b7d540fb528b5f797bd536bde5bf298faa6e50dfedb747bea5b71c640a2f",
+      "kind": "file",
+      "sourceSha256": "b4c8b7d540fb528b5f797bd536bde5bf298faa6e50dfedb747bea5b71c640a2f"
+    },
     ".agents/skills/raven-debug-failure/SKILL.md": {
       "installedSha256": "ba24e1740befcd55ae21507573677cb119c8d6192d18c3bbc03519ff48820e11",
       "kind": "file",
@@ -31,9 +36,9 @@
       "sourceSha256": "a135e01e9d328ead801e4b187f88db5dd5d36b634dff962fc560e11cec0f358e"
     },
     ".agents/skills/raven-project-lifecycle/SKILL.md": {
-      "installedSha256": "785b486cc72dac1a12f4609661ebd3b2b6426d6990574ba72194b96450bad777",
+      "installedSha256": "10c1edec41eee658e4452f56b7fefcac8b9cef2e0fa09c184524c156b381c0be",
       "kind": "file",
-      "sourceSha256": "785b486cc72dac1a12f4609661ebd3b2b6426d6990574ba72194b96450bad777"
+      "sourceSha256": "10c1edec41eee658e4452f56b7fefcac8b9cef2e0fa09c184524c156b381c0be"
     },
     ".agents/skills/raven-review-pr/SKILL.md": {
       "installedSha256": "9e03729e1a35abc8911ccbdd0285c026ff86fa523e6a8438c36312f031a4422e",
@@ -292,7 +297,7 @@
       "sourceSha256": "5953156d7e0c564a427251316eaf26f8870e6483ae2197f916b630e4f93e31ae"
     },
     "AGENTS.md": {
-      "installedSha256": "79dc58b8cf6668cb27321911e07191293d88f6fd86d1722de6535f1782a46b33",
+      "installedSha256": "2f43bc414e6328722a2d26c8c7b1c16f64e594124f56d7b3e7dcd545d015d0b9",
       "kind": "file",
       "sourceSha256": "145c087189c655d48457f2cc2cef5db08773b6b3a7a81d41a5c979e78f49224c"
     },
@@ -313,8 +318,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "d122329e23cf",
+  "ravenVersion": "6227a5d9dd87",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-06-09T09:06:57.738597+00:00"
+  "updatedAt": "2026-06-09T20:19:46.860649+00:00"
 }
