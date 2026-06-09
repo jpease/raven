@@ -16,6 +16,10 @@ These paths are owned by the Raven template:
 - `.codex/hooks/raven-*.py`
 - `.codex/rules/raven.rules`
 - `.codex/scripts/raven-*.py`
+- `.raven/config.toml` (feature flags and platform config; tracked in git)
+- `.raven/session.md` (gitignored; per-project lifecycle state)
+- `.raven/session.lock` (transient; never committed)
+- `.raven/session-archive.md` (gitignored; completed unit history)
 
 These integration files are also template-managed, but they cannot be fully namespaced because agents and tools expect these names:
 
