@@ -5,8 +5,11 @@ __pycache__/
 # Claude Code local permissions/settings
 .claude/settings.local.json
 
-# Destination repo state, not used by this template repo root
-.raven/
+# Raven self-install state — config and manifest are tracked; session files are not
+.raven/session.md
+.raven/session.lock
+.raven/session.tmp
+.raven/session-archive.md
 
 # Local working notes
 SCRATCH*.md
