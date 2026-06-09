@@ -73,3 +73,134 @@ class SessionInitTests(unittest.TestCase):
         output = f.getvalue()
         self.assertIn("unit-a", output)
         self.assertIn("current", output.lower())
+
+
+class SessionValidateCompleteTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.raven_dir = self.root / ".raven"
+        self.raven_dir.mkdir()
+        self.session_file = self.raven_dir / "session.md"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run(self, args: list[str]) -> int:
+        mod = load_session()
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            return mod.main(args)
+        finally:
+            os.chdir(orig)
+
+    def _init(self, *units: str) -> None:
+        self._run(["--init", "greenfield"] + list(units))
+
+    def test_validate_passes_for_current_unit(self):
+        self._init("unit-a", "unit-b")
+        rc = self._run(["--validate", "unit-a"])
+        self.assertEqual(rc, 0)
+
+    def test_validate_fails_for_wrong_unit(self):
+        self._init("unit-a", "unit-b")
+        rc = self._run(["--validate", "unit-b"])
+        self.assertNotEqual(rc, 0)
+
+    def test_validate_fails_for_already_completed_unit(self):
+        self._init("unit-a", "unit-b")
+        self._run(["--complete", "unit-a"])
+        rc = self._run(["--validate", "unit-a"])
+        self.assertNotEqual(rc, 0)
+
+    def test_validate_fails_when_no_session(self):
+        rc = self._run(["--validate", "unit-a"])
+        self.assertNotEqual(rc, 0)
+
+    def test_complete_marks_unit_done(self):
+        self._init("unit-a", "unit-b")
+        self._run(["--complete", "unit-a"])
+        content = self.session_file.read_text()
+        self.assertIn("- [x] unit-a", content)
+
+    def test_complete_advances_current_to_next_unit(self):
+        self._init("unit-a", "unit-b")
+        self._run(["--complete", "unit-a"])
+        content = self.session_file.read_text()
+        self.assertIn("- [ ] unit-b (current)", content)
+
+    def test_complete_records_timestamp(self):
+        self._init("unit-a")
+        self._run(["--complete", "unit-a"])
+        content = self.session_file.read_text()
+        self.assertRegex(content, r"completed \d{4}-\d{2}-\d{2}T")
+
+    def test_complete_fails_for_wrong_unit(self):
+        self._init("unit-a", "unit-b")
+        rc = self._run(["--complete", "unit-b"])
+        self.assertNotEqual(rc, 0)
+
+    def test_complete_fails_when_no_session(self):
+        rc = self._run(["--complete", "unit-a"])
+        self.assertNotEqual(rc, 0)
+
+
+class SessionArchiveTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.raven_dir = self.root / ".raven"
+        self.raven_dir.mkdir()
+        self.session_file = self.raven_dir / "session.md"
+        self.archive_file = self.raven_dir / "session-archive.md"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run(self, args: list[str]) -> int:
+        mod = load_session()
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            return mod.main(args)
+        finally:
+            os.chdir(orig)
+
+    def test_archive_moves_completed_units_to_archive_file(self):
+        self._run(["--init", "greenfield", "unit-a", "unit-b", "unit-c"])
+        self._run(["--complete", "unit-a"])
+        self._run(["--complete", "unit-b"])
+        self._run(["--archive"])
+        archive = self.archive_file.read_text()
+        self.assertIn("unit-a", archive)
+        self.assertIn("unit-b", archive)
+
+    def test_archive_removes_completed_units_from_session(self):
+        self._run(["--init", "greenfield", "unit-a", "unit-b", "unit-c"])
+        self._run(["--complete", "unit-a"])
+        self._run(["--archive"])
+        session = self.session_file.read_text()
+        self.assertNotIn("unit-a", session)
+        self.assertIn("unit-b", session)
+
+    def test_archive_preserves_pending_units_in_session(self):
+        self._run(["--init", "greenfield", "unit-a", "unit-b"])
+        self._run(["--complete", "unit-a"])
+        self._run(["--archive"])
+        session = self.session_file.read_text()
+        self.assertIn("unit-b", session)
+
+    def test_archive_appends_to_existing_archive(self):
+        self._run(["--init", "greenfield", "unit-a", "unit-b"])
+        self._run(["--complete", "unit-a"])
+        self._run(["--archive"])
+        self._run(["--complete", "unit-b"])
+        self._run(["--archive"])
+        archive = self.archive_file.read_text()
+        self.assertIn("unit-a", archive)
+        self.assertIn("unit-b", archive)
