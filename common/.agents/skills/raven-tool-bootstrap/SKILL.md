@@ -34,3 +34,22 @@ python .claude/scripts/raven-tool-check.py --no-reminder
 ```
 
 Use `python3`, `py -3`, or the active virtual environment if `python` is not the correct launcher.
+
+## Issue-Tracker CLI Tools
+
+These are checked only when `[issue_tracker].platform` is set in `.raven/config.toml`:
+
+| Platform | CLI | Install |
+|---|---|---|
+| `github` | `gh` | `brew install gh` / https://cli.github.com |
+| `gitlab` | `glab` | `brew install glab` / https://gitlab.com/gitlab-org/cli |
+
+If `platform = "github"` and `gh` is missing, or `platform = "gitlab"` and `glab` is missing, ask the user whether to install, get instructions, remind later, or stop reminding — same flow as other missing tools.
+
+For GitHub sub-issues (used with `--parent` in `raven-session.py --init`), verify `gh` version is v2.49 or later:
+
+```bash
+gh --version
+```
+
+If older, note that `--parent` will fall back to task-list checkboxes in the parent issue body.
