@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import subprocess
 import sys
@@ -31,12 +30,12 @@ def run(label: str, args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def load_raven_module():
-    spec = importlib.util.spec_from_file_location("raven_cli", RAVEN_SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    scripts_dir = str(RAVEN_SCRIPT.parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import raven_lib
+
+    return raven_lib
 
 
 def validate_installed_shape() -> None:

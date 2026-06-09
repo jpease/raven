@@ -12,17 +12,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RAVEN_PATH = REPO_ROOT / "scripts" / "raven.py"
 
-
-def load_raven():
-    spec = importlib.util.spec_from_file_location("raven", RAVEN_PATH)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-raven = load_raven()
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+import raven_lib as raven  # noqa: E402
 
 
 class RavenTests(unittest.TestCase):
