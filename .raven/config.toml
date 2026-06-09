@@ -1,0 +1,75 @@
+# RAVEN configuration for this repository.
+#
+# This file is intended to be edited by the destination project.
+# RAVEN reads it when raven.py is run without a language argument.
+# Machine-written install/upgrade state lives separately in .raven/manifest.json.
+
+# Config schema version. Keep this as 1 unless a future RAVEN release says otherwise.
+schema = 1
+
+# Language template to apply by default when no language is passed on the command line.
+# Supported values are the language directories in the RAVEN repo, such as python, swift, and rust.
+template = "python"
+
+# Include the language template README.md when applying RAVEN.
+# Usually false because README.md explains the template itself rather than agent behavior
+# that belongs in the destination repository.
+include_readme = false
+
+[components]
+# Root instruction files: AGENTS.md and CLAUDE.md.
+# Turn this off if your repository owns those files and you only want lower-level RAVEN pieces.
+root_instructions = true
+
+# Reusable on-demand procedures under .agents/skills/raven-* plus the .claude/skills compatibility symlink.
+skills = true
+
+# Claude Code subagent definitions under .claude/agents/raven-*.
+agents = true
+
+# Claude Code hook scripts under .claude/hooks/raven-*.
+# Turn this off if your team does not want RAVEN to install hook enforcement.
+hooks = true
+
+# Claude Code scoped rule files under .claude/rules/raven-*.
+rules = true
+
+# Agent-facing reference docs under .claude/docs/raven-*.
+docs = true
+
+# Helper scripts under .claude/scripts/raven-*.
+scripts = true
+
+# MCP example configuration at .mcp.json.
+# Turn this off if your repository already manages MCP separately.
+mcp = true
+
+# Claude Code settings at .claude/settings.json, including RAVEN hook wiring.
+# Turn this off if your repository owns Claude settings and will merge hooks manually.
+settings = true
+
+[exclude]
+# Additional template-relative paths to exclude from apply operations.
+# Use exact paths or glob patterns. A trailing /** excludes a directory tree.
+# Examples:
+#   paths = [
+#     ".agents/skills/raven-review-pr/**",
+#     ".claude/agents/raven-security-reviewer.md",
+#   ]
+paths = []
+
+[lifecycle]
+# Enable checkpoint enforcement hook for raven-project-lifecycle.
+# When true, the PreToolUse hook validates each unit checkpoint before
+# allowing raven-session.py --complete to proceed.
+# Set to false to fall back to instructional-only enforcement.
+checkpoint_enforcement = true
+
+[issue_tracker]
+# External issue tracker for this project. Controls which issue-tracker
+# workflow skill is active and which CLI raven-tool-bootstrap checks for.
+# This is independent of local session tracking (governed by [lifecycle]).
+#
+# platform = "github"   # use raven-github-issues + gh CLI
+# platform = "gitlab"   # use raven-gitlab-issues + glab CLI
+platform = "github"      # dogfooding: raven repo uses GitHub Issues
