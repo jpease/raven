@@ -28,6 +28,15 @@
             "command": "python .claude/hooks/raven-pre-edit-guard.py"
           }
         ]
+      },
+      {
+        "matcher": "raven-session.*--complete",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/raven-session-checkpoint.py"
+          }
+        ]
       }
     ],
     "PostToolUse": [
