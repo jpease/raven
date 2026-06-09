@@ -22,7 +22,7 @@ description: Use for renames, shared abstraction changes, API changes, moved cod
 ## Process
 
 1. Identify public surface area.
-2. Use LSP references before editing.
+2. Use LSP references before editing. If similar implementations may exist elsewhere, use Semble `find_related` on the symbol or pattern to find them too.
 3. Use GitNexus for dependency and blast-radius analysis.
 4. Use ast-grep or Semgrep for mechanical syntax-aware rewrites.
 5. Use `rg` to verify no textual leftovers.

@@ -25,7 +25,7 @@ description: Use when tests, builds, runtime commands, or user-reported behavior
 3. Extract the failing test or command, exact error, relevant stack frame, and likely owning file or symbol.
 4. Use `rg` for exact error strings.
 5. Use LSP diagnostics for target files.
-6. Use Semble only if ownership is unclear.
+6. Use Semble only if ownership is unclear. If ownership is still unclear afterward, delegate per AGENTS.md Delegation guidance rather than expanding the search further.
 7. Patch minimally.
 8. Re-run the narrowest failing test.
 9. Only then run broader tests.
