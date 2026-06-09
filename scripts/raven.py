@@ -57,7 +57,7 @@ COMPONENT_PATHS = {
     "root_instructions": ["AGENTS.md", "CLAUDE.md"],
     "skills": [".agents/skills", ".claude/skills"],
     "agents": [".claude/agents", ".codex/agents"],
-    "hooks": [".claude/hooks", ".codex/hooks", ".codex/hooks.json"],
+    "hooks": [".claude/hooks", ".codex/hooks", ".codex/hooks.json", ".raven/git-hooks"],
     "rules": [".claude/rules", ".codex/rules"],
     "docs": [".claude/docs"],
     "scripts": [".claude/scripts", ".codex/scripts"],
@@ -306,7 +306,7 @@ def load_config(destination: Path) -> RavenConfig:
     )
 
 
-def default_config_text(template_name: str, include_readme: bool) -> str:
+def default_config_text(template_name: str, include_readme: bool, platform: str = "none") -> str:
     include = str(include_readme).lower()
     return dedent(
         f"""\
@@ -419,7 +419,15 @@ def default_config_text(template_name: str, include_readme: bool) -> str:
         #
         # platform = "github"   # use raven-github-issues + gh CLI
         # platform = "gitlab"   # use raven-gitlab-issues + glab CLI
-        platform = "none"        # no external issue tracker
+        # platform = "none"     # no external issue tracker
+        platform = "{platform}"
+
+        [git_hooks]
+        # Strip AI agent attribution trailers (Co-Authored-By, Generated-by) from commit
+        # messages before they land in git history.  The commit-msg hook removes lines
+        # that name known AI tools or AI provider domains so they never reach the repo.
+        # Set to false only if your team intentionally records AI attribution in commits.
+        strip_ai_attribution = true
         """
     )
 
@@ -1312,6 +1320,81 @@ def _parse_install_language(items: list[str]) -> tuple[str | None, list[str]]:
     return None, items
 
 
+_ISSUE_TRACKER_SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]")
+_PLATFORM_LINE_RE = re.compile(r"^\s*platform\s*=")
+
+
+def _update_config_platform(config_path: Path, platform: str) -> None:
+    """Replace the active platform value in [issue_tracker] section of config."""
+    lines = config_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    in_section = False
+    new_lines = []
+    updated = False
+    for line in lines:
+        m = _ISSUE_TRACKER_SECTION_RE.match(line)
+        if m:
+            in_section = m.group(1).strip() == "issue_tracker"
+        if (
+            in_section
+            and not updated
+            and _PLATFORM_LINE_RE.match(line)
+            and not line.lstrip().startswith("#")
+        ):
+            new_lines.append(f'platform = "{platform}"\n')
+            updated = True
+            continue
+        new_lines.append(line)
+    config_path.write_text("".join(new_lines), encoding="utf-8")
+
+
+def _git_hooks_dir(destination: Path) -> Path | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(destination), "rev-parse", "--git-dir"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        git_dir = result.stdout.strip()
+        hooks_dir = (destination / git_dir / "hooks").resolve()
+        return hooks_dir if hooks_dir.parent.is_dir() else None
+    except subprocess.CalledProcessError:
+        return None
+
+
+def install_git_hooks(destination: Path) -> list[str]:
+    """Symlink .raven/git-hooks/* into .git/hooks/. Returns installed hook names."""
+    git_hooks_src = destination / ".raven" / "git-hooks"
+    if not git_hooks_src.is_dir():
+        return []
+    hooks_dir = _git_hooks_dir(destination)
+    if hooks_dir is None:
+        return []
+    hooks_dir.mkdir(exist_ok=True)
+    installed: list[str] = []
+    for hook_src in sorted(git_hooks_src.iterdir()):
+        if hook_src.name.startswith(".") or not hook_src.is_file():
+            continue
+        hook_src.chmod(hook_src.stat().st_mode | 0o111)
+        hook_link = hooks_dir / hook_src.name
+        rel = os.path.relpath(hook_src, hooks_dir)
+        if hook_link.is_symlink() and os.readlink(hook_link) == rel:
+            installed.append(hook_src.name)
+            continue
+        if hook_link.exists() and not hook_link.is_symlink():
+            print(
+                f"warning: .git/hooks/{hook_src.name} already exists as a regular file; "
+                "remove it to let Raven manage it.",
+                file=sys.stderr,
+            )
+            continue
+        if hook_link.is_symlink():
+            hook_link.unlink()
+        hook_link.symlink_to(rel)
+        installed.append(hook_src.name)
+    return installed
+
+
 def _run(
     destination: Path,
     template_name: str,
@@ -1378,6 +1461,8 @@ def _run(
     if rc != 0:
         return rc
 
+    git_hooks_installed = install_git_hooks(destination)
+
     print_apply_summary(
         plan.copied,
         plan.will_upgrade,
@@ -1392,6 +1477,9 @@ def _run(
         print_section(
             "Wrote guided merge artifacts for existing instruction files:", merge_artifacts
         )
+    if git_hooks_installed:
+        print()
+        print_section("Installed git hooks:", [f".git/hooks/{h}" for h in git_hooks_installed])
 
     return 0
 
@@ -1416,7 +1504,8 @@ def cmd_init(args: argparse.Namespace) -> int:
         return 2
     path = destination / CONFIG_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(default_config_text(language, False), encoding="utf-8")
+    platform = getattr(args, "platform", None) or "none"
+    path.write_text(default_config_text(language, False, platform), encoding="utf-8")
     print(f"Created {destination / CONFIG_PATH}")
     return 0
 
@@ -1433,15 +1522,20 @@ def cmd_install(args: argparse.Namespace) -> int:
     language_arg, overrides = _parse_install_language(install_items)
     config = load_config(destination)
 
+    platform = getattr(args, "platform", None)
     if config.exists:
         template_name = config.template or list_language_templates()[0]
         include_readme = args.include_readme or config.include_readme
+        if platform is not None:
+            _update_config_platform(destination / CONFIG_PATH, platform)
     else:
         language = language_arg or select_language_interactively()
         template_name = language
         include_readme = args.include_readme
         if not args.dry_run:
-            init_args = argparse.Namespace(destination=str(destination), language=language)
+            init_args = argparse.Namespace(
+                destination=str(destination), language=language, platform=platform
+            )
             rc = cmd_init(init_args)
             if rc != 0:
                 return rc
@@ -1536,6 +1630,12 @@ File safety:
         default=None,
         help="language template (e.g. python, swift, rust, typescript, elixir); prompts interactively if omitted",
     )
+    init_parser.add_argument(
+        "--platform",
+        choices=["github", "gitlab", "none"],
+        default=None,
+        help="issue-tracker platform: github, gitlab, or none (default: none)",
+    )
 
     install_parser = subparsers.add_parser(
         "install",
@@ -1597,6 +1697,12 @@ AGENTS.md and CLAUDE.md:
             "if CLAUDE.md exists, move it to CLAUDE.md.bak and create the CLAUDE.md -> "
             "AGENTS.md symlink; fails if backup exists"
         ),
+    )
+    install_parser.add_argument(
+        "--platform",
+        choices=["github", "gitlab", "none"],
+        default=None,
+        help="issue-tracker platform: github, gitlab, or none; updates existing config if already installed",
     )
 
     upgrade_parser = subparsers.add_parser(
