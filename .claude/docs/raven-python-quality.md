@@ -4,6 +4,8 @@ Use this reference for Python implementation work when the task touches public A
 
 For language-neutral guidance such as clarity over cleverness, dependency restraint, comments, and maintainability, use `.claude/docs/raven-coding-principles.md`.
 
+For changes that touch security-sensitive boundaries, run the `raven-security-review` skill before shipping.
+
 ## Public Contracts
 
 - Treat public functions, classes, and module interfaces as compatibility surfaces.

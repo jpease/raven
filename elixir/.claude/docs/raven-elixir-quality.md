@@ -4,6 +4,8 @@ Use this reference for Elixir implementation work when the task touches public A
 
 For language-neutral guidance such as clarity over cleverness, dependency restraint, comments, and maintainability, use `.claude/docs/raven-coding-principles.md`.
 
+For changes that touch security-sensitive boundaries, run the `raven-security-review` skill before shipping.
+
 ## Public Contracts
 
 - Treat public modules, context functions, routes, API payloads, event names, job args, database schemas, migrations, config keys, and release behavior as compatibility surfaces.

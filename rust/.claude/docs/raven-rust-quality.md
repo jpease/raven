@@ -4,6 +4,8 @@ Use this reference for Rust implementation work when the task touches public API
 
 For language-neutral guidance such as clarity over cleverness, dependency restraint, comments, and maintainability, use `.claude/docs/raven-coding-principles.md`.
 
+For changes that touch security-sensitive boundaries, run the `raven-security-review` skill before shipping.
+
 ## Public Contracts
 
 - Treat public APIs, feature flags, crate names, module paths, serialized formats, config files, and CLI behavior as compatibility surfaces.

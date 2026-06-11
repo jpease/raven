@@ -4,6 +4,8 @@ Use this reference for TypeScript implementation work when the task touches type
 
 For language-neutral guidance such as clarity over cleverness, dependency restraint, comments, and maintainability, use `.claude/docs/raven-coding-principles.md`.
 
+For changes that touch security-sensitive boundaries, run the `raven-security-review` skill before shipping.
+
 ## Public Contracts
 
 - Treat exported functions, types, classes, and package interfaces as compatibility surfaces.
