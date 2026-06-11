@@ -181,9 +181,9 @@
       "sourceSha256": "986fe15944d8d91a238f3d6a1907d035d1c17d7b7796b50f5643445b28f6ff54"
     },
     ".claude/settings.json": {
-      "installedSha256": "e7a092e96a7080bccd7d225ee01d1f898899fa05fc852328a0d0bf962050420f",
+      "installedSha256": "a699a2739028b758d8900ea62823beae01f1137804281d751d4fcc39b778837d",
       "kind": "file",
-      "sourceSha256": "e7a092e96a7080bccd7d225ee01d1f898899fa05fc852328a0d0bf962050420f"
+      "sourceSha256": "a699a2739028b758d8900ea62823beae01f1137804281d751d4fcc39b778837d"
     },
     ".claude/skills": {
       "installedSha256": "81bdc0f9bb8fdb71e26bfdaf4de77159e927d44746752c62564185c1eefdce9e",
@@ -217,9 +217,9 @@
       "sourceSha256": "85a082d464427ccdc2fe0133dfc857981978fcb8627f95066fbd140e8dbdf64e"
     },
     ".codex/hooks.json": {
-      "installedSha256": "cfec315f0c8f592fd0359f4939911ec4eb1bc522e56e22d7a565e99b5a43d412",
+      "installedSha256": "a7790040652e7bc3ef62b77369f366eba0293d8433d91e3ff393a5f1afd6a11f",
       "kind": "file",
-      "sourceSha256": "cfec315f0c8f592fd0359f4939911ec4eb1bc522e56e22d7a565e99b5a43d412"
+      "sourceSha256": "a7790040652e7bc3ef62b77369f366eba0293d8433d91e3ff393a5f1afd6a11f"
     },
     ".codex/hooks/raven-post-bash-summarize.py": {
       "installedSha256": "dd8909153eca2ab58e2825c2379df4b5ac60d65e632376664c4a39bb2244161e",
@@ -323,8 +323,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "836de081f7ad",
+  "ravenVersion": "daad08a17be2",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-06-11T19:14:56.439218+00:00"
+  "updatedAt": "2026-06-11T21:03:24.330052+00:00"
 }

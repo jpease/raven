@@ -5,7 +5,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "python .codex/scripts/raven-tool-check.py --session-start",
+          "command": "python \"$(git rev-parse --show-toplevel)/.codex/scripts/raven-tool-check.py\" --session-start",
           "timeout": 30,
           "statusMessage": "Checking RAVEN tool availability"
         }
@@ -18,7 +18,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "python .codex/hooks/raven-pre-bash-guard.py",
+          "command": "python \"$(git rev-parse --show-toplevel)/.codex/hooks/raven-pre-bash-guard.py\"",
           "timeout": 30,
           "statusMessage": "Checking shell command safety"
         }
@@ -29,7 +29,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "python .codex/hooks/raven-pre-edit-guard.py",
+          "command": "python \"$(git rev-parse --show-toplevel)/.codex/hooks/raven-pre-edit-guard.py\"",
           "timeout": 30,
           "statusMessage": "Checking edit target"
         }
@@ -40,7 +40,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "python .codex/hooks/raven-session-checkpoint.py",
+          "command": "python \"$(git rev-parse --show-toplevel)/.codex/hooks/raven-session-checkpoint.py\"",
           "timeout": 10,
           "statusMessage": "Validating session checkpoint"
         }
@@ -53,7 +53,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "python .codex/hooks/raven-post-bash-summarize.py",
+          "command": "python \"$(git rev-parse --show-toplevel)/.codex/hooks/raven-post-bash-summarize.py\"",
           "timeout": 30,
           "statusMessage": "Checking shell output policy"
         }
@@ -64,7 +64,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "python .codex/hooks/raven-post-edit-format.py",
+          "command": "python \"$(git rev-parse --show-toplevel)/.codex/hooks/raven-post-edit-format.py\"",
           "timeout": 30,
           "statusMessage": "Running lightweight formatter"
         }

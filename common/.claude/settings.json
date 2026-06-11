@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/scripts/raven-tool-check.py --session-start"
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/scripts/raven-tool-check.py\" --session-start"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/raven-pre-bash-guard.py"
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-pre-bash-guard.py\""
           }
         ]
       },
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/raven-pre-edit-guard.py"
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-pre-edit-guard.py\""
           }
         ]
       },
@@ -34,7 +34,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/raven-session-checkpoint.py"
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-session-checkpoint.py\""
           }
         ]
       }
@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/raven-post-bash-summarize.py"
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-post-bash-summarize.py\""
           }
         ]
       },
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/raven-post-edit-format.py"
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-post-edit-format.py\""
           }
         ]
       }
