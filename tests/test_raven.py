@@ -917,6 +917,43 @@ rules = false
                     upgrade_output.getvalue(),
                 )
 
+    def test_hook_commands_are_project_anchored(self):
+        def commands_in(node):
+            commands = []
+            if isinstance(node, dict):
+                command = node.get("command")
+                if isinstance(command, str):
+                    commands.append(command)
+                for value in node.values():
+                    commands.extend(commands_in(value))
+            elif isinstance(node, list):
+                for value in node:
+                    commands.extend(commands_in(value))
+            return commands
+
+        cases = [
+            (
+                REPO_ROOT / "common" / ".claude" / "settings.json",
+                "$CLAUDE_PROJECT_DIR/",
+                "python .claude/",
+            ),
+            (
+                REPO_ROOT / "common" / ".codex" / "hooks.json",
+                "$(git rev-parse --show-toplevel)/",
+                "python .codex/",
+            ),
+        ]
+
+        for path, required_anchor, forbidden_prefix in cases:
+            with self.subTest(path=path):
+                commands = commands_in(json.loads(path.read_text(encoding="utf-8")))
+                raven_commands = [command for command in commands if "raven-" in command]
+
+                self.assertTrue(raven_commands)
+                for command in raven_commands:
+                    self.assertIn(required_anchor, command)
+                    self.assertNotIn(forbidden_prefix, command)
+
     def test_templates_have_no_broken_symlinks(self):
         for language in raven.list_language_templates():
             template = REPO_ROOT / language
