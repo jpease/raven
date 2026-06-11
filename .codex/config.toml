@@ -13,6 +13,9 @@ args = ["mcp"]
 command = "uvx"
 args = ["--from", "semble[mcp]", "semble"]
 
+[mcp_servers.semble.tools.search]
+approval_mode = "approve"
+
 [mcp_servers.gitnexus]
 command = "gitnexus"
 args = ["mcp"]
