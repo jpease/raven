@@ -904,6 +904,11 @@ rules = false
                 self.assertTrue((destination / ".codex" / "config.toml").is_file())
                 self.assertTrue((destination / ".codex" / "hooks.json").is_file())
                 self.assertTrue(
+                    (
+                        destination / ".agents" / "skills" / "raven-security-review" / "SKILL.md"
+                    ).is_file()
+                )
+                self.assertTrue(
                     (destination / ".codex" / "agents" / "raven-security-reviewer.toml").is_file()
                 )
                 self.assertTrue((destination / ".codex" / "rules" / "raven.rules").is_file())
