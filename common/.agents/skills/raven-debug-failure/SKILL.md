@@ -30,6 +30,10 @@ description: Use when tests, builds, runtime commands, or user-reported behavior
 8. Re-run the narrowest failing test.
 9. Only then run broader tests.
 
+## When To Stop
+
+Stop when the failing signal has been captured but targeted retrieval cannot identify the owning file, symbol, or integration point after two or more appropriate lookups. Report the failing command or behavior, the searches or diagnostics already checked, and the unresolved ownership question. Then delegate per AGENTS.md Delegation guidance or pause and ask rather than broadening into unrelated code.
+
 ## Output
 
 Summarize root cause, changed files, verification command, and remaining risk.

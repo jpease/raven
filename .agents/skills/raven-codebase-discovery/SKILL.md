@@ -19,7 +19,7 @@ Goal: find the smallest sufficient context.
 - Do not use Semble for exhaustive proof that something does not exist.
 - Verify Semble candidates with `rg`, LSP, targeted file reads, or tests before treating them as facts.
 - Return only relevant files, symbols, relationships, confidence, and unresolved questions.
-- If the search scope is broad or stays unclear after the steps below, delegate per AGENTS.md Delegation guidance rather than continuing to expand context.
+- Stop when targeted retrieval fails; delegate or pause rather than continuing to expand context.
 
 ## Process
 
@@ -29,6 +29,19 @@ Goal: find the smallest sufficient context.
 4. For promising symbols, use LSP definition and references.
 5. If change impact matters, use GitNexus.
 6. Read only the smallest relevant ranges.
+
+## When To Stop
+
+Targeted retrieval has failed when two or more appropriate tools or queries have not found a credible file, symbol, owner, or integration point; when promising candidates lead to unrelated code; or when the next step would require broad full-file reading without a clear target.
+
+When that happens, stop and report:
+
+- what behavior or question you were trying to locate
+- which tools or queries were already tried
+- the best candidate paths or symbols, if any
+- the unresolved question blocking progress
+
+Then delegate per AGENTS.md Delegation guidance, or pause and ask the user if no delegation mechanism is available.
 
 ## Broad Exploration
 
