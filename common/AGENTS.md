@@ -44,6 +44,8 @@ Read full files only after targeted tools identify the file and smaller ranges a
 
 Semble is for conceptual discovery when names are unclear. Do not use Semble as exhaustive proof that code does not exist, and do not treat Semble snippets as sufficient verification before editing. Confirm candidate locations with `rg`, LSP, targeted file reads, or tests as appropriate.
 
+Stop targeted retrieval when two or more appropriate tools have failed to identify a credible file, symbol, or integration point, or when the next step would require broad reading with no clear target. At that point, summarize what was tried, state the unresolved question, and either delegate or pause and ask the user instead of expanding context indefinitely.
+
 ## File Reading Policy
 
 - Before reading a full file, try `rg`, Semble, LSP, or repo-configured code intelligence.
@@ -61,7 +63,8 @@ When to delegate:
 - An architecture or "how does X work" question would take many retrieval steps to answer directly.
 - The expected output is noisy relative to what the main context needs — large diffs, long logs, or many candidate files where only a summary or a few facts matter.
 - The work is a specialized audit with its own checklist, such as a security review, test coverage analysis, or type design review.
-- The Context Retrieval Ladder has been tried and the integration point or root cause is still unclear after reasonable effort.
+- Two or more appropriate retrieval tools have been tried and the integration point or root cause is still unclear.
+- Search results keep producing unrelated candidates, repeated dead ends, or candidate lists too large to inspect safely in the main context.
 
 How to delegate:
 
