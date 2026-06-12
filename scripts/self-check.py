@@ -66,6 +66,38 @@ def validate_shared_docs_sync() -> None:
     print("shared docs sync ok")
 
 
+def validate_context_budget() -> None:
+    # always-loaded tier — raise thresholds only with deliberate justification
+    THRESHOLDS: dict[str, int] = {
+        "common/AGENTS.md": 1110,
+        # language-specific rules files
+        "python/.claude/rules/raven-python.md": 760,
+        "elixir/.claude/rules/raven-elixir.md": 890,
+        "rust/.claude/rules/raven-rust.md": 820,
+        "swift/.claude/rules/raven-swift.md": 640,
+        "typescript/.claude/rules/raven-typescript.md": 660,
+        # shared rules files (symlinked from language dirs)
+        "common/.claude/rules/raven-security.md": 70,
+        "common/.claude/rules/raven-tests.md": 70,
+    }
+    print("==> validate context budget for always-loaded guidance")
+    offenders: list[str] = []
+    for rel, limit in THRESHOLDS.items():
+        path = REPO_ROOT / rel
+        if not path.exists():
+            print(f"  WARNING: {rel} not found, skipping budget check")
+            continue
+        text = path.read_text(encoding="utf-8")
+        count = len(text.split())
+        if count > limit:
+            offenders.append(f"  {rel}: {count} words (limit {limit})")
+    if offenders:
+        for line in offenders:
+            print(line)
+        raise SystemExit("Context budget exceeded. Trim always-loaded guidance or raise thresholds with justification.")
+    print("context budget ok")
+
+
 def validate_installed_shape() -> None:
     print("==> validate installed RAVEN shape")
     raven = load_raven_module()
@@ -89,6 +121,7 @@ def validate_installed_shape() -> None:
 
 def main() -> int:
     validate_shared_docs_sync()
+    validate_context_budget()
     validate_installed_shape()
     run(
         "RAVEN self-upgrade dry run",
