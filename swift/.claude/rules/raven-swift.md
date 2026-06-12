@@ -18,14 +18,12 @@ Use `.claude/docs/raven-swift-quality.md` for detailed Swift quality guidance wh
 
 ## Pause And Ask
 
-Ask before changing:
+In addition to the guardrails in AGENTS.md, ask before changing:
 
 - SwiftData schema, model fields, relationships, delete rules, or migrations.
 - CloudKit, WatchConnectivity, sync, de-duplication, or conflict-resolution behavior.
 - HealthKit permissions, read/write scope, export behavior, or privacy posture.
 - Entitlements, signing, capabilities, bundle identifiers, or deployment targets.
-- Third-party dependencies or architecture patterns.
-- Generated project files, generated clients, vendored code, or test deletion.
 
 ## Data Safety
 
@@ -104,11 +102,3 @@ Ask before changing:
 - Fix SwiftLint or formatting violations in files you touch.
 - For docs-only changes, run the documented lightweight docs/link check if available.
 - Treat warnings-as-errors projects accordingly; do not dismiss warnings as cosmetic.
-
-## Tooling
-
-- Use `rg` for exact symbols, errors, filenames, config keys, and project settings.
-- Use LSP or Xcode source tooling for definitions, references, diagnostics, and rename safety.
-- Use GitNexus or another dependency graph tool before editing shared services, public APIs, data models, or sync paths.
-- Use Semble only for conceptual discovery when names are unclear, then verify with deterministic tools.
-- Use RTK or equivalent output compression for noisy builds and test logs when exact raw output is not required.

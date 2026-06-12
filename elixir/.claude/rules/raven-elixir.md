@@ -24,19 +24,14 @@ Use `.claude/docs/raven-elixir-quality.md` for detailed Elixir quality guidance 
   - `mix deps.audit` when `mix_audit` is configured
 - Run `mix help <task>` before using an unfamiliar Mix task or option.
 - Avoid `mix deps.clean --all` unless there is a clear dependency corruption reason.
-- Use RTK for noisy Mix, test, Dialyzer, asset, or deployment output when exact raw output is not required.
 
 ## Pause And Ask
 
-Ask before changing:
+In addition to the guardrails in AGENTS.md, ask before changing:
 
-- Public APIs, context boundaries, module names, route paths, or externally visible behavior.
 - Ecto schemas, migrations, indexes, constraints, repo configuration, or persisted data semantics.
-- Authentication, authorization, tenant isolation, session handling, secret handling, or webhook verification.
 - OTP supervision trees, GenServer state machines, process names, Registry usage, queues, or retry behavior.
-- Dependencies, licenses, vendored code, generated artifacts, or lockfiles.
 - CI/CD workflows, release configuration, deployment settings, observability, or production runtime config.
-- Broad refactors, cross-context architecture changes, or unclear scope boundaries.
 
 ## Elixir Safety
 
@@ -121,9 +116,5 @@ Ask before changing:
 
 ## Tooling
 
-- Use `rg` for exact modules, functions, routes, config keys, migration names, errors, and test names.
 - Use Expert or another Elixir LSP for definitions, references, diagnostics, hover, and rename safety when available.
-- Use repo-configured code intelligence before editing shared contexts, public APIs, supervision trees, schemas, migrations, or cross-context interfaces.
-- Use ast-grep or Semgrep for structural searches and mechanical rewrites.
-- Use Semble for conceptual discovery when names are unclear, then verify with deterministic tools.
-- Use RTK or equivalent output compression for noisy Mix, ExUnit, Dialyzer, asset, or deployment output when exact raw output is not required.
+- Use `mix deps.tree` for dependency graph questions.

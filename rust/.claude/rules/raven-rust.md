@@ -23,15 +23,11 @@ Use `.claude/docs/raven-rust-quality.md` for detailed Rust quality guidance when
 
 ## Pause And Ask
 
-Ask before changing:
+In addition to the guardrails in AGENTS.md, ask before changing:
 
-- Public APIs, crate boundaries, module paths, feature flags, or semver-relevant behavior.
-- Serialization formats, persisted data, config schemas, migrations, or compatibility contracts.
 - `unsafe`, FFI, ABI, linking, build scripts, generated bindings, or platform-specific packaging.
-- Dependencies, licenses, vendored code, or code derived from third-party implementations.
-- Authentication, authorization, secret handling, command execution, filesystem deletion, or network access.
 - CI/release workflows, publishing settings, benchmark baselines, or golden/reference outputs.
-- Generated files, vendored code, lockfiles, or deleted tests unless the task explicitly requires it.
+- Serialization formats, persisted data, config schemas, or compatibility contracts.
 
 ## Rust Safety
 
@@ -108,10 +104,5 @@ Ask before changing:
 
 ## Tooling
 
-- Use `rg` for exact symbols, errors, filenames, features, config keys, and Cargo metadata.
-- Use Rust Analyzer or LSP for definitions, references, diagnostics, type info, and rename safety.
 - Use `cargo metadata`, `cargo tree`, or dependency graph tools for workspace and dependency questions.
-- Use ast-grep or Semgrep for structural searches and mechanical rewrites.
-- Use GitNexus or another dependency graph tool before editing shared public APIs or cross-crate interfaces.
-- Use Semble only for conceptual discovery when names are unclear, then verify with deterministic tools.
-- Use RTK or equivalent output compression for noisy builds and test logs when exact raw output is not required.
+- Use Rust Analyzer for rename safety when available (via LSP or IDE).
