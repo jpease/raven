@@ -166,9 +166,7 @@ def load_config(destination: Path) -> RavenConfig:
     include_readme = raw.get("include_readme", False)
     raw_issue_tracker = raw.get("issue_tracker")
     raw_platform = (
-        raw_issue_tracker.get("platform")
-        if isinstance(raw_issue_tracker, dict)
-        else None
+        raw_issue_tracker.get("platform") if isinstance(raw_issue_tracker, dict) else None
     )
     platform = raw_platform if isinstance(raw_platform, str) else "none"
     return RavenConfig(
@@ -367,8 +365,9 @@ def platform_excluded(relative: str, config: RavenConfig) -> bool:
     for skill_name, required_platform in _PLATFORM_GATED_SKILLS.items():
         skill_prefix_agents = f".agents/skills/{skill_name}"
         skill_prefix_claude = f".claude/skills/{skill_name}"
+        # startswith checks cover directory contents, not just exact paths
         is_this_skill = (
-            relative == skill_prefix_agents
+            relative == skill_prefix_agents  # noqa: SIM109
             or relative.startswith(f"{skill_prefix_agents}/")
             or relative == skill_prefix_claude
             or relative.startswith(f"{skill_prefix_claude}/")
