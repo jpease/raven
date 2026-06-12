@@ -22,6 +22,7 @@ def _extract_command(payload: dict) -> str:
 
 
 def _is_codex_hook(payload: dict) -> bool:
+    # Both Claude Code and Codex include these fields; both use the structured JSON path.
     return "hook_event_name" in payload or "tool_name" in payload
 
 
@@ -53,8 +54,10 @@ def main() -> int:
         return 0
 
     blocked_patterns = [
-        r"rm\s+-rf\s+/",
-        r"rm\s+-rf\s+~",
+        # rm -rf / or rm -fr / (root only; /path/to/dir is intentionally allowed)
+        r"rm\s+(-\w*rf\w*|-\w*fr\w*)\s+/(\s|[;|&]|$)",
+        # rm -rf ~/ or rm -rf ~ (home directory)
+        r"rm\s+(-\w*rf\w*|-\w*fr\w*)\s+~",
         r"sudo\s+rm\b",
         r"git\s+reset\s+--hard",
         r"git\s+clean\s+-fdx",

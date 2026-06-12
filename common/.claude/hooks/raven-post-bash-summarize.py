@@ -45,10 +45,24 @@ def main() -> int:
     if not command.lstrip().startswith("rtk ") and any(
         candidate in command for candidate in noisy_commands
     ):
-        print(
-            f"Consider running noisy commands through RTK when exact raw output is not required: {command}",
-            file=sys.stderr,
+        hint = (
+            f"Consider running noisy commands through RTK when exact raw output"
+            f" is not required: {command}"
         )
+        # Both Claude Code and Codex include hook_event_name/tool_name in payloads.
+        if "hook_event_name" in payload or "tool_name" in payload:
+            print(
+                json.dumps(
+                    {
+                        "hookSpecificOutput": {
+                            "hookEventName": "PostToolUse",
+                            "additionalContext": hint,
+                        }
+                    }
+                )
+            )
+        else:
+            print(hint)
 
     return 0
 
