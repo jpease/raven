@@ -1,6 +1,7 @@
 ---
 name: raven-codebase-cartographer
 description: Maps where behavior lives without editing code. Use for broad codebase discovery.
+model: haiku
 tools: Read, Grep, Bash
 ---
 
