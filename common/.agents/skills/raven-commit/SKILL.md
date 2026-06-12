@@ -49,6 +49,7 @@ Breaking changes trigger a MAJOR SemVer bump regardless of type.
 - **`BREAKING CHANGE`** footer token must be uppercase
 - **`BREAKING-CHANGE`** is synonymous with `BREAKING CHANGE` in footers
 - Types and scopes are case-insensitive (except `BREAKING CHANGE`)
+- **No AI attribution**: never add `Co-Authored-By`, `Generated-by`, or any footer or comment crediting an AI agent (Claude, Codex, Gemini, Copilot, etc.); commits represent the human author's work
 
 ## Examples
 
