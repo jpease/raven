@@ -1,3 +1,4 @@
+import argparse
 import contextlib
 import io
 import unittest
@@ -190,6 +191,56 @@ class PlatformGatingTests(RavenTestCase):
         self.assertFalse(
             raven.platform_excluded(".agents/skills/raven-commit/SKILL.md", config_none)
         )
+
+
+class PlatformDryRunTests(RavenTestCase):
+    """Fresh-install dry runs must preview --platform gating without writing config."""
+
+    def _install_args(self, dry_run: bool) -> argparse.Namespace:
+        return argparse.Namespace(
+            destination=str(self.destination),
+            args=["python"],
+            language=None,
+            overrides=[],
+            dry_run=dry_run,
+            include_readme=False,
+            adopt_claude_symlink=False,
+            platform="github",
+        )
+
+    def test_fresh_install_dry_run_previews_platform_gating(self):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            rc = raven.cmd_install(self._install_args(dry_run=True))
+
+        self.assertEqual(rc, 0)
+        output = buffer.getvalue()
+        self.assertIn("raven-github-issues", output)
+        self.assertNotIn("raven-gitlab-issues", output)
+
+    def test_fresh_install_dry_run_writes_no_config(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            raven.cmd_install(self._install_args(dry_run=True))
+
+        self.assertFalse((self.destination / ".raven" / "config.toml").exists())
+
+    def test_existing_config_dry_run_does_not_persist_platform(self):
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            raven.default_config_text("python", False, "gitlab"), encoding="utf-8"
+        )
+        before = config_path.read_text(encoding="utf-8")
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            rc = raven.cmd_install(self._install_args(dry_run=True))
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(config_path.read_text(encoding="utf-8"), before)
+        output = buffer.getvalue()
+        self.assertIn("raven-github-issues", output)
+        self.assertNotIn("raven-gitlab-issues", output)
 
 
 if __name__ == "__main__":

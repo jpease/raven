@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from .apply import classify, claude_symlink_adoption_needed
@@ -71,8 +72,13 @@ def _run(
     requested_overrides: list[str],
     adopt_claude_symlink_requested: bool = False,
     prompt_claude_symlink: bool = True,
+    platform_override: str | None = None,
 ) -> int:
     config = load_config(destination)
+    if platform_override is not None:
+        # Dry runs must not write config, but the preview should still
+        # reflect the requested platform's skill gating.
+        config = replace(config, platform=platform_override)
     template = REPO_ROOT / template_name
     excludes = set() if include_readme else DEFAULT_EXCLUDES
 
@@ -197,7 +203,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     if config.exists:
         template_name = config.template or list_language_templates()[0]
         include_readme = args.include_readme or config.include_readme
-        if platform is not None:
+        if platform is not None and not args.dry_run:
             _update_config_platform(destination / CONFIG_PATH, platform)
     else:
         language = language_arg or select_language_interactively()
@@ -219,6 +225,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         args.dry_run,
         overrides,
         adopt_claude_symlink_requested=args.adopt_claude_symlink,
+        platform_override=platform if args.dry_run else None,
     )
 
 
