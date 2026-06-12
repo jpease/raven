@@ -21,7 +21,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=295baa51fa297479f69f35cb8ea6469a210daff9ccbed60a356a231fa33e0f8a -->
+<!-- RAVEN:BEGIN sha256=11b5c76185ec5fedd9f3cf23f8f8f9065067e4904a1618f7d0d769f0a4104210 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -59,6 +59,7 @@ Use the cheapest adequate source before reading full files.
 - Read line ranges around relevant symbols; read the full file only when small, the whole structure matters, or targeted reads are ambiguous. For files over 500 lines, summarize structure before reading further.
 - Return concise findings before editing. Avoid pasting raw command output unless essential.
 - Semble is for conceptual discovery — not exhaustive proof and not sufficient for an edit decision on its own. Verify with `rg`, LSP, targeted reads, or tests before changing code.
+- If two literal `rg` guesses miss, switch to Semble rather than iterating term variations.
 - Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried and delegate per the Delegation section, or ask the user.
 
 ## Delegation
@@ -143,7 +144,7 @@ Pause and ask before work that is ambiguous or could create durable harm:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **raven** (1078 symbols, 1673 relationships, 38 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **raven** (1179 symbols, 1885 relationships, 41 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

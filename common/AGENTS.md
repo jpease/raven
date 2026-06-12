@@ -35,6 +35,7 @@ Use the cheapest adequate source before reading full files.
 - Read line ranges around relevant symbols; read the full file only when small, the whole structure matters, or targeted reads are ambiguous. For files over 500 lines, summarize structure before reading further.
 - Return concise findings before editing. Avoid pasting raw command output unless essential.
 - Semble is for conceptual discovery — not exhaustive proof and not sufficient for an edit decision on its own. Verify with `rg`, LSP, targeted reads, or tests before changing code.
+- If two literal `rg` guesses miss, switch to Semble rather than iterating term variations.
 - Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried and delegate per the Delegation section, or ask the user.
 
 ## Delegation
