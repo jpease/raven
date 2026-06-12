@@ -1,7 +1,6 @@
 import contextlib
 import io
 import unittest
-from pathlib import Path
 
 from helpers import REPO_ROOT, RavenTestCase, raven
 
@@ -166,17 +165,31 @@ class PlatformGatingTests(RavenTestCase):
         config_none = self._make_config("none")
 
         # github skill gating
-        self.assertFalse(raven.platform_excluded(".agents/skills/raven-github-issues/SKILL.md", config_github))
-        self.assertTrue(raven.platform_excluded(".agents/skills/raven-github-issues/SKILL.md", config_gitlab))
-        self.assertTrue(raven.platform_excluded(".agents/skills/raven-github-issues/SKILL.md", config_none))
+        self.assertFalse(
+            raven.platform_excluded(".agents/skills/raven-github-issues/SKILL.md", config_github)
+        )
+        self.assertTrue(
+            raven.platform_excluded(".agents/skills/raven-github-issues/SKILL.md", config_gitlab)
+        )
+        self.assertTrue(
+            raven.platform_excluded(".agents/skills/raven-github-issues/SKILL.md", config_none)
+        )
 
         # gitlab skill gating
-        self.assertTrue(raven.platform_excluded(".agents/skills/raven-gitlab-issues/SKILL.md", config_github))
-        self.assertFalse(raven.platform_excluded(".agents/skills/raven-gitlab-issues/SKILL.md", config_gitlab))
-        self.assertTrue(raven.platform_excluded(".agents/skills/raven-gitlab-issues/SKILL.md", config_none))
+        self.assertTrue(
+            raven.platform_excluded(".agents/skills/raven-gitlab-issues/SKILL.md", config_github)
+        )
+        self.assertFalse(
+            raven.platform_excluded(".agents/skills/raven-gitlab-issues/SKILL.md", config_gitlab)
+        )
+        self.assertTrue(
+            raven.platform_excluded(".agents/skills/raven-gitlab-issues/SKILL.md", config_none)
+        )
 
         # unrelated skills are never excluded by platform
-        self.assertFalse(raven.platform_excluded(".agents/skills/raven-commit/SKILL.md", config_none))
+        self.assertFalse(
+            raven.platform_excluded(".agents/skills/raven-commit/SKILL.md", config_none)
+        )
 
 
 if __name__ == "__main__":
