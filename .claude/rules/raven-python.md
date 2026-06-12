@@ -38,26 +38,30 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 ## Error Handling
 
-- Catch specific exception types. Avoid bare `except:` or overly broad `except Exception` unless the project already uses that pattern with intentional behavior.
+- Catch specific exception types. Avoid bare `except:` or overly broad `except Exception`.
 - Do not silently swallow exceptions. Log or re-raise at minimum.
-- Define custom exception classes for library or service boundaries so callers can handle specific failure modes.
 - Use context managers for cleanup; do not rely on `finally` blocks where `with` is cleaner.
 - Preserve exception context when re-raising: use `raise NewError(...) from original_error`.
+
+For full error-design guidance (custom exception hierarchies, result types, boundary patterns),
+see `.claude/docs/raven-python-quality.md`.
 
 ## Architecture
 
 - Preserve existing module and package boundaries unless the task is explicitly architectural.
 - Keep pure business logic separate from I/O, network calls, time, randomness, and framework integration.
 - Prefer dependency injection over importing singletons or globals directly in business logic.
-- Validate untrusted input at the boundary — HTTP requests, CLI arguments, env config, file contents, external API responses. Pass typed domain values internally.
 - Do not import from sibling packages in ways that create circular dependencies.
+
+For full architecture guidance (functional core/imperative shell, module boundaries, validation),
+see `.claude/docs/raven-python-quality.md`.
 
 ## Async And Concurrency
 
-- Do not block an async event loop with synchronous filesystem, network, subprocess, or CPU-heavy work unless the project pattern permits it.
-- Use `asyncio.to_thread` or an executor for blocking work that must happen in an async context.
+- Do not block an async event loop with synchronous filesystem, network, subprocess, or CPU-heavy work.
 - Do not mix `asyncio` and `threading` without understanding the safety implications.
-- Keep shared mutable state narrow. Prefer message passing or structured concurrency patterns.
+
+For full async guidance, see `.claude/docs/raven-python-quality.md`.
 
 ## Testing
 
@@ -72,16 +76,16 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 ## Dependencies
 
 - Prefer the standard library and existing dependencies before adding new packages.
-- Add packages only when they remove meaningful complexity, are actively maintained, and fit the project's license and security policy.
-- Resolve dependency conflicts; do not add packages that create version incompatibilities without a documented resolution.
-- Use `--frozen` or equivalent in CI to ensure reproducible installs.
+- Do not add packages that create version incompatibilities without a documented resolution.
+
+For full dependency and license hygiene, see `.claude/docs/raven-python-quality.md`.
 
 ## Performance And Benchmarks
 
-- Profile with `py-spy`, `cProfile`, or `scalene` before optimizing; use `timeit` for microbenchmarks rather than wall-clock one-liners.
-- CPU-bound threads do not parallelize due to the GIL; reach for `multiprocessing` or a C extension when CPU parallelism is needed.
-- Prefer generators over list comprehensions in hot paths when the result is consumed once.
-- If a change is expected to affect performance, state the profiler output, Python version, and dataset size — not just a before/after time.
+- Profile before optimizing; do not make performance claims from a single local run.
+- CPU-bound threads do not parallelize due to the GIL; reach for `multiprocessing` or a C extension when needed.
+
+For full performance guidance, see `.claude/docs/raven-python-quality.md`.
 
 ## Quality Gates
 

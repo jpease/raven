@@ -1,6 +1,7 @@
 ---
 name: raven-test-debugger
 description: Investigates failing tests/builds and returns a concise root-cause summary.
+model: haiku
 tools: Bash, Read, Grep
 ---
 

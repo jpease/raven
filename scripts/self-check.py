@@ -60,7 +60,9 @@ def validate_shared_docs_sync() -> None:
             if not common_copy.exists():
                 continue
             if doc.read_bytes() != common_copy.read_bytes():
-                mismatches.append(f"{doc.relative_to(REPO_ROOT)} differs from common/.claude/docs/{doc.name}")
+                mismatches.append(
+                    f"{doc.relative_to(REPO_ROOT)} differs from common/.claude/docs/{doc.name}"
+                )
     if mismatches:
         for m in mismatches:
             print(f"  MISMATCH: {m}")
@@ -96,7 +98,9 @@ def validate_context_budget() -> None:
     if offenders:
         for line in offenders:
             print(line)
-        raise SystemExit("Context budget exceeded. Trim always-loaded guidance or raise thresholds with justification.")
+        raise SystemExit(
+            "Context budget exceeded. Trim always-loaded guidance or raise thresholds with justification."
+        )
     print("context budget ok")
 
 
@@ -147,7 +151,9 @@ def warn_stale_docs() -> None:
                         f"  STALE: {doc.name} — last verified {m.group(1)} ({age} days ago)"
                     )
             except ValueError:
-                warnings.append(f"  WARN: {doc.name} — unparseable Last verified date: {m.group(1)!r}")
+                warnings.append(
+                    f"  WARN: {doc.name} — unparseable Last verified date: {m.group(1)!r}"
+                )
         elif doc.name in _FRESHNESS_REQUIRED:
             warnings.append(f"  MISSING: {doc.name} — no 'Last verified:' marker found")
 

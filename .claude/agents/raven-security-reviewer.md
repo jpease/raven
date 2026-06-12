@@ -1,6 +1,7 @@
 ---
 name: raven-security-reviewer
 description: Checks changes for secrets, unsafe shell/database/file operations, auth bugs, and permission issues.
+model: sonnet
 tools: Read, Grep, Bash
 ---
 
