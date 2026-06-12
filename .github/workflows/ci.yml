@@ -4,21 +4,36 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  test:
+  checks:
+    if: github.event_name != 'schedule'
+    name: Checks (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
-      - name: Install ruff
-        run: pip install ruff
+      - name: Install check tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ruff pyright
 
       - name: ruff format check
         run: python -m ruff format --check .
@@ -26,8 +41,55 @@ jobs:
       - name: ruff lint
         run: python -m ruff check .
 
+      - name: pyright
+        run: pyright scripts/raven.py scripts/raven_lib
+
       - name: Unit tests
         run: python -m unittest discover -s tests
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+
+  self-check:
+    name: Self-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install self-check tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ruff
 
       - name: Self-check
         run: python scripts/self-check.py
+
+  template-smoke:
+    if: github.event_name != 'schedule'
+    name: Template smoke (${{ matrix.template }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [python, typescript, rust, swift, elixir]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install and dry-run upgrade template
+        run: |
+          destination="${RUNNER_TEMP}/raven-smoke-${{ matrix.template }}"
+          mkdir -p "$destination"
+          python scripts/raven.py --destination "$destination" install "${{ matrix.template }}" --platform github
+          python scripts/raven.py --destination "$destination" upgrade --dry-run
