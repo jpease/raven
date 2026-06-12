@@ -19,17 +19,11 @@ Use `.claude/docs/raven-python-quality.md` for detailed Python quality guidance 
   - `ruff format --check .` or `black --check .` for formatting
   - `mypy .` or `pyright` for type checking
 - Do not assume every project uses the same toolchain. Confirm before using.
-- Use RTK for noisy `pytest`, `tox`, `nox`, or package-manager output when exact raw output is not required.
 
 ## Pause And Ask
 
-Ask before changing:
+In addition to the guardrails in AGENTS.md, ask before changing:
 
-- Public APIs, module paths, or exported interfaces.
-- Database migrations, schema definitions, or persistence behavior.
-- Authentication, authorization, secret handling, or security-sensitive code.
-- Dependencies, license-sensitive code, vendored code, or generated artifacts.
-- Broad refactors, cross-module architecture changes, or unclear scope boundaries.
 - Configuration schemas, environment variable contracts, or deployment behavior.
 - CI/CD workflows or release automation.
 
@@ -96,11 +90,3 @@ Ask before changing:
 - Fix formatter, lint, and type-checking failures in touched code.
 - Do not add broad `# noqa` or `# type: ignore` comments. Prefer fixing the code or using the narrowest scoped suppression with a reason comment.
 
-## Tooling
-
-- Use `rg` for exact module names, function names, import paths, errors, and fixture names.
-- Use LSP for definitions, references, hover/type information, and diagnostics once a symbol is known.
-- Use ast-grep or Semgrep for structural searches and mechanical rewrites.
-- Use GitNexus before changing shared interfaces, public modules, dependency injection boundaries, or persistence code.
-- Use Semble for behavior-oriented discovery when the owning module is unclear, then verify with deterministic tools.
-- Use RTK for noisy `pytest`, `tox`, `nox`, or package-manager output when exact raw output is not required.

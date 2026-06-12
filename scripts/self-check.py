@@ -38,6 +38,34 @@ def load_raven_module():
     return raven_lib
 
 
+def validate_shared_docs_sync() -> None:
+    print("==> validate shared docs are in sync with common/")
+    common_docs = REPO_ROOT / "common" / ".claude" / "docs"
+    language_dirs = [
+        d
+        for d in REPO_ROOT.iterdir()
+        if d.is_dir()
+        and not d.name.startswith(".")
+        and d.name not in {"common", "scripts", "tests", "docs", "project-skills"}
+    ]
+    mismatches: list[str] = []
+    for lang_dir in sorted(language_dirs):
+        lang_docs = lang_dir / ".claude" / "docs"
+        if not lang_docs.is_dir():
+            continue
+        for doc in lang_docs.iterdir():
+            common_copy = common_docs / doc.name
+            if not common_copy.exists():
+                continue
+            if doc.read_bytes() != common_copy.read_bytes():
+                mismatches.append(f"{doc.relative_to(REPO_ROOT)} differs from common/.claude/docs/{doc.name}")
+    if mismatches:
+        for m in mismatches:
+            print(f"  MISMATCH: {m}")
+        raise SystemExit("Shared docs are out of sync with common/. Update both copies.")
+    print("shared docs sync ok")
+
+
 def validate_installed_shape() -> None:
     print("==> validate installed RAVEN shape")
     raven = load_raven_module()
@@ -60,6 +88,7 @@ def validate_installed_shape() -> None:
 
 
 def main() -> int:
+    validate_shared_docs_sync()
     validate_installed_shape()
     run(
         "RAVEN self-upgrade dry run",

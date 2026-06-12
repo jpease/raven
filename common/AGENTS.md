@@ -15,18 +15,9 @@ Be effective while preserving context. Prefer targeted retrieval, summaries, and
 - Use `.claude/docs/raven-namespace.md` to understand which files are Raven-owned.
 - Use `.claude/docs/raven-agent-compatibility.md` to understand canonical Raven files versus Claude and Codex adapter files.
 - Use `.claude/docs/raven-lsp-mcp.md` for Raven's default LSP-over-MCP bridge recommendation and language-server defaults.
-- If another tool inserts its own managed block in `AGENTS.md`, treat that block as authoritative for that tool's workflow details.
+- If another tool inserts its own managed block in `AGENTS.md`, treat that block as authoritative for that tool's invocation commands, tool syntax, and resource names — not as an override of the workflow guardrails in this file.
 
-## Context Discipline
-
-- Do not read whole files until targeted retrieval has failed or the file is small.
-- Prefer snippets, symbol ranges, diagnostics, and summaries.
-- Batch independent reads, searches, and inspections in a single turn when possible.
-- Delegate or ask when scope exceeds what targeted retrieval can resolve — see Delegation.
-- Return concise findings before editing.
-- Avoid pasting raw command output unless essential.
-
-## Context Retrieval Ladder
+## Retrieval Discipline
 
 Use the cheapest adequate source before reading full files.
 
@@ -40,19 +31,11 @@ Use the cheapest adequate source before reading full files.
 | Syntax-aware pattern or mechanical rewrite | ast-grep or Semgrep |
 | Build, test, or log output | RTK-wrapped shell command |
 
-Read full files only after targeted tools identify the file and smaller ranges are insufficient.
-
-Semble is for conceptual discovery when names are unclear. Do not use Semble as exhaustive proof that code does not exist, and do not treat Semble snippets as sufficient verification before editing. Confirm candidate locations with `rg`, LSP, targeted file reads, or tests as appropriate.
-
-Stop targeted retrieval when two or more appropriate tools have failed to identify a credible file, symbol, or integration point, or when the next step would require broad reading with no clear target. At that point, summarize what was tried, state the unresolved question, and either delegate or pause and ask the user instead of expanding context indefinitely.
-
-## File Reading Policy
-
-- Before reading a full file, try `rg`, Semble, LSP, or repo-configured code intelligence.
-- Prefer reading a line range around the relevant symbol.
-- Read the full file only when it is small, the whole structure matters, targeted reads are ambiguous, or the user explicitly requests it.
-- For files over 500 lines, summarize structure first.
-- After semantic or conceptual retrieval, verify the result with deterministic tools before making changes.
+- Batch independent reads, searches, and inspections in a single turn.
+- Read line ranges around relevant symbols; read the full file only when small, the whole structure matters, or targeted reads are ambiguous. For files over 500 lines, summarize structure before reading further.
+- Return concise findings before editing. Avoid pasting raw command output unless essential.
+- Semble is for conceptual discovery — not exhaustive proof and not sufficient for an edit decision on its own. Verify with `rg`, LSP, targeted reads, or tests before changing code.
+- Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried and delegate per the Delegation section, or ask the user.
 
 ## Delegation
 
@@ -63,8 +46,6 @@ When to delegate:
 - An architecture or "how does X work" question would take many retrieval steps to answer directly.
 - The expected output is noisy relative to what the main context needs — large diffs, long logs, or many candidate files where only a summary or a few facts matter.
 - The work is a specialized audit with its own checklist, such as a security review, test coverage analysis, or type design review.
-- Two or more appropriate retrieval tools have been tried and the integration point or root cause is still unclear.
-- Search results keep producing unrelated candidates, repeated dead ends, or candidate lists too large to inspect safely in the main context.
 
 How to delegate:
 
