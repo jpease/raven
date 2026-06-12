@@ -1,5 +1,7 @@
 # Semgrep Setup
 
+Last verified: 2026-06-12
+
 Raven defaults to the **community (free) edition** of Semgrep. No account or login is required.
 
 ## Community Edition (Default)
