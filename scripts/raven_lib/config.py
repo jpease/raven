@@ -164,6 +164,13 @@ def load_config(destination: Path) -> RavenConfig:
 
     template = raw.get("template")
     include_readme = raw.get("include_readme", False)
+    raw_issue_tracker = raw.get("issue_tracker")
+    raw_platform = (
+        raw_issue_tracker.get("platform")
+        if isinstance(raw_issue_tracker, dict)
+        else None
+    )
+    platform = raw_platform if isinstance(raw_platform, str) else "none"
     return RavenConfig(
         template=template if isinstance(template, str) else None,
         include_readme=bool(include_readme),
@@ -171,6 +178,7 @@ def load_config(destination: Path) -> RavenConfig:
         claude_components=claude_components,
         codex_components=codex_components,
         exclude_paths=exclude_paths,
+        platform=platform,
         exists=True,
     )
 
@@ -286,6 +294,11 @@ def default_config_text(template_name: str, include_readme: bool, platform: str 
         # workflow skill is active and which CLI raven-tool-bootstrap checks for.
         # This is independent of local session tracking (governed by [lifecycle]).
         #
+        # This setting also gates skill installation: raven-github-issues is
+        # installed only when platform = "github", and raven-gitlab-issues only
+        # when platform = "gitlab".  Neither skill is installed when platform =
+        # "none".  Note: upgrade does not remove previously-installed skills.
+        #
         # platform = "github"   # use raven-github-issues + gh CLI
         # platform = "gitlab"   # use raven-gitlab-issues + glab CLI
         # platform = "none"     # no external issue tracker
@@ -336,8 +349,39 @@ def component_disabled(relative: str, config: RavenConfig) -> bool:
     )
 
 
+_PLATFORM_GATED_SKILLS: dict[str, str] = {
+    "raven-github-issues": "github",
+    "raven-gitlab-issues": "gitlab",
+}
+
+
+def platform_excluded(relative: str, config: RavenConfig) -> bool:
+    """Exclude issue-tracker skills that don't match the configured platform.
+
+    Skills under .agents/skills/<name> (and their derived .claude/skills/<name>
+    twins) are gated: raven-github-issues requires platform=github, and
+    raven-gitlab-issues requires platform=gitlab.  Both are excluded when
+    platform is "none" or unset.  Previously-installed skills are not removed
+    by upgrade; this exclusion only prevents new installations.
+    """
+    for skill_name, required_platform in _PLATFORM_GATED_SKILLS.items():
+        skill_prefix_agents = f".agents/skills/{skill_name}"
+        skill_prefix_claude = f".claude/skills/{skill_name}"
+        is_this_skill = (
+            relative == skill_prefix_agents
+            or relative.startswith(f"{skill_prefix_agents}/")
+            or relative == skill_prefix_claude
+            or relative.startswith(f"{skill_prefix_claude}/")
+        )
+        if is_this_skill and config.platform != required_platform:
+            return True
+    return False
+
+
 def config_excluded(relative: str, config: RavenConfig) -> bool:
     if component_disabled(relative, config):
+        return True
+    if platform_excluded(relative, config):
         return True
     return any(path_matches(relative, pattern) for pattern in config.exclude_paths)
 

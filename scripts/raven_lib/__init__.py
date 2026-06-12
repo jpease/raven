@@ -41,6 +41,7 @@ from .config import (
     parse_simple_toml,
     parse_value,
     path_matches,
+    platform_excluded,
     strip_comment,
 )
 from .constants import (
@@ -140,6 +141,7 @@ __all__ = [
     "path_matches",
     "component_disabled",
     "config_excluded",
+    "platform_excluded",
     "_update_config_platform",
     # template
     "is_excluded",
