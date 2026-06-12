@@ -42,24 +42,22 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 ## Error Handling
 
 - Prefer typed errors or `Result`-like patterns in domain and application code.
-- Reserve `throw` for true boundary failures; catch and convert to typed errors at entry points.
-- Preserve error context when wrapping errors; do not replace useful errors with generic strings.
+- Preserve error context when wrapping; do not replace useful errors with generic strings.
+
+For full error design, architecture, and async concurrency guidance, see `.claude/docs/raven-typescript-quality.md`.
 
 ## Architecture
 
 - Preserve existing module and package boundaries unless the task is explicitly architectural.
 - Keep pure domain logic separate from I/O, network calls, time, and randomness.
-- Validate untrusted input at the boundary — HTTP requests, env config, webhooks, external data. Pass typed domain values internally.
 - Prefer `import type` boundaries between packages when only types cross the boundary.
 
 ## Async And Concurrency
 
-- Prefer `async`/`await` over raw Promise chains for readability and error propagation.
 - Always handle Promise rejections. Unhandled rejections are errors, not warnings.
-- Avoid `async void` except for top-level event handlers; return the Promise so callers can await or catch.
-- In Node.js, do not block the event loop with synchronous CPU-heavy or filesystem work; use `fs/promises`, worker threads, or a process pool.
 - Do not spawn unbounded parallel async work in server contexts; batch or queue concurrent operations.
-- In React, handle stale async results in effects: cancel with `AbortController` or check a mounted flag before applying results.
+
+For full async and React concurrency guidance, see `.claude/docs/raven-typescript-quality.md`.
 
 ## Testing
 
@@ -67,24 +65,20 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Prefer the narrowest useful test command first, such as one file or one test case.
 - Unit-test pure functions and domain logic at high volume.
 - Use integration tests for API routes, repositories, and service layers.
-- Use Playwright for E2E selectively; prefer `data-testid` selectors over text selectors.
 - Do not delete or weaken tests to make a change pass unless explicitly requested.
 - Add regression tests for bug fixes when the failure can be reproduced deterministically.
 
 ## Dependencies
 
 - Prefer existing dependencies before adding new packages.
-- Add packages only when they remove meaningful complexity and are actively maintained.
 - Resolve peer dependency warnings; track accepted exceptions explicitly.
 - Use `--frozen-lockfile` (or equivalent) in CI to prevent drift.
 
 ## Performance And Benchmarks
 
-- For web targets, bundle size is as important as runtime speed; measure with a bundle analyzer before and after changes that affect dependencies or code splitting.
-- Use `performance.now()` or `console.time` for microbenchmarks, but account for JIT warmup in V8 — run iterations before measuring.
-- For Node.js services, use `clinic`, `0x`, or `autocannon` for profiling; do not optimize from `console.time` alone.
-- Profile React render performance with React DevTools Profiler before adding memoization.
-- State runtime (Node.js version or browser and version), build mode (`development` vs `production`), and dataset when reporting performance results.
+- Profile before broad optimization; do not make performance claims from a single local run.
+
+For full performance guidance, see `.claude/docs/raven-typescript-quality.md`.
 
 ## Quality Gates
 

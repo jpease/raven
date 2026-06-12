@@ -40,59 +40,51 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 ## Error Handling
 
-- For libraries, prefer typed errors that callers can match, commonly with `thiserror` when the project uses it.
-- For binaries and tests, contextual errors are acceptable when they match local convention, commonly with `anyhow` or `eyre`.
+- For libraries, prefer typed errors that callers can match.
 - Preserve error sources and context. Do not replace useful errors with generic strings.
-- Keep recoverable failures as `Result`; reserve panics for impossible internal invariants that are documented and tested.
+- Keep recoverable failures as `Result`; reserve panics for impossible internal invariants.
+
+For full error design, unsafe/FFI, and concurrency guidance, see `.claude/docs/raven-rust-quality.md`.
 
 ## Architecture
 
 - Preserve existing crate and module boundaries unless the task is explicitly architectural.
-- Keep pure logic separate from I/O, time, randomness, process execution, network calls, and filesystem access where practical.
-- Coordinate across modules through explicit interfaces, events, traits, or data types instead of hidden global coupling.
-- Use traits when they create a meaningful boundary for tests or alternative implementations, not as default indirection.
-- Prefer small focused functions and early returns over deeply nested control flow.
+- Keep pure logic separate from I/O, time, randomness, process execution, and network calls.
 - Add `#[must_use]` to pure helpers or builder-like APIs when ignoring the result is likely a bug.
 
 ## Async And Concurrency
 
-- Do not block async runtimes with synchronous filesystem, process, sleep, lock, or CPU-heavy work unless the project pattern permits it.
+- Do not block async runtimes with synchronous work unless the project pattern permits it.
 - Avoid holding locks across `.await`.
-- Prefer structured cancellation, timeouts, and bounded queues for long-running async work.
-- Be explicit about `Send` and `Sync` requirements when values cross thread or task boundaries.
-- Keep shared mutable state narrow. Prefer message passing or ownership transfer when it simplifies correctness.
+
+For full async and concurrency guidance, see `.claude/docs/raven-rust-quality.md`.
 
 ## Testing
 
 - Inspect nearby tests and fixtures before adding new patterns.
 - Prefer focused unit tests for pure helpers and integration tests for public behavior.
 - Add regression tests for bug fixes when the failure can be reproduced deterministically.
-- Use property tests, fuzz tests, snapshot tests, or golden/reference tests only when they fit the behavior and the project already supports or benefits from them.
-- Update golden/reference outputs only when the behavior change is intentional, reviewed, and documented with the reason.
 - Do not delete or weaken tests to make a change pass unless explicitly requested.
 
 ## Dependencies
 
 - Prefer the standard library and existing dependencies before adding new crates.
-- Add dependencies only when they remove meaningful complexity, are maintained, and fit the repository's license and security policy.
 - Check license compatibility and maintenance status for new dependencies.
-- Treat security audit findings as real risk. If a finding is accepted, document severity, exploitability, mitigation, owner, and review date according to project policy.
-- For algorithmic code, derive from specifications, papers, or original reasoning. Do not copy or translate incompatible third-party implementations.
+- Treat security audit findings as real risk.
+
+For full dependency and license hygiene, see `.claude/docs/raven-rust-quality.md`.
 
 ## Performance And Benchmarks
 
 - Measure before broad optimization unless the inefficiency is obvious and local.
-- Keep benchmark claims scoped to the machine, command, dataset, and conditions used.
-- Run before/after comparisons under similar conditions and rerun suspicious results.
 - Do not make broad performance claims from a single local run.
-- If a change materially worsens latency, memory, binary size, or throughput, include the reason and mitigation.
+
+For full benchmark guidance, see `.claude/docs/raven-rust-quality.md`.
 
 ## Clippy And Lint Handling
 
-- Use the repository's configured Clippy command or quality gate when one exists.
 - Do not weaken lint settings, add broad `allow` attributes, or silence Clippy globally without explicit approval.
 - Prefer fixing the code over suppressing the lint. When suppression is justified, keep it local and document why.
-- Test code should meet the repository's lint expectations; do not assume tests may ignore Clippy unless local policy says so.
 
 ## Quality Gates
 

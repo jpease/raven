@@ -31,6 +31,7 @@ For changes that touch security-sensitive boundaries, run the `raven-security-re
 - Do not silently swallow exceptions. Log or re-raise.
 - Preserve exception context: `raise AppError("...") from original`.
 - For domain and application code that crosses service or thread boundaries, consider returning typed result values (`Result`, `tuple`, named alternatives) when explicit error handling by the caller is more important than raising.
+- Use context managers for cleanup; do not rely on `finally` blocks where `with` is cleaner.
 
 ## Architecture
 
