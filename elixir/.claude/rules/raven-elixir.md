@@ -48,63 +48,50 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 ## OTP And Concurrency
 
 - Preserve supervision boundaries and restart semantics unless the task explicitly changes runtime architecture.
-- Name OTP children, supervisors, registries, and processes intentionally; avoid accidental global names.
 - Use `start_supervised!/1` in tests for supervised processes so cleanup is automatic.
-- Avoid `Process.sleep/1` in tests. Prefer monitors, messages, `assert_receive`, or `_ = :sys.get_state(pid)` for synchronization.
-- Use `Task.async_stream/3` for bounded concurrent enumeration when concurrency is needed.
-- Do not introduce unbounded processes, queues, tasks, or retries without backpressure and failure behavior.
-- Keep GenServer state explicit and small. Avoid using processes as hidden mutable global storage.
+- Avoid `Process.sleep/1` in tests; prefer monitors, messages, or `assert_receive`.
+- Do not introduce unbounded processes, queues, tasks, or retries without backpressure.
+
+For full OTP design guidance, see `.claude/docs/raven-elixir-quality.md`.
 
 ## Ecto And Persistence
 
-- Generate migrations with `mix ecto.gen.migration descriptive_name` rather than handcrafting timestamps.
 - Treat migrations, constraints, indexes, and data backfills as high-risk durable changes.
-- Encode invariants in constraints or transactions when correctness depends on the database.
-- Do not put server-controlled fields such as `user_id`, `account_id`, tenant IDs, or role flags in user-cast parameter lists.
-- Preload associations that templates or serialization code will access.
-- Keep query logic in the appropriate context or repository boundary; avoid leaking raw query details through presentation code.
-- In `seeds.exs`, import or alias required query modules explicitly.
+- Do not put server-controlled fields such as `user_id`, `account_id`, or role flags in user-cast parameter lists.
+- Keep query logic in the appropriate context or repository boundary.
+
+For full Ecto and data-safety guidance, see `.claude/docs/raven-elixir-quality.md`.
 
 ## Phoenix, HEEx, And LiveView
 
-- Follow the Phoenix version and local generator conventions in the repository.
-- Prefer existing CoreComponents and layout components before adding new component patterns.
 - Use HEEx (`~H` or `.html.heex`) for templates; do not introduce legacy `~E`.
-- Use `Phoenix.Component.to_form/2`, `<.form>`, and `<.input>` when those are the project convention.
-- Add stable DOM IDs to forms, buttons, and interactive elements that tests or LiveView updates need to target.
-- Use HEEx class list syntax for conditional classes.
-- Use `<%= for ... do %>` for generated template content rather than `Enum.each`.
-- Use LiveView streams for large or frequently updated collections when the project uses streams.
-- Avoid LiveComponents unless they remove real complexity or match local architecture.
-- Do not add inline scripts to templates. Use the existing asset pipeline and bundle entry points.
+- Add stable DOM IDs to forms, buttons, and interactive elements that tests or LiveView updates need.
+- Do not add inline scripts to templates.
+
+For full Phoenix/LiveView guidance, see `.claude/docs/raven-elixir-quality.md`.
 
 ## Testing
 
 - Inspect nearby tests, fixtures, factories, and support modules before adding new patterns.
-- Prefer domain tests for business rules and invariants.
-- Use integration tests for routes, controllers, LiveViews, jobs, webhooks, and external boundaries.
+- Prefer domain tests for business rules; integration tests for routes, jobs, webhooks, and external boundaries.
 - Add regression tests for bug fixes when the failure can be reproduced deterministically.
-- For background jobs, test enqueueing, execution, retries, and idempotency when behavior changes.
-- For webhooks and external integrations, use realistic fixtures and local stubs/mocks. Do not hit live services in tests.
-- Avoid brittle UI copy assertions when intent-based assertions or stable selectors are available.
 - Do not delete or weaken tests to make a change pass unless explicitly requested.
 
 ## Dependencies
 
 - Prefer Elixir/Erlang standard library and existing dependencies before adding new packages.
-- Use `Req` when the repository already includes it for HTTP; do not add HTTP clients for convenience.
-- Add dependencies only when they remove meaningful complexity, are maintained, and fit the repository's license and security policy.
-- Check Hex package maintenance, transitive dependency impact, and vulnerability/audit status when adding dependencies.
 - Do not change `mix.lock` unless dependency resolution is required by the task.
+
+For full dependency and license hygiene, see `.claude/docs/raven-elixir-quality.md`.
 
 ## Security
 
-- Treat authentication, authorization, tenant isolation, session/cookie handling, CSRF, CSP, webhooks, file access, and secrets as high-risk.
-- Validate and normalize untrusted input at Phoenix, API, webhook, CLI, and persistence boundaries.
+- Treat authentication, authorization, tenant isolation, session handling, CSRF, webhooks, and secrets as high-risk.
 - Verify webhook signatures before processing payloads.
-- Do not log secrets, tokens, raw webhook secrets, magic links, private keys, session data, payment details, or license material.
-- Use Sobelow, Semgrep, dependency audits, and repository-specific security scripts when configured.
+- Do not log secrets, tokens, magic links, private keys, or payment details.
 - Preserve `config :logger, :filter_parameters` and equivalent filtering behavior.
+
+For full security guidance, see `.claude/docs/raven-elixir-quality.md`.
 
 ## Quality Gates
 
