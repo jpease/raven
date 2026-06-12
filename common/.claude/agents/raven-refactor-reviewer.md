@@ -1,6 +1,7 @@
 ---
 name: raven-refactor-reviewer
 description: Reviews planned refactors for blast radius, missed references, and unsafe API changes.
+model: sonnet
 tools: Read, Grep, Bash
 ---
 
