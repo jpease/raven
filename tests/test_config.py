@@ -1,8 +1,9 @@
 import contextlib
 import io
 import unittest
+from pathlib import Path
 
-from helpers import RavenTestCase, raven
+from helpers import REPO_ROOT, RavenTestCase, raven
 
 
 class ConfigTests(RavenTestCase):
@@ -84,6 +85,98 @@ class ConfigTests(RavenTestCase):
             )
         self.assertEqual(rc, 0)
         self.assertIn('platform = "github"', config_path.read_text(encoding="utf-8"))
+
+
+class PlatformGatingTests(RavenTestCase):
+    """Issue-tracker skills are gated by the platform field in config."""
+
+    def _make_config(self, platform: str) -> raven.RavenConfig:
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            raven.default_config_text("python", False, platform), encoding="utf-8"
+        )
+        return raven.load_config(self.destination)
+
+    def _skill_entries(self, platform: str) -> set[str]:
+        config = self._make_config(platform)
+        template = REPO_ROOT / "python"
+        entries = raven.iter_template_entries(template, self.excludes, config)
+        return {e.relative for e in entries}
+
+    def test_load_config_parses_platform_github(self):
+        config = self._make_config("github")
+        self.assertEqual(config.platform, "github")
+
+    def test_load_config_parses_platform_gitlab(self):
+        config = self._make_config("gitlab")
+        self.assertEqual(config.platform, "gitlab")
+
+    def test_load_config_parses_platform_none(self):
+        config = self._make_config("none")
+        self.assertEqual(config.platform, "none")
+
+    def test_load_config_default_platform_is_none(self):
+        # No config file present
+        config = raven.load_config(self.destination)
+        self.assertEqual(config.platform, "none")
+
+    def test_github_platform_includes_github_skill(self):
+        entries = self._skill_entries("github")
+        self.assertTrue(
+            any("raven-github-issues" in e for e in entries),
+            f"raven-github-issues not found in entries: {sorted(entries)[:10]}",
+        )
+
+    def test_github_platform_excludes_gitlab_skill(self):
+        entries = self._skill_entries("github")
+        self.assertFalse(
+            any("raven-gitlab-issues" in e for e in entries),
+            "raven-gitlab-issues should be excluded when platform=github",
+        )
+
+    def test_gitlab_platform_includes_gitlab_skill(self):
+        entries = self._skill_entries("gitlab")
+        self.assertTrue(
+            any("raven-gitlab-issues" in e for e in entries),
+            f"raven-gitlab-issues not found in entries: {sorted(entries)[:10]}",
+        )
+
+    def test_gitlab_platform_excludes_github_skill(self):
+        entries = self._skill_entries("gitlab")
+        self.assertFalse(
+            any("raven-github-issues" in e for e in entries),
+            "raven-github-issues should be excluded when platform=gitlab",
+        )
+
+    def test_none_platform_excludes_both_issue_skills(self):
+        entries = self._skill_entries("none")
+        self.assertFalse(
+            any("raven-github-issues" in e for e in entries),
+            "raven-github-issues should be excluded when platform=none",
+        )
+        self.assertFalse(
+            any("raven-gitlab-issues" in e for e in entries),
+            "raven-gitlab-issues should be excluded when platform=none",
+        )
+
+    def test_platform_excluded_helper_directly(self):
+        config_github = self._make_config("github")
+        config_gitlab = self._make_config("gitlab")
+        config_none = self._make_config("none")
+
+        # github skill gating
+        self.assertFalse(raven.platform_excluded(".agents/skills/raven-github-issues/SKILL.md", config_github))
+        self.assertTrue(raven.platform_excluded(".agents/skills/raven-github-issues/SKILL.md", config_gitlab))
+        self.assertTrue(raven.platform_excluded(".agents/skills/raven-github-issues/SKILL.md", config_none))
+
+        # gitlab skill gating
+        self.assertTrue(raven.platform_excluded(".agents/skills/raven-gitlab-issues/SKILL.md", config_github))
+        self.assertFalse(raven.platform_excluded(".agents/skills/raven-gitlab-issues/SKILL.md", config_gitlab))
+        self.assertTrue(raven.platform_excluded(".agents/skills/raven-gitlab-issues/SKILL.md", config_none))
+
+        # unrelated skills are never excluded by platform
+        self.assertFalse(raven.platform_excluded(".agents/skills/raven-commit/SKILL.md", config_none))
 
 
 if __name__ == "__main__":

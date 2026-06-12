@@ -19,6 +19,7 @@ class RavenConfig:
     claude_components: dict[str, bool]
     codex_components: dict[str, bool]
     exclude_paths: list[str]
+    platform: str = "none"
     exists: bool = False
 
 
