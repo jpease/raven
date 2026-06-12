@@ -20,17 +20,12 @@ Use `.claude/docs/raven-typescript-quality.md` for detailed TypeScript quality g
   - `pnpm build`
   - `pnpm format --check` or `prettier --check .`
 - Do not assume every project uses pnpm, turbo, vitest, or ESLint. Confirm before using.
-- Use RTK for noisy test, build, or package manager output when exact raw output is not required.
 
 ## Pause And Ask
 
-Ask before changing:
+In addition to the guardrails in AGENTS.md, ask before changing:
 
-- Public APIs, package boundaries, module paths, or exported types.
-- Serialization formats, persisted data, config schemas, migrations, or API contracts.
-- Authentication, authorization, secret handling, or security-sensitive behavior.
-- Dependencies, license-sensitive code, vendored code, or generated artifacts.
-- Broad refactors, cross-package architecture changes, or unclear scope boundaries.
+- Serialization formats, persisted data, or API contracts.
 - Database queries, schema definitions, or migration files.
 - CI/CD workflows, deployment config, or release behavior.
 
@@ -97,12 +92,3 @@ Ask before changing:
 - If no final gate exists, run typecheck, lint, and tests at minimum.
 - Fix typecheck, lint, and formatter failures in touched code.
 - Do not add broad `eslint-disable` comments. Prefer fixing the code or using the narrowest scoped disable with a reason comment.
-
-## Tooling
-
-- Use `rg` for exact symbols, imports, config keys, and error messages.
-- Use LSP (TypeScript Language Server) for definitions, references, type information, diagnostics, and rename safety.
-- Use ast-grep or Semgrep for structural searches and mechanical rewrites.
-- Use GitNexus before editing shared public APIs or cross-package interfaces.
-- Use Semble for conceptual discovery when names are unclear, then verify with deterministic tools.
-- Use RTK or equivalent output compression for noisy builds, test logs, and package manager output when exact raw output is not required.
