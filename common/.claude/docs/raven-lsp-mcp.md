@@ -1,5 +1,7 @@
 # LSP MCP Defaults
 
+Last verified: 2026-06-12
+
 Use client-native LSP or language plugins first when the agent client provides a reliable one for the project language. When no client-native option is available, Raven's recommended general-purpose fallback is `mcp-language-server` from `isaacphi/mcp-language-server`.
 
 `mcp-language-server` is a generic MCP adapter for stdio-based language servers. It exposes semantic tools such as definition, references, hover, diagnostics, and rename through MCP. It still requires the actual language server for the project language.

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import datetime
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -119,9 +121,48 @@ def validate_installed_shape() -> None:
     print("installed shape ok")
 
 
+_LAST_VERIFIED_RE = re.compile(r"Last verified:\s*(\d{4}-\d{2}-\d{2})")
+_FRESHNESS_MAX_DAYS = 180
+_FRESHNESS_REQUIRED = {
+    "raven-lsp-mcp.md",
+    "raven-semgrep.md",
+}
+
+
+def warn_stale_docs() -> None:
+    """Non-fatal: warn if third-party setup docs are missing or stale freshness markers."""
+    docs_dir = REPO_ROOT / "common" / ".claude" / "docs"
+    today = datetime.date.today()
+    warnings: list[str] = []
+
+    for doc in sorted(docs_dir.glob("*.md")):
+        text = doc.read_text(encoding="utf-8")
+        m = _LAST_VERIFIED_RE.search(text)
+        if m:
+            try:
+                verified = datetime.date.fromisoformat(m.group(1))
+                age = (today - verified).days
+                if age > _FRESHNESS_MAX_DAYS:
+                    warnings.append(
+                        f"  STALE: {doc.name} — last verified {m.group(1)} ({age} days ago)"
+                    )
+            except ValueError:
+                warnings.append(f"  WARN: {doc.name} — unparseable Last verified date: {m.group(1)!r}")
+        elif doc.name in _FRESHNESS_REQUIRED:
+            warnings.append(f"  MISSING: {doc.name} — no 'Last verified:' marker found")
+
+    if warnings:
+        print("==> freshness warnings (non-fatal)")
+        for w in warnings:
+            print(w)
+    else:
+        print("==> freshness check ok")
+
+
 def main() -> int:
     validate_shared_docs_sync()
     validate_context_budget()
+    warn_stale_docs()
     validate_installed_shape()
     run(
         "RAVEN self-upgrade dry run",
