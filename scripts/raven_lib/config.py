@@ -358,13 +358,17 @@ def config_excluded(relative: str, config: RavenConfig) -> bool:
     return any(path_matches(relative, pattern) for pattern in config.exclude_paths)
 
 
-def _update_config_platform(config_path: Path, platform: str) -> None:
-    """Replace the active platform value in [issue_tracker] section of config."""
-    lines = config_path.read_text(encoding="utf-8").splitlines(keepends=True)
-    in_section = False
+def replace_platform_line(text: str, platform: str) -> str:
+    """Return config text with the active [issue_tracker] platform value replaced.
+
+    Pure: rewrites only the first uncommented ``platform =`` line inside the
+    ``[issue_tracker]`` section, leaving commented examples and other sections
+    untouched.
+    """
     new_lines = []
+    in_section = False
     updated = False
-    for line in lines:
+    for line in text.splitlines(keepends=True):
         m = _ISSUE_TRACKER_SECTION_RE.match(line)
         if m:
             in_section = m.group(1).strip() == "issue_tracker"
@@ -378,4 +382,10 @@ def _update_config_platform(config_path: Path, platform: str) -> None:
             updated = True
             continue
         new_lines.append(line)
-    config_path.write_text("".join(new_lines), encoding="utf-8")
+    return "".join(new_lines)
+
+
+def _update_config_platform(config_path: Path, platform: str) -> None:
+    """Replace the active platform value in [issue_tracker] section of config."""
+    text = config_path.read_text(encoding="utf-8")
+    config_path.write_text(replace_platform_line(text, platform), encoding="utf-8")

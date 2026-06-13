@@ -43,6 +43,27 @@ class BuildConfigTests(unittest.TestCase):
         self.assertEqual(config.exclude_paths, ["a/b", "c/d"])
 
 
+class ReplacePlatformLineTests(unittest.TestCase):
+    def test_replaces_only_active_line_in_issue_tracker_section(self):
+        text = raven.default_config_text("python", False, "none")
+        result = raven.replace_platform_line(text, "github")
+        self.assertIn('platform = "github"', result)
+        # Commented example lines like '# platform = "none"' stay untouched.
+        self.assertNotIn('\nplatform = "none"', result)
+        self.assertIn('# platform = "none"', result)
+
+    def test_ignores_platform_line_outside_issue_tracker(self):
+        text = 'platform = "decoy"\n\n[issue_tracker]\nplatform = "none"\n'
+        result = raven.replace_platform_line(text, "gitlab")
+        self.assertIn('platform = "decoy"', result)
+        self.assertIn('platform = "gitlab"', result)
+        self.assertNotIn('platform = "none"', result)
+
+    def test_no_section_leaves_text_unchanged(self):
+        text = 'template = "python"\n'
+        self.assertEqual(raven.replace_platform_line(text, "github"), text)
+
+
 class ConfigTests(RavenTestCase):
     def test_default_config_is_self_documenting(self):
         text = raven.default_config_text("rust", False)
