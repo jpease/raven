@@ -91,6 +91,7 @@ from .models import ApplyPlan, Classification, RavenBlock, RavenConfig, Template
 from .plan import (
     apply_plan,
     build_apply_plan,
+    claude_symlink_conflict,
     normalize_override,
     print_apply_summary,
     print_dry_run_plan,
@@ -191,6 +192,7 @@ __all__ = [
     "print_apply_summary",
     "print_dry_run_summary",
     "build_apply_plan",
+    "claude_symlink_conflict",
     "print_dry_run_plan",
     "apply_plan",
     "normalize_override",
