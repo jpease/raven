@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .constants import KIND_SYMLINK, MANIFEST_PATH, REPO_ROOT
 from .hashing import destination_fingerprint, entry_fingerprint
-from .models import RavenConfig, TemplateEntry
+from .models import Fingerprint, RavenConfig, TemplateEntry
 from .template import entries_for_destination
 
 
@@ -59,11 +59,13 @@ def _make_manifest_record(entry: TemplateEntry, target: Path) -> dict[str, str] 
     if installed is None:
         return None
     base: dict[str, str] = {
-        "kind": installed["kind"],
-        "sourceSha256": entry_fingerprint(entry)["sha256"],
-        "installedSha256": installed["sha256"],
+        "kind": installed.kind,
+        "sourceSha256": entry_fingerprint(entry).sha256,
+        "installedSha256": installed.sha256,
     }
-    return {**base, "target": installed["target"]} if installed["kind"] == KIND_SYMLINK else base
+    if installed.kind == KIND_SYMLINK and installed.target is not None:
+        return {**base, "target": installed.target}
+    return base
 
 
 def update_manifest(
@@ -97,14 +99,14 @@ def update_manifest(
     save_manifest(destination, manifest)
 
 
-def manifest_allows_upgrade(manifest: dict, relative: str, fingerprint: dict | None) -> bool:
+def manifest_allows_upgrade(manifest: dict, relative: str, fingerprint: Fingerprint | None) -> bool:
     record = manifest.get("files", {}).get(relative)
     if not isinstance(record, dict):
         return False
-    if not fingerprint:
+    if fingerprint is None:
         return False
-    if fingerprint.get("kind") != record.get("kind"):
+    if fingerprint.kind != record.get("kind"):
         return False
-    if fingerprint["kind"] == KIND_SYMLINK and fingerprint.get("target") != record.get("target"):
+    if fingerprint.kind == KIND_SYMLINK and fingerprint.target != record.get("target"):
         return False
-    return fingerprint["sha256"] == record.get("installedSha256")
+    return fingerprint.sha256 == record.get("installedSha256")

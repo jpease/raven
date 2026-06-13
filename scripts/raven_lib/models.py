@@ -12,6 +12,15 @@ class TemplateEntry:
 
 
 @dataclass(frozen=True)
+class Fingerprint:
+    """Content identity of a file or symlink: KIND_FILE/KIND_SYMLINK + hash."""
+
+    kind: str
+    sha256: str
+    target: str | None = None
+
+
+@dataclass(frozen=True)
 class RavenConfig:
     template: str | None
     include_readme: bool

@@ -10,7 +10,7 @@ from .blocks import BlockState, block_managed_state, update_raven_block
 from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH, _any_exists
 from .hashing import destination_fingerprint, same_content
 from .manifest import load_manifest, manifest_allows_upgrade
-from .models import Classification, RavenConfig, TemplateEntry
+from .models import Classification, Fingerprint, RavenConfig, TemplateEntry
 from .template import entries_for_destination, iter_template_entries
 
 ClassifyState = Literal["will_copy", "will_upgrade", "identical", "needs_merge", "unknown_existing"]
@@ -23,7 +23,7 @@ def _classify_entry(
     target_exists: bool,
     content_matches: bool,
     block_state: BlockState | None,
-    fingerprint: dict | None,
+    fingerprint: Fingerprint | None,
 ) -> ClassifyState:
     if not target_exists:
         return "will_copy"

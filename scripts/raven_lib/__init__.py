@@ -88,7 +88,14 @@ from .manifest import (
     save_manifest,
     update_manifest,
 )
-from .models import ApplyPlan, Classification, RavenBlock, RavenConfig, TemplateEntry
+from .models import (
+    ApplyPlan,
+    Classification,
+    Fingerprint,
+    RavenBlock,
+    RavenConfig,
+    TemplateEntry,
+)
 from .plan import (
     apply_plan,
     build_apply_plan,
@@ -137,6 +144,7 @@ __all__ = [
     "RavenBlock",
     "Classification",
     "ApplyPlan",
+    "Fingerprint",
     # config
     "strip_comment",
     "parse_value",
