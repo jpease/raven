@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from .constants import KIND_FILE, KIND_SYMLINK
-from .models import TemplateEntry
+from .models import Fingerprint, TemplateEntry
 
 
 def sha256_bytes(value: bytes) -> str:
@@ -21,31 +21,25 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _symlink_fingerprint(target: str) -> dict[str, str]:
-    return {
-        "kind": KIND_SYMLINK,
-        "target": target,
-        "sha256": sha256_bytes(f"symlink:{target}".encode()),
-    }
+def _symlink_fingerprint(target: str) -> Fingerprint:
+    return Fingerprint(
+        kind=KIND_SYMLINK,
+        target=target,
+        sha256=sha256_bytes(f"symlink:{target}".encode()),
+    )
 
 
-def entry_fingerprint(entry: TemplateEntry) -> dict[str, str]:
+def entry_fingerprint(entry: TemplateEntry) -> Fingerprint:
     if entry.copy_as_symlink:
         return _symlink_fingerprint(os.readlink(entry.source))
-    return {
-        "kind": KIND_FILE,
-        "sha256": file_sha256(entry.source),
-    }
+    return Fingerprint(kind=KIND_FILE, sha256=file_sha256(entry.source))
 
 
-def destination_fingerprint(path: Path) -> dict[str, str] | None:
+def destination_fingerprint(path: Path) -> Fingerprint | None:
     if path.is_symlink():
         return _symlink_fingerprint(os.readlink(path))
     if path.is_file():
-        return {
-            "kind": KIND_FILE,
-            "sha256": file_sha256(path),
-        }
+        return Fingerprint(kind=KIND_FILE, sha256=file_sha256(path))
     return None
 
 
