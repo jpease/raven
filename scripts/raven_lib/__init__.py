@@ -13,6 +13,7 @@ from .blocks import (
     block_managed_state,
     comparison_block_content,
     find_raven_block,
+    guided_merge_instructions,
     normalized_block_content,
     raven_block_begin_for,
     raven_block_is_unchanged,
@@ -171,6 +172,7 @@ __all__ = [
     "update_raven_block",
     "template_entry_text",
     "append_patch_text",
+    "guided_merge_instructions",
     "write_guided_merge_artifacts",
     # manifest
     "load_manifest",
