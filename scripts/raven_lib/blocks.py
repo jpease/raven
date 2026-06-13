@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal
 
 from .constants import (
     MERGE_DIR,
@@ -12,6 +13,8 @@ from .constants import (
 )
 from .hashing import sha256_bytes
 from .models import RavenBlock, TemplateEntry
+
+BlockState = Literal["identical", "upgradeable", "modified"]
 
 
 def normalized_block_content(text: str) -> str:
@@ -90,7 +93,7 @@ def raven_block_is_unchanged(block: RavenBlock) -> bool:
     return block.declared_sha256 == raven_block_sha256(block.content)
 
 
-def block_managed_state(entry: TemplateEntry, target: Path) -> str | None:
+def block_managed_state(entry: TemplateEntry, target: Path) -> BlockState | None:
     if (
         entry.relative not in ROOT_INSTRUCTION_FILES
         or entry.copy_as_symlink
