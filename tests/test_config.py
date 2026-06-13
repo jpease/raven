@@ -6,6 +6,43 @@ import unittest
 from helpers import REPO_ROOT, RavenTestCase, raven
 
 
+class BuildConfigTests(unittest.TestCase):
+    def test_empty_raw_yields_defaults(self):
+        config = raven.build_config({}, exists=False)
+        self.assertFalse(config.exists)
+        self.assertIsNone(config.template)
+        self.assertFalse(config.include_readme)
+        self.assertEqual(config.platform, "none")
+        self.assertEqual(config.exclude_paths, [])
+        self.assertEqual(config.components, raven.DEFAULT_COMPONENTS)
+        # Must not alias the module-level defaults.
+        self.assertIsNot(config.components, raven.DEFAULT_COMPONENTS)
+
+    def test_component_overrides_merge_over_defaults(self):
+        config = raven.build_config(
+            {"components": {"hooks": False, "unknown": True, "skills": "nope"}},
+            exists=True,
+        )
+        self.assertFalse(config.components["hooks"])
+        self.assertTrue(config.components["skills"])  # non-bool override ignored
+        self.assertNotIn("unknown", config.components)  # unknown key ignored
+
+    def test_platform_and_template_parsed(self):
+        config = raven.build_config(
+            {
+                "template": "rust",
+                "include_readme": True,
+                "issue_tracker": {"platform": "github"},
+                "exclude": {"paths": ["a/b", "c\\d"]},
+            },
+            exists=True,
+        )
+        self.assertEqual(config.template, "rust")
+        self.assertTrue(config.include_readme)
+        self.assertEqual(config.platform, "github")
+        self.assertEqual(config.exclude_paths, ["a/b", "c/d"])
+
+
 class ConfigTests(RavenTestCase):
     def test_default_config_is_self_documenting(self):
         text = raven.default_config_text("rust", False)

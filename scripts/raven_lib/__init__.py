@@ -34,6 +34,7 @@ from .cli import (
 )
 from .config import (
     _update_config_platform,
+    build_config,
     component_disabled,
     config_excluded,
     default_config_text,
@@ -136,6 +137,7 @@ __all__ = [
     "strip_comment",
     "parse_value",
     "parse_simple_toml",
+    "build_config",
     "load_config",
     "default_config_text",
     "path_matches",
