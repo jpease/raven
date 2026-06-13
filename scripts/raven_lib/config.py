@@ -4,6 +4,7 @@ import fnmatch
 import re
 from pathlib import Path
 from textwrap import dedent
+from typing import TypeAlias
 
 from .constants import (
     CLAUDE_COMPONENT_PATHS,
@@ -18,6 +19,9 @@ from .models import RavenConfig
 
 _ISSUE_TRACKER_SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]")
 _PLATFORM_LINE_RE = re.compile(r"^\s*platform\s*=")
+
+# A scalar or list value parsed from the simplified TOML config.
+ConfigValue: TypeAlias = bool | int | str | list["ConfigValue"]
 
 
 def strip_comment(line: str) -> str:
@@ -43,7 +47,7 @@ def strip_comment(line: str) -> str:
     return "".join(result).strip()
 
 
-def parse_value(value: str):
+def parse_value(value: str) -> ConfigValue:
     value = value.strip()
     if value in {"true", "false"}:
         return value == "true"
@@ -64,7 +68,7 @@ def parse_value(value: str):
         return value
 
 
-def parse_simple_toml(text: str) -> dict:
+def parse_simple_toml(text: str) -> dict[str, object]:
     data: dict[str, object] = {}
     section: str | None = None
     lines: list[str] = []
