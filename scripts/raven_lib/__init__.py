@@ -85,6 +85,7 @@ from .manifest import (
     git_ref,
     load_manifest,
     manifest_allows_upgrade,
+    parse_record,
     save_manifest,
     update_manifest,
 )
@@ -92,6 +93,7 @@ from .models import (
     ApplyPlan,
     Classification,
     Fingerprint,
+    ManifestRecord,
     RavenBlock,
     RavenConfig,
     TemplateEntry,
@@ -145,6 +147,7 @@ __all__ = [
     "Classification",
     "ApplyPlan",
     "Fingerprint",
+    "ManifestRecord",
     # config
     "strip_comment",
     "parse_value",
@@ -191,6 +194,7 @@ __all__ = [
     "save_manifest",
     "update_manifest",
     "manifest_allows_upgrade",
+    "parse_record",
     # apply
     "classify",
     "copy_paths",

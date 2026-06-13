@@ -21,6 +21,15 @@ class Fingerprint:
 
 
 @dataclass(frozen=True)
+class ManifestRecord:
+    """The upgrade-relevant fields of one entry in manifest.json's files map."""
+
+    kind: str
+    installed_sha256: str
+    target: str | None = None
+
+
+@dataclass(frozen=True)
 class RavenConfig:
     template: str | None
     include_readme: bool

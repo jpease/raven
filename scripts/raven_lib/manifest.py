@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .constants import KIND_SYMLINK, MANIFEST_PATH, REPO_ROOT
 from .hashing import destination_fingerprint, entry_fingerprint
-from .models import Fingerprint, RavenConfig, TemplateEntry
+from .models import Fingerprint, ManifestRecord, RavenConfig, TemplateEntry
 from .template import entries_for_destination
 
 
@@ -99,14 +99,28 @@ def update_manifest(
     save_manifest(destination, manifest)
 
 
+def parse_record(raw: object) -> ManifestRecord | None:
+    """Parse one raw files-map entry into a typed record, or None if malformed."""
+    if not isinstance(raw, dict):
+        return None
+    kind = raw.get("kind")
+    installed_sha256 = raw.get("installedSha256")
+    if not isinstance(kind, str) or not isinstance(installed_sha256, str):
+        return None
+    target = raw.get("target")
+    return ManifestRecord(
+        kind=kind,
+        installed_sha256=installed_sha256,
+        target=target if isinstance(target, str) else None,
+    )
+
+
 def manifest_allows_upgrade(manifest: dict, relative: str, fingerprint: Fingerprint | None) -> bool:
-    record = manifest.get("files", {}).get(relative)
-    if not isinstance(record, dict):
+    record = parse_record(manifest.get("files", {}).get(relative))
+    if record is None or fingerprint is None:
         return False
-    if fingerprint is None:
+    if fingerprint.kind != record.kind:
         return False
-    if fingerprint.kind != record.get("kind"):
+    if fingerprint.kind == KIND_SYMLINK and fingerprint.target != record.target:
         return False
-    if fingerprint.kind == KIND_SYMLINK and fingerprint.target != record.get("target"):
-        return False
-    return fingerprint.sha256 == record.get("installedSha256")
+    return fingerprint.sha256 == record.installed_sha256

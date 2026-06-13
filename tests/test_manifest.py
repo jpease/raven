@@ -73,6 +73,20 @@ class ManifestTests(RavenTestCase):
             raven.file_sha256(self.destination / path),
         )
 
+    def test_parse_record_parses_valid_and_rejects_malformed(self):
+        record = raven.parse_record(
+            {"kind": "symlink", "installedSha256": "abc", "target": "AGENTS.md", "extra": 1}
+        )
+        self.assertEqual(record.kind, "symlink")
+        self.assertEqual(record.installed_sha256, "abc")
+        self.assertEqual(record.target, "AGENTS.md")
+
+        self.assertIsNone(raven.parse_record("not a dict"))
+        self.assertIsNone(raven.parse_record({"kind": "file"}))  # missing installedSha256
+        self.assertIsNone(raven.parse_record({"installedSha256": "abc"}))  # missing kind
+        # Files have no target.
+        self.assertIsNone(raven.parse_record({"kind": "file", "installedSha256": "abc"}).target)
+
     def test_load_manifest_warns_and_defaults_on_invalid_json(self):
         manifest_path = self.destination / ".raven" / "manifest.json"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
