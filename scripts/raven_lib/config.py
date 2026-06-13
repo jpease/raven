@@ -100,61 +100,20 @@ def parse_simple_toml(text: str) -> dict:
     return data
 
 
-def load_config(destination: Path) -> RavenConfig:
-    path = destination / CONFIG_PATH
-    if not path.exists():
-        return RavenConfig(
-            template=None,
-            include_readme=False,
-            components=DEFAULT_COMPONENTS.copy(),
-            claude_components=DEFAULT_CLAUDE_COMPONENTS.copy(),
-            codex_components=DEFAULT_CODEX_COMPONENTS.copy(),
-            exclude_paths=[],
-            exists=False,
-        )
-    try:
-        raw = parse_simple_toml(path.read_text(encoding="utf-8"))
-    except Exception:
-        return RavenConfig(
-            template=None,
-            include_readme=False,
-            components=DEFAULT_COMPONENTS.copy(),
-            claude_components=DEFAULT_CLAUDE_COMPONENTS.copy(),
-            codex_components=DEFAULT_CODEX_COMPONENTS.copy(),
-            exclude_paths=[],
-            exists=True,
-        )
-
-    raw_components = raw.get("components")
+def _merge_component_overrides(
+    raw: dict, section_key: str, defaults: dict[str, bool]
+) -> dict[str, bool]:
+    section = raw.get(section_key)
     overrides = (
-        {k: v for k, v in raw_components.items() if k in DEFAULT_COMPONENTS and isinstance(v, bool)}
-        if isinstance(raw_components, dict)
+        {k: v for k, v in section.items() if k in defaults and isinstance(v, bool)}
+        if isinstance(section, dict)
         else {}
     )
-    components = {**DEFAULT_COMPONENTS, **overrides}
-    raw_claude_components = raw.get("components.claude")
-    claude_overrides = (
-        {
-            k: v
-            for k, v in raw_claude_components.items()
-            if k in DEFAULT_CLAUDE_COMPONENTS and isinstance(v, bool)
-        }
-        if isinstance(raw_claude_components, dict)
-        else {}
-    )
-    claude_components = {**DEFAULT_CLAUDE_COMPONENTS, **claude_overrides}
-    raw_codex_components = raw.get("components.codex")
-    codex_overrides = (
-        {
-            k: v
-            for k, v in raw_codex_components.items()
-            if k in DEFAULT_CODEX_COMPONENTS and isinstance(v, bool)
-        }
-        if isinstance(raw_codex_components, dict)
-        else {}
-    )
-    codex_components = {**DEFAULT_CODEX_COMPONENTS, **codex_overrides}
+    return {**defaults, **overrides}
 
+
+def build_config(raw: dict, *, exists: bool) -> RavenConfig:
+    """Build a RavenConfig from a parsed-TOML mapping. Pure; no filesystem access."""
     exclude_paths: list[str] = []
     raw_exclude = raw.get("exclude")
     if isinstance(raw_exclude, dict):
@@ -163,7 +122,6 @@ def load_config(destination: Path) -> RavenConfig:
             exclude_paths = [str(p).replace("\\", "/") for p in paths if isinstance(p, str)]
 
     template = raw.get("template")
-    include_readme = raw.get("include_readme", False)
     raw_issue_tracker = raw.get("issue_tracker")
     raw_platform = (
         raw_issue_tracker.get("platform") if isinstance(raw_issue_tracker, dict) else None
@@ -171,14 +129,29 @@ def load_config(destination: Path) -> RavenConfig:
     platform = raw_platform if isinstance(raw_platform, str) else "none"
     return RavenConfig(
         template=template if isinstance(template, str) else None,
-        include_readme=bool(include_readme),
-        components=components,
-        claude_components=claude_components,
-        codex_components=codex_components,
+        include_readme=bool(raw.get("include_readme", False)),
+        components=_merge_component_overrides(raw, "components", DEFAULT_COMPONENTS),
+        claude_components=_merge_component_overrides(
+            raw, "components.claude", DEFAULT_CLAUDE_COMPONENTS
+        ),
+        codex_components=_merge_component_overrides(
+            raw, "components.codex", DEFAULT_CODEX_COMPONENTS
+        ),
         exclude_paths=exclude_paths,
         platform=platform,
-        exists=True,
+        exists=exists,
     )
+
+
+def load_config(destination: Path) -> RavenConfig:
+    path = destination / CONFIG_PATH
+    if not path.exists():
+        return build_config({}, exists=False)
+    try:
+        raw = parse_simple_toml(path.read_text(encoding="utf-8"))
+    except Exception:
+        return build_config({}, exists=True)
+    return build_config(raw, exists=True)
 
 
 def default_config_text(template_name: str, include_readme: bool, platform: str = "none") -> str:
