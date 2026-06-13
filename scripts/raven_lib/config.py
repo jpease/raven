@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import re
+import sys
 from pathlib import Path
 from textwrap import dedent
 from typing import TypeAlias
@@ -153,7 +154,11 @@ def load_config(destination: Path) -> RavenConfig:
         return build_config({}, exists=False)
     try:
         raw = parse_simple_toml(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, ValueError) as exc:
+        print(
+            f"warning: could not read {path} ({exc}); using default Raven configuration.",
+            file=sys.stderr,
+        )
         return build_config({}, exists=True)
     return build_config(raw, exists=True)
 

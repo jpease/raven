@@ -187,6 +187,19 @@ class PlatformGatingTests(RavenTestCase):
         config = raven.load_config(self.destination)
         self.assertEqual(config.platform, "none")
 
+    def test_load_config_warns_and_defaults_on_unreadable_file(self):
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_bytes(b"\xff\xfe not valid utf-8")
+        err = io.StringIO()
+
+        with contextlib.redirect_stderr(err):
+            config = raven.load_config(self.destination)
+
+        self.assertTrue(config.exists)
+        self.assertIsNone(config.template)
+        self.assertIn("warning", err.getvalue())
+
     def test_github_platform_includes_github_skill(self):
         entries = self._skill_entries("github")
         self.assertTrue(
