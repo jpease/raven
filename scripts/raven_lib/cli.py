@@ -174,12 +174,24 @@ def _resolve_destination(args: argparse.Namespace) -> Path | None:
     return destination
 
 
+def _create_config(destination: Path, language: str, platform: str | None) -> int:
+    """Write a fresh .raven/config.toml for a known-missing destination config."""
+    template = REPO_ROOT / language
+    if not template.is_dir():
+        print(f"error: unknown language template: {language}", file=sys.stderr)
+        return 2
+    path = destination / CONFIG_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(default_config_text(language, False, platform or "none"), encoding="utf-8")
+    print(f"Created {destination / CONFIG_PATH}")
+    return 0
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     destination = _resolve_destination(args)
     if destination is None:
         return 2
-    config = load_config(destination)
-    if config.exists:
+    if load_config(destination).exists:
         print(
             f"error: config already exists at {destination / CONFIG_PATH}; "
             "run `raven upgrade` to update managed files.",
@@ -187,16 +199,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         )
         return 2
     language = args.language or select_language_interactively()
-    template = REPO_ROOT / language
-    if not template.is_dir():
-        print(f"error: unknown language template: {language}", file=sys.stderr)
-        return 2
-    path = destination / CONFIG_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    platform = getattr(args, "platform", None) or "none"
-    path.write_text(default_config_text(language, False, platform), encoding="utf-8")
-    print(f"Created {destination / CONFIG_PATH}")
-    return 0
+    return _create_config(destination, language, getattr(args, "platform", None))
 
 
 def cmd_install(args: argparse.Namespace) -> int:
@@ -221,10 +224,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         template_name = language
         include_readme = args.include_readme
         if not args.dry_run:
-            init_args = argparse.Namespace(
-                destination=str(destination), language=language, platform=platform
-            )
-            rc = cmd_init(init_args)
+            rc = _create_config(destination, language, platform)
             if rc != 0:
                 return rc
             config = load_config(destination)
