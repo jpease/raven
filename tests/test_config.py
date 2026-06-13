@@ -43,6 +43,14 @@ class BuildConfigTests(unittest.TestCase):
         self.assertEqual(config.exclude_paths, ["a/b", "c/d"])
 
 
+class PathWithinTests(unittest.TestCase):
+    def test_matches_exact_and_descendants_only(self):
+        self.assertTrue(raven.path_within(".claude/skills", ".claude/skills"))
+        self.assertTrue(raven.path_within(".claude/skills/x/SKILL.md", ".claude/skills"))
+        self.assertFalse(raven.path_within(".claude/skills-extra", ".claude/skills"))
+        self.assertFalse(raven.path_within(".claude", ".claude/skills"))
+
+
 class ReplacePlatformLineTests(unittest.TestCase):
     def test_replaces_only_active_line_in_issue_tracker_section(self):
         text = raven.default_config_text("python", False, "none")
