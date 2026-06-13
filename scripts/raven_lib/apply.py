@@ -4,13 +4,16 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Literal
 
-from .blocks import block_managed_state, update_raven_block
+from .blocks import BlockState, block_managed_state, update_raven_block
 from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH, _any_exists
 from .hashing import destination_fingerprint, same_content
 from .manifest import load_manifest, manifest_allows_upgrade
 from .models import Classification, RavenConfig, TemplateEntry
 from .template import entries_for_destination, iter_template_entries
+
+ClassifyState = Literal["will_copy", "will_upgrade", "identical", "needs_merge", "unknown_existing"]
 
 
 def _classify_entry(
@@ -19,9 +22,9 @@ def _classify_entry(
     *,
     target_exists: bool,
     content_matches: bool,
-    block_state: str | None,
+    block_state: BlockState | None,
     fingerprint: dict | None,
-) -> str:
+) -> ClassifyState:
     if not target_exists:
         return "will_copy"
     if content_matches:
@@ -55,7 +58,7 @@ def classify(
         if entries is not None
         else iter_template_entries(template, excludes, config)
     )
-    groups: dict[str, list[str]] = {
+    groups: dict[ClassifyState, list[str]] = {
         "will_copy": [],
         "will_upgrade": [],
         "identical": [],
