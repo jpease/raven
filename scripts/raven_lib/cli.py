@@ -166,10 +166,17 @@ def _run(
     return 0
 
 
-def cmd_init(args: argparse.Namespace) -> int:
+def _resolve_destination(args: argparse.Namespace) -> Path | None:
     destination = Path(args.destination).expanduser().resolve()
     if not destination.is_dir():
         print(f"error: destination directory does not exist: {destination}", file=sys.stderr)
+        return None
+    return destination
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    destination = _resolve_destination(args)
+    if destination is None:
         return 2
     config = load_config(destination)
     if config.exists:
@@ -193,9 +200,8 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_install(args: argparse.Namespace) -> int:
-    destination = Path(args.destination).expanduser().resolve()
-    if not destination.is_dir():
-        print(f"error: destination directory does not exist: {destination}", file=sys.stderr)
+    destination = _resolve_destination(args)
+    if destination is None:
         return 2
 
     install_items = getattr(args, "args", None)
@@ -235,9 +241,8 @@ def cmd_install(args: argparse.Namespace) -> int:
 
 
 def cmd_upgrade(args: argparse.Namespace) -> int:
-    destination = Path(args.destination).expanduser().resolve()
-    if not destination.is_dir():
-        print(f"error: destination directory does not exist: {destination}", file=sys.stderr)
+    destination = _resolve_destination(args)
+    if destination is None:
         return 2
     config = load_config(destination)
     if not config.exists:
