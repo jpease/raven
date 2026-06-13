@@ -9,6 +9,7 @@ from pathlib import Path
 from .constants import KIND_SYMLINK, MANIFEST_PATH, REPO_ROOT
 from .hashing import destination_fingerprint, entry_fingerprint
 from .models import RavenConfig, TemplateEntry
+from .template import entries_for_destination
 
 
 def load_manifest(destination: Path) -> dict:
@@ -75,10 +76,6 @@ def update_manifest(
     manifest: dict | None = None,
     entries: dict[str, TemplateEntry] | None = None,
 ) -> None:
-    from .template import (
-        entries_for_destination,
-    )  # avoid circular: template → config → (no manifest)
-
     if manifest is None:
         manifest = load_manifest(destination)
     manifest["schema"] = 1
