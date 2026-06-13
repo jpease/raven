@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,9 +17,17 @@ def load_manifest(destination: Path) -> dict:
         return {"schema": 1, "files": {}}
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, ValueError) as exc:
+        print(
+            f"warning: could not read {path} ({exc}); treating Raven manifest as empty.",
+            file=sys.stderr,
+        )
         return {"schema": 1, "files": {}}
     if not isinstance(manifest, dict):
+        print(
+            f"warning: {path} is not a JSON object; treating Raven manifest as empty.",
+            file=sys.stderr,
+        )
         return {"schema": 1, "files": {}}
     if not isinstance(manifest.get("files"), dict):
         manifest["files"] = {}

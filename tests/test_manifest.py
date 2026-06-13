@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import unittest
 
@@ -70,6 +72,18 @@ class ManifestTests(RavenTestCase):
             manifest["files"][path]["installedSha256"],
             raven.file_sha256(self.destination / path),
         )
+
+    def test_load_manifest_warns_and_defaults_on_invalid_json(self):
+        manifest_path = self.destination / ".raven" / "manifest.json"
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text("{not valid json", encoding="utf-8")
+        err = io.StringIO()
+
+        with contextlib.redirect_stderr(err):
+            manifest = raven.load_manifest(self.destination)
+
+        self.assertEqual(manifest, {"schema": 1, "files": {}})
+        self.assertIn("warning", err.getvalue())
 
     def test_update_manifest_can_adopt_identical_existing_file(self):
         path = ".claude/scripts/raven-tool-check.py"
