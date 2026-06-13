@@ -7,7 +7,6 @@ from .apply import (
     adopt_claude_symlink,
     claude_symlink_adoption_needed,
     copy_paths,
-    prompt_for_claude_symlink_adoption,
 )
 from .blocks import write_guided_merge_artifacts
 from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH, ROOT_INSTRUCTION_FILES
@@ -92,16 +91,21 @@ def _without(paths: list[str], excluded: set[str]) -> list[str]:
     return sorted(set(paths) - excluded)
 
 
+def claude_symlink_conflict(classification: Classification, requested_overrides: list[str]) -> bool:
+    """Whether CLAUDE.md ends up needing a manual merge after override removal."""
+    override_set = set(requested_overrides)
+    conflicts = (
+        set(classification.needs_merge) | set(classification.unknown_existing)
+    ) - override_set
+    return CLAUDE_PATH in conflicts
+
+
 def build_apply_plan(
-    destination: Path,
     classification: Classification,
     requested_overrides: list[str],
     existing_overrides: set[str],
-    symlink_adoption_needed: bool,
-    adopt_claude_symlink_requested: bool,
     *,
-    dry_run: bool,
-    prompt_claude_symlink: bool,
+    adopt_claude_symlink: bool,
 ) -> ApplyPlan:
     override_set = set(requested_overrides)
     overwritten = sorted(path for path in requested_overrides if path in existing_overrides)
@@ -112,14 +116,7 @@ def build_apply_plan(
     needs_merge = _without(classification.needs_merge, override_set)
     unknown_existing = _without(classification.unknown_existing, override_set)
 
-    adopt_symlink = False
-    claude_conflicts = set(needs_merge) | set(unknown_existing)
-    if CLAUDE_PATH in claude_conflicts and symlink_adoption_needed:
-        if adopt_claude_symlink_requested:
-            adopt_symlink = True
-        elif not dry_run and prompt_claude_symlink:
-            adopt_symlink = prompt_for_claude_symlink_adoption(destination)
-
+    adopt_symlink = adopt_claude_symlink
     if adopt_symlink:
         needs_merge = [path for path in needs_merge if path != CLAUDE_PATH]
         unknown_existing = [path for path in unknown_existing if path != CLAUDE_PATH]

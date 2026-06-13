@@ -5,7 +5,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from .apply import classify, claude_symlink_adoption_needed
+from .apply import classify, claude_symlink_adoption_needed, prompt_for_claude_symlink_adoption
 from .config import _update_config_platform, default_config_text, load_config
 from .constants import CONFIG_PATH, DEFAULT_EXCLUDES, NON_TEMPLATE_DIRS, REPO_ROOT, _any_exists
 from .git_hooks import install_git_hooks
@@ -13,6 +13,7 @@ from .manifest import load_manifest
 from .plan import (
     apply_plan,
     build_apply_plan,
+    claude_symlink_conflict,
     normalize_override,
     print_apply_summary,
     print_dry_run_plan,
@@ -106,15 +107,19 @@ def _run(
     )
     existing_overrides = {p for p in requested_overrides_norm if _any_exists(destination / p)}
     symlink_adoption_needed = claude_symlink_adoption_needed(destination, entries)
+    adopt_claude_symlink = False
+    if symlink_adoption_needed and claude_symlink_conflict(
+        classification, requested_overrides_norm
+    ):
+        if adopt_claude_symlink_requested:
+            adopt_claude_symlink = True
+        elif not dry_run and prompt_claude_symlink:
+            adopt_claude_symlink = prompt_for_claude_symlink_adoption(destination)
     plan = build_apply_plan(
-        destination,
         classification,
         requested_overrides_norm,
         existing_overrides,
-        symlink_adoption_needed,
-        adopt_claude_symlink_requested,
-        dry_run=dry_run,
-        prompt_claude_symlink=prompt_claude_symlink,
+        adopt_claude_symlink=adopt_claude_symlink,
     )
 
     print(f"Template: {template}")

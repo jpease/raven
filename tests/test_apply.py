@@ -190,5 +190,49 @@ rules = false
         self.assertIn("Manual merge still required", output.getvalue())
 
 
+def _classification(**overrides):
+    fields = {
+        "will_copy": [],
+        "will_upgrade": [],
+        "identical": [],
+        "needs_merge": [],
+        "unknown_existing": [],
+        "excluded": [],
+    }
+    fields.update(overrides)
+    return raven.Classification(**fields)
+
+
+class BuildApplyPlanTests(unittest.TestCase):
+    def test_claude_symlink_conflict_respects_overrides(self):
+        classification = _classification(needs_merge=["CLAUDE.md", "AGENTS.md"])
+        self.assertTrue(raven.claude_symlink_conflict(classification, []))
+        # An explicit override for CLAUDE.md removes it from the conflict set.
+        self.assertFalse(raven.claude_symlink_conflict(classification, ["CLAUDE.md"]))
+
+    def test_build_apply_plan_is_pure_and_routes_overrides(self):
+        classification = _classification(
+            will_copy=["a.md"], will_upgrade=["b.md"], needs_merge=["c.md"]
+        )
+        plan = raven.build_apply_plan(
+            classification,
+            ["c.md"],
+            existing_overrides={"c.md"},
+            adopt_claude_symlink=False,
+        )
+        self.assertEqual(plan.will_copy, ["a.md"])
+        self.assertEqual(plan.overwritten, ["c.md"])
+        self.assertEqual(plan.needs_merge, [])  # removed by override
+        self.assertFalse(plan.adopt_claude_symlink)
+
+    def test_build_apply_plan_adopts_claude_symlink_when_decided(self):
+        classification = _classification(needs_merge=["CLAUDE.md"])
+        plan = raven.build_apply_plan(
+            classification, [], existing_overrides=set(), adopt_claude_symlink=True
+        )
+        self.assertTrue(plan.adopt_claude_symlink)
+        self.assertNotIn("CLAUDE.md", plan.needs_merge)
+
+
 if __name__ == "__main__":
     unittest.main()
