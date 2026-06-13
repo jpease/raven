@@ -43,6 +43,7 @@ from .config import (
     parse_value,
     path_matches,
     platform_excluded,
+    replace_platform_line,
     strip_comment,
 )
 from .constants import (
@@ -144,6 +145,7 @@ __all__ = [
     "component_disabled",
     "config_excluded",
     "platform_excluded",
+    "replace_platform_line",
     "_update_config_platform",
     # template
     "is_excluded",
