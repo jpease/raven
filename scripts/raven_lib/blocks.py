@@ -155,6 +155,43 @@ def append_patch_text(relative: str, existing_text: str, raven_text: str) -> str
     return "\n".join(patch_lines)
 
 
+def guided_merge_instructions(relative: str, suggestion: str, patch: str | None) -> str:
+    """Build the guided-merge instructions body for an existing instruction file.
+
+    Pure: ``patch`` is the relative patch path when an append-only patch was
+    written, or ``None`` when only a manual merge is possible.
+    """
+    header = (
+        f"# Guided Raven merge for `{relative}`\n\n"
+        f"Raven found an existing `{relative}` and did not modify it.\n\n"
+    )
+    if patch is not None:
+        return (
+            header + f"- Existing file: `{relative}`\n"
+            f"- Raven suggestion for review: `{suggestion}`\n"
+            f"- Append-only patch: `{patch}`\n\n"
+            "## Recommended automatic merge\n\n"
+            "From the destination repository root, inspect the patch first:\n\n"
+            f"```sh\npatch --dry-run -p1 < {patch}\n```\n\n"
+            "If the dry run succeeds and the appended Raven guidance is appropriate, apply it:\n\n"
+            f"```sh\npatch -p1 < {patch}\n```\n\n"
+            "This appends a `RAVEN:BEGIN` / `RAVEN:END` managed block to the existing file. "
+            "Future Raven upgrades can update that block automatically as long as it is not edited directly.\n\n"
+            "## Manual merge option\n\n"
+            f"Review `{suggestion}` and copy only the guidance that applies. If you do this without "
+            "the managed block markers, "
+            "Raven will not be able to upgrade that content automatically later.\n\n"
+            "Do not apply the suggestion blindly if the repository already has stronger local instructions.\n"
+        )
+    return (
+        header + f"- Existing file: `{relative}`\n"
+        f"- Raven suggestion for review: `{suggestion}`\n\n"
+        "Raven could not generate an automatic text patch for this file. Review the suggestion "
+        "and manually merge the guidance that applies.\n\n"
+        "Do not apply the suggestion blindly if the repository already has stronger local instructions.\n"
+    )
+
+
 def write_guided_merge_artifacts(
     destination: Path, entries: dict[str, TemplateEntry], paths: list[str]
 ) -> list[str]:
@@ -182,37 +219,8 @@ def write_guided_merge_artifacts(
 
         instructions_path = merge_dir / f"{relative}.instructions.md"
         suggestion = raven_path.relative_to(destination).as_posix()
-        patch = patch_path.relative_to(destination).as_posix()
-        if patch_written:
-            body = (
-                f"# Guided Raven merge for `{relative}`\n\n"
-                f"Raven found an existing `{relative}` and did not modify it.\n\n"
-                f"- Existing file: `{relative}`\n"
-                f"- Raven suggestion for review: `{suggestion}`\n"
-                f"- Append-only patch: `{patch}`\n\n"
-                "## Recommended automatic merge\n\n"
-                "From the destination repository root, inspect the patch first:\n\n"
-                f"```sh\npatch --dry-run -p1 < {patch}\n```\n\n"
-                "If the dry run succeeds and the appended Raven guidance is appropriate, apply it:\n\n"
-                f"```sh\npatch -p1 < {patch}\n```\n\n"
-                "This appends a `RAVEN:BEGIN` / `RAVEN:END` managed block to the existing file. "
-                "Future Raven upgrades can update that block automatically as long as it is not edited directly.\n\n"
-                "## Manual merge option\n\n"
-                f"Review `{suggestion}` and copy only the guidance that applies. If you do this without "
-                "the managed block markers, "
-                "Raven will not be able to upgrade that content automatically later.\n\n"
-                "Do not apply the suggestion blindly if the repository already has stronger local instructions.\n"
-            )
-        else:
-            body = (
-                f"# Guided Raven merge for `{relative}`\n\n"
-                f"Raven found an existing `{relative}` and did not modify it.\n\n"
-                f"- Existing file: `{relative}`\n"
-                f"- Raven suggestion for review: `{suggestion}`\n\n"
-                "Raven could not generate an automatic text patch for this file. Review the suggestion "
-                "and manually merge the guidance that applies.\n\n"
-                "Do not apply the suggestion blindly if the repository already has stronger local instructions.\n"
-            )
+        patch = patch_path.relative_to(destination).as_posix() if patch_written else None
+        body = guided_merge_instructions(relative, suggestion, patch)
         instructions_path.write_text(body, encoding="utf-8")
         written.append(instructions_path.relative_to(destination).as_posix())
         if patch_written:

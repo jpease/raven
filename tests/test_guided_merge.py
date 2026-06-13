@@ -69,6 +69,20 @@ class GuidedMergeTests(RavenTestCase):
             (self.destination / "AGENTS.md").read_text(encoding="utf-8"), "# Existing\n"
         )
 
+    def test_instructions_with_patch_describe_automatic_merge(self):
+        body = raven.guided_merge_instructions(
+            "AGENTS.md", ".raven/merge/AGENTS.md.raven", ".raven/merge/AGENTS.md.patch"
+        )
+        self.assertIn("# Guided Raven merge for `AGENTS.md`", body)
+        self.assertIn("patch --dry-run -p1 < .raven/merge/AGENTS.md.patch", body)
+        self.assertIn("## Manual merge option", body)
+
+    def test_instructions_without_patch_omit_patch_commands(self):
+        body = raven.guided_merge_instructions("CLAUDE.md", ".raven/merge/CLAUDE.md.raven", None)
+        self.assertIn("could not generate an automatic text patch", body)
+        self.assertNotIn("patch --dry-run", body)
+        self.assertNotIn("## Recommended automatic merge", body)
+
     def test_generated_agents_patch_marks_block_with_hash(self):
         raven_text = "# RAVEN guidance\n"
 
