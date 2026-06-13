@@ -42,13 +42,12 @@ def load_raven_module():
 
 def validate_shared_docs_sync() -> None:
     print("==> validate shared docs are in sync with common/")
+    non_template_dirs = load_raven_module().NON_TEMPLATE_DIRS
     common_docs = REPO_ROOT / "common" / ".claude" / "docs"
     language_dirs = [
         d
         for d in REPO_ROOT.iterdir()
-        if d.is_dir()
-        and not d.name.startswith(".")
-        and d.name not in {"common", "scripts", "tests", "docs", "project-skills"}
+        if d.is_dir() and not d.name.startswith(".") and d.name not in non_template_dirs
     ]
     mismatches: list[str] = []
     for lang_dir in sorted(language_dirs):
