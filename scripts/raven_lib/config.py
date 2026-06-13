@@ -285,13 +285,17 @@ def default_config_text(template_name: str, include_readme: bool, platform: str 
     )
 
 
+def path_within(path: str, prefix: str) -> bool:
+    """Whether ``path`` is ``prefix`` itself or a descendant directory entry of it."""
+    return path == prefix or path.startswith(f"{prefix}/")
+
+
 def path_matches(path: str, pattern: str) -> bool:
     normalized = pattern.strip().replace("\\", "/")
     if not normalized:
         return False
     if normalized.endswith("/**"):
-        prefix = normalized[:-3]
-        return path == prefix or path.startswith(f"{prefix}/")
+        return path_within(path, normalized[:-3])
     return fnmatch.fnmatch(path, normalized)
 
 
@@ -304,7 +308,7 @@ def _disabled_by_component(
         if enabled:
             continue
         for component_path in component_paths.get(component, []):
-            if relative == component_path or relative.startswith(f"{component_path}/"):
+            if path_within(relative, component_path):
                 return True
     return False
 
@@ -336,14 +340,8 @@ def platform_excluded(relative: str, config: RavenConfig) -> bool:
     by upgrade; this exclusion only prevents new installations.
     """
     for skill_name, required_platform in _PLATFORM_GATED_SKILLS.items():
-        skill_prefix_agents = f".agents/skills/{skill_name}"
-        skill_prefix_claude = f".claude/skills/{skill_name}"
-        # startswith checks cover directory contents, not just exact paths
-        is_this_skill = (
-            relative == skill_prefix_agents  # noqa: SIM109
-            or relative.startswith(f"{skill_prefix_agents}/")
-            or relative == skill_prefix_claude
-            or relative.startswith(f"{skill_prefix_claude}/")
+        is_this_skill = path_within(relative, f".agents/skills/{skill_name}") or path_within(
+            relative, f".claude/skills/{skill_name}"
         )
         if is_this_skill and config.platform != required_platform:
             return True
