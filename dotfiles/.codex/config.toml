@@ -1,4 +1,4 @@
-# Raven Codex project configuration for Go repositories.
+# Raven Codex project configuration for dotfiles / home-directory config.
 # Project-local Codex config loads only after the project .codex layer is trusted.
 
 [agents]
@@ -16,7 +16,3 @@ args = ["--from", "semble[mcp]", "semble"]
 [mcp_servers.gitnexus]
 command = "gitnexus"
 args = ["mcp"]
-
-[mcp_servers.lsp]
-command = "mcp-language-server"
-args = ["--workspace", ".", "--lsp", "gopls"]
