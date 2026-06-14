@@ -9,6 +9,7 @@ Be effective while preserving context. Prefer targeted retrieval, summaries, and
 - `AGENTS.md` is the authoritative root instruction file.
 - `.agents/skills/` is the canonical location for reusable skills.
 - Agent-specific skill paths, such as `.claude/skills`, should point to `.agents/skills` instead of duplicating content.
+- When a `raven-*` skill and a generic skill cover the same intent (commit, review, tests, debugging), prefer the `raven-*` skill — it encodes this project's specific guardrails.
 - Use `.claude/docs/raven-authority-map.md` to distinguish canonical source-of-truth context from non-canonical plans, notes, and history.
 - Use `.claude/docs/raven-guardrails.md` to understand deterministic, procedural, instructional, and manual guardrails.
 - Use `.claude/docs/raven-coding-principles.md` for shared coding-quality principles that apply across languages.
@@ -37,6 +38,7 @@ Use the cheapest adequate source before reading full files.
 - Semble is for conceptual discovery — not exhaustive proof and not sufficient for an edit decision on its own. Verify with `rg`, LSP, targeted reads, or tests before changing code.
 - If two literal `rg` guesses miss, switch to Semble rather than iterating term variations.
 - Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried and delegate per the Delegation section, or ask the user.
+- If a tool named above is not installed, fall back to `rg` plus targeted reads and flag the missing capability per Tool Availability Memory.
 
 ## Delegation
 

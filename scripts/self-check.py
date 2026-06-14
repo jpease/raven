@@ -14,7 +14,6 @@ RAVEN_SCRIPT = REPO_ROOT / "scripts" / "raven.py"
 
 
 def run(label: str, args: list[str]) -> subprocess.CompletedProcess[str]:
-    print(f"==> {label}")
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     result = subprocess.run(
         args,
@@ -25,9 +24,13 @@ def run(label: str, args: list[str]) -> subprocess.CompletedProcess[str]:
         stderr=subprocess.STDOUT,
         check=False,
     )
-    print(result.stdout, end="")
     if result.returncode != 0:
+        # Surface full output only on failure, so a real error is not buried
+        # under routine success chatter from upgrades, linters, and tests.
+        print(f"==> {label}")
+        print(result.stdout, end="")
         raise SystemExit(result.returncode)
+    print(f"==> {label} ok")
     return result
 
 
@@ -103,6 +106,52 @@ def validate_context_budget() -> None:
     print("context budget ok")
 
 
+def validate_aggregate_budget() -> None:
+    # Per-language always-loaded tier = AGENTS.md + that language's rules file +
+    # the shared security and tests rules (symlinked into each language dir).
+    # Per-file thresholds cap each file alone; this caps the SUM, which they do
+    # not. Without it, every file could spend its individual headroom at once and
+    # silently bloat the context window. Keep each budget below the sum of the
+    # corresponding per-file thresholds so it stays a real, tighter constraint.
+    SHARED = [
+        "common/AGENTS.md",
+        "common/.claude/rules/raven-security.md",
+        "common/.claude/rules/raven-tests.md",
+    ]
+    PROFILES: dict[str, tuple[int, str]] = {
+        # language: (aggregate word budget, language rules file)
+        "python": (1950, "python/.claude/rules/raven-python.md"),
+        "elixir": (2080, "elixir/.claude/rules/raven-elixir.md"),
+        "rust": (2010, "rust/.claude/rules/raven-rust.md"),
+        "swift": (1850, "swift/.claude/rules/raven-swift.md"),
+        "typescript": (1870, "typescript/.claude/rules/raven-typescript.md"),
+    }
+    print("==> validate aggregate context budget per language profile")
+    offenders: list[str] = []
+    for lang, (limit, rules_rel) in PROFILES.items():
+        total = 0
+        missing = False
+        for rel in [*SHARED, rules_rel]:
+            path = REPO_ROOT / rel
+            if not path.exists():
+                print(f"  WARNING: {rel} not found, skipping {lang} aggregate check")
+                missing = True
+                break
+            total += len(path.read_text(encoding="utf-8").split())
+        if missing:
+            continue
+        if total > limit:
+            offenders.append(f"  {lang}: {total} words (limit {limit})")
+    if offenders:
+        for line in offenders:
+            print(line)
+        raise SystemExit(
+            "Aggregate context budget exceeded. Trim always-loaded guidance "
+            "or raise the profile budget with justification."
+        )
+    print("aggregate context budget ok")
+
+
 def validate_installed_shape() -> None:
     print("==> validate installed RAVEN shape")
     raven = load_raven_module()
@@ -129,6 +178,7 @@ _FRESHNESS_MAX_DAYS = 180
 _FRESHNESS_REQUIRED = {
     "raven-lsp-mcp.md",
     "raven-semgrep.md",
+    "raven-tool-assessment.md",
 }
 
 
@@ -167,6 +217,7 @@ def warn_stale_docs() -> None:
 def main() -> int:
     validate_shared_docs_sync()
     validate_context_budget()
+    validate_aggregate_budget()
     warn_stale_docs()
     validate_installed_shape()
     run(
