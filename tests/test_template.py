@@ -260,6 +260,32 @@ tool_configs = false
                 self.assertEqual(lsp["command"], "mcp-language-server")
                 self.assertEqual(lsp["args"], args)
 
+    def test_dotfiles_stack_shape(self):
+        languages = raven.list_language_templates()
+        self.assertIn("dotfiles", languages)
+
+        stack = REPO_ROOT / "dotfiles"
+
+        # Stack-local rule exists as a real file.
+        rule = stack / ".claude" / "rules" / "raven-dotfiles.md"
+        self.assertTrue(rule.is_file())
+
+        # .mcp.json ships semgrep/semble/gitnexus but intentionally no lsp server.
+        mcp = json.loads((stack / ".mcp.json").read_text(encoding="utf-8"))
+        servers = mcp["mcpServers"]
+        self.assertIn("semgrep", servers)
+        self.assertIn("semble", servers)
+        self.assertIn("gitnexus", servers)
+        self.assertNotIn("lsp", servers)
+
+        # Global, description-gated skill lives in common/.
+        skill = REPO_ROOT / "common" / ".agents" / "skills" / "raven-dotfiles" / "SKILL.md"
+        self.assertTrue(skill.is_file())
+
+        # v1 intentionally ships no justfile and no quality doc for this stack.
+        self.assertFalse((stack / "justfile").exists())
+        self.assertFalse((stack / ".claude" / "docs" / "raven-dotfiles-quality.md").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
