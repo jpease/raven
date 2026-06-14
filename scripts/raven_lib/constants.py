@@ -52,6 +52,7 @@ COMPONENT_PATHS = {
     "tool_configs": [
         ".credo.exs",
         ".formatter.exs",
+        ".golangci.yml",
         ".swift-format",
         ".swiftlint.yml",
         "eslint.config.mjs",

@@ -286,6 +286,7 @@ Run "raven COMMAND --help" for command-specific arguments and examples.
 
 If this repository's scripts directory is not on PATH yet, use:
   /path/to/raven/scripts/raven install python --dry-run
+  /path/to/raven/scripts/raven install go --dry-run
 
 File safety:
   - Dry runs never write files.
@@ -339,6 +340,7 @@ File safety:
 Examples:
   raven install python --dry-run
   raven install python
+  raven install go --dry-run
   raven install python --adopt-claude-symlink
   raven install python .claude/scripts/raven-tool-check.py
 

@@ -52,7 +52,7 @@ cd /path/to/destination-repo
 raven init <language>
 ```
 
-Raven currently has support for Python, TypeScript, Rust, Swift, and Elixir. So for example, if you're using Raven in a Rust project you'd use:
+Raven currently has support for Python, TypeScript, Go, Rust, Swift, and Elixir. So for example, if you're using Raven in a Rust project you'd use:
 
 ```sh
 raven init rust
@@ -201,6 +201,9 @@ On Windows, prefer WSL when the target repository is POSIX-heavy or already uses
 | `mcp-language-server` | General LSP-over-MCP fallback for definition, references, diagnostics, and rename safety. | Likely  | [Link](https://github.com/isaacphi/mcp-language-server)         |
 | ast-grep              | Syntax-aware search and mechanical rewrites.                                              | Yes     | [Link](https://ast-grep.github.io/guide/quick-start.html)       |
 | Semgrep               | Security, policy, and multi-language static-analysis rules.                               | Yes     | [Link](https://semgrep.dev/docs/getting-started/cli)            |
+| Gitleaks              | Deterministic secret scanning for staged changes and full git history.                    | Yes     | [Link](https://github.com/gitleaks/gitleaks)                    |
+| `jq`                  | Reads and transforms structured JSON without brittle text parsing.                        | Yes     | [Link](https://jqlang.org/download/)                            |
+| `yq`                  | Reads and transforms structured YAML without brittle text parsing.                        | Yes     | [Link](https://github.com/mikefarah/yq/#install)                |
 | RTK                   | Compresses noisy command output before it enters model context.                           | Yes     | [Link](https://github.com/rtk-ai/rtk/tree/master)               |
 
 Language templates include `.mcp.json` defaults for Semble, GitNexus, and LSP. For LSP, Raven uses `mcp-language-server` as the general fallback when the agent client does not already provide a reliable native/plugin LSP integration. The default language servers are:
@@ -209,6 +212,7 @@ Language templates include `.mcp.json` defaults for Semble, GitNexus, and LSP. F
 | ---------- | ------------------------------------ |
 | Python     | `pyright-langserver --stdio`         |
 | TypeScript | `typescript-language-server --stdio` |
+| Go         | `gopls`                              |
 | Rust       | `rust-analyzer`                      |
 | Swift      | `sourcekit-lsp`                      |
 | Elixir     | `expert`                             |

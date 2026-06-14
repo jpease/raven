@@ -18,6 +18,19 @@ class ToolCheckTests(RavenTestCase):
 
         self.assertEqual(module._DO_NOT_REMIND_KEY, "doNotRemind")
 
+    def test_tool_check_includes_optional_gap_tools(self):
+        path = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
+        spec = importlib.util.spec_from_file_location("raven_tool_check_tools", path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+
+        spec.loader.exec_module(module)
+
+        tool_ids = {tool["id"] for tool in module.TOOLS}
+        self.assertIn("gitleaks", tool_ids)
+        self.assertIn("jq", tool_ids)
+        self.assertIn("yq", tool_ids)
+
     def test_tool_check_parses_claude_mcp_server_names(self):
         path = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
         spec = importlib.util.spec_from_file_location("raven_tool_check_parser", path)
