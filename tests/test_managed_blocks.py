@@ -96,6 +96,7 @@ class ManagedBlocksTests(RavenTestCase):
         self.assertIn("AGENTS.md", classification.will_upgrade)
         self.assertNotIn("AGENTS.md", classification.needs_merge)
         self.assertIsNotNone(block)
+        assert block is not None  # narrow Optional for the type checker
         self.assertTrue(raven.raven_block_is_unchanged(block))
         self.assertIn(
             "- Use targeted retrieval before reading files.", target.read_text(encoding="utf-8")
@@ -133,6 +134,7 @@ class ManagedBlocksTests(RavenTestCase):
         self.assertIn("AGENTS.md", classification.will_upgrade)
         self.assertNotIn("AGENTS.md", classification.needs_merge)
         self.assertIsNotNone(block)
+        assert block is not None  # narrow Optional for the type checker
         self.assertTrue(raven.raven_block_is_unchanged(block))
         self.assertIn("|---|---|", target.read_text(encoding="utf-8"))
 
@@ -167,6 +169,7 @@ class ManagedBlocksTests(RavenTestCase):
         self.assertIn("AGENTS.md", classification.will_upgrade)
         self.assertNotIn("AGENTS.md", classification.needs_merge)
         self.assertIsNotNone(block)
+        assert block is not None  # narrow Optional for the type checker
         self.assertTrue(raven.raven_block_is_unchanged(block))
 
     def test_matching_agents_block_without_hash_is_repairable(self):

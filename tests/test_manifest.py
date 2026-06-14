@@ -77,6 +77,7 @@ class ManifestTests(RavenTestCase):
         record = raven.parse_record(
             {"kind": "symlink", "installedSha256": "abc", "target": "AGENTS.md", "extra": 1}
         )
+        assert record is not None  # narrow Optional for the type checker
         self.assertEqual(record.kind, "symlink")
         self.assertEqual(record.installed_sha256, "abc")
         self.assertEqual(record.target, "AGENTS.md")
@@ -85,7 +86,9 @@ class ManifestTests(RavenTestCase):
         self.assertIsNone(raven.parse_record({"kind": "file"}))  # missing installedSha256
         self.assertIsNone(raven.parse_record({"installedSha256": "abc"}))  # missing kind
         # Files have no target.
-        self.assertIsNone(raven.parse_record({"kind": "file", "installedSha256": "abc"}).target)
+        file_record = raven.parse_record({"kind": "file", "installedSha256": "abc"})
+        assert file_record is not None  # narrow Optional for the type checker
+        self.assertIsNone(file_record.target)
 
     def test_load_manifest_warns_and_defaults_on_invalid_json(self):
         manifest_path = self.destination / ".raven" / "manifest.json"

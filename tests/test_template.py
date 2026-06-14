@@ -1,3 +1,4 @@
+import argparse
 import contextlib
 import io
 import json
@@ -106,31 +107,23 @@ tool_configs = false
 
                 with contextlib.redirect_stdout(install_output):
                     install_rc = raven.cmd_install(
-                        type(
-                            "Args",
-                            (),
-                            {
-                                "destination": str(destination),
-                                "args": [language],
-                                "include_readme": False,
-                                "dry_run": False,
-                                "adopt_claude_symlink": False,
-                            },
-                        )()
+                        argparse.Namespace(
+                            destination=str(destination),
+                            args=[language],
+                            include_readme=False,
+                            dry_run=False,
+                            adopt_claude_symlink=False,
+                        )
                     )
                 with contextlib.redirect_stdout(upgrade_output):
                     upgrade_rc = raven.cmd_upgrade(
-                        type(
-                            "Args",
-                            (),
-                            {
-                                "destination": str(destination),
-                                "overrides": [],
-                                "include_readme": False,
-                                "dry_run": True,
-                                "adopt_claude_symlink": False,
-                            },
-                        )()
+                        argparse.Namespace(
+                            destination=str(destination),
+                            overrides=[],
+                            include_readme=False,
+                            dry_run=True,
+                            adopt_claude_symlink=False,
+                        )
                     )
 
                 self.assertEqual(install_rc, 0, install_output.getvalue())
@@ -262,6 +255,7 @@ tool_configs = false
                     (REPO_ROOT / language / ".codex" / "config.toml").read_text(encoding="utf-8")
                 )
                 lsp = config["mcp_servers.lsp"]
+                assert isinstance(lsp, dict)  # parse_simple_toml values are typed object
 
                 self.assertEqual(lsp["command"], "mcp-language-server")
                 self.assertEqual(lsp["args"], args)

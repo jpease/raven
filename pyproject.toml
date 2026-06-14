@@ -22,3 +22,5 @@ quote-style = "preserve"
 pythonVersion = "3.10"
 typeCheckingMode = "standard"
 reportMissingTypeStubs = false
+# Tests import the installer package from scripts/ after a sys.path insert.
+extraPaths = ["scripts"]

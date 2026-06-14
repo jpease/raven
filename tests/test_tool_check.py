@@ -1,30 +1,21 @@
-import importlib.util
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import REPO_ROOT, RavenTestCase
+from helpers import REPO_ROOT, RavenTestCase, load_script_module
+
+TOOL_CHECK_SCRIPT = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
 
 
 class ToolCheckTests(RavenTestCase):
     def test_tool_check_script_imports_without_name_error(self):
-        path = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
-        spec = importlib.util.spec_from_file_location("raven_tool_check", path)
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-
-        spec.loader.exec_module(module)
+        module = load_script_module("raven_tool_check", TOOL_CHECK_SCRIPT)
 
         self.assertEqual(module._DO_NOT_REMIND_KEY, "doNotRemind")
 
     def test_tool_check_includes_optional_gap_tools(self):
-        path = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
-        spec = importlib.util.spec_from_file_location("raven_tool_check_tools", path)
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-
-        spec.loader.exec_module(module)
+        module = load_script_module("raven_tool_check_tools", TOOL_CHECK_SCRIPT)
 
         tool_ids = {tool["id"] for tool in module.TOOLS}
         self.assertIn("gitleaks", tool_ids)
@@ -32,11 +23,7 @@ class ToolCheckTests(RavenTestCase):
         self.assertIn("yq", tool_ids)
 
     def test_tool_check_parses_claude_mcp_server_names(self):
-        path = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
-        spec = importlib.util.spec_from_file_location("raven_tool_check_parser", path)
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
+        module = load_script_module("raven_tool_check_parser", TOOL_CHECK_SCRIPT)
         output = """Checking MCP server health...
 
 semble: uvx --from semble[mcp] semble - ✗ Failed to connect
@@ -49,11 +36,7 @@ gitnexus: gitnexus mcp - ✓ Connected
         self.assertIn("gitnexus", module._configured_mcp_server_names(output))
 
     def test_claude_mcp_config_files_are_parsed_without_cli(self):
-        path = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
-        spec = importlib.util.spec_from_file_location("raven_tool_check_config", path)
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
+        module = load_script_module("raven_tool_check_config", TOOL_CHECK_SCRIPT)
 
         with tempfile.TemporaryDirectory() as tmp:
             config = Path(tmp) / ".claude.json"
@@ -68,11 +51,7 @@ gitnexus: gitnexus mcp - ✓ Connected
                 module._claude_mcp_server_names_from_config.cache_clear()
 
     def test_semble_can_be_available_from_claude_mcp_config_without_cli(self):
-        path = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
-        spec = importlib.util.spec_from_file_location("raven_tool_check_semble", path)
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
+        module = load_script_module("raven_tool_check_semble", TOOL_CHECK_SCRIPT)
         tool = next(tool for tool in module.TOOLS if tool["id"] == "semble")
         original_command_status = module.command_status
         original_status = module.claude_mcp_server_status
@@ -90,11 +69,7 @@ gitnexus: gitnexus mcp - ✓ Connected
         self.assertEqual(source, "claude-mcp-config")
 
     def test_semble_can_be_available_from_codex_mcp_config_without_cli(self):
-        path = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
-        spec = importlib.util.spec_from_file_location("raven_tool_check_semble_codex", path)
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
+        module = load_script_module("raven_tool_check_semble_codex", TOOL_CHECK_SCRIPT)
         tool = next(tool for tool in module.TOOLS if tool["id"] == "semble")
         original_command_status = module.command_status
         original_claude_status = module.claude_mcp_server_status
@@ -113,11 +88,7 @@ gitnexus: gitnexus mcp - ✓ Connected
         self.assertEqual(source, "codex-mcp-config")
 
     def test_slow_claude_mcp_check_does_not_crash_tool_check(self):
-        path = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
-        spec = importlib.util.spec_from_file_location("raven_tool_check_timeout", path)
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
+        module = load_script_module("raven_tool_check_timeout", TOOL_CHECK_SCRIPT)
 
         original_which = module.shutil.which
         original_run = module.subprocess.run
@@ -145,11 +116,7 @@ gitnexus: gitnexus mcp - ✓ Connected
             module.subprocess.run = original_run
 
     def test_command_timeout_counts_as_unavailable(self):
-        path = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
-        spec = importlib.util.spec_from_file_location("raven_tool_check_command_timeout", path)
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
+        module = load_script_module("raven_tool_check_command_timeout", TOOL_CHECK_SCRIPT)
 
         original_which = module.shutil.which
         original_run = module.subprocess.run
