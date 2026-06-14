@@ -62,6 +62,15 @@ domain-specific hazards the language stacks do not address:
 6. **Shells covered:** bash, zsh, fish, powershell.
 7. **No external-skill dependency:** the source-of-truth/apply workflow is fully
    self-contained in the Raven-owned skill.
+8. **Skill location (resolved during planning):** skills are shared across stacks
+   via `common/.agents/skills/` (each stack symlinks `.agents/skills` to it). There
+   is no stack-local skill mechanism, so `raven-dotfiles` lives in
+   `common/.agents/skills/raven-dotfiles/` and ships to every install, dormant
+   until its description triggers on dotfiles editing.
+9. **LSP omitted (resolved during planning):** dotfiles span many formats with no
+   single language server, so the stack's `.mcp.json` and `.codex/config.toml` omit
+   the `lsp` MCP server entirely (keeping semgrep/semble/gitnexus). The per-stack
+   LSP-defaults tests only check the six named languages, so dotfiles is unaffected.
 
 ## Architecture
 
@@ -95,10 +104,13 @@ Mirrors the structure of `raven-python.md`, domain-shifted:
 - **Secrets** — configs are secret-dense; never commit without a secrets scan;
   never paste secret-bearing config into external tools.
 
-The rule must be shipped in both `dotfiles/.claude/rules/` and
-`dotfiles/.codex/rules/` (per `COMPONENT_PATHS["rules"]`).
+The rule ships as a real file at `dotfiles/.claude/rules/raven-dotfiles.md`,
+matching the existing per-stack pattern (e.g. `go/.claude/rules/raven-go.md`).
+`dotfiles/.codex/rules` stays a symlink to `common/.codex/rules`, exactly like the
+language stacks — the per-stack rule is Claude-side only, a known limitation shared
+with every existing stack and out of scope to change here.
 
-**2. `dotfiles/.agents/skills/raven-dotfiles/SKILL.md` (on demand)**
+**2. `common/.agents/skills/raven-dotfiles/SKILL.md` (on demand, global)**
 The Raven-owned edit/validate/apply workflow, invoked when editing managed
 dotfiles. Steps:
 
