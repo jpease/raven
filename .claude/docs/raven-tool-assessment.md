@@ -1,5 +1,7 @@
 # Tool Assessment
 
+Last verified: 2026-06-14
+
 This template intentionally separates tool roles. No single retrieval tool should replace all others.
 
 ## Recommended Tool Roles

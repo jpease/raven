@@ -16,6 +16,7 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 
 - Do not declare a task done without running at least the narrowest relevant verification.
 - State what was verified and what was not — never silently skip a step.
+- Do not generalize a narrow check into a broad claim. If you ran one test file, say that — not "all tests pass." Name the exact scope you verified.
 - If a verification step fails, address it before proceeding.
 
 ## Process
