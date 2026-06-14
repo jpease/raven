@@ -30,6 +30,7 @@ class CliTests(RavenTestCase):
         self.assertIn("usage: raven [OPTIONS] COMMAND [ARGS]...", result.stdout)
         self.assertIn("--destination DESTINATION", result.stdout)
         self.assertIn("raven install <language> --dry-run", result.stdout)
+        self.assertIn("raven install go --dry-run", result.stdout)
         self.assertIn("raven upgrade .claude/scripts/raven-tool-check.py", result.stdout)
         self.assertIn("Explicit override paths force-copy Raven-owned files.", result.stdout)
         self.assertIn("Supported languages:", result.stdout)

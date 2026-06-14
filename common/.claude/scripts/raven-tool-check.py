@@ -138,6 +138,45 @@ TOOLS = [
         },
     },
     {
+        "id": "gitleaks",
+        "name": "Gitleaks",
+        "commands": [["gitleaks", "version"], ["gitleaks", "--version"]],
+        "purpose": "deterministic secret scanning for staged changes and full git history",
+        "install": {
+            "darwin": "official install docs: https://github.com/gitleaks/gitleaks",
+            "linux": "official install docs: https://github.com/gitleaks/gitleaks",
+            "windows": (
+                "official install docs: https://github.com/gitleaks/gitleaks; "
+                "validate native Windows vs WSL hook behavior for this repo"
+            ),
+        },
+        "optionalWhen": "secret scanning is provided by another approved project or platform control",
+    },
+    {
+        "id": "jq",
+        "name": "jq",
+        "commands": [["jq", "--version"]],
+        "purpose": "reading and transforming structured JSON without brittle text parsing",
+        "install": {
+            "darwin": "official install docs: https://jqlang.org/download/",
+            "linux": "official install docs: https://jqlang.org/download/",
+            "windows": "official install docs: https://jqlang.org/download/",
+        },
+        "optionalWhen": "the task does not involve JSON transformation or another structured parser is available",
+    },
+    {
+        "id": "yq",
+        "name": "yq",
+        "commands": [["yq", "--version"]],
+        "purpose": "reading and transforming structured YAML without brittle text parsing",
+        "install": {
+            "darwin": "official install docs: https://github.com/mikefarah/yq/#install",
+            "linux": "official install docs: https://github.com/mikefarah/yq/#install",
+            "windows": "official install docs: https://github.com/mikefarah/yq/#install",
+        },
+        "optionalWhen": "the task does not involve YAML transformation or another structured parser is available",
+    },
+    {
         "id": "rtk",
         "name": "RTK",
         "commands": [["rtk", "--version"]],

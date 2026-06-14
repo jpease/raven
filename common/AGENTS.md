@@ -69,6 +69,8 @@ Use RTK for commands likely to produce noisy output:
 - cloud CLIs
 - Docker and Kubernetes commands
 
+Prefer `jq`/`yq` for reading or transforming structured JSON/YAML instead of `grep`/`sed`/`awk`.
+
 Do not use RTK when exact raw output matters, such as reviewing a small precise diff, inspecting generated code, diagnosing compression-sensitive compiler output, or doing a security-sensitive review.
 
 ## Pause And Ask

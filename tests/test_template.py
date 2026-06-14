@@ -14,6 +14,7 @@ class TemplateTests(RavenTestCase):
         expected = {
             "python": ["pyproject.toml"],
             "typescript": ["eslint.config.mjs", "prettier.config.mjs"],
+            "go": [".golangci.yml"],
             "rust": ["rustfmt.toml"],
             "swift": [".swiftlint.yml"],
             "elixir": [".formatter.exs"],
@@ -93,6 +94,7 @@ tool_configs = false
 
         self.assertIn("python", languages)
         self.assertIn("swift", languages)
+        self.assertIn("go", languages)
         self.assertIn("rust", languages)
         self.assertIn("typescript", languages)
         self.assertIn("elixir", languages)
@@ -222,6 +224,7 @@ tool_configs = false
                 "--stdio",
             ],
             "rust": ["--workspace", ".", "--lsp", "rust-analyzer"],
+            "go": ["--workspace", ".", "--lsp", "gopls"],
             "swift": ["--workspace", ".", "--lsp", "sourcekit-lsp"],
             "elixir": ["--workspace", ".", "--lsp", "expert"],
         }
@@ -248,6 +251,7 @@ tool_configs = false
                 "--stdio",
             ],
             "rust": ["--workspace", ".", "--lsp", "rust-analyzer"],
+            "go": ["--workspace", ".", "--lsp", "gopls"],
             "swift": ["--workspace", ".", "--lsp", "sourcekit-lsp"],
             "elixir": ["--workspace", ".", "--lsp", "expert"],
         }

@@ -1,5 +1,6 @@
 import contextlib
 import io
+import os
 import subprocess
 import tempfile
 import unittest
@@ -99,6 +100,31 @@ class GitHookInstallerTests(unittest.TestCase):
 
     def test_raven_git_hooks_path_included_in_hooks_component(self):
         self.assertIn(".raven/git-hooks", raven.COMPONENT_PATHS["hooks"])
+
+    def test_gitleaks_pre_commit_hook_is_optional_when_missing(self):
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-commit"
+        git_path = subprocess.run(
+            ["which", "git"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        bin_dir = self.destination / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "git").symlink_to(git_path)
+
+        env = {k: v for k, v in os.environ.items() if k != "PATH"}
+        env["PATH"] = str(bin_dir)
+        result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

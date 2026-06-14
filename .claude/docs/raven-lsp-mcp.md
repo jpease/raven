@@ -27,6 +27,7 @@ Install the bridge and selected language server from their official documentatio
 | `mcp-language-server` | https://github.com/isaacphi/mcp-language-server | n/a |
 | Python / Pyright | https://github.com/microsoft/pyright | `pyright-langserver --stdio` |
 | TypeScript language server | https://github.com/typescript-language-server/typescript-language-server | `typescript-language-server --stdio` |
+| Go / gopls | https://go.dev/gopls/ | `gopls` |
 | Rust Analyzer | https://rust-analyzer.github.io/manual.html | `rust-analyzer` |
 | SourceKit-LSP | https://github.com/swiftlang/sourcekit-lsp | `sourcekit-lsp` |
 | Elixir Expert | https://expert-lsp.github.io/docs/installation | `expert` |

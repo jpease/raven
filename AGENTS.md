@@ -21,7 +21,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=11b5c76185ec5fedd9f3cf23f8f8f9065067e4904a1618f7d0d769f0a4104210 -->
+<!-- RAVEN:BEGIN sha256=0f49865af997c752880ba3bfcbc10e4046ffe5cbca214eaedd0355fb62fcad3d -->
 # AGENTS.md
 
 ## Primary Objective
@@ -93,6 +93,8 @@ Use RTK for commands likely to produce noisy output:
 - cloud CLIs
 - Docker and Kubernetes commands
 
+Prefer `jq`/`yq` for reading or transforming structured JSON/YAML instead of `grep`/`sed`/`awk`.
+
 Do not use RTK when exact raw output matters, such as reviewing a small precise diff, inspecting generated code, diagnosing compression-sensitive compiler output, or doing a security-sensitive review.
 
 ## Pause And Ask
@@ -144,7 +146,7 @@ Pause and ask before work that is ambiguous or could create durable harm:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **raven** (1179 symbols, 1885 relationships, 41 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **raven** (1229 symbols, 1992 relationships, 44 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
