@@ -1,4 +1,4 @@
-# Raven Codex project configuration for Go repositories.
+# Raven Codex project configuration for Lua repositories.
 # Project-local Codex config loads only after the project .codex layer is trusted.
 
 [agents]
@@ -19,4 +19,4 @@ args = ["mcp"]
 
 [mcp_servers.lsp]
 command = "mcp-language-server"
-args = ["--workspace", ".", "--lsp", "gopls"]
+args = ["--workspace", ".", "--lsp", "lua-language-server"]
