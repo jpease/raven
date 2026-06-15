@@ -16,6 +16,7 @@ Use client-native LSP or language plugins first when the agent client provides a
 | Swift | `sourcekit-lsp` |
 | Go | `gopls` |
 | C/C++ | `clangd` with the repo's compile database settings |
+| Lua | `lua-language-server` |
 | Elixir | `expert` when available; ElixirLS remains a viable fallback if the repository already uses it |
 
 ## Install
@@ -31,6 +32,7 @@ Install the bridge and selected language server from their official documentatio
 | Rust Analyzer | https://rust-analyzer.github.io/manual.html | `rust-analyzer` |
 | SourceKit-LSP | https://github.com/swiftlang/sourcekit-lsp | `sourcekit-lsp` |
 | Elixir Expert | https://expert-lsp.github.io/docs/installation | `expert` |
+| Lua Language Server | https://github.com/LuaLS/lua-language-server | `lua-language-server` |
 
 Treat Raven's template defaults as convenience defaults, not a replacement for upstream documentation.
 

@@ -53,12 +53,14 @@ COMPONENT_PATHS = {
         ".credo.exs",
         ".formatter.exs",
         ".golangci.yml",
+        ".luacheckrc",
         ".swift-format",
         ".swiftlint.yml",
         "eslint.config.mjs",
         "prettier.config.mjs",
         "pyproject.toml",
         "rustfmt.toml",
+        "stylua.toml",
     ],
 }
 STARTER_TOOL_CONFIG_PATHS = set(COMPONENT_PATHS["tool_configs"])
