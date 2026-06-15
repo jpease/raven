@@ -1,24 +1,24 @@
-# Go Raven Template
+# Lua Raven Template
 
-Copy this template into the root of a Go repository with `scripts/raven.py` from this repository.
+Copy this template into the root of a Lua repository with `scripts/raven.py` from this repository.
 
 This directory assembles:
 
 - shared agent guidance from `common/`
-- Go-specific Raven rules in `.claude/rules/raven-go.md`
-- Go quality reference material in `.claude/docs/raven-go-quality.md`
-- a starter `.golangci.yml` for `golangci-lint`
+- Lua-specific Raven rules in `.claude/rules/raven-lua.md`
+- Lua quality reference material in `.claude/docs/raven-lua-quality.md`
+- a starter `stylua.toml` for StyLua and `.luacheckrc` for luacheck
 
 `README.md` is template documentation and is excluded by default when applying the template.
 
 When copying into a project, run the top-level apply script from the destination repository root:
 
 ```sh
-cd /path/to/go-project
+cd /path/to/lua-project
 RAVEN_TEMPLATE=/path/to/raven
 
-python "$RAVEN_TEMPLATE/scripts/raven.py" install go --dry-run
-python "$RAVEN_TEMPLATE/scripts/raven.py" install go
+python "$RAVEN_TEMPLATE/scripts/raven.py" install lua --dry-run
+python "$RAVEN_TEMPLATE/scripts/raven.py" install lua
 ```
 
 After copying:
