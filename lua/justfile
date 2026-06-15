@@ -1,30 +1,21 @@
 # Run the test suite
 test:
-    go test ./...
+    busted
 
 # Run lint checks
 lint:
-    golangci-lint run
+    luacheck .
 
 # Format the codebase in place
 format:
-    gofmt -w .
+    stylua .
 
 # Check formatting without modifying files
 fmt-check:
-    #!/usr/bin/env sh
-    files="$(gofmt -l .)"
-    if [ -n "$files" ]; then
-        printf '%s\n' "$files"
-        exit 1
-    fi
-
-# Run Go vet
-vet:
-    go vet ./...
+    stylua --check .
 
 # Run the standard local verification set
-check: fmt-check vet lint test
+check: fmt-check lint test
 
 # Install a pre-commit git hook that runs 'just check'
 install-hooks:
