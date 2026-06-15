@@ -19,6 +19,7 @@ class TemplateTests(RavenTestCase):
             "rust": ["rustfmt.toml"],
             "swift": [".swiftlint.yml"],
             "elixir": [".formatter.exs"],
+            "lua": ["stylua.toml", ".luacheckrc"],
         }
 
         for language, paths in expected.items():
@@ -220,6 +221,7 @@ tool_configs = false
             "go": ["--workspace", ".", "--lsp", "gopls"],
             "swift": ["--workspace", ".", "--lsp", "sourcekit-lsp"],
             "elixir": ["--workspace", ".", "--lsp", "expert"],
+            "lua": ["--workspace", ".", "--lsp", "lua-language-server"],
         }
 
         for language, args in expected.items():
@@ -247,6 +249,7 @@ tool_configs = false
             "go": ["--workspace", ".", "--lsp", "gopls"],
             "swift": ["--workspace", ".", "--lsp", "sourcekit-lsp"],
             "elixir": ["--workspace", ".", "--lsp", "expert"],
+            "lua": ["--workspace", ".", "--lsp", "lua-language-server"],
         }
 
         for language, args in expected.items():
