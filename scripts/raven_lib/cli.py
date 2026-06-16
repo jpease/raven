@@ -6,10 +6,18 @@ from dataclasses import replace
 from pathlib import Path
 
 from .apply import classify, claude_symlink_adoption_needed, prompt_for_claude_symlink_adoption
+from .blocks import pending_merge_paths, remove_merge_artifacts
 from .config import _update_config_platform, default_config_text, load_config
-from .constants import CONFIG_PATH, DEFAULT_EXCLUDES, NON_TEMPLATE_DIRS, REPO_ROOT, _any_exists
+from .constants import (
+    CONFIG_PATH,
+    DEFAULT_EXCLUDES,
+    MERGE_DIR,
+    NON_TEMPLATE_DIRS,
+    REPO_ROOT,
+    _any_exists,
+)
 from .git_hooks import install_git_hooks
-from .manifest import load_manifest
+from .manifest import load_manifest, update_manifest
 from .plan import (
     apply_plan,
     build_apply_plan,
@@ -270,6 +278,81 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_accept(args: argparse.Namespace) -> int:
+    destination = _resolve_destination(args)
+    if destination is None:
+        return 2
+    config = load_config(destination)
+    if not config.exists:
+        print(
+            "error: no .raven/config.toml found; run `raven install <language>` first.",
+            file=sys.stderr,
+        )
+        return 2
+    template_name = config.template or list_language_templates()[0]
+    template = REPO_ROOT / template_name
+    include_readme = getattr(args, "include_readme", False) or config.include_readme
+    excludes = set() if include_readme else DEFAULT_EXCLUDES
+    config = replace(config, template=config.template or template_name)
+    entries = entries_for_destination(template, excludes, config, destination)
+
+    requested = (
+        [normalize_override(path) for path in args.paths]
+        if args.paths
+        else pending_merge_paths(destination)
+    )
+    if not requested:
+        print(
+            "Nothing to accept: no paths given and no pending merges under "
+            f"{MERGE_DIR.as_posix()}/."
+        )
+        return 0
+
+    accepted: list[str] = []
+    skipped: list[str] = []
+    for relative in requested:
+        if entries.get(relative) is None:
+            skipped.append(f"{relative} (not a Raven-managed template file)")
+        elif not _any_exists(destination / relative):
+            skipped.append(f"{relative} (no such file in destination)")
+        else:
+            accepted.append(relative)
+
+    if args.dry_run:
+        print_section("Would record as the accepted Raven baseline:", accepted)
+        if skipped:
+            print()
+            print_section("Would skip:", skipped)
+        print(
+            "\nPreview only. Re-run without --dry-run to update the manifest and remove artifacts."
+        )
+        return 0
+
+    removed: list[str] = []
+    if accepted:
+        manifest = load_manifest(destination)
+        update_manifest(
+            destination,
+            template_name,
+            template,
+            excludes,
+            config,
+            accepted,
+            manifest=manifest,
+            entries=entries,
+        )
+        removed = remove_merge_artifacts(destination, accepted)
+
+    print_section("Recorded accepted Raven baseline for:", accepted)
+    if removed:
+        print()
+        print_section("Removed merge artifacts:", removed)
+    if skipped:
+        print()
+        print_section("Skipped:", skipped)
+    return 0
+
+
 def main() -> int:
     supported_languages = ", ".join(list_language_templates())
     parser = argparse.ArgumentParser(
@@ -284,6 +367,7 @@ Common commands:
   raven upgrade --dry-run
   raven upgrade
   raven upgrade .claude/scripts/raven-tool-check.py
+  raven accept
 
 Supported languages:
   {supported_languages}
@@ -450,6 +534,42 @@ AGENTS.md and CLAUDE.md:
         ),
     )
 
+    accept_parser = subparsers.add_parser(
+        "accept",
+        usage="raven accept [OPTIONS] [path ...]",
+        help="record manually merged files as the accepted Raven baseline",
+        description=(
+            "After manually merging a conflicting file, record its current content as the\n"
+            "accepted baseline so future upgrades stop prompting until the template changes."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  raven accept                      # accept every pending merge under .raven/merge/
+  raven accept .mcp.json            # accept a specific file
+  raven accept --dry-run
+
+With no paths, Raven accepts every file that still has guided-merge artifacts under
+.raven/merge/. Accepting records the current file as installed and the current
+template as its source, then removes the merge artifacts.
+""",
+    )
+    accept_parser.add_argument(
+        "paths",
+        nargs="*",
+        help="destination-relative paths to accept; defaults to all pending merges",
+    )
+    accept_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="preview which files would be recorded; change nothing",
+    )
+    accept_parser.add_argument(
+        "--include-readme",
+        action="store_true",
+        help="include the language template README.md when resolving template entries",
+    )
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -458,4 +578,6 @@ AGENTS.md and CLAUDE.md:
         return cmd_install(args)
     if args.command == "upgrade":
         return cmd_upgrade(args)
+    if args.command == "accept":
+        return cmd_accept(args)
     return 1

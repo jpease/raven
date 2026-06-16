@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import os
+from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 
@@ -199,8 +200,11 @@ def guided_merge_instructions(
             f"`{relative}` is not a managed-block instruction file, so Raven cannot apply an "
             "automatic patch. Review the diff to see exactly what changed:\n\n"
             f"```sh\ncat {diff}\n```\n\n"
-            f"Then copy whatever applies from `{suggestion}` into `{relative}` manually. "
-            "Delete the artifacts under `.raven/merge/` once you have merged.\n\n"
+            f"Then copy whatever applies from `{suggestion}` into `{relative}` manually.\n\n"
+            f"When done, run `raven accept {relative}` (or `raven accept` to accept every "
+            "pending merge). This records your merged file as the new baseline and removes "
+            "these artifacts, so future upgrades will not prompt again until the template "
+            "changes.\n\n"
             "Do not apply the template blindly if the repository already has stronger local settings.\n"
         )
     if patch is not None:
@@ -219,6 +223,8 @@ def guided_merge_instructions(
             f"Review `{suggestion}` and copy only the guidance that applies. If you do this without "
             "the managed block markers, "
             "Raven will not be able to upgrade that content automatically later.\n\n"
+            f"Either way, run `raven accept {relative}` (or `raven accept`) afterwards to remove "
+            "these artifacts.\n\n"
             "Do not apply the suggestion blindly if the repository already has stronger local instructions.\n"
         )
     return (
@@ -276,3 +282,42 @@ def write_guided_merge_artifacts(
         if diff_rel:
             written.append(diff_rel)
     return written
+
+
+_MERGE_ARTIFACT_SUFFIXES = (".raven", ".diff", ".patch", ".instructions.md")
+
+
+def pending_merge_paths(destination: Path) -> list[str]:
+    """Destination-relative paths with guided-merge artifacts awaiting acceptance.
+
+    Each merged file has exactly one ``<path>.instructions.md`` artifact, so the
+    instruction files are the canonical record of what is still pending.
+    """
+    merge_dir = destination / MERGE_DIR
+    if not merge_dir.is_dir():
+        return []
+    suffix = ".instructions.md"
+    paths = [
+        artifact.relative_to(merge_dir).as_posix()[: -len(suffix)]
+        for artifact in merge_dir.rglob(f"*{suffix}")
+    ]
+    return sorted(paths)
+
+
+def remove_merge_artifacts(destination: Path, paths: list[str]) -> list[str]:
+    """Delete the guided-merge artifacts for ``paths`` and prune empty dirs."""
+    merge_dir = destination / MERGE_DIR
+    removed: list[str] = []
+    for relative in paths:
+        for suffix in _MERGE_ARTIFACT_SUFFIXES:
+            artifact = merge_dir / f"{relative}{suffix}"
+            if artifact.exists() or artifact.is_symlink():
+                artifact.unlink()
+                removed.append(artifact.relative_to(destination).as_posix())
+    if merge_dir.is_dir():
+        for directory in sorted((p for p in merge_dir.rglob("*") if p.is_dir()), reverse=True):
+            with suppress(OSError):
+                directory.rmdir()
+        with suppress(OSError):
+            merge_dir.rmdir()
+    return sorted(removed)

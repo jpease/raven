@@ -7,13 +7,54 @@ from pathlib import Path
 from typing import Literal
 
 from .blocks import BlockState, block_managed_state, update_raven_block
-from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH, _any_exists
-from .hashing import destination_fingerprint, same_content
-from .manifest import load_manifest, manifest_allows_upgrade
-from .models import Classification, Fingerprint, RavenConfig, TemplateEntry
+from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH, KIND_SYMLINK, _any_exists
+from .hashing import destination_fingerprint, entry_fingerprint, same_content
+from .manifest import load_manifest, parse_record
+from .models import Classification, Fingerprint, ManifestRecord, RavenConfig, TemplateEntry
 from .template import entries_for_destination, iter_template_entries
 
 ClassifyState = Literal["will_copy", "will_upgrade", "identical", "needs_merge", "unknown_existing"]
+
+
+def _fingerprint_matches(fingerprint: Fingerprint | None, record: ManifestRecord) -> bool:
+    """Whether the destination fingerprint equals the recorded installed baseline."""
+    if fingerprint is None or fingerprint.kind != record.kind:
+        return False
+    if fingerprint.kind == KIND_SYMLINK and fingerprint.target != record.target:
+        return False
+    return fingerprint.sha256 == record.installed_sha256
+
+
+def reconcile_state(
+    record: ManifestRecord,
+    fingerprint: Fingerprint | None,
+    template_fp: Fingerprint | None,
+) -> ClassifyState:
+    """3-way reconcile of a tracked non-managed-block file against its baseline.
+
+    ``record`` is the manifest baseline (the destination and template content
+    Raven last reconciled), ``fingerprint`` is the current destination, and
+    ``template_fp`` is the current template. A baseline where ``installed`` and
+    ``source`` differ marks a file the user has customized (e.g. an accepted
+    manual merge), which must be re-merged rather than overwritten.
+    """
+    if record.source_sha256 is None:
+        # Legacy manifest predating sourceSha256: fall back to the 2-way rule.
+        return "will_upgrade" if _fingerprint_matches(fingerprint, record) else "needs_merge"
+
+    template_changed = template_fp is None or template_fp.sha256 != record.source_sha256
+    user_touched = not _fingerprint_matches(fingerprint, record)
+    if not template_changed:
+        # Raven's template is unchanged since the baseline. If the file still
+        # matches the recorded baseline (e.g. an accepted manual merge) there is
+        # nothing to do; a later local edit is surfaced as before.
+        return "needs_merge" if user_touched else "identical"
+    if user_touched:
+        return "needs_merge"
+    # Untouched since the baseline: take the new template unless the baseline is a
+    # customization (installed != source) that an overwrite would destroy.
+    customized = record.installed_sha256 != record.source_sha256
+    return "needs_merge" if customized else "will_upgrade"
 
 
 def _classify_entry(
@@ -24,6 +65,7 @@ def _classify_entry(
     content_matches: bool,
     block_state: BlockState | None,
     fingerprint: Fingerprint | None,
+    template_fp: Fingerprint | None,
 ) -> ClassifyState:
     if not target_exists:
         return "will_copy"
@@ -35,11 +77,10 @@ def _classify_entry(
         return "will_upgrade"
     if block_state == "modified":
         return "needs_merge"
-    if manifest_allows_upgrade(manifest, entry.relative, fingerprint):
-        return "will_upgrade"
-    if entry.relative in manifest.get("files", {}):
-        return "needs_merge"
-    return "unknown_existing"
+    record = parse_record(manifest.get("files", {}).get(entry.relative))
+    if record is None:
+        return "unknown_existing"
+    return reconcile_state(record, fingerprint, template_fp)
 
 
 def classify(
@@ -71,10 +112,14 @@ def classify(
         content_matches = False
         block_state = None
         fingerprint = None
+        template_fp = None
         if target_exists:
             content_matches = same_content(entry, target)
             block_state = block_managed_state(entry, target)
             fingerprint = destination_fingerprint(target)
+            if not content_matches and block_state is None:
+                # Only the 3-way reconcile path needs the template fingerprint.
+                template_fp = entry_fingerprint(entry)
         groups[
             _classify_entry(
                 entry,
@@ -83,6 +128,7 @@ def classify(
                 content_matches=content_matches,
                 block_state=block_state,
                 fingerprint=fingerprint,
+                template_fp=template_fp,
             )
         ].append(entry.relative)
 
