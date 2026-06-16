@@ -55,6 +55,86 @@ class GuidedMergeTests(RavenTestCase):
             (self.destination / ".raven" / "merge" / "CLAUDE.md.raven").read_text(encoding="utf-8"),
         )
 
+    def test_guided_merge_artifacts_for_modified_non_instruction_file(self):
+        original = '{"mcpServers": {"local": "keep me"}}\n'
+        (self.destination / ".mcp.json").write_text(original, encoding="utf-8")
+        entries = raven.entries_for_destination(
+            self.template,
+            self.excludes,
+            raven.load_config(self.destination),
+            self.destination,
+        )
+
+        written = raven.write_guided_merge_artifacts(self.destination, entries, [".mcp.json"])
+
+        # Raven never touches the user's file.
+        self.assertEqual((self.destination / ".mcp.json").read_text(encoding="utf-8"), original)
+        # Template copy + informational diff + instructions, but no appliable patch:
+        # an append-only managed block would corrupt arbitrary JSON/TOML files.
+        self.assertIn(".raven/merge/.mcp.json.raven", written)
+        self.assertIn(".raven/merge/.mcp.json.diff", written)
+        self.assertIn(".raven/merge/.mcp.json.instructions.md", written)
+        self.assertNotIn(".raven/merge/.mcp.json.patch", written)
+        diff = (self.destination / ".raven" / "merge" / ".mcp.json.diff").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("keep me", diff)
+        self.assertIn("@@", diff)
+        instructions = (
+            self.destination / ".raven" / "merge" / ".mcp.json.instructions.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn(".raven/merge/.mcp.json.diff", instructions)
+        self.assertNotIn("patch -p1", instructions)
+
+    def test_guided_merge_artifacts_handle_nested_paths(self):
+        (self.destination / ".codex").mkdir()
+        (self.destination / ".codex" / "config.toml").write_text("local = true\n", encoding="utf-8")
+        entries = raven.entries_for_destination(
+            self.template,
+            self.excludes,
+            raven.load_config(self.destination),
+            self.destination,
+        )
+
+        written = raven.write_guided_merge_artifacts(
+            self.destination, entries, [".codex/config.toml"]
+        )
+
+        self.assertIn(".raven/merge/.codex/config.toml.raven", written)
+        self.assertIn(".raven/merge/.codex/config.toml.diff", written)
+        self.assertTrue(
+            (self.destination / ".raven" / "merge" / ".codex" / "config.toml.diff").is_file()
+        )
+
+    def test_unified_diff_text_shows_local_and_template(self):
+        diff = raven.unified_diff_text("x.toml", "old = 1\n", "new = 2\n")
+
+        self.assertIn("-old = 1", diff)
+        self.assertIn("+new = 2", diff)
+        self.assertIn("x.toml", diff)
+
+    def test_instructions_with_diff_describe_manual_merge(self):
+        body = raven.guided_merge_instructions(
+            ".mcp.json", ".raven/merge/.mcp.json.raven", None, ".raven/merge/.mcp.json.diff"
+        )
+
+        self.assertIn("# Guided Raven merge for `.mcp.json`", body)
+        self.assertIn(".raven/merge/.mcp.json.diff", body)
+        self.assertIn("manually", body.lower())
+        self.assertNotIn("patch -p1", body)
+        self.assertNotIn("## Recommended automatic merge", body)
+
+    def test_run_writes_merge_helpers_for_conflicting_non_instruction_file(self):
+        (self.destination / ".mcp.json").write_text('{"local": true}\n', encoding="utf-8")
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            rc = raven._run(self.destination, "python", False, False, [])
+
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.destination / ".raven" / "merge" / ".mcp.json.diff").is_file())
+        self.assertIn("Wrote guided merge artifacts", output.getvalue())
+
     def test_dry_run_does_not_write_guided_merge_artifacts(self):
         (self.destination / "AGENTS.md").write_text("# Existing\n", encoding="utf-8")
         output = io.StringIO()

@@ -20,6 +20,7 @@ from .blocks import (
     raven_block_sha256,
     raven_managed_block,
     template_entry_text,
+    unified_diff_text,
     update_raven_block,
     write_guided_merge_artifacts,
 )
@@ -188,6 +189,7 @@ __all__ = [
     "update_raven_block",
     "template_entry_text",
     "append_patch_text",
+    "unified_diff_text",
     "guided_merge_instructions",
     "write_guided_merge_artifacts",
     # manifest

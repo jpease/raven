@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import os
 from pathlib import Path
 from typing import Literal
@@ -158,16 +159,50 @@ def append_patch_text(relative: str, existing_text: str, raven_text: str) -> str
     return "\n".join(patch_lines)
 
 
-def guided_merge_instructions(relative: str, suggestion: str, patch: str | None) -> str:
-    """Build the guided-merge instructions body for an existing instruction file.
+def unified_diff_text(relative: str, existing_text: str, template_text: str) -> str:
+    """Build a review-only unified diff from the local file to the template version.
 
-    Pure: ``patch`` is the relative patch path when an append-only patch was
-    written, or ``None`` when only a manual merge is possible.
+    Unlike ``append_patch_text``, this is informational: it shows how the existing
+    file differs from the Raven template version. It is not meant to be applied
+    with ``patch`` -- arbitrary JSON/TOML/etc. files have no managed block to
+    append to, so the user merges by hand.
+    """
+    diff = difflib.unified_diff(
+        existing_text.splitlines(keepends=True),
+        template_text.splitlines(keepends=True),
+        fromfile=f"{relative} (your version)",
+        tofile=f"{relative} (Raven template)",
+    )
+    return "".join(diff)
+
+
+def guided_merge_instructions(
+    relative: str, suggestion: str, patch: str | None, diff: str | None = None
+) -> str:
+    """Build the guided-merge instructions body for an existing file.
+
+    Pure. At most one of ``patch``/``diff`` is set:
+    ``patch`` is the relative path of an append-only managed-block patch (instruction
+    files only); ``diff`` is the relative path of a review-only unified diff (all other
+    files); both ``None`` means only a fully manual merge is possible.
     """
     header = (
         f"# Guided Raven merge for `{relative}`\n\n"
         f"Raven found an existing `{relative}` and did not modify it.\n\n"
     )
+    if patch is None and diff is not None:
+        return (
+            header + f"- Existing file: `{relative}`\n"
+            f"- Raven template version for review: `{suggestion}`\n"
+            f"- What differs from the template: `{diff}`\n\n"
+            "## Manual merge\n\n"
+            f"`{relative}` is not a managed-block instruction file, so Raven cannot apply an "
+            "automatic patch. Review the diff to see exactly what changed:\n\n"
+            f"```sh\ncat {diff}\n```\n\n"
+            f"Then copy whatever applies from `{suggestion}` into `{relative}` manually. "
+            "Delete the artifacts under `.raven/merge/` once you have merged.\n\n"
+            "Do not apply the template blindly if the repository already has stronger local settings.\n"
+        )
     if patch is not None:
         return (
             header + f"- Existing file: `{relative}`\n"
@@ -200,32 +235,44 @@ def write_guided_merge_artifacts(
 ) -> list[str]:
     written: list[str] = []
     merge_dir = destination / MERGE_DIR
-    for relative in sorted(set(paths) & ROOT_INSTRUCTION_FILES):
+    for relative in sorted(set(paths)):
         entry = entries.get(relative)
         target = destination / relative
         if entry is None or not _any_exists(target):
             continue
-        merge_dir.mkdir(parents=True, exist_ok=True)
         raven_path = merge_dir / f"{relative}.raven"
+        raven_path.parent.mkdir(parents=True, exist_ok=True)
         raven_text = template_entry_text(entry)
         raven_path.write_text(raven_text, encoding="utf-8")
         written.append(raven_path.relative_to(destination).as_posix())
 
-        patch_path = merge_dir / f"{relative}.patch"
-        patch_written = False
+        suggestion = raven_path.relative_to(destination).as_posix()
+        patch_rel: str | None = None
+        diff_rel: str | None = None
         if not entry.copy_as_symlink and target.is_file():
-            patch_path.write_text(
-                append_patch_text(relative, target.read_text(encoding="utf-8"), raven_text),
-                encoding="utf-8",
-            )
-            patch_written = True
+            existing_text = target.read_text(encoding="utf-8")
+            # Instruction files use RAVEN managed blocks, so an append-only patch
+            # merges cleanly. Any other file gets a review-only diff instead --
+            # appending a managed block would corrupt arbitrary JSON/TOML/etc.
+            if relative in ROOT_INSTRUCTION_FILES:
+                patch_path = merge_dir / f"{relative}.patch"
+                patch_path.write_text(
+                    append_patch_text(relative, existing_text, raven_text), encoding="utf-8"
+                )
+                patch_rel = patch_path.relative_to(destination).as_posix()
+            else:
+                diff_path = merge_dir / f"{relative}.diff"
+                diff_path.write_text(
+                    unified_diff_text(relative, existing_text, raven_text), encoding="utf-8"
+                )
+                diff_rel = diff_path.relative_to(destination).as_posix()
 
         instructions_path = merge_dir / f"{relative}.instructions.md"
-        suggestion = raven_path.relative_to(destination).as_posix()
-        patch = patch_path.relative_to(destination).as_posix() if patch_written else None
-        body = guided_merge_instructions(relative, suggestion, patch)
+        body = guided_merge_instructions(relative, suggestion, patch_rel, diff_rel)
         instructions_path.write_text(body, encoding="utf-8")
         written.append(instructions_path.relative_to(destination).as_posix())
-        if patch_written:
-            written.append(patch_path.relative_to(destination).as_posix())
+        if patch_rel:
+            written.append(patch_rel)
+        if diff_rel:
+            written.append(diff_rel)
     return written
