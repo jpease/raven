@@ -149,11 +149,13 @@ tool_configs = false
                 self.assertTrue((destination / ".codex" / "rules" / "raven.rules").is_file())
                 self.assertIn("Already up to date", upgrade_output.getvalue())
                 self.assertIn(
-                    "Manual merge required; locally modified Raven-managed files:\n  (none)",
+                    "Manual merge required (locally modified Raven-managed files; "
+                    "will be left untouched):\n  (none)",
                     upgrade_output.getvalue(),
                 )
                 self.assertIn(
-                    "Manual merge required; existing files not known to be Raven-managed:\n  (none)",
+                    "Manual merge required (existing files Raven does not manage; "
+                    "template ships its own version):\n  (none)",
                     upgrade_output.getvalue(),
                 )
 

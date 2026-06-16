@@ -161,7 +161,9 @@ def _run(
     if merge_artifacts:
         print()
         print_section(
-            "Wrote guided merge artifacts for existing instruction files:", merge_artifacts
+            "Wrote guided merge artifacts to .raven/merge/ "
+            "(review each .diff or .patch, merge what applies, then delete them):",
+            merge_artifacts,
         )
     if git_hooks_installed:
         print()

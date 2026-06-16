@@ -11,6 +11,9 @@ __pycache__/
 .raven/session.tmp
 .raven/session-archive.md
 
+# Transient guided-merge helpers; review then delete (never commit)
+.raven/merge/
+
 # Local working notes
 SCRATCH*.md
 TODO.md

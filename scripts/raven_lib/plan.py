@@ -9,7 +9,7 @@ from .apply import (
     copy_paths,
 )
 from .blocks import write_guided_merge_artifacts
-from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH, ROOT_INSTRUCTION_FILES
+from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH
 from .manifest import update_manifest
 from .models import ApplyPlan, Classification, RavenConfig, TemplateEntry
 
@@ -55,15 +55,16 @@ def print_apply_summary(
     if needs_merge:
         print()
         print_section(
-            "!!! Manual merge still required for locally modified Raven-managed files. These were not copied. !!!",
+            "!!! Manual merge still required: you locally modified these Raven-managed files, "
+            "so the upgrade left them untouched. See .raven/merge/<file>.diff for what changed. !!!",
             needs_merge,
         )
 
     if unknown_existing:
         print()
         print_section(
-            "!!! Manual merge still required for existing files not known to be Raven-managed. "
-            "These were not copied. !!!",
+            "!!! Manual merge still required: these files exist but Raven does not manage them; "
+            "the template ships its own version. Compare .raven/merge/<file>.diff before merging. !!!",
             unknown_existing,
         )
 
@@ -76,11 +77,12 @@ def print_dry_run_summary(classification: Classification) -> None:
     print_section("Already up to date; will not copy:", classification.identical)
     print()
     print_section(
-        "Manual merge required; locally modified Raven-managed files:", classification.needs_merge
+        "Manual merge required (locally modified Raven-managed files; will be left untouched):",
+        classification.needs_merge,
     )
     print()
     print_section(
-        "Manual merge required; existing files not known to be Raven-managed:",
+        "Manual merge required (existing files Raven does not manage; template ships its own version):",
         classification.unknown_existing,
     )
     print()
@@ -129,7 +131,7 @@ def build_apply_plan(
         unknown_existing=unknown_existing,
         excluded=classification.excluded,
     )
-    guided_merge_paths = sorted((set(needs_merge) | set(unknown_existing)) & ROOT_INSTRUCTION_FILES)
+    guided_merge_paths = sorted(set(needs_merge) | set(unknown_existing))
 
     return ApplyPlan(
         requested_overrides=requested_overrides,
@@ -187,7 +189,8 @@ def print_dry_run_plan(
     if plan.guided_merge_paths:
         print()
         print_section(
-            "Would write guided merge artifacts for existing instruction files:",
+            "Would write guided merge artifacts to .raven/merge/ for these conflicting files "
+            "(.patch for instruction files, .diff for others):",
             plan.guided_merge_paths,
         )
     return 0
