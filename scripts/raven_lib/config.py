@@ -223,6 +223,10 @@ _PLATFORM_GATED_SKILLS: dict[str, str] = {
     "raven-gitlab-issues": "gitlab",
 }
 
+_TEMPLATE_GATED_SKILLS: dict[str, str] = {
+    "raven-dotfiles": "dotfiles",
+}
+
 
 def platform_excluded(relative: str, config: RavenConfig) -> bool:
     """Exclude issue-tracker skills that don't match the configured platform.
@@ -242,10 +246,27 @@ def platform_excluded(relative: str, config: RavenConfig) -> bool:
     return False
 
 
+def template_excluded(relative: str, config: RavenConfig) -> bool:
+    """Exclude skills that only apply to a specific template type.
+
+    Skills under .agents/skills/<name> (and their .claude/skills/<name> twins)
+    are gated by template: raven-dotfiles requires template=dotfiles.
+    """
+    for skill_name, required_template in _TEMPLATE_GATED_SKILLS.items():
+        is_this_skill = path_within(relative, f".agents/skills/{skill_name}") or path_within(
+            relative, f".claude/skills/{skill_name}"
+        )
+        if is_this_skill and config.template != required_template:
+            return True
+    return False
+
+
 def config_excluded(relative: str, config: RavenConfig) -> bool:
     if component_disabled(relative, config):
         return True
     if platform_excluded(relative, config):
+        return True
+    if template_excluded(relative, config):
         return True
     return any(path_matches(relative, pattern) for pattern in config.exclude_paths)
 
