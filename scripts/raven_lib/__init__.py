@@ -47,6 +47,7 @@ from .config import (
     platform_excluded,
     replace_platform_line,
     strip_comment,
+    template_excluded,
 )
 from .constants import (
     CLAUDE_BACKUP_PATH,
@@ -160,6 +161,7 @@ __all__ = [
     "component_disabled",
     "config_excluded",
     "platform_excluded",
+    "template_excluded",
     "replace_platform_line",
     "_update_config_platform",
     # template

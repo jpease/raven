@@ -80,6 +80,10 @@ def _run(
         # Dry runs must not write config, but the preview should still
         # reflect the requested platform's skill gating.
         config = replace(config, platform=platform_override)
+    # Fresh installs have config.template=None until after _create_config writes it.
+    # Apply the template being installed so template-gated skills are correctly
+    # included or excluded in both dry-run and live runs.
+    config = replace(config, template=config.template or template_name)
     template = REPO_ROOT / template_name
     excludes = set() if include_readme else DEFAULT_EXCLUDES
 

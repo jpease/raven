@@ -272,6 +272,61 @@ class PlatformGatingTests(RavenTestCase):
         )
 
 
+class TemplateGatingTests(RavenTestCase):
+    """The raven-dotfiles skill is gated to template=dotfiles."""
+
+    def _make_config(self, template: str) -> raven.RavenConfig:
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(raven.default_config_text(template, False), encoding="utf-8")
+        return raven.load_config(self.destination)
+
+    def _skill_entries(self, template: str) -> set[str]:
+        config = self._make_config(template)
+        template_dir = REPO_ROOT / template
+        entries = raven.iter_template_entries(template_dir, self.excludes, config)
+        return {e.relative for e in entries}
+
+    def test_dotfiles_template_includes_dotfiles_skill(self):
+        entries = self._skill_entries("dotfiles")
+        self.assertTrue(
+            any("raven-dotfiles" in e for e in entries),
+            f"raven-dotfiles not found in entries: {sorted(entries)[:10]}",
+        )
+
+    def test_python_template_excludes_dotfiles_skill(self):
+        entries = self._skill_entries("python")
+        self.assertFalse(
+            any("raven-dotfiles" in e for e in entries),
+            "raven-dotfiles should be excluded when template=python",
+        )
+
+    def test_template_excluded_helper_directly(self):
+        config_dotfiles = self._make_config("dotfiles")
+        config_python = self._make_config("python")
+
+        self.assertFalse(
+            raven.template_excluded(".agents/skills/raven-dotfiles/SKILL.md", config_dotfiles)
+        )
+        self.assertTrue(
+            raven.template_excluded(".agents/skills/raven-dotfiles/SKILL.md", config_python)
+        )
+        # .claude/skills twin is also gated
+        self.assertTrue(
+            raven.template_excluded(".claude/skills/raven-dotfiles/SKILL.md", config_python)
+        )
+        # unrelated skills are never excluded by template
+        self.assertFalse(
+            raven.template_excluded(".agents/skills/raven-commit/SKILL.md", config_python)
+        )
+
+    def test_template_excluded_when_template_is_none(self):
+        config_no_template = raven.build_config({}, exists=False)
+        self.assertTrue(
+            raven.template_excluded(".agents/skills/raven-dotfiles/SKILL.md", config_no_template)
+        )
+
+
 class PlatformDryRunTests(RavenTestCase):
     """Fresh-install dry runs must preview --platform gating without writing config."""
 
