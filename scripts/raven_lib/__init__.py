@@ -6,6 +6,7 @@ from .apply import (
     claude_symlink_adoption_needed,
     copy_paths,
     prompt_for_claude_symlink_adoption,
+    reconcile_state,
 )
 from .blocks import (
     append_patch_text,
@@ -15,10 +16,12 @@ from .blocks import (
     find_raven_block,
     guided_merge_instructions,
     normalized_block_content,
+    pending_merge_paths,
     raven_block_begin_for,
     raven_block_is_unchanged,
     raven_block_sha256,
     raven_managed_block,
+    remove_merge_artifacts,
     template_entry_text,
     unified_diff_text,
     update_raven_block,
@@ -27,6 +30,7 @@ from .blocks import (
 from .cli import (
     _parse_install_language,
     _run,
+    cmd_accept,
     cmd_init,
     cmd_install,
     cmd_upgrade,
@@ -192,6 +196,8 @@ __all__ = [
     "unified_diff_text",
     "guided_merge_instructions",
     "write_guided_merge_artifacts",
+    "pending_merge_paths",
+    "remove_merge_artifacts",
     # manifest
     "load_manifest",
     "git_ref",
@@ -202,6 +208,7 @@ __all__ = [
     # apply
     "classify",
     "copy_paths",
+    "reconcile_state",
     "claude_symlink_adoption_needed",
     "adopt_claude_symlink",
     "prompt_for_claude_symlink_adoption",
@@ -224,5 +231,6 @@ __all__ = [
     "cmd_init",
     "cmd_install",
     "cmd_upgrade",
+    "cmd_accept",
     "main",
 ]

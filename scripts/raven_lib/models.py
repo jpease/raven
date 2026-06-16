@@ -27,6 +27,7 @@ class ManifestRecord:
     kind: str
     installed_sha256: str
     target: str | None = None
+    source_sha256: str | None = None
 
 
 @dataclass(frozen=True)

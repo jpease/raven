@@ -156,6 +156,23 @@ Raven treats `AGENTS.md` as canonical and normally installs `CLAUDE.md` as a sym
 
 The generated `AGENTS.md` patch wraps Raven guidance in a marked block with a content hash. If that block is applied and left unchanged, later `upgrade` runs can limit updates to the Raven block, preserving project-owned content elsewhere in `AGENTS.md`. If the Raven block is edited, a Raven upgrade will report it as requiring manual merge.
 
+## Finish a Manual Merge with `raven accept`
+
+For any conflicting file — a locally modified Raven-managed file, or an existing file Raven does not yet track — Raven leaves your file untouched and writes review artifacts under `.raven/merge/`:
+
+- `<file>.raven`: the current template version.
+- `<file>.diff`: a review-only diff from your file to the template (for non-instruction files).
+- `<file>.instructions.md`: how to merge.
+
+After you merge the template's changes by hand, record the result so future upgrades stop re-prompting:
+
+```sh
+raven accept            # accept every pending merge under .raven/merge/
+raven accept .mcp.json  # or accept specific paths
+```
+
+`accept` records your merged file as the new baseline — its current content plus the current template version — and removes the merge artifacts. A later `raven upgrade` then reports the file as up to date until Raven's template changes again, at which point it is surfaced for merge once more rather than silently overwriting your customizations. Preview with `raven accept --dry-run`.
+
 ## Restore a Raven-Managed File
 
 By default, Raven will not overwrite a file you have edited locally — even if it is Raven-managed. To force a specific file back to the template version, pass its template-relative path as an argument:

@@ -19,10 +19,14 @@ class ManifestTests(RavenTestCase):
             [path],
         )
 
+        # Model a file installed from an older template: its recorded baseline
+        # (installed == source) predates the current, newer template file.
         target = self.destination / path
         target.write_text("old template content\n", encoding="utf-8")
+        old_hash = raven.file_sha256(target)
         manifest = raven.load_manifest(self.destination)
-        manifest["files"][path]["installedSha256"] = raven.file_sha256(target)
+        manifest["files"][path]["installedSha256"] = old_hash
+        manifest["files"][path]["sourceSha256"] = old_hash
         raven.save_manifest(self.destination, manifest)
 
         classification = raven.classify(self.template, self.destination, self.excludes)

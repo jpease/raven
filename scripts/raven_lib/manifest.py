@@ -108,10 +108,12 @@ def parse_record(raw: object) -> ManifestRecord | None:
     if not isinstance(kind, str) or not isinstance(installed_sha256, str):
         return None
     target = raw.get("target")
+    source_sha256 = raw.get("sourceSha256")
     return ManifestRecord(
         kind=kind,
         installed_sha256=installed_sha256,
         target=target if isinstance(target, str) else None,
+        source_sha256=source_sha256 if isinstance(source_sha256, str) else None,
     )
 
 
