@@ -20,7 +20,7 @@ prefix_rule(
 prefix_rule(
     pattern = ["git", "clean", "-fdx"],
     decision = "prompt",
-    justification = "git clean -fdx can remove untracked work and generated state; require explicit approval.",
+    justification = "git clean -fdx removes untracked work and state; require explicit approval.",
     match = ["git clean -fdx"],
 )
 
