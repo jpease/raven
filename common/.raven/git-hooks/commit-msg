@@ -8,11 +8,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Match Co-Authored-By or Generated-by trailers that name a known AI tool or AI provider domain.
+# Match AI attribution trailers: Co-Authored-By/Generated-by naming a known AI tool or provider
+# domain, or the Claude-session link trailer injected by the Claude Code system prompt.
 _AI_TRAILER = re.compile(
     r"^(?:co-authored-by|generated-by):\s+.*"
     r"(?:claude|copilot|codex|chatgpt|gpt-[0-9]+|gemini|llama|mistral"
-    r"|@anthropic\.com|@openai\.com)",
+    r"|@anthropic\.com|@openai\.com)"
+    r"|^claude-session:\s+\S+",
     re.IGNORECASE,
 )
 
