@@ -49,6 +49,13 @@ class CommitMsgHookTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertNotIn("Generated-by", out)
 
+    def test_strips_claude_session_trailer(self):
+        msg = "perf: optimize loop\n\nClaude-Session: https://claude.ai/code/session_abc123\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Claude-Session", out)
+        self.assertIn("perf: optimize loop", out)
+
     def test_removes_trailing_blank_lines_after_strip(self):
         msg = "feat: add thing\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n"
         out, rc = self._run_hook(msg)
