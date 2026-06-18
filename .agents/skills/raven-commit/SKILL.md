@@ -1,6 +1,7 @@
 ---
 name: raven-commit
 description: Use when writing git commit messages. Enforces Conventional Commits format.
+model: haiku
 allowed-tools: Bash(git *)
 ---
 
