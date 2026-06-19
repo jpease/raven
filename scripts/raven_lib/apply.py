@@ -159,7 +159,9 @@ def copy_paths(
                 target.unlink()
             target.symlink_to(os.readlink(entry.source))
         else:
-            shutil.copy2(entry.source, target, follow_symlinks=True)
+            if target.is_symlink():
+                target.unlink()
+            shutil.copy2(entry.source, target)
 
 
 def claude_symlink_adoption_needed(destination: Path, entries: dict[str, TemplateEntry]) -> bool:
