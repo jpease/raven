@@ -22,9 +22,10 @@ from pathlib import Path
 DEFAULT_THRESHOLD = 500
 
 # Extensions the raven-skeleton ast-grep backend can produce a skeleton for.
-# Keep in sync with raven-skeleton.py NODE_KINDS (Elixir is deferred there, so
-# it is intentionally absent here -- gating it would suggest a helper that
-# returns nothing).
+# Keep in sync with the languages raven-skeleton.py supports via ast-grep --
+# its NODE_KINDS table plus STRUCTURAL_RULES (Elixir is handled by a structural
+# rule). Gating an extension the helper cannot skeletonize would point the agent
+# at a helper that returns nothing.
 SUPPORTED_EXTENSIONS = {
     ".py",
     ".ts",
@@ -35,6 +36,8 @@ SUPPORTED_EXTENSIONS = {
     ".rs",
     ".swift",
     ".lua",
+    ".ex",
+    ".exs",
 }
 
 _GATE_RE = re.compile(r"^\s*read_gate\s*=\s*true\b", re.IGNORECASE)

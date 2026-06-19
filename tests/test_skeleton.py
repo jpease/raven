@@ -109,14 +109,20 @@ class NodeKindTests(RavenTestCase):
                 self.assertIn(language, detectable)
                 self.assertTrue(module.node_kinds(language))
 
-    def test_elixir_is_detected_but_deferred_from_astgrep(self):
-        # Elixir declarations are `call` nodes, indistinguishable from ordinary
-        # calls by a plain --kind selector; it needs a structural rule (follow-up).
-        # Until then it is detected (so the fallback ladder handles it) but has
-        # no ast-grep node kinds.
+    def test_elixir_uses_a_structural_rule_not_node_kinds(self):
+        # Elixir def/defp/defmodule are `call` nodes that a plain --kind selector
+        # cannot isolate, so they are handled by an ast-grep structural rule
+        # instead of the node-kind table.
         module = _module()
         self.assertEqual(module.detect_language("/repo/a.ex"), "elixir")
         self.assertEqual(module.node_kinds("elixir"), [])
+        self.assertIsNotNone(module.astgrep_rule("elixir"))
+        self.assertTrue(module.astgrep_supports("elixir"))
+
+    def test_kind_based_languages_have_no_structural_rule(self):
+        module = _module()
+        self.assertIsNone(module.astgrep_rule("python"))
+        self.assertTrue(module.astgrep_supports("python"))
 
     def test_unknown_language_has_no_kinds(self):
         module = _module()
@@ -248,6 +254,24 @@ class AstgrepSkeletonTests(RavenTestCase):
                 {"start_line": 4, "end_line": 4, "header": "constructor() {}"},
                 {"start_line": 5, "end_line": 5, "header": "load(): void {}"},
                 {"start_line": 8, "end_line": 8, "header": "interface User { name: string }"},
+            ],
+        )
+
+    @unittest.skipUnless(HAVE_ASTGREP, "ast-grep not installed")
+    def test_elixir_golden_via_structural_rule(self):
+        module = _module()
+        path = self._write(
+            "golden.ex",
+            "defmodule M do\n  def alpha(x) do\n    x\n  end\n\n"
+            "  defp beta do\n    1\n  end\nend\n",
+        )
+
+        self.assertEqual(
+            module.astgrep_skeleton(str(path)),
+            [
+                {"start_line": 1, "end_line": 9, "header": "defmodule M do"},
+                {"start_line": 2, "end_line": 4, "header": "def alpha(x) do"},
+                {"start_line": 6, "end_line": 8, "header": "defp beta do"},
             ],
         )
 
