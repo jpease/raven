@@ -147,7 +147,8 @@ def cmd_init(args: list[str]) -> int:
     print(f"Session initialized: {len(ns.units)} unit(s), project type '{ns.project_type}'.")
     if ns.parent:
         print(
-            f"Parent issue: {ns.parent}. Create child issues manually with gh/glab and record them in session.md."
+            f"Parent issue: {ns.parent}."
+            " Create child issues manually with gh/glab and record them in session.md."
         )
     _update_gitignore()
     return 0
@@ -185,7 +186,8 @@ def cmd_status(args: list[str]) -> int:
         print(f"Remaining    : {', '.join(u['name'] for u in pending[1:])}")
     if len(data["context_lines"]) > CONTEXT_SOFT_CAP:
         print(
-            f"warning: context block is {len(data['context_lines'])} lines (>{CONTEXT_SOFT_CAP}). Consider running --archive."
+            f"warning: context block is {len(data['context_lines'])} lines"
+            f" (>{CONTEXT_SOFT_CAP}). Consider running --archive."
         )
     return 0
 

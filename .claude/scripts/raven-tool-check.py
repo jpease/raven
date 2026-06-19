@@ -32,7 +32,9 @@ TOOLS = [
         "id": "just",
         "name": "just",
         "commands": [["just", "--version"]],
-        "purpose": "consistent task runner for test, lint, format, typecheck, and hook installation",
+        "purpose": (
+            "consistent task runner for test, lint, format, typecheck, and hook installation"
+        ),
         "install": {
             "darwin": "official install docs: https://just.systems/man/en/",
             "linux": "official install docs: https://just.systems/man/en/",
@@ -54,11 +56,20 @@ TOOLS = [
         "id": "uvx",
         "name": "uvx",
         "commands": [["uvx", "--version"]],
-        "purpose": "running Python-packaged tools such as Semble MCP without a permanent project dependency",
+        "purpose": (
+            "running Python-packaged tools such as Semble MCP"
+            " without a permanent project dependency"
+        ),
         "install": {
-            "darwin": "official install docs: https://docs.astral.sh/uv/getting-started/installation/",
-            "linux": "official install docs: https://docs.astral.sh/uv/getting-started/installation/",
-            "windows": "official install docs: https://docs.astral.sh/uv/getting-started/installation/",
+            "darwin": (
+                "official install docs: https://docs.astral.sh/uv/getting-started/installation/"
+            ),
+            "linux": (
+                "official install docs: https://docs.astral.sh/uv/getting-started/installation/"
+            ),
+            "windows": (
+                "official install docs: https://docs.astral.sh/uv/getting-started/installation/"
+            ),
         },
     },
     {
@@ -150,7 +161,9 @@ TOOLS = [
                 "validate native Windows vs WSL hook behavior for this repo"
             ),
         },
-        "optionalWhen": "secret scanning is provided by another approved project or platform control",
+        "optionalWhen": (
+            "secret scanning is provided by another approved project or platform control"
+        ),
     },
     {
         "id": "jq",
@@ -162,7 +175,10 @@ TOOLS = [
             "linux": "official install docs: https://jqlang.org/download/",
             "windows": "official install docs: https://jqlang.org/download/",
         },
-        "optionalWhen": "the task does not involve JSON transformation or another structured parser is available",
+        "optionalWhen": (
+            "the task does not involve JSON transformation"
+            " or another structured parser is available"
+        ),
     },
     {
         "id": "yq",
@@ -174,7 +190,10 @@ TOOLS = [
             "linux": "official install docs: https://github.com/mikefarah/yq/#install",
             "windows": "official install docs: https://github.com/mikefarah/yq/#install",
         },
-        "optionalWhen": "the task does not involve YAML transformation or another structured parser is available",
+        "optionalWhen": (
+            "the task does not involve YAML transformation"
+            " or another structured parser is available"
+        ),
     },
     {
         "id": "rtk",
@@ -522,15 +541,16 @@ def print_session_start_prompt(missing: list[dict], memory_path: Path) -> None:
             print(f"  Note: {result['optionalWhen']}")
     print()
     print(
-        "Ask the user whether they want to install the missing tools, receive install instructions, "
-        "be reminded later, or stop being reminded."
+        "Ask the user whether they want to install the missing tools,"
+        " receive install instructions, be reminded later, or stop being reminded."
     )
     print(
         "If tools are installed, run `python .claude/scripts/raven-tool-check.py --write` "
         "afterward to update local memory."
     )
     print(
-        "If the user chooses not to be reminded, run `python .claude/scripts/raven-tool-check.py --no-reminder`."
+        "If the user chooses not to be reminded, run"
+        " `python .claude/scripts/raven-tool-check.py --no-reminder`."
     )
 
 
@@ -601,7 +621,9 @@ def print_human_report(report: ToolCheckReport) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Check recommended RAVEN tooling and optionally update RAVEN's local tool-check cache.",
+        description=(
+            "Check recommended RAVEN tooling and optionally update RAVEN's local tool-check cache."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Default human use:
