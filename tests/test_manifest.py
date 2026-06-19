@@ -58,6 +58,36 @@ class ManifestTests(RavenTestCase):
         self.assertNotIn(path, classification.needs_merge)
         self.assertNotIn(path, classification.will_upgrade)
 
+    def test_final_newline_only_diff_upgrades_instead_of_merging(self):
+        path = ".claude/scripts/raven-tool-check.py"
+        raven.copy_paths(self.template, self.destination, [path])
+        raven.update_manifest(
+            self.destination,
+            "python",
+            self.template,
+            self.excludes,
+            raven.load_config(self.destination),
+            [path],
+        )
+
+        # Install differs from the template only by its final newline, and the
+        # baseline differs from both (so the 3-way reconcile would otherwise say
+        # needs_merge -- a genuine both-changed conflict).
+        target = self.destination / path
+        template_text = (self.template / path).read_text(encoding="utf-8")
+        self.assertTrue(template_text.endswith("\n"))
+        target.write_text(template_text.rstrip("\n"), encoding="utf-8")
+        manifest = raven.load_manifest(self.destination)
+        manifest["files"][path]["installedSha256"] = "0" * 64
+        manifest["files"][path]["sourceSha256"] = "0" * 64
+        raven.save_manifest(self.destination, manifest)
+
+        classification = raven.classify(self.template, self.destination, self.excludes)
+
+        # A newline-only difference is cosmetic: take the template, no guided merge.
+        self.assertIn(path, classification.will_upgrade)
+        self.assertNotIn(path, classification.needs_merge)
+
     def test_update_manifest_records_file_hashes(self):
         path = ".claude/scripts/raven-tool-check.py"
         raven.copy_paths(self.template, self.destination, [path])
