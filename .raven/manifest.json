@@ -307,9 +307,9 @@
       "sourceSha256": "15249ab10417d8366caeb1d3c122e7a79ab2c445f9037da70bba305e09bafba3"
     },
     ".mcp.json": {
-      "installedSha256": "792dfd7a6a441f528e7ce98e9fe37850a41517828b21fc4878bc303af95e2cf8",
+      "installedSha256": "09cfaec8d8f45e26bd21eb53e0bc4f6a23f2cc7aaa45bc74245f4395ecede2dd",
       "kind": "file",
-      "sourceSha256": "792dfd7a6a441f528e7ce98e9fe37850a41517828b21fc4878bc303af95e2cf8"
+      "sourceSha256": "09cfaec8d8f45e26bd21eb53e0bc4f6a23f2cc7aaa45bc74245f4395ecede2dd"
     },
     ".raven/git-hooks/commit-msg": {
       "installedSha256": "c5f5c32d03322e1acd19ac92a58a27022cde5c64cc4f1c846a7f049e3ec213a0",
@@ -352,7 +352,7 @@
       "sourceSha256": "5953156d7e0c564a427251316eaf26f8870e6483ae2197f916b630e4f93e31ae"
     },
     "AGENTS.md": {
-      "installedSha256": "1c3e9ae32a369f4846c1e5542b7881c27d62b1d70455e9f8014dd035f4fab327",
+      "installedSha256": "26fe347e06c945d0666df59c9a929827776ac2d0cf1049b30b7bae603d4caa49",
       "kind": "file",
       "sourceSha256": "9636a60ac3421b53ffce9e1bf69f84d2be459f4362ce050c39b4a34e4e691077"
     },
@@ -373,8 +373,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "2e9f3aa9305a",
+  "ravenVersion": "3abed07f7917",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-06-19T22:01:18.207519+00:00"
+  "updatedAt": "2026-06-19T23:17:22.202570+00:00"
 }
