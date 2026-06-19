@@ -100,6 +100,17 @@ paths = []
 # Set to false to fall back to instructional-only enforcement.
 checkpoint_enforcement = true
 
+[skeleton]
+# Skeleton-first read gate (Claude Code only). When read_gate is true, a
+# PreToolUse hook denies unbounded reads of large supported-language files and
+# points the agent at the raven-skeleton helper to fetch a symbol map and read
+# only the ranges it needs. Default off: rung-0 guidance and the raven-skeleton
+# skill still apply regardless. Supported languages: Python, TypeScript/TSX,
+# JavaScript, Go, Rust, Swift, Lua.
+# read_gate = true
+# Minimum file length in lines before the gate fires. Default 500.
+# read_gate_threshold_lines = 500
+
 [issue_tracker]
 # External issue tracker for this project. Controls which issue-tracker
 # workflow skill is active and which CLI raven-tool-bootstrap checks for.
