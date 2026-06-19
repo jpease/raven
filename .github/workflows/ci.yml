@@ -77,7 +77,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        template: [python, typescript, go, rust, swift, elixir]
+        template: [python, typescript, go, rust, swift, elixir, lua, dotfiles]
 
     steps:
       - uses: actions/checkout@v4
