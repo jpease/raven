@@ -1,6 +1,6 @@
 # Run the test suite
 test:
-    python -m pytest
+    python -m unittest discover -s tests
 
 # Run lint checks
 lint:
