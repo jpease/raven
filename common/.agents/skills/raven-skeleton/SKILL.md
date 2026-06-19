@@ -36,11 +36,26 @@ This implements the skeleton-first guidance in `AGENTS.md` Retrieval Discipline.
 
 ## When No Skeleton Is Available
 
-If the helper prints `No skeleton available ...` (unsupported language, or
-`ast-grep` is not installed) or `No top-level symbols found`, fall back to reading
-the file directly. The helper never blocks a read; it only offers a cheaper path.
+If the helper prints `No skeleton available ...` (no symbols found, unsupported
+language, or no backend installed), fall back to reading the file directly. The
+helper never blocks a read; it only offers a cheaper path.
+
+## Approximate Ranges
+
+If the output begins with `Approximate declaration ranges; AST generator
+unavailable.`, the skeleton came from a degraded `rg` declaration scan: the start
+lines are real but each end line is inferred (the line before the next
+declaration). Treat the ranges as hints and read a little generously around them.
 
 ## Supported Languages
 
-ast-grep backend: Python, TypeScript/TSX, JavaScript, Go, Rust, Swift, Lua. Other
-languages fall through to the no-skeleton message above.
+The helper tries a backend ladder and notes which tier produced the skeleton:
+
+1. **ast-grep** (exact): Python, TypeScript/TSX, JavaScript, Go, Rust, Swift, Lua,
+   and Elixir (via a structural rule). Needs an installed `ast-grep` binary.
+2. **Universal Ctags** (exact): used when ast-grep is unavailable or finds nothing;
+   requires genuine Universal Ctags with JSON support.
+3. **`rg`** (approximate): a final degraded declaration scan; see Approximate
+   Ranges above.
+
+Languages outside these tiers fall through to the no-skeleton message.
