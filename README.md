@@ -268,7 +268,7 @@ Raven-managed paths use `raven-*` wherever possible.
 
 - `common/`: shared policy, skills, subagents, hooks, docs, rules, scripts, and MCP examples.
 - `python/`, `swift/`, `rust/`, `typescript/`, `go/`, `elixir/`, `lua/`, `dotfiles/`: templates that assemble common guidance with stack-specific Raven rules.
-- `scripts/raven`: executable CLI wrapper for `raven init`, `raven install`, and `raven upgrade`.
+- `scripts/raven`: executable CLI wrapper for `raven init`, `raven install`, `raven upgrade`, `raven doctor`, and `raven assess`.
 - `scripts/raven.py` and `scripts/raven_lib/`: Python implementation for the CLI.
 - `tests/`: applicator tests.
 - `project-skills/`: maintenance-only skills for this repository; not copied into destination repos.
