@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import platform
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -27,6 +28,10 @@ from .plan import (
     print_dry_run_plan,
     print_section,
 )
+from .assess import build_assess_findings
+from .doctor import build_doctor_findings
+from .findings import exit_code
+from .report import render_human, render_json
 from .template import entries_for_destination
 
 
@@ -353,6 +358,43 @@ def cmd_accept(args: argparse.Namespace) -> int:
     return 0
 
 
+def _os_name() -> str:
+    name = platform.system().lower()
+    if name == "darwin":
+        return "darwin"
+    if name == "windows":
+        return "windows"
+    return "linux"
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    destination = _resolve_destination(args)
+    if destination is None:
+        return 2
+    findings = build_doctor_findings(destination)
+    output = (
+        render_json("doctor", _os_name(), findings)
+        if args.json
+        else render_human("doctor", _os_name(), findings)
+    )
+    print(output)
+    return exit_code(findings)
+
+
+def cmd_assess(args: argparse.Namespace) -> int:
+    destination = _resolve_destination(args)
+    if destination is None:
+        return 2
+    findings = build_assess_findings(destination, run=args.run)
+    output = (
+        render_json("assess", _os_name(), findings)
+        if args.json
+        else render_human("assess", _os_name(), findings)
+    )
+    print(output)
+    return exit_code(findings)
+
+
 def main() -> int:
     supported_languages = ", ".join(list_language_templates())
     parser = argparse.ArgumentParser(
@@ -368,6 +410,9 @@ Common commands:
   raven upgrade
   raven upgrade .claude/scripts/raven-tool-check.py
   raven accept
+  raven doctor
+  raven assess
+  raven assess --run
 
 Supported languages:
   {supported_languages}
@@ -570,6 +615,33 @@ template as its source, then removes the merge artifacts.
         help="include the language template README.md when resolving template entries",
     )
 
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        usage="raven doctor [OPTIONS]",
+        help="diagnose Raven's install and the local toolchain",
+        description=(
+            "Read-only diagnostics for Raven's own installation and the local tooling.\n"
+            "Exits non-zero only when the Raven install itself is broken."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    doctor_parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
+
+    assess_parser = subparsers.add_parser(
+        "assess",
+        usage="raven assess [OPTIONS]",
+        help="grade the project against the active template's standards",
+        description=(
+            "Read-only scorecard of how well this project conforms to Raven's gate and\n"
+            "convention expectations. Static by default; --run executes the gates."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    assess_parser.add_argument(
+        "--run", action="store_true", help="execute the quality gates for a true pass/fail verdict"
+    )
+    assess_parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -580,4 +652,8 @@ template as its source, then removes the merge artifacts.
         return cmd_upgrade(args)
     if args.command == "accept":
         return cmd_accept(args)
+    if args.command == "doctor":
+        return cmd_doctor(args)
+    if args.command == "assess":
+        return cmd_assess(args)
     return 1

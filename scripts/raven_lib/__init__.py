@@ -31,6 +31,8 @@ from .cli import (
     _parse_install_language,
     _run,
     cmd_accept,
+    cmd_assess,
+    cmd_doctor,
     cmd_init,
     cmd_install,
     cmd_upgrade,
@@ -120,6 +122,10 @@ from .template import (
     iter_template_entries,
     should_preserve_symlink,
 )
+from .findings import Finding, Severity, exit_code, summarize
+from .report import render_human, render_json
+from .doctor import build_doctor_findings
+from .assess import build_assess_findings
 
 __all__ = [
     # constants
@@ -232,5 +238,18 @@ __all__ = [
     "cmd_install",
     "cmd_upgrade",
     "cmd_accept",
+    "cmd_doctor",
+    "cmd_assess",
     "main",
+    # findings
+    "Finding",
+    "Severity",
+    "exit_code",
+    "summarize",
+    # report
+    "render_human",
+    "render_json",
+    # doctor / assess
+    "build_doctor_findings",
+    "build_assess_findings",
 ]
