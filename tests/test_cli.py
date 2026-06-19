@@ -53,5 +53,51 @@ class CliTests(RavenTestCase):
         self.assertNotIn("language_or_path", result.stdout)
 
 
+import json as _json
+
+
+class DoctorAssessCliTests(RavenTestCase):
+    def _run(self, *cli_args):
+        return subprocess.run(
+            [sys.executable, str(RAVEN_PATH), "-d", str(self.destination), *cli_args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_doctor_help_lists_command(self):
+        result = subprocess.run(
+            [sys.executable, str(RAVEN_PATH), "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertIn("doctor", result.stdout)
+        self.assertIn("assess", result.stdout)
+
+    def test_doctor_on_empty_dir_errors(self):
+        result = self._run("doctor", "--json")
+        self.assertEqual(result.returncode, 1)
+        data = _json.loads(result.stdout)
+        self.assertEqual(data["command"], "doctor")
+        self.assertTrue(any(f["severity"] == "error" for f in data["findings"]))
+
+    def test_assess_json_on_installed_repo_exits_zero(self):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n', encoding="utf-8"
+        )
+        (self.destination / "AGENTS.md").write_text("# A\n", encoding="utf-8")
+        (self.destination / "justfile").write_text(
+            "lint:\n    ruff check .\nformat:\n    ruff format .\n"
+            "typecheck:\n    pyright\ntest:\n    python -m pytest\n",
+            encoding="utf-8",
+        )
+        result = self._run("assess", "--json")
+        self.assertEqual(result.returncode, 0)
+        data = _json.loads(result.stdout)
+        self.assertEqual(data["command"], "assess")
+
+
 if __name__ == "__main__":
     unittest.main()
