@@ -15,7 +15,7 @@ REPO = "raven"
 
 
 def run_gh_command(args):
-    result = subprocess.run(["gh"] + args, capture_output=True, text=True)
+    result = subprocess.run(["gh", *args], capture_output=True, text=True)
     if result.returncode != 0:
         print(f"Error running gh command: {result.stderr}", file=sys.stderr)
         return None

@@ -418,12 +418,7 @@ def _configured_mcp_server_names(output: str) -> set[str]:
     names: set[str] = set()
     for raw_line in output.splitlines():
         line = raw_line.strip()
-        if (
-            not line
-            or line.startswith("[")
-            or line.startswith("└")
-            or line.startswith("Suggestion:")
-        ):
+        if not line or line.startswith(("[", "└", "Suggestion:")):
             continue
         if ":" not in line:
             continue

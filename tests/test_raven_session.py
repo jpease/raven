@@ -18,7 +18,7 @@ def load_session():
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     assert spec.loader is not None
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    spec.loader.exec_module(module)
     return module
 
 
@@ -102,7 +102,7 @@ class SessionValidateCompleteTests(unittest.TestCase):
             os.chdir(orig)
 
     def _init(self, *units: str) -> None:
-        self._run(["--init", "greenfield"] + list(units))
+        self._run(["--init", "greenfield", *list(units)])
 
     def test_validate_passes_for_current_unit(self):
         self._init("unit-a", "unit-b")
@@ -215,7 +215,7 @@ def load_hook():
     assert spec is not None
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    spec.loader.exec_module(mod)
     return mod
 
 

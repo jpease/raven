@@ -25,13 +25,13 @@ class IsUnboundedReadTests(RavenTestCase):
 
 class ShouldGateTests(RavenTestCase):
     def _gate(self, **kw):
-        defaults = dict(
-            tool_input={"file_path": "/a.py"},
-            line_count=2000,
-            enabled=True,
-            threshold=500,
-            supported=True,
-        )
+        defaults = {
+            "tool_input": {"file_path": "/a.py"},
+            "line_count": 2000,
+            "enabled": True,
+            "threshold": 500,
+            "supported": True,
+        }
         defaults.update(kw)
         return _module().should_gate(**defaults)
 

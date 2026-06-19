@@ -3,6 +3,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 from helpers import REPO_ROOT, RavenTestCase, load_script_module
 
@@ -281,7 +282,7 @@ class ParseCtagsJsonTests(RavenTestCase):
     it carries both ``line`` and ``end``. The header is read from the source so
     it matches the ast-grep tier's "first line of the declaration" convention."""
 
-    SOURCE_LINES = [
+    SOURCE_LINES: ClassVar[list[str]] = [
         "def top_function(x):",  # 1
         "    y = 1",  # 2
         "    return y",  # 3

@@ -43,3 +43,21 @@ def run_command(command: list[str], cwd: Path, timeout: int = 120) -> RunResult:
 
 
 Runner = Callable[[list[str], Path], RunResult]
+
+# Short budget for `tool --version` style availability probes.
+PROBE_TIMEOUT_SECONDS = 15
+# Generous budget for executing real quality gates (test suites, builds).
+GATE_TIMEOUT_SECONDS = 600
+
+
+def make_runner(timeout: int) -> Runner:
+    """Build a Runner that invokes run_command with a fixed timeout."""
+
+    def runner(command: list[str], cwd: Path) -> RunResult:
+        return run_command(command, cwd, timeout=timeout)
+
+    return runner
+
+
+probe_runner = make_runner(PROBE_TIMEOUT_SECONDS)
+gate_runner = make_runner(GATE_TIMEOUT_SECONDS)

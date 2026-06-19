@@ -4,14 +4,10 @@ from pathlib import Path
 
 from .config import load_config
 from .findings import Finding, Severity
-from .gates import gate_spec_for
-from .runner import RunResult, Runner
+from .gates import gate_spec_for, recipe_present
+from .runner import Runner, RunResult
 
 _GATES = "Gate compliance"
-
-
-def _recipe_present(justfile_text: str, recipe: str) -> bool:
-    return any(line.rstrip().startswith(f"{recipe}:") for line in justfile_text.splitlines())
 
 
 def gate_compliance_findings(destination: Path, runner: Runner) -> list[Finding]:
@@ -27,7 +23,7 @@ def gate_compliance_findings(destination: Path, runner: Runner) -> list[Finding]
     findings: list[Finding] = []
     used_fallback = False
     for recipe in spec.recipes:
-        use_just = just_available and _recipe_present(justfile_text, recipe)
+        use_just = just_available and recipe_present(justfile_text, recipe)
         if use_just:
             command = ["just", recipe]
         else:
