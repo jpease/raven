@@ -27,7 +27,8 @@ ConfigValue: TypeAlias = bool | int | str | list["ConfigValue"]
 
 
 def strip_comment(line: str) -> str:
-    in_quote = False
+    in_double = False
+    in_single = False
     escaped = False
     result = []
     for char in line:
@@ -35,25 +36,65 @@ def strip_comment(line: str) -> str:
             result.append(char)
             escaped = False
             continue
-        if char == "\\" and in_quote:
+        if char == "\\" and in_double:
             result.append(char)
             escaped = True
             continue
-        if char == '"':
-            in_quote = not in_quote
+        if char == "'" and not in_double:
+            in_single = not in_single
             result.append(char)
             continue
-        if char == "#" and not in_quote:
+        if char == '"' and not in_single:
+            in_double = not in_double
+            result.append(char)
+            continue
+        if char == "#" and not in_double and not in_single:
             break
         result.append(char)
     return "".join(result).strip()
+
+
+def _split_array(inner: str) -> list[str]:
+    """Split array content on commas, respecting single- and double-quoted strings."""
+    parts: list[str] = []
+    current: list[str] = []
+    in_double = False
+    in_single = False
+    escaped = False
+    for char in inner:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == "\\" and in_double:
+            current.append(char)
+            escaped = True
+            continue
+        if char == "'" and not in_double:
+            in_single = not in_single
+            current.append(char)
+            continue
+        if char == '"' and not in_single:
+            in_double = not in_double
+            current.append(char)
+            continue
+        if char == "," and not in_double and not in_single:
+            parts.append("".join(current))
+            current = []
+            continue
+        current.append(char)
+    if current or inner:
+        parts.append("".join(current))
+    return parts
 
 
 def parse_value(value: str) -> ConfigValue:
     value = value.strip()
     if value in {"true", "false"}:
         return value == "true"
-    if value.startswith('"') and value.endswith('"'):
+    if value.startswith('"') and value.endswith('"') and len(value) >= 2:
+        return value[1:-1]
+    if value.startswith("'") and value.endswith("'") and len(value) >= 2:
         return value[1:-1]
     if value.startswith("[") and value.endswith("]"):
         inner = value[1:-1].strip()
@@ -61,7 +102,7 @@ def parse_value(value: str) -> ConfigValue:
             return []
         return [
             parse_value(part.strip().rstrip(","))
-            for part in inner.split(",")
+            for part in _split_array(inner)
             if part.strip().rstrip(",")
         ]
     try:
@@ -272,29 +313,40 @@ def config_excluded(relative: str, config: RavenConfig) -> bool:
 
 
 def replace_platform_line(text: str, platform: str) -> str:
-    """Return config text with the active [issue_tracker] platform value replaced.
+    """Return config text with the active [issue_tracker] platform value upserted.
 
     Pure: rewrites only the first uncommented ``platform =`` line inside the
     ``[issue_tracker]`` section, leaving commented examples and other sections
-    untouched.
+    untouched.  When the section exists but has no active platform key the line
+    is inserted right after the section header.  When the section is absent it
+    is appended at the end of the file.
     """
-    new_lines = []
-    in_section = False
-    updated = False
-    for line in text.splitlines(keepends=True):
+    lines = text.splitlines(keepends=True)
+    new_platform = f'platform = "{platform}"\n'
+
+    # Locate the [issue_tracker] header and the first active platform = line inside it.
+    in_issue_tracker = False
+    issue_tracker_header_idx: int | None = None
+    platform_line_idx: int | None = None
+
+    for i, line in enumerate(lines):
         m = _ISSUE_TRACKER_SECTION_RE.match(line)
         if m:
-            in_section = m.group(1).strip() == "issue_tracker"
-        if (
-            in_section
-            and not updated
-            and _PLATFORM_LINE_RE.match(line)
-            and not line.lstrip().startswith("#")
-        ):
-            new_lines.append(f'platform = "{platform}"\n')
-            updated = True
-            continue
-        new_lines.append(line)
+            in_issue_tracker = m.group(1).strip() == "issue_tracker"
+            if in_issue_tracker:
+                issue_tracker_header_idx = i
+        if in_issue_tracker and _PLATFORM_LINE_RE.match(line) and not line.lstrip().startswith("#"):
+            platform_line_idx = i
+            break
+
+    new_lines = list(lines)
+    if platform_line_idx is not None:
+        new_lines[platform_line_idx] = new_platform
+    elif issue_tracker_header_idx is not None:
+        new_lines.insert(issue_tracker_header_idx + 1, new_platform)
+    else:
+        suffix = "" if (not text or text.endswith("\n")) else "\n"
+        new_lines.append(f"{suffix}\n[issue_tracker]\n{new_platform}")
     return "".join(new_lines)
 
 
