@@ -1,7 +1,8 @@
 # Plan: Skeleton-first reads (rungs 1-3)
 
-Status: Rung 1 core complete (generator + tests + cross-template install).
-Rungs 2-3 pending. Exposure/guidance for the rung-1 helper still open.
+Status: Rung 1 complete (generator + tests + cross-template install + the
+`raven-skeleton` discovery skill). Rungs 2-3 pending. Deferred follow-ups:
+ctags/rg fallback backends, Elixir structural rule.
 
 Source research: `docs/research/hook-read-interception.md`.
 
@@ -27,9 +28,13 @@ is silently dropped from installs until linked into every template. Fixed by
 adding the per-file symlink to all 8 templates, guarded by a new parity test
 (`tests/test_claude_script_symlinks.py`).
 
-Still open in rung 1: ctags/rg fallback backends (deferred — safe degradation
-already works via the "no skeleton" message), and exposure/guidance so agents
-discover the helper.
+Exposure shipped: `common/.agents/skills/raven-skeleton/SKILL.md` documents the
+helper harness-agnostically (it names both the `.claude` and `.codex` script
+paths). Skills auto-propagate via the whole-directory template symlink, so no
+per-template linking was needed (unlike scripts).
+
+Still deferred in rung 1: ctags/rg fallback backends (safe degradation already
+works via the "no skeleton" message).
 
 ## Goal
 
