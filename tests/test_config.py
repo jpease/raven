@@ -43,6 +43,41 @@ class BuildConfigTests(unittest.TestCase):
         self.assertEqual(config.exclude_paths, ["a/b", "c/d"])
 
 
+class ParseSimpleTomlTests(unittest.TestCase):
+    """Issue #28 — TOML parser must handle literal strings, quoted commas, and hash in strings."""
+
+    def test_double_quoted_string_decoded(self):
+        result = raven.parse_simple_toml('template = "rust"\n')
+        self.assertEqual(result["template"], "rust")
+
+    def test_single_quoted_literal_string_decoded(self):
+        result = raven.parse_simple_toml("template = 'rust'\n")
+        self.assertEqual(result["template"], "rust")
+
+    def test_hash_inside_double_quoted_string_not_treated_as_comment(self):
+        result = raven.parse_simple_toml('key = "val#ue"\n')
+        self.assertEqual(result["key"], "val#ue")
+
+    def test_hash_inside_single_quoted_string_not_treated_as_comment(self):
+        result = raven.parse_simple_toml("key = 'val#ue'\n")
+        self.assertEqual(result["key"], "val#ue")
+
+    def test_array_comma_inside_quoted_string_not_split(self):
+        result = raven.parse_simple_toml('[exclude]\npaths = ["docs/a,b.md"]\n')
+        self.assertIsInstance(result.get("exclude"), dict)
+        paths = result["exclude"]["paths"]  # type: ignore[index]
+        self.assertEqual(paths, ["docs/a,b.md"])
+
+    def test_array_with_multiple_items_split_correctly(self):
+        result = raven.parse_simple_toml('[exclude]\npaths = ["a/b.md", "c/d.md"]\n')
+        paths = result["exclude"]["paths"]  # type: ignore[index]
+        self.assertEqual(paths, ["a/b.md", "c/d.md"])
+
+    def test_hash_after_value_is_comment(self):
+        result = raven.parse_simple_toml('key = "value"  # this is a comment\n')
+        self.assertEqual(result["key"], "value")
+
+
 class PathWithinTests(unittest.TestCase):
     def test_matches_exact_and_descendants_only(self):
         self.assertTrue(raven.path_within(".claude/skills", ".claude/skills"))
@@ -67,9 +102,23 @@ class ReplacePlatformLineTests(unittest.TestCase):
         self.assertIn('platform = "gitlab"', result)
         self.assertNotIn('platform = "none"', result)
 
-    def test_no_section_leaves_text_unchanged(self):
+    def test_no_section_appends_issue_tracker_section(self):
         text = 'template = "python"\n'
-        self.assertEqual(raven.replace_platform_line(text, "github"), text)
+        result = raven.replace_platform_line(text, "github")
+        self.assertIn("[issue_tracker]", result)
+        self.assertIn('platform = "github"', result)
+        self.assertIn('template = "python"', result)
+
+    def test_section_with_only_comments_inserts_active_platform_line(self):
+        text = "[issue_tracker]\n# platform = \"none\"\n"
+        result = raven.replace_platform_line(text, "github")
+        self.assertIn('platform = "github"', result)
+        self.assertIn('# platform = "none"', result)
+
+    def test_empty_config_appends_section(self):
+        result = raven.replace_platform_line("", "gitlab")
+        self.assertIn("[issue_tracker]", result)
+        self.assertIn('platform = "gitlab"', result)
 
 
 class ConfigTests(RavenTestCase):
