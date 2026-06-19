@@ -13,7 +13,9 @@ from .manifest import load_manifest, parse_record
 from .models import Classification, Fingerprint, ManifestRecord, RavenConfig, TemplateEntry
 from .template import entries_for_destination, iter_template_entries
 
-ClassifyState = Literal["will_copy", "will_upgrade", "identical", "needs_merge", "unknown_existing"]
+ClassifyState = Literal[
+    "will_copy", "will_upgrade", "identical", "needs_merge", "unknown_existing", "local_only"
+]
 
 
 def _fingerprint_matches(fingerprint: Fingerprint | None, record: ManifestRecord) -> bool:
@@ -47,8 +49,10 @@ def reconcile_state(
     if not template_changed:
         # Raven's template is unchanged since the baseline. If the file still
         # matches the recorded baseline (e.g. an accepted manual merge) there is
-        # nothing to do; a later local edit is surfaced as before.
-        return "needs_merge" if user_touched else "identical"
+        # nothing to do. A later local edit has nothing upstream to merge against,
+        # so it is "local_only": upgrade leaves it untouched without manufacturing
+        # a guided merge, and doctor surfaces it informationally.
+        return "local_only" if user_touched else "identical"
     if user_touched:
         return "needs_merge"
     # Untouched since the baseline: take the new template unless the baseline is a
@@ -105,6 +109,7 @@ def classify(
         "identical": [],
         "needs_merge": [],
         "unknown_existing": [],
+        "local_only": [],
     }
     for entry in entry_iter:
         target = destination / entry.relative

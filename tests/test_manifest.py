@@ -34,7 +34,7 @@ class ManifestTests(RavenTestCase):
         self.assertIn(path, classification.will_upgrade)
         self.assertNotIn(path, classification.needs_merge)
 
-    def test_manifest_requires_merge_for_locally_modified_managed_file(self):
+    def test_local_edit_with_unchanged_template_is_local_only_not_merge(self):
         path = ".claude/scripts/raven-tool-check.py"
         raven.copy_paths(self.template, self.destination, [path])
         raven.update_manifest(
@@ -51,7 +51,11 @@ class ManifestTests(RavenTestCase):
 
         classification = raven.classify(self.template, self.destination, self.excludes)
 
-        self.assertIn(path, classification.needs_merge)
+        # The template is unchanged from the recorded baseline, so there is
+        # nothing upstream to merge: the local edit is left untouched, not forced
+        # into a guided merge.
+        self.assertIn(path, classification.local_only)
+        self.assertNotIn(path, classification.needs_merge)
         self.assertNotIn(path, classification.will_upgrade)
 
     def test_update_manifest_records_file_hashes(self):

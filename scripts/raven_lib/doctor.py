@@ -168,7 +168,19 @@ def drift_findings(destination: Path) -> list[Finding]:
     findings: list[Finding] = []
     template = REPO_ROOT / config.template
     classification = classify(template, destination, set(DEFAULT_EXCLUDES), config)
-    modified = sorted(set(classification.needs_merge) | set(classification.unknown_existing))
+    pending = pending_merge_paths(destination)
+    # Files with a pending guided merge are, by construction, also classified as
+    # needs_merge. Subtract them so each finding is disjoint: "locally modified"
+    # surfaces only drift that has no merge artifact yet, while "pending guided
+    # merge" owns the rest. Reporting both sets in full double-counts the same
+    # files and offers contradictory fixes for them.
+    modified = sorted(
+        (set(classification.needs_merge) | set(classification.unknown_existing)) - set(pending)
+    )
+    # Files the user changed locally where the template is unchanged from the
+    # baseline: nothing upstream to merge, so these are informational, not drift
+    # that needs action (e.g. an editor reformatting an installed file).
+    local_only = sorted(set(classification.local_only) - set(pending))
     if modified:
         findings.append(
             Finding(
@@ -180,7 +192,7 @@ def drift_findings(destination: Path) -> list[Finding]:
                 fix="review and `raven upgrade` or `raven accept`",
             )
         )
-    else:
+    elif not pending and not local_only:
         findings.append(
             Finding(
                 id="doctor.drift.modified",
@@ -191,7 +203,18 @@ def drift_findings(destination: Path) -> list[Finding]:
             )
         )
 
-    pending = pending_merge_paths(destination)
+    if local_only:
+        findings.append(
+            Finding(
+                id="doctor.drift.local",
+                severity=Severity.INFO,
+                category=_DRIFT,
+                title=f"{len(local_only)} Raven-owned file(s) customized locally",
+                detail=", ".join(local_only),
+                fix="no action needed; the template is unchanged, so Raven leaves these as-is",
+            )
+        )
+
     if pending:
         findings.append(
             Finding(

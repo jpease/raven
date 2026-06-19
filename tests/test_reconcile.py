@@ -43,19 +43,21 @@ class ReconcileStateTests(unittest.TestCase):
             "will_upgrade",
         )
 
-    def test_local_edit_without_template_change_needs_merge(self):
-        # Pristine baseline, user edited locally, template unchanged: still flagged
-        # so an un-accepted local divergence is not silently dropped.
+    def test_local_edit_without_template_change_is_local_only(self):
+        # Pristine baseline, user edited locally, template unchanged: nothing
+        # upstream to merge, so the edit is left untouched (e.g. an editor
+        # reformatting an installed file) rather than forced into a merge.
         self.assertEqual(
             raven.reconcile_state(record("S0", "S0"), fp("M"), fp("S0")),
-            "needs_merge",
+            "local_only",
         )
 
-    def test_further_edit_after_accept_needs_merge(self):
-        # Accepted baseline (installed != source), then edited again: re-flag.
+    def test_further_edit_after_accept_without_template_change_is_local_only(self):
+        # Accepted baseline (installed != source), then edited again while the
+        # template is unchanged: again nothing to merge, so local_only.
         self.assertEqual(
             raven.reconcile_state(record("Z", "S1"), fp("Z2"), fp("S1")),
-            "needs_merge",
+            "local_only",
         )
 
     def test_both_changed_needs_merge(self):
