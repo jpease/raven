@@ -276,7 +276,8 @@ Raven-managed paths use `raven-*` wherever possible.
 ## Developing Raven
 
 ```sh
-python -m unittest discover -s tests
+python -m pip install pytest   # development-only; Raven's runtime is stdlib
+python -m pytest
 python scripts/self-check.py
 ```
 
