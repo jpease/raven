@@ -182,6 +182,27 @@ class GitHookInstallerTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_install_targets_destination_despite_inherited_git_dir(self):
+        # Reproduces the corruption: running inside another repo's hook exports
+        # GIT_DIR/GIT_INDEX_FILE. install_git_hooks must still target the passed
+        # destination, never the repo named by the ambient environment.
+        self._write_hook("pre-commit", "#!/bin/sh\njust check\n")
+        decoy_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(decoy_tmp.cleanup)
+        decoy = Path(decoy_tmp.name)
+        subprocess.run(["git", "init", str(decoy)], capture_output=True, check=True)
+        os.environ["GIT_DIR"] = str(decoy / ".git")
+        os.environ["GIT_INDEX_FILE"] = str(decoy / ".git" / "index")
+        self.addCleanup(os.environ.pop, "GIT_DIR", None)
+        self.addCleanup(os.environ.pop, "GIT_INDEX_FILE", None)
+
+        installed = raven.install_git_hooks(self.destination)
+
+        self.assertEqual(installed, ["pre-commit"])
+        self.assertTrue((self.destination / ".git" / "hooks" / "pre-commit").is_symlink())
+        # The decoy repo named by GIT_DIR must be left untouched.
+        self.assertFalse((decoy / ".git" / "hooks" / "pre-commit").exists())
+
     def test_pre_commit_hook_blocks_when_just_check_fails(self):
         hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-commit"
         git_path = subprocess.run(

@@ -6,7 +6,21 @@ import sys
 from pathlib import Path
 
 
+def _clean_git_env() -> dict[str, str]:
+    """Environment with GIT_* removed.
+
+    An inherited ``GIT_DIR``/``GIT_INDEX_FILE``/``GIT_WORK_TREE`` -- which git
+    exports whenever it runs a hook -- takes precedence over ``git -C
+    <destination>`` and would point discovery at the *outer* repository. Without
+    this, ``install_git_hooks`` invoked from inside a hook (e.g. a pre-commit
+    running the test suite) could install into the wrong repo's ``.git/hooks``.
+    Stripping GIT_* makes the explicit ``destination`` authoritative.
+    """
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
 def _git_hooks_dir(destination: Path) -> Path | None:
+    git_env = _clean_git_env()
     try:
         # core.hooksPath overrides the default hooks location entirely.
         result = subprocess.run(
@@ -14,6 +28,7 @@ def _git_hooks_dir(destination: Path) -> Path | None:
             capture_output=True,
             text=True,
             check=False,
+            env=git_env,
         )
         if result.returncode == 0:
             hooks_path = result.stdout.strip()
@@ -25,6 +40,7 @@ def _git_hooks_dir(destination: Path) -> Path | None:
                         capture_output=True,
                         text=True,
                         check=True,
+                        env=git_env,
                     ).stdout.strip()
                     p = Path(toplevel) / p
                 return p.resolve()
@@ -35,6 +51,7 @@ def _git_hooks_dir(destination: Path) -> Path | None:
             capture_output=True,
             text=True,
             check=True,
+            env=git_env,
         )
         git_common_dir = result.stdout.strip()
         hooks_dir = (destination / git_common_dir / "hooks").resolve()
