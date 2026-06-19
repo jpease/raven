@@ -87,6 +87,24 @@ def _classify_entry(
     return reconcile_state(record, fingerprint, template_fp)
 
 
+def _differs_only_by_final_newline(entry: TemplateEntry, target: Path) -> bool:
+    """Whether ``target`` and the template differ only in trailing newline(s).
+
+    A file installed by Raven that loses (or gains) its final newline -- a common
+    editor/formatter artifact -- otherwise produces a guided merge with nothing
+    substantive to resolve. When the content is identical apart from trailing
+    newlines, upgrade can safely take the template instead of prompting.
+    """
+    if entry.copy_as_symlink or target.is_symlink():
+        return False
+    try:
+        src = entry.source.read_bytes()
+        dst = target.read_bytes()
+    except OSError:
+        return False
+    return src != dst and src.rstrip(b"\n") == dst.rstrip(b"\n")
+
+
 def classify(
     template: Path,
     destination: Path,
@@ -125,17 +143,20 @@ def classify(
             if not content_matches and block_state is None:
                 # Only the 3-way reconcile path needs the template fingerprint.
                 template_fp = entry_fingerprint(entry)
-        groups[
-            _classify_entry(
-                entry,
-                manifest,
-                target_exists=target_exists,
-                content_matches=content_matches,
-                block_state=block_state,
-                fingerprint=fingerprint,
-                template_fp=template_fp,
-            )
-        ].append(entry.relative)
+        state = _classify_entry(
+            entry,
+            manifest,
+            target_exists=target_exists,
+            content_matches=content_matches,
+            block_state=block_state,
+            fingerprint=fingerprint,
+            template_fp=template_fp,
+        )
+        # A merge whose only difference is the final newline has nothing to
+        # resolve; take the template rather than forcing a guided merge.
+        if state == "needs_merge" and _differs_only_by_final_newline(entry, target):
+            state = "will_upgrade"
+        groups[state].append(entry.relative)
 
     return Classification(
         **groups,
