@@ -39,9 +39,9 @@ Use `python3`, `py -3`, or the active virtual environment if `python` is not the
 
 These are checked only when `[issue_tracker].platform` is set in `.raven/config.toml`:
 
-| Platform | CLI | Install |
-|---|---|---|
-| `github` | `gh` | `brew install gh` / https://cli.github.com |
+| Platform | CLI    | Install                                                 |
+| -------- | ------ | ------------------------------------------------------- |
+| `github` | `gh`   | `brew install gh` / https://cli.github.com              |
 | `gitlab` | `glab` | `brew install glab` / https://gitlab.com/gitlab-org/cli |
 
 If `platform = "github"` and `gh` is missing, or `platform = "gitlab"` and `glab` is missing, ask the user whether to install, get instructions, remind later, or stop reminding — same flow as other missing tools.

@@ -6,38 +6,38 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 
 ## Recommended Tool Roles
 
-| Tool | Best suited for | Notes |
-|---|---|---|
-| `rg` | Exact strings, symbols, error messages, config keys, exhaustive confirmation | Usually the cheapest first step. Claude Code usually includes ripgrep; install separately if search fails. |
-| `fd` | File discovery by name, extension, type, or pattern | Faster and friendlier than `find`. Use to locate files before reading them. |
-| `just` | Consistent task runner for test, lint, format, typecheck, and hook installation | Use `just --list` to discover available recipes. Prefer `just check` over invoking tools directly. |
-| Semble | Intent-based code search when the owning file or symbol is unknown | Best for "where is this behavior?" questions. Treat it as semantic retrieval, not exhaustive proof or an editing decision by itself. |
-| LSP | Definitions, references, hover/type info, diagnostics, rename safety | Best once a symbol is known. Prefer client-native LSP integrations when available; otherwise use `mcp-language-server` plus the relevant language server. |
-| GitNexus | Architecture, dependency, call-path, and blast-radius reasoning | Best for structural questions. Treat as a graph/static-analysis layer, not as a replacement for LSP. |
-| ast-grep | Syntax-aware search and mechanical rewrites | Best when code shape matters more than raw text. Good for reviewable structural edits. |
-| Semgrep | Security, policy, and multi-language static-analysis rules | Best for finding risky patterns and enforcing rules across codebases. Heavier than ast-grep for simple rewrites. |
-| Gitleaks | Deterministic secret scanning | Best for checking staged changes with `gitleaks git --staged` and repository history with `gitleaks git`. |
-| `jq` | Structured JSON reads and transformations | Use for JSON output when a purpose-built parser is not already available. This is a transform tool, not a retrieval source. |
-| `yq` | Structured YAML reads and transformations | Use for YAML output when a purpose-built parser is not already available. This is a transform tool, not a retrieval source. |
-| RTK | Compressing noisy command output before it enters model context | Best for tests, builds, logs, and large CLI output. Bypass it when exact output is required. |
+| Tool     | Best suited for                                                                 | Notes                                                                                                                                                     |
+| -------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rg`     | Exact strings, symbols, error messages, config keys, exhaustive confirmation    | Usually the cheapest first step. Claude Code usually includes ripgrep; install separately if search fails.                                                |
+| `fd`     | File discovery by name, extension, type, or pattern                             | Faster and friendlier than `find`. Use to locate files before reading them.                                                                               |
+| `just`   | Consistent task runner for test, lint, format, typecheck, and hook installation | Use `just --list` to discover available recipes. Prefer `just check` over invoking tools directly.                                                        |
+| Semble   | Intent-based code search when the owning file or symbol is unknown              | Best for "where is this behavior?" questions. Treat it as semantic retrieval, not exhaustive proof or an editing decision by itself.                      |
+| LSP      | Definitions, references, hover/type info, diagnostics, rename safety            | Best once a symbol is known. Prefer client-native LSP integrations when available; otherwise use `mcp-language-server` plus the relevant language server. |
+| GitNexus | Architecture, dependency, call-path, and blast-radius reasoning                 | Best for structural questions. Treat as a graph/static-analysis layer, not as a replacement for LSP.                                                      |
+| ast-grep | Syntax-aware search and mechanical rewrites                                     | Best when code shape matters more than raw text. Good for reviewable structural edits.                                                                    |
+| Semgrep  | Security, policy, and multi-language static-analysis rules                      | Best for finding risky patterns and enforcing rules across codebases. Heavier than ast-grep for simple rewrites.                                          |
+| Gitleaks | Deterministic secret scanning                                                   | Best for checking staged changes with `gitleaks git --staged` and repository history with `gitleaks git`.                                                 |
+| `jq`     | Structured JSON reads and transformations                                       | Use for JSON output when a purpose-built parser is not already available. This is a transform tool, not a retrieval source.                               |
+| `yq`     | Structured YAML reads and transformations                                       | Use for YAML output when a purpose-built parser is not already available. This is a transform tool, not a retrieval source.                               |
+| RTK      | Compressing noisy command output before it enters model context                 | Best for tests, builds, logs, and large CLI output. Bypass it when exact output is required.                                                              |
 
 ## Cross-Platform Availability
 
-| Tool | macOS | Linux | Windows native | Windows WSL |
-|---|---:|---:|---:|---:|
-| Claude Code | Yes | Yes | Yes | Yes |
-| `rg` | Yes | Yes | Yes | Yes |
-| `fd` | Yes | Yes | Yes | Yes |
-| `just` | Yes | Yes | Yes | Yes |
-| Semble | Likely, via Python/`uvx` | Likely, via Python/`uvx` | Likely, but validate locally | Yes |
-| `mcp-language-server` LSP bridge | Yes, requires Go and language server | Yes, requires Go and language server | Likely, validate PATH/toolchain behavior | Yes |
-| GitNexus | Validate locally | Validate locally | Validate locally | Validate locally |
-| ast-grep | Yes | Yes | Yes | Yes |
-| Semgrep | Yes | Yes | Supported, but confirm current CLI behavior | Yes |
-| Gitleaks | Yes | Yes | Yes | Yes |
-| `jq` | Yes | Yes | Yes | Yes |
-| `yq` | Yes | Yes | Yes | Yes |
-| RTK | Yes | Yes | Yes, via prebuilt binary | Yes |
+| Tool                             |                                macOS |                                Linux |                              Windows native |      Windows WSL |
+| -------------------------------- | -----------------------------------: | -----------------------------------: | ------------------------------------------: | ---------------: |
+| Claude Code                      |                                  Yes |                                  Yes |                                         Yes |              Yes |
+| `rg`                             |                                  Yes |                                  Yes |                                         Yes |              Yes |
+| `fd`                             |                                  Yes |                                  Yes |                                         Yes |              Yes |
+| `just`                           |                                  Yes |                                  Yes |                                         Yes |              Yes |
+| Semble                           |             Likely, via Python/`uvx` |             Likely, via Python/`uvx` |                Likely, but validate locally |              Yes |
+| `mcp-language-server` LSP bridge | Yes, requires Go and language server | Yes, requires Go and language server |    Likely, validate PATH/toolchain behavior |              Yes |
+| GitNexus                         |                     Validate locally |                     Validate locally |                            Validate locally | Validate locally |
+| ast-grep                         |                                  Yes |                                  Yes |                                         Yes |              Yes |
+| Semgrep                          |                                  Yes |                                  Yes | Supported, but confirm current CLI behavior |              Yes |
+| Gitleaks                         |                                  Yes |                                  Yes |                                         Yes |              Yes |
+| `jq`                             |                                  Yes |                                  Yes |                                         Yes |              Yes |
+| `yq`                             |                                  Yes |                                  Yes |                                         Yes |              Yes |
+| RTK                              |                                  Yes |                                  Yes |                    Yes, via prebuilt binary |              Yes |
 
 ## Practical Guidance
 

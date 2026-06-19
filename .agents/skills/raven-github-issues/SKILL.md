@@ -55,6 +55,7 @@ gh issue close <number> --comment "Completed in <sha>"
 ## Heuristics
 
 Use this skill when:
+
 - The repo policy says GitHub Issues are the primary task system
 - The user asks to open, update, or close issues
 - Work should be tracked durably across sessions

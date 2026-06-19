@@ -93,4 +93,3 @@ For full performance guidance, see `.claude/docs/raven-python-quality.md`.
 - If no final gate exists, run formatter check, lint, type check, and tests at minimum.
 - Fix formatter, lint, and type-checking failures in touched code.
 - Do not add broad `# noqa` or `# type: ignore` comments. Prefer fixing the code or using the narrowest scoped suppression with a reason comment.
-

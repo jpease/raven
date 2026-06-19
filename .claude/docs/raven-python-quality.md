@@ -68,12 +68,12 @@ Domain code must not import infrastructure modules. Violations make the domain u
 
 ### Test Pyramid
 
-| Layer | Focus | Tooling |
-|---|---|---|
-| Unit | Pure functions, domain logic | pytest |
-| Service | Use-cases, repositories, routes | pytest + fakes |
-| Integration | Real DB, real external services | pytest |
-| E2E | CLI or HTTP flows end-to-end | pytest / subprocess |
+| Layer       | Focus                           | Tooling             |
+| ----------- | ------------------------------- | ------------------- |
+| Unit        | Pure functions, domain logic    | pytest              |
+| Service     | Use-cases, repositories, routes | pytest + fakes      |
+| Integration | Real DB, real external services | pytest              |
+| E2E         | CLI or HTTP flows end-to-end    | pytest / subprocess |
 
 ### Unit And Service Tests
 
