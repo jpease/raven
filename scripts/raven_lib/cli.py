@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from .apply import classify, claude_symlink_adoption_needed, prompt_for_claude_symlink_adoption
+from .assess import build_assess_findings
 from .blocks import pending_merge_paths, remove_merge_artifacts
 from .config import _update_config_platform, default_config_text, load_config
 from .constants import (
@@ -17,6 +18,8 @@ from .constants import (
     REPO_ROOT,
     _any_exists,
 )
+from .doctor import build_doctor_findings
+from .findings import exit_code
 from .git_hooks import install_git_hooks
 from .manifest import load_manifest, update_manifest
 from .plan import (
@@ -28,9 +31,6 @@ from .plan import (
     print_dry_run_plan,
     print_section,
 )
-from .assess import build_assess_findings
-from .doctor import build_doctor_findings
-from .findings import exit_code
 from .report import render_human, render_json
 from .template import entries_for_destination
 

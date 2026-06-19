@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 
 @dataclass(frozen=True)
@@ -25,8 +25,7 @@ def run_command(command: list[str], cwd: Path, timeout: int = 120) -> RunResult:
         completed = subprocess.run(
             [executable, *command[1:]],
             cwd=str(cwd),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             check=False,
             timeout=timeout,

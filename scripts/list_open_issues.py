@@ -23,21 +23,21 @@ def run_gh_command(args):
 
 
 def get_issues():
-    query = """
-    query($cursor: String) {
-      repository(owner: "%s", name: "%s") {
-        issues(first: 100, after: $cursor, states: OPEN) {
-          pageInfo { hasNextPage endCursor }
-          nodes {
+    query = f"""
+    query($cursor: String) {{
+      repository(owner: "{OWNER}", name: "{REPO}") {{
+        issues(first: 100, after: $cursor, states: OPEN) {{
+          pageInfo {{ hasNextPage endCursor }}
+          nodes {{
             number
             title
-            labels(first: 20) { nodes { name } }
-            parent { number }
-          }
-        }
-      }
-    }
-    """ % (OWNER, REPO)
+            labels(first: 20) {{ nodes {{ name }} }}
+            parent {{ number }}
+          }}
+        }}
+      }}
+    }}
+    """
 
     nodes = []
     cursor = None

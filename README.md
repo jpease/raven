@@ -189,6 +189,29 @@ raven install python .claude/scripts/raven-tool-check.py
 
 You can name multiple paths in a single command. The path must match the template layout exactly — run `raven upgrade --dry-run` first to see the canonical names if you are unsure.
 
+## Diagnose with `raven doctor`
+
+`raven doctor` performs a read-only health check of Raven's own installation in the current repository — config, manifest, enabled components, the AGENTS.md root instruction file, and the local toolchain. It exits non-zero only when the Raven install itself is broken (not for missing optional tools).
+
+```sh
+raven doctor          # human-readable report
+raven doctor --json   # machine-readable JSON
+```
+
+Exit code `1` means at least one `error` finding; exit `0` means only warnings or OK findings.
+
+## Assess with `raven assess`
+
+`raven assess` grades the project against its active template's quality-gate expectations — justfile recipe wiring, tool-config signals, pre-commit hook, and template fit. By default it performs only static checks (no processes are run). Pass `--run` to actually execute the gates:
+
+```sh
+raven assess          # static wiring checks only
+raven assess --run    # execute lint, format, typecheck, test gates
+raven assess --json   # machine-readable output (combine with --run)
+```
+
+Exit code `1` when any gate fails or a required config is missing; exit `0` otherwise.
+
 ## Optional Tool Bootstrap
 
 After installing Raven in a repository, you can print a report for recommended but optional tools:
