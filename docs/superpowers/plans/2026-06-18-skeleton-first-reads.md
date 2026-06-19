@@ -5,7 +5,9 @@ generator + discovery skill. Rung 2 = opt-in Claude read gate (default off),
 verified end-to-end. Rung 3 (transparent transform) is impossible for `Read`:
 a live probe confirmed `PostToolUse.updatedToolOutput` is ignored for the
 built-in Read tool (gap #2 resolved empirically). Rung 2 is the final mechanism.
-Deferred follow-ups: ctags/rg fallback backends, Elixir structural rule.
+The deferred follow-ups (ctags/rg fallback backends, Elixir structural rule, the
+`sg`-probe fix, and whole-directory Claude symlinks) all landed 2026-06-19; see
+Follow-Ups.
 
 Source research: `docs/research/hook-read-interception.md`.
 
@@ -36,8 +38,7 @@ helper harness-agnostically (it names both the `.claude` and `.codex` script
 paths). Skills auto-propagate via the whole-directory template symlink, so no
 per-template linking was needed (unlike scripts).
 
-Still deferred in rung 1: ctags/rg fallback backends (safe degradation already
-works via the "no skeleton" message).
+Rung-1 ctags/rg fallback backends since landed (2026-06-19); see Follow-Ups.
 
 ## Goal
 
@@ -158,14 +159,24 @@ Code versions if this is ever revisited.
 
 ## Follow-Ups
 
-- Elixir ast-grep support via a structural rule (def/defp/defmodule `call` nodes).
-- ctags + `rg` degraded backends to round out the fallback ladder.
+- DONE (2026-06-19): ctags + `rg` degraded backends round out the fallback ladder
+  in `raven-skeleton.py`. `generate_skeleton()` runs ast-grep -> Universal Ctags
+  -> `rg` with an empty-result sanity check that degrades instead of emitting a
+  bad/empty skeleton; the CLI reports the backend and labels `rg` ranges
+  approximate.
+- DONE (2026-06-19): Elixir ast-grep support via a structural rule (`call` nodes
+  constrained to the def-family target identifier), run through `ast-grep scan
+  --inline-rules`; verified by a golden test. `.ex`/`.exs` added to the rung-2
+  read gate's `SUPPORTED_EXTENSIONS`.
+- DONE (2026-06-19): the `sg` probe removed from `raven-tool-check.py` (Linux
+  `/usr/bin/sg` setgroups collision; Raven always invokes `ast-grep` by name).
+- DONE (2026-06-19): `<lang>/.claude/scripts` and `/hooks` are now whole-directory
+  symlinks to `common/` (like `.codex`), retiring the per-file symlink maintenance
+  rule and its bug class. `test_claude_script_symlinks.py` guards the new
+  invariant.
 - Exposure: skill vs AGENTS.md pointer for the rung-1 helper (harness-path aware).
-- Consider making `<lang>/.claude/scripts` a whole-directory symlink (like Codex)
-  to remove per-file symlink maintenance and the class of bug fixed above.
 - Gap #3 (does Codex route reads through MCP) — only relevant if we ever revisit
   the dropped Codex interception path.
-- The `sg` probe fix in `raven-tool-check.py`.
 
 ## Open Questions
 
