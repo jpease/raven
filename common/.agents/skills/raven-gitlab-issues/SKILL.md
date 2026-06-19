@@ -55,6 +55,7 @@ glab issue close <number> -m "Completed in <sha>"
 ## Heuristics
 
 Use this skill when:
+
 - The repo policy says GitLab issues are the primary task system
 - The user asks to open, update, or close issues or merge requests
 - Work should be tracked durably across sessions

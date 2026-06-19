@@ -4,12 +4,12 @@ Guardrails are checks and procedures that make agent work more reliable. Prefer 
 
 ## Guardrail Levels
 
-| Level | Examples | Use when |
-|---|---|---|
-| Deterministic | tests, linters, type checks, hooks, scripts, dry-run tools | A machine can verify the condition. |
-| Procedural | skills with required discovery, edit, and verification steps | The agent must follow a repeatable workflow. |
-| Instructional | `AGENTS.md`, scoped rules, review guidance | The behavior is contextual and cannot be fully automated. |
-| Manual | user approval, code review, explicit override paths | Judgment or risk acceptance is required. |
+| Level         | Examples                                                     | Use when                                                  |
+| ------------- | ------------------------------------------------------------ | --------------------------------------------------------- |
+| Deterministic | tests, linters, type checks, hooks, scripts, dry-run tools   | A machine can verify the condition.                       |
+| Procedural    | skills with required discovery, edit, and verification steps | The agent must follow a repeatable workflow.              |
+| Instructional | `AGENTS.md`, scoped rules, review guidance                   | The behavior is contextual and cannot be fully automated. |
+| Manual        | user approval, code review, explicit override paths          | Judgment or risk acceptance is required.                  |
 
 ## Current Deterministic Guardrails
 

@@ -8,6 +8,7 @@ description: Use for multi-session or multi-unit tasks where you need brownfield
 Lightweight session orchestration for tasks that span multiple units or sessions. Scopes work, tracks progress, and delegates execution to appropriate Raven skills. Does not replace AI-DLC or full lifecycle frameworks — use those when you need phased requirements, NFR design, or structured approval workflows.
 
 For projects with an external issue tracker, check `[issue_tracker].platform` in `.raven/config.toml`:
+
 - `platform = "github"`: use `raven-github-issues` for issue-driven execution alongside this skill
 - `platform = "gitlab"`: use `raven-gitlab-issues` alongside this skill
 - `platform = "none"`: this skill is the sole task tracker
@@ -42,7 +43,7 @@ For projects with an external issue tracker, check `[issue_tracker].platform` in
    - After `--init`, create child issues manually using `gh issue create` or `glab issue create` and record their numbers in `session.md`
 4. Present the unit plan to the user and wait for confirmation before proceeding
 
-## Phase 3 — Execution Loop *(repeats per unit)*
+## Phase 3 — Execution Loop _(repeats per unit)_
 
 1. Run `python .claude/scripts/raven-session.py --status` — confirm the current unit
 2. Select the appropriate Raven execution skill:

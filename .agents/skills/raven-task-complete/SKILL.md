@@ -35,7 +35,9 @@ When using `raven-project-lifecycle`, run this skill immediately before calling 
 ## Output
 
 On success:
+
 > Verified: [test command and result], [lint/type-check result]. Diff scoped to [N files]. No debug scaffolding found.
 
 When gaps exist:
+
 > Gap: [what was not verified and why]. Residual risk: [what remains unchecked].
