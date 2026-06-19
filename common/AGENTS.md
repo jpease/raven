@@ -33,7 +33,7 @@ Use the cheapest adequate source before reading full files.
 | Build, test, or log output | RTK-wrapped shell command |
 
 - Batch independent reads, searches, and inspections in a single turn.
-- Read line ranges around relevant symbols; read the full file only when small, the whole structure matters, or targeted reads are ambiguous. For files over 500 lines, summarize structure before reading further.
+- Skeleton-first: for a large or unfamiliar file, get a symbol map (LSP document symbols, or `ast-grep`/`rg` for definitions) before reading, then read only the ranges you need. Read a full file only when it is small or the whole structure matters, not as a first discovery step.
 - Return concise findings before editing. Avoid pasting raw command output unless essential.
 - Semble is for conceptual discovery — not exhaustive proof and not sufficient for an edit decision on its own. Verify with `rg`, LSP, targeted reads, or tests before changing code.
 - If two literal `rg` guesses miss, switch to Semble rather than iterating term variations.
