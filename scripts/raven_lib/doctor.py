@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
 
 from .apply import classify
@@ -13,6 +15,8 @@ from .constants import (
     _any_exists,
 )
 from .findings import Finding, Severity
+from .gates import gate_spec_for
+from .runner import RunResult, Runner, run_command
 from .manifest import git_ref, load_manifest
 
 _INTEGRITY = "Install integrity"
@@ -219,4 +223,107 @@ def drift_findings(destination: Path) -> list[Finding]:
                 fix="run `raven upgrade --dry-run` to preview updates",
             )
         )
+    return findings
+
+
+_TOOLCHAIN = "Toolchain"
+
+
+def _default_runner(command: list[str], cwd: Path) -> RunResult:
+    return run_command(command, cwd, timeout=15)
+
+
+def _tool_check_results(destination: Path, runner: Runner) -> list[dict] | None:
+    script = destination / ".claude" / "scripts" / "raven-tool-check.py"
+    result = runner([sys.executable, str(script), "--json"], destination)
+    if result.timed_out:
+        return None
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    results = data.get("results")
+    return results if isinstance(results, list) else None
+
+
+def toolchain_findings(destination: Path, runner: Runner = _default_runner) -> list[Finding]:
+    findings: list[Finding] = []
+    results = _tool_check_results(destination, runner)
+    if results is None:
+        findings.append(
+            Finding(
+                id="doctor.tool.script",
+                severity=Severity.WARN,
+                category=_TOOLCHAIN,
+                title="Tool-check script unavailable",
+                detail="could not run .claude/scripts/raven-tool-check.py --json",
+                fix="run `raven install` to restore Raven scripts, then re-run",
+            )
+        )
+        return findings
+
+    seen_ids: set[str] = set()
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        tool_id = str(result.get("id", "unknown"))
+        seen_ids.add(tool_id)
+        name = str(result.get("name", tool_id))
+        available = bool(result.get("available"))
+        optional_when = result.get("optionalWhen")
+        if available:
+            findings.append(
+                Finding(
+                    id=f"doctor.tool.{tool_id}",
+                    severity=Severity.OK,
+                    category=_TOOLCHAIN,
+                    title=f"{name} present",
+                    detail=str(result.get("purpose", "")),
+                )
+            )
+        else:
+            detail = f"{name} not installed or configured"
+            if isinstance(optional_when, str) and optional_when:
+                detail += f" (optional when {optional_when})"
+            findings.append(
+                Finding(
+                    id=f"doctor.tool.{tool_id}",
+                    severity=Severity.WARN,
+                    category=_TOOLCHAIN,
+                    title=f"{name} missing",
+                    detail=detail,
+                    fix="see `raven-tool-bootstrap` skill for install guidance",
+                )
+            )
+
+    config = load_config(destination)
+    spec = gate_spec_for(config.template) if config.template else None
+    if spec is not None:
+        for tool in spec.tools:
+            if tool in seen_ids:
+                continue
+            probe = runner([tool, "--version"], destination)
+            severity = Severity.OK if probe.found and probe.ok else Severity.WARN
+            findings.append(
+                Finding(
+                    id=f"doctor.gate-tool.{tool}",
+                    severity=severity,
+                    category=_TOOLCHAIN,
+                    title=f"{tool} {'present' if severity is Severity.OK else 'missing'}",
+                    detail=f"gate tool for the {config.template} template",
+                    fix=None
+                    if severity is Severity.OK
+                    else f"install {tool} to run the template's gates",
+                )
+            )
+    return findings
+
+
+def build_doctor_findings(destination: Path, runner: Runner = _default_runner) -> list[Finding]:
+    findings = toolchain_findings(destination, runner)
+    integrity = integrity_findings(destination)
+    findings.extend(integrity)
+    config = load_config(destination)
+    if config.exists:
+        findings.extend(drift_findings(destination))
     return findings
