@@ -186,9 +186,9 @@
       "sourceSha256": "967749c2280f4aefd28926245fa477b00a0b3b8ae413b2c253c2736755b82e8e"
     },
     ".claude/hooks/raven-skeleton-read-guard.py": {
-      "installedSha256": "ea6a9ee4dbd286e70d7fe9513ac64dafe2be271241e6ae84204f238dcd1a6a35",
+      "installedSha256": "7d9a9dc9a25bc642dfe3ce5413cf23bc390e29556aa6b0a552a42ce03094f08f",
       "kind": "file",
-      "sourceSha256": "ea6a9ee4dbd286e70d7fe9513ac64dafe2be271241e6ae84204f238dcd1a6a35"
+      "sourceSha256": "7d9a9dc9a25bc642dfe3ce5413cf23bc390e29556aa6b0a552a42ce03094f08f"
     },
     ".claude/rules/raven-python.md": {
       "installedSha256": "92392b08450e11070c4ad6c10a3eb335a47736007e4d5b80d1df6e782b4f4ee7",
@@ -211,9 +211,9 @@
       "sourceSha256": "5b5cb2a6a1f947587a1641ed1f5318097684113273ee15495220bb02ab81fe59"
     },
     ".claude/scripts/raven-skeleton.py": {
-      "installedSha256": "029d9ab64ef0a07b18686b9dddfb98ef99ba583b245075960aabaad6f0acf82a",
+      "installedSha256": "f4b302632ceb0e171f9008a161d7b8ed369322451a40ee8da7de2cb5c653d2ed",
       "kind": "file",
-      "sourceSha256": "029d9ab64ef0a07b18686b9dddfb98ef99ba583b245075960aabaad6f0acf82a"
+      "sourceSha256": "f4b302632ceb0e171f9008a161d7b8ed369322451a40ee8da7de2cb5c653d2ed"
     },
     ".claude/scripts/raven-tool-check.py": {
       "installedSha256": "0fb3fd3b0ee5ffecbd26c339989e06b75cc9f7bb4a6b85dbdfe43683f5711d23",
@@ -297,9 +297,9 @@
       "sourceSha256": "5b5cb2a6a1f947587a1641ed1f5318097684113273ee15495220bb02ab81fe59"
     },
     ".codex/scripts/raven-skeleton.py": {
-      "installedSha256": "029d9ab64ef0a07b18686b9dddfb98ef99ba583b245075960aabaad6f0acf82a",
+      "installedSha256": "f4b302632ceb0e171f9008a161d7b8ed369322451a40ee8da7de2cb5c653d2ed",
       "kind": "file",
-      "sourceSha256": "029d9ab64ef0a07b18686b9dddfb98ef99ba583b245075960aabaad6f0acf82a"
+      "sourceSha256": "f4b302632ceb0e171f9008a161d7b8ed369322451a40ee8da7de2cb5c653d2ed"
     },
     ".codex/scripts/raven-tool-check.py": {
       "installedSha256": "0fb3fd3b0ee5ffecbd26c339989e06b75cc9f7bb4a6b85dbdfe43683f5711d23",
@@ -373,8 +373,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "97c76c12f2a3",
+  "ravenVersion": "984532ddb778",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-06-19T05:33:32.742924+00:00"
+  "updatedAt": "2026-06-19T08:14:04.231508+00:00"
 }

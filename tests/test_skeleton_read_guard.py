@@ -83,14 +83,25 @@ class ParseGateConfigTests(RavenTestCase):
 class IsSupportedTests(RavenTestCase):
     def test_supported_source_extensions(self):
         module = _module()
-        for name in ["a.py", "a.ts", "a.tsx", "a.js", "a.jsx", "a.go", "a.rs", "a.swift", "a.lua"]:
+        for name in [
+            "a.py",
+            "a.ts",
+            "a.tsx",
+            "a.js",
+            "a.jsx",
+            "a.go",
+            "a.rs",
+            "a.swift",
+            "a.lua",
+            "a.ex",
+            "a.exs",
+        ]:
             with self.subTest(name=name):
                 self.assertTrue(module.is_supported(f"/repo/{name}"))
 
     def test_unsupported_extensions(self):
         module = _module()
-        # Elixir is deferred from the skeleton backend, so the gate must not fire.
-        for name in ["a.md", "a.txt", "a.ex", "Makefile"]:
+        for name in ["a.md", "a.txt", "Makefile"]:
             with self.subTest(name=name):
                 self.assertFalse(module.is_supported(f"/repo/{name}"))
 

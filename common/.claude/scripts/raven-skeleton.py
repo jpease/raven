@@ -67,6 +67,23 @@ NODE_KINDS: dict[str, list[str]] = {
 # TSX shares TypeScript's declaration kinds.
 NODE_KINDS["tsx"] = NODE_KINDS["typescript"]
 
+# Languages whose declarations cannot be expressed as a node-kind union use an
+# ast-grep YAML structural rule instead, run via ``ast-grep scan``. Elixir's
+# def/defp/defmodule/defmacro are `call` nodes indistinguishable from ordinary
+# calls by --kind; they are isolated by constraining the call's target
+# identifier. Verified against ast-grep 0.43.0 and exercised by a golden test.
+STRUCTURAL_RULES: dict[str, str] = {
+    "elixir": (
+        "id: raven-elixir-defs\n"
+        "language: elixir\n"
+        "rule:\n"
+        "  kind: call\n"
+        "  has:\n"
+        "    field: target\n"
+        '    regex: "^(defmodule|defmacrop|defmacro|defp|def)$"\n'
+    ),
+}
+
 
 def detect_language(path: str) -> str | None:
     """Map a file path to an ast-grep language name by extension, or None."""
@@ -76,8 +93,20 @@ def detect_language(path: str) -> str | None:
 
 def node_kinds(language: str) -> list[str]:
     """Return the declaration node kinds for a language, or [] if the ast-grep
-    backend does not support it."""
+    backend handles it with a structural rule instead (or not at all)."""
     return NODE_KINDS.get(language, [])
+
+
+def astgrep_rule(language: str) -> str | None:
+    """Return the ast-grep YAML structural rule for a language, or None when the
+    language is handled by the node-kind table (or unsupported)."""
+    return STRUCTURAL_RULES.get(language)
+
+
+def astgrep_supports(language: str) -> bool:
+    """Whether the ast-grep backend can skeletonize a language -- via either the
+    node-kind table or a structural rule."""
+    return bool(node_kinds(language)) or astgrep_rule(language) is not None
 
 
 def exclusive_range_to_lines(start: dict, end: dict) -> tuple[int, int]:
@@ -172,19 +201,30 @@ def astgrep_skeleton(path: str, language: str | None = None) -> list[dict] | Non
     language = language or detect_language(path)
     if language is None:
         return None
-    kinds = node_kinds(language)
-    if not kinds:
-        return None
     binary = astgrep_binary()
     if binary is None:
         return None
 
-    result = subprocess.run(
-        [binary, "run", "--lang", language, "--kind", ",".join(kinds), "--json=stream", "--", path],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    rule = astgrep_rule(language)
+    if rule is not None:
+        command = [binary, "scan", "--inline-rules", rule, "--json=stream", "--", path]
+    else:
+        kinds = node_kinds(language)
+        if not kinds:
+            return None
+        command = [
+            binary,
+            "run",
+            "--lang",
+            language,
+            "--kind",
+            ",".join(kinds),
+            "--json=stream",
+            "--",
+            path,
+        ]
+
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         return None
     return sort_rows(parse_astgrep_stream(result.stdout))
