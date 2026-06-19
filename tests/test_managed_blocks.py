@@ -239,7 +239,8 @@ class SymlinkSafetyTests(RavenTestCase):
     """Issue #27 — writes must not follow destination symlinks outside the tree."""
 
     def _make_entry(self, name: str, content: str) -> raven.TemplateEntry:
-        src = self.template / name
+        # Use a temp subdirectory, not self.template, to avoid polluting the real template tree.
+        src = self.destination / "_src" / name
         src.parent.mkdir(parents=True, exist_ok=True)
         src.write_text(content, encoding="utf-8")
         return raven.TemplateEntry(name, src)
