@@ -22,6 +22,16 @@ class ToolCheckTests(RavenTestCase):
         self.assertIn("jq", tool_ids)
         self.assertIn("yq", tool_ids)
 
+    def test_astgrep_probe_never_invokes_sg(self):
+        # On some Linux systems /usr/bin/sg is the unrelated setgroups utility, so
+        # probing `sg --version` risks a false positive (or an interactive hang).
+        # Raven always invokes ast-grep as `ast-grep`, so the alias must not be
+        # probed.
+        module = load_script_module("raven_tool_check_astgrep", TOOL_CHECK_SCRIPT)
+        astgrep = next(tool for tool in module.TOOLS if tool["id"] == "ast-grep")
+        probed = {command[0] for command in astgrep["commands"]}
+        self.assertEqual(probed, {"ast-grep"})
+
     def test_tool_check_parses_claude_mcp_server_names(self):
         module = load_script_module("raven_tool_check_parser", TOOL_CHECK_SCRIPT)
         output = """Checking MCP server health...
