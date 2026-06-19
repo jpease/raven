@@ -233,6 +233,17 @@ class BuildApplyPlanTests(unittest.TestCase):
         self.assertTrue(plan.adopt_claude_symlink)
         self.assertNotIn("CLAUDE.md", plan.needs_merge)
 
+    def test_local_only_files_get_no_guided_merge(self):
+        classification = _classification(local_only=["notes.md"], needs_merge=["real.md"])
+        plan = raven.build_apply_plan(
+            classification, [], existing_overrides=set(), adopt_claude_symlink=False
+        )
+        # local_only is left untouched: it carries no merge artifact, while a
+        # genuine needs_merge file still does.
+        self.assertNotIn("notes.md", plan.guided_merge_paths)
+        self.assertIn("real.md", plan.guided_merge_paths)
+        self.assertEqual(plan.effective_classification.local_only, ["notes.md"])
+
 
 if __name__ == "__main__":
     unittest.main()

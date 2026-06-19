@@ -2,6 +2,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -9,7 +10,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from helpers import RavenTestCase
 from raven_lib.doctor import drift_findings, integrity_findings
 from raven_lib.findings import Severity
+from raven_lib.models import Classification
 from raven_lib.runner import RunResult
+
+
+def _classification(needs_merge, local_only=()):
+    return Classification(
+        will_copy=[],
+        will_upgrade=[],
+        identical=[],
+        needs_merge=list(needs_merge),
+        unknown_existing=[],
+        excluded=[],
+        local_only=list(local_only),
+    )
 
 
 class DoctorIntegrityTests(RavenTestCase):
@@ -57,14 +71,61 @@ class DoctorIntegrityTests(RavenTestCase):
 
 
 class DoctorDriftTests(RavenTestCase):
-    def test_clean_destination_reports_ok_modified(self):
+    def _config(self):
         (self.destination / ".raven").mkdir()
         (self.destination / ".raven" / "config.toml").write_text(
             'schema = 1\ntemplate = "python"\n', encoding="utf-8"
         )
+
+    def _drift(self, *, needs_merge, pending, local_only=()):
+        self._config()
+        with (
+            mock.patch(
+                "raven_lib.doctor.classify",
+                return_value=_classification(needs_merge, local_only=local_only),
+            ),
+            mock.patch("raven_lib.doctor.pending_merge_paths", return_value=list(pending)),
+        ):
+            return {f.id: f for f in drift_findings(self.destination)}
+
+    def test_clean_destination_reports_ok_modified(self):
+        self._config()
         findings = drift_findings(self.destination)
         ids = {f.id for f in findings}
         self.assertIn("doctor.drift.modified", ids)
+
+    def test_pending_files_excluded_from_modified_count(self):
+        shared = ".claude/rules/raven-python.md"
+        only_modified = "pyproject.toml"
+        findings = self._drift(needs_merge=[shared, only_modified], pending=[shared])
+        modified = findings["doctor.drift.modified"]
+        self.assertEqual(modified.severity, Severity.WARN)
+        self.assertIn("1 Raven-owned file", modified.title)
+        self.assertEqual(modified.detail, only_modified)
+        self.assertNotIn(shared, modified.detail)
+        self.assertIn("1 pending guided merge", findings["doctor.drift.pending"].title)
+
+    def test_all_modified_are_pending_suppresses_modified_finding(self):
+        shared = ".claude/rules/raven-python.md"
+        findings = self._drift(needs_merge=[shared], pending=[shared])
+        # Nothing is modified-without-a-merge, so no modified finding at all --
+        # and no spurious "no drift detected" OK while a merge is still pending.
+        self.assertNotIn("doctor.drift.modified", findings)
+        self.assertIn("doctor.drift.pending", findings)
+
+    def test_no_drift_and_no_pending_reports_ok(self):
+        findings = self._drift(needs_merge=[], pending=[])
+        self.assertEqual(findings["doctor.drift.modified"].severity, Severity.OK)
+        self.assertNotIn("doctor.drift.pending", findings)
+
+    def test_local_only_is_info_not_modified_warning(self):
+        findings = self._drift(needs_merge=[], pending=[], local_only=["justfile"])
+        # A locally customized file with no upstream change is informational,
+        # never a WARN, and does not trigger the "no drift" OK either.
+        self.assertIn("doctor.drift.local", findings)
+        self.assertEqual(findings["doctor.drift.local"].severity, Severity.INFO)
+        self.assertIn("justfile", findings["doctor.drift.local"].detail)
+        self.assertNotIn("doctor.drift.modified", findings)
 
 
 def _fake_toolcheck_runner(results):

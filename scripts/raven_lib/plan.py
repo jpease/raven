@@ -85,6 +85,12 @@ def print_dry_run_summary(classification: Classification) -> None:
         "Manual merge required (existing files Raven does not manage; template ships its own version):",
         classification.unknown_existing,
     )
+    if classification.local_only:
+        print()
+        print_section(
+            "Locally customized; template unchanged, so left untouched (no merge needed):",
+            classification.local_only,
+        )
     print()
     print("Preview only. Re-run without --dry-run to copy and upgrade files listed above.")
 
@@ -117,6 +123,7 @@ def build_apply_plan(
     identical = _without(classification.identical, override_set)
     needs_merge = _without(classification.needs_merge, override_set)
     unknown_existing = _without(classification.unknown_existing, override_set)
+    local_only = _without(classification.local_only, override_set)
 
     adopt_symlink = adopt_claude_symlink
     if adopt_symlink:
@@ -130,6 +137,7 @@ def build_apply_plan(
         needs_merge=needs_merge,
         unknown_existing=unknown_existing,
         excluded=classification.excluded,
+        local_only=local_only,
     )
     guided_merge_paths = sorted(set(needs_merge) | set(unknown_existing))
 

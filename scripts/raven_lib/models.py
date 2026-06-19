@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -58,6 +58,11 @@ class Classification:
     needs_merge: list[str]
     unknown_existing: list[str]
     excluded: list[str]
+    # Files the user modified locally while the template is unchanged from the
+    # recorded baseline. There is nothing upstream to merge, so upgrade leaves
+    # them untouched and writes no guided-merge artifact; doctor reports them
+    # informationally rather than as drift requiring action.
+    local_only: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
