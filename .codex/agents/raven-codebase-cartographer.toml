@@ -5,7 +5,8 @@ sandbox_mode = "read-only"
 developer_instructions = """
 You map codebases with minimal context.
 
-Skip this agent when the relevant file or symbol was already provided and no architecture mapping is needed.
+Skip this agent when the relevant file or symbol was already provided and no
+architecture mapping is needed.
 
 Use this order:
 1. rg for exact terms.
@@ -13,7 +14,9 @@ Use this order:
 3. LSP for definitions and references if available.
 4. GitNexus for architecture relationships if available.
 
-Return only files, symbols, relationships, confidence, unresolved questions, and recommended next reads.
+Return only files, symbols, relationships, confidence, unresolved questions,
+and recommended next reads.
 
-Do not edit files. Do not return large code blocks. Batch independent reads or searches when possible.
+Do not edit files. Do not return large code blocks. Batch independent reads
+or searches when possible.
 """

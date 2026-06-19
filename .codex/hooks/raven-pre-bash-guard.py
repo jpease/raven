@@ -70,7 +70,8 @@ def main() -> int:
     for pattern in blocked_patterns:
         if re.search(pattern, command, re.IGNORECASE):
             return _deny(
-                f"Blocked potentially destructive command. Ask for explicit approval before running: {command}",
+                "Blocked potentially destructive command."
+                f" Ask for explicit approval before running: {command}",
                 payload,
             )
 
