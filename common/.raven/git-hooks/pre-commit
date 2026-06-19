@@ -1,12 +1,15 @@
 #!/usr/bin/env sh
 
-# Optional secret scan for staged changes. If Gitleaks is not installed, Raven
-# leaves the commit path alone instead of making the hook a hard dependency.
-if ! command -v gitleaks >/dev/null 2>&1; then
-    exit 0
-fi
-
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 cd "$repo_root" || exit 0
 
-gitleaks git --staged --redact
+# Run the standard checks when the task runner is available; a failure blocks
+# the commit. If `just` is not installed, skip rather than hard-failing.
+if command -v just >/dev/null 2>&1; then
+    just check || exit 1
+fi
+
+# Optional secret scan for staged changes; a detected leak blocks the commit.
+if command -v gitleaks >/dev/null 2>&1; then
+    gitleaks git --staged --redact || exit 1
+fi

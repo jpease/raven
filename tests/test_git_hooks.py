@@ -11,6 +11,14 @@ from helpers import raven
 
 class GitHookInstallerTests(unittest.TestCase):
     def setUp(self):
+        # Git hooks run with GIT_DIR/GIT_INDEX_FILE/etc. exported. If this suite
+        # runs inside a hook (e.g. the pre-commit `just check`), those inherited
+        # vars would point git at the outer repo instead of the temp repo these
+        # tests create, so strip them for the duration of each test.
+        for var in [k for k in os.environ if k.startswith("GIT_")]:
+            self.addCleanup(os.environ.__setitem__, var, os.environ[var])
+            del os.environ[var]
+
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.destination = Path(self.tmp.name)
@@ -173,6 +181,33 @@ class GitHookInstallerTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_pre_commit_hook_blocks_when_just_check_fails(self):
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-commit"
+        git_path = subprocess.run(
+            ["which", "git"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        bin_dir = self.destination / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "git").symlink_to(git_path)
+        # A `just` that fails must abort the commit -- the whole point of running
+        # `just check` in the hook.
+        fake_just = bin_dir / "just"
+        fake_just.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        fake_just.chmod(0o755)
+
+        env = {k: v for k, v in os.environ.items() if k != "PATH"}
+        env["PATH"] = str(bin_dir)
+        result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":
