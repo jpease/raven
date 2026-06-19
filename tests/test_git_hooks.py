@@ -98,6 +98,54 @@ class GitHookInstallerTests(unittest.TestCase):
         self.assertEqual(installed, ["commit-msg"])
         self.assertEqual(link.resolve(), (self.git_hooks_src / "commit-msg").resolve())
 
+    def test_installs_into_custom_core_hooks_path(self):
+        custom_hooks = self.destination / ".githooks"
+        custom_hooks.mkdir()
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".githooks"],
+            check=True,
+        )
+        self._write_hook("commit-msg")
+
+        installed = raven.install_git_hooks(self.destination)
+
+        self.assertEqual(installed, ["commit-msg"])
+        link = custom_hooks / "commit-msg"
+        self.assertTrue(link.is_symlink())
+        self.assertFalse((self.git_hooks_dir / "commit-msg").exists())
+
+    def test_linked_worktree_installs_into_shared_hooks_dir(self):
+        self._write_hook("commit-msg")
+        worktree_dir = self.destination.parent / "linked-wt"
+        subprocess.run(
+            ["git", "-C", str(self.destination), "worktree", "add", str(worktree_dir)],
+            capture_output=True,
+            check=True,
+        )
+        self.addCleanup(
+            lambda: subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(self.destination),
+                    "worktree",
+                    "remove",
+                    "--force",
+                    str(worktree_dir),
+                ],
+                capture_output=True,
+            )
+        )
+        wt_hooks_src = worktree_dir / ".raven" / "git-hooks"
+        wt_hooks_src.mkdir(parents=True)
+        (wt_hooks_src / "commit-msg").write_text("#!/bin/sh\n", encoding="utf-8")
+
+        installed = raven.install_git_hooks(worktree_dir)
+
+        shared_link = self.git_hooks_dir / "commit-msg"
+        self.assertEqual(installed, ["commit-msg"])
+        self.assertTrue(shared_link.is_symlink())
+
     def test_raven_git_hooks_path_included_in_hooks_component(self):
         self.assertIn(".raven/git-hooks", raven.COMPONENT_PATHS["hooks"])
 

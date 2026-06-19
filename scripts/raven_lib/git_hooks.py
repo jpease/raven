@@ -8,14 +8,36 @@ from pathlib import Path
 
 def _git_hooks_dir(destination: Path) -> Path | None:
     try:
+        # core.hooksPath overrides the default hooks location entirely.
         result = subprocess.run(
-            ["git", "-C", str(destination), "rev-parse", "--git-dir"],
+            ["git", "-C", str(destination), "config", "--get", "core.hooksPath"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            hooks_path = result.stdout.strip()
+            if hooks_path:
+                p = Path(hooks_path)
+                if not p.is_absolute():
+                    toplevel = subprocess.run(
+                        ["git", "-C", str(destination), "rev-parse", "--show-toplevel"],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    ).stdout.strip()
+                    p = Path(toplevel) / p
+                return p.resolve()
+
+        # Fall back to the common git directory, which is shared across linked worktrees.
+        result = subprocess.run(
+            ["git", "-C", str(destination), "rev-parse", "--git-common-dir"],
             capture_output=True,
             text=True,
             check=True,
         )
-        git_dir = result.stdout.strip()
-        hooks_dir = (destination / git_dir / "hooks").resolve()
+        git_common_dir = result.stdout.strip()
+        hooks_dir = (destination / git_common_dir / "hooks").resolve()
         return hooks_dir if hooks_dir.parent.is_dir() else None
     except subprocess.CalledProcessError:
         return None
