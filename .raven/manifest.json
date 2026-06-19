@@ -185,6 +185,11 @@
       "kind": "file",
       "sourceSha256": "967749c2280f4aefd28926245fa477b00a0b3b8ae413b2c253c2736755b82e8e"
     },
+    ".claude/hooks/raven-skeleton-read-guard.py": {
+      "installedSha256": "ea6a9ee4dbd286e70d7fe9513ac64dafe2be271241e6ae84204f238dcd1a6a35",
+      "kind": "file",
+      "sourceSha256": "ea6a9ee4dbd286e70d7fe9513ac64dafe2be271241e6ae84204f238dcd1a6a35"
+    },
     ".claude/rules/raven-python.md": {
       "installedSha256": "92392b08450e11070c4ad6c10a3eb335a47736007e4d5b80d1df6e782b4f4ee7",
       "kind": "file",
@@ -216,9 +221,9 @@
       "sourceSha256": "0fb3fd3b0ee5ffecbd26c339989e06b75cc9f7bb4a6b85dbdfe43683f5711d23"
     },
     ".claude/settings.json": {
-      "installedSha256": "a699a2739028b758d8900ea62823beae01f1137804281d751d4fcc39b778837d",
+      "installedSha256": "5fe9b03c90aa8814023d51a236598379f03a48eef623b4603b9c3c434c05775b",
       "kind": "file",
-      "sourceSha256": "a699a2739028b758d8900ea62823beae01f1137804281d751d4fcc39b778837d"
+      "sourceSha256": "5fe9b03c90aa8814023d51a236598379f03a48eef623b4603b9c3c434c05775b"
     },
     ".claude/skills": {
       "installedSha256": "81bdc0f9bb8fdb71e26bfdaf4de77159e927d44746752c62564185c1eefdce9e",
@@ -368,8 +373,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "ee1b92889b93",
+  "ravenVersion": "34debd43f0b4",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-06-19T04:51:52.019966+00:00"
+  "updatedAt": "2026-06-19T05:02:02.785948+00:00"
 }

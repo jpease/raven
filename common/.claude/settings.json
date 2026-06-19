@@ -37,6 +37,15 @@
             "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-session-checkpoint.py\""
           }
         ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-skeleton-read-guard.py\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
