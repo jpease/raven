@@ -5,6 +5,7 @@ from enum import Enum
 
 
 class Severity(str, Enum):
+    INFO = "info"
     OK = "ok"
     WARN = "warn"
     ERROR = "error"
@@ -28,5 +29,6 @@ def summarize(findings: list[Finding]) -> dict[str, int]:
     return {
         "errors": sum(1 for f in findings if f.severity is Severity.ERROR),
         "warnings": sum(1 for f in findings if f.severity is Severity.WARN),
+        "info": sum(1 for f in findings if f.severity is Severity.INFO),
         "ok": sum(1 for f in findings if f.severity is Severity.OK),
     }

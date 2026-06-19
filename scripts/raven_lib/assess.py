@@ -3,18 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from .config import load_config
-from .doctor import _default_runner
 from .findings import Finding, Severity
-from .gates import gate_spec_for, load_gate_specs
-from .runner import Runner
+from .gate_run import gate_compliance_findings
+from .gates import gate_spec_for, load_gate_specs, recipe_present
+from .runner import Runner, gate_runner
 
 _WIRING = "Quality-gate wiring"
 _FIT = "Template fit"
 _GATES = "Gate compliance"
-
-
-def _recipe_present(justfile_text: str, recipe: str) -> bool:
-    return any(line.rstrip().startswith(f"{recipe}:") for line in justfile_text.splitlines())
 
 
 def wiring_findings(destination: Path) -> list[Finding]:
@@ -59,7 +55,7 @@ def wiring_findings(destination: Path) -> list[Finding]:
         )
 
     for recipe in spec.recipes:
-        present = _recipe_present(text, recipe)
+        present = recipe_present(text, recipe)
         findings.append(
             Finding(
                 id=f"assess.wiring.recipe.{recipe}",
@@ -149,7 +145,7 @@ def template_fit_findings(destination: Path) -> list[Finding]:
 
 
 def build_assess_findings(
-    destination: Path, run: bool, runner: Runner = _default_runner
+    destination: Path, run: bool, runner: Runner = gate_runner
 ) -> list[Finding]:
     config = load_config(destination)
     if not config.exists:
@@ -166,14 +162,12 @@ def build_assess_findings(
 
     findings = wiring_findings(destination)
     if run:
-        from .gate_run import gate_compliance_findings
-
         findings.extend(gate_compliance_findings(destination, runner))
     else:
         findings.append(
             Finding(
                 id="assess.gates.skipped",
-                severity=Severity.OK,
+                severity=Severity.INFO,
                 category=_GATES,
                 title="Gates not executed (use --run)",
                 detail="static checks only; pass --run for a true pass/fail verdict",

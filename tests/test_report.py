@@ -58,7 +58,7 @@ class ReportTests(unittest.TestCase):
         data = json.loads(out)
         self.assertEqual(data["command"], "assess")
         self.assertEqual(data["os"], "linux")
-        self.assertEqual(data["summary"], {"errors": 1, "warnings": 1, "ok": 1})
+        self.assertEqual(data["summary"], {"errors": 1, "warnings": 1, "info": 0, "ok": 1})
         self.assertEqual(data["findings"][1]["severity"], "warn")
         self.assertEqual(data["findings"][2]["fix"], "run raven install")
 
