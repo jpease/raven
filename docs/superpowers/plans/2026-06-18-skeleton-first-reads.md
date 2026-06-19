@@ -1,8 +1,10 @@
 # Plan: Skeleton-first reads (rungs 1-3)
 
-Status: Rung 1 complete (generator + tests + cross-template install + the
-`raven-skeleton` discovery skill). Rungs 2-3 pending. Deferred follow-ups:
-ctags/rg fallback backends, Elixir structural rule.
+Status: Rungs 1-2 complete and shipped. Rung 1 = generator + discovery skill.
+Rung 2 = opt-in Claude read gate (default off), verified end-to-end. Rung 3
+HALTED: gap #2 (Read updatedToolOutput schema) could not be resolved from docs
+and needs an empirical test before it is safe to build (see rung 3 below).
+Deferred follow-ups: ctags/rg fallback backends, Elixir structural rule.
 
 Source research: `docs/research/hook-read-interception.md`.
 
@@ -116,7 +118,29 @@ Installs are unchanged until a team enables it; rung-0 guidance + the
 10. Ship via `common/.claude` settings template; confirm Codex is unaffected.
 11. Unit-test the guard as a pure function over the hook payload.
 
-### Rung 3 — Claude PostToolUse transform (BLOCKED on gap #2)
+### Rung 3 — Claude PostToolUse transform (HALTED: gap #2 unresolved)
+
+Finding (2026-06-18): gap #2 could not be resolved from the public docs. The
+Claude Code hooks reference confirms `hookSpecificOutput.updatedToolOutput`
+replaces a PostToolUse result, and one reading describes it as a general
+replacement with no tool-specific format enforcement -- but the precise Read
+schema/validation section is truncated, and the prior research recorded the
+opposite (built-in tools require a schema-matching replacement or it is silently
+ignored). The hooks-guide page does not cover `updatedToolOutput` at all.
+
+Because a mismatch fails *silently* (original full file still reaches the model,
+ast-grep cost incurred on every read, no error), building rung 3 on the
+optimistic reading risks a no-op that is invisible until measured. Per this
+plan's stop-condition, rung 3 is halted pending one of:
+- an authoritative doc/example pinning Read's `updatedToolOutput` behavior, or
+- an empirical test in a live Claude session (install a PostToolUse Read hook,
+  return a sentinel `updatedToolOutput`, observe whether Claude shows it).
+
+Design note for if/when it resumes: rung 2 (gate) and rung 3 (transform) must
+not both run on the same read -- a denied read never reaches PostToolUse. Treat
+them as mutually exclusive opt-in modes (off / gate / transform). Also, a
+transform must clearly label itself as a skeleton substitution so the agent does
+not believe it received full file contents.
 
 12. **Checkpoint:** resolve gap #2 — pin the exact `Read` output schema that
     `updatedToolOutput` must match (research + empirical test). If it cannot be
