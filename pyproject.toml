@@ -2,17 +2,31 @@
 line-length = 100
 target-version = "py310"
 
+# Raven's own development lint bar is intentionally stricter than the shipped
+# python/ template. pyproject.toml is a starter tool config, so this root file
+# diverges from the template permanently and is never clobbered by upgrade.
 [tool.ruff.lint]
 select = [
     "B",
+    "C4",
     "E4",
     "E7",
     "E9",
     "F",
     "I",
+    "ISC",
+    "PERF",
+    "PGH",
+    "PIE",
+    "RET",
+    "RUF",
     "SIM",
     "UP",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# __all__ is grouped by source module with comment headers, not sorted alphabetically.
+"scripts/raven_lib/__init__.py" = ["RUF022"]
 
 [tool.ruff.format]
 line-ending = "auto"
@@ -22,5 +36,11 @@ quote-style = "preserve"
 pythonVersion = "3.10"
 typeCheckingMode = "standard"
 reportMissingTypeStubs = false
+# Reference-grade extra beyond "standard" (not full "strict", which floods on
+# tomllib/untyped-boundary unknowns): fail the build when a # type: ignore goes
+# stale, so suppressions can't silently rot. (reportImplicitStringConcatenation
+# was evaluated and rejected — it flags intentional multi-line string splits;
+# ruff ISC already covers the accidental-concatenation bug class surgically.)
+reportUnnecessaryTypeIgnoreComment = true
 # Tests import the installer package from scripts/ after a sys.path insert.
 extraPaths = ["scripts"]
