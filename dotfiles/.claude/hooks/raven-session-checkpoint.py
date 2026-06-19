@@ -1,1 +1,0 @@
-../../../common/.claude/hooks/raven-session-checkpoint.py

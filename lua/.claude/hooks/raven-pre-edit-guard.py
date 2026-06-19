@@ -1,1 +1,0 @@
-../../../common/.claude/hooks/raven-pre-edit-guard.py
