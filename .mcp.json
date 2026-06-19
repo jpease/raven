@@ -14,6 +14,12 @@
         "semble"
       ]
     },
+    "gitnexus": {
+      "command": "gitnexus",
+      "args": [
+        "mcp"
+      ]
+    },
     "lsp": {
       "command": "mcp-language-server",
       "args": [
