@@ -4,16 +4,13 @@ import json
 
 from .findings import Finding, Severity, summarize
 
-_MARK = {Severity.OK: "✓", Severity.WARN: "!", Severity.ERROR: "✗"}
+_MARK = {Severity.INFO: "ⓘ", Severity.OK: "✓", Severity.WARN: "!", Severity.ERROR: "✗"}
 
 
 def render_human(command: str, os_name: str, findings: list[Finding]) -> str:
     lines: list[str] = [f"raven {command} ({os_name})", ""]
-    seen: list[str] = []
-    for f in findings:
-        if f.category not in seen:
-            seen.append(f.category)
-    for category in seen:
+    categories = list(dict.fromkeys(f.category for f in findings))
+    for category in categories:
         lines.append(category)
         for finding in [f for f in findings if f.category == category]:
             lines.append(f"  {_MARK[finding.severity]} {finding.title}")

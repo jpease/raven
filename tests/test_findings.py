@@ -26,7 +26,7 @@ class FindingsTests(unittest.TestCase):
             self._f(Severity.ERROR),
             self._f(Severity.OK),
         ]
-        self.assertEqual(summarize(findings), {"errors": 1, "warnings": 1, "ok": 2})
+        self.assertEqual(summarize(findings), {"errors": 1, "warnings": 1, "info": 0, "ok": 2})
 
     def test_severity_value_is_lowercase_string(self):
         self.assertEqual(Severity.WARN.value, "warn")
