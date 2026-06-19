@@ -53,7 +53,7 @@ def comparison_block_content(text: str) -> str:
     for line in normalized_block_content(text).split("\n"):
         table_separator = _normalize_markdown_table_separator(line)
         normalized_lines.append(table_separator if table_separator is not None else line)
-    return "".join("".join(normalized_lines).split())
+    return " ".join(" ".join(normalized_lines).split())
 
 
 def block_content_matches(left: str, right: str) -> bool:
@@ -129,7 +129,10 @@ def update_raven_block(entry: TemplateEntry, target: Path) -> None:
     replacement = raven_managed_block(entry.source.read_text(encoding="utf-8")).splitlines()[1:]
     updated = lines[: block.start] + replacement + lines[block.end + 1 :]
     trailing_newline = "\n" if text.endswith("\n") else ""
-    target.write_text("\n".join(updated) + trailing_newline, encoding="utf-8")
+    final_content = "\n".join(updated) + trailing_newline
+    if target.is_symlink():
+        target.unlink()
+    target.write_text(final_content, encoding="utf-8")
 
 
 def template_entry_text(entry: TemplateEntry) -> str:
