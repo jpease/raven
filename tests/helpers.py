@@ -24,6 +24,11 @@ def load_script_module(name: str, path: Path) -> Any:
     if spec is None or spec.loader is None:
         raise ImportError(f"could not load module {name!r} from {path}")
     module = importlib.util.module_from_spec(spec)
+    # Register before exec so the module can resolve its own namespace -- e.g.
+    # @dataclass under ``from __future__ import annotations`` looks the module up
+    # in sys.modules to evaluate string annotations. This mirrors the import
+    # system's own loading order.
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
