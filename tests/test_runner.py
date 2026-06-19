@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from raven_lib.runner import RunResult, run_command
+from raven_lib.runner import run_command
 
 
 class RunnerTests(unittest.TestCase):

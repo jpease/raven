@@ -1,3 +1,4 @@
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -64,9 +65,6 @@ class DoctorDriftTests(RavenTestCase):
         findings = drift_findings(self.destination)
         ids = {f.id for f in findings}
         self.assertIn("doctor.drift.modified", ids)
-
-
-import json
 
 
 def _fake_toolcheck_runner(results):

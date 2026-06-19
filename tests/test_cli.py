@@ -1,3 +1,4 @@
+import json as _json
 import os
 import subprocess
 import sys
@@ -51,9 +52,6 @@ class CliTests(RavenTestCase):
         self.assertIn("template-relative file paths to force-copy", result.stdout)
         self.assertIn("Supported languages:", result.stdout)
         self.assertNotIn("language_or_path", result.stdout)
-
-
-import json as _json
 
 
 class DoctorAssessCliTests(RavenTestCase):
