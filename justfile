@@ -17,6 +17,10 @@ typecheck:
 # Run the standard local verification set
 check: lint typecheck test
 
+# List open issues with hierarchy and priority
+list-open:
+    ./scripts/list_open_issues.py
+
 # Install a pre-commit git hook that runs 'just check'
 install-hooks:
     #!/usr/bin/env sh
