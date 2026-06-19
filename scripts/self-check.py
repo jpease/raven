@@ -231,7 +231,7 @@ def main() -> int:
     validate_installed_shape()
     run("ruff format check", [sys.executable, "-m", "ruff", "format", "--check", "."])
     run("ruff lint", [sys.executable, "-m", "ruff", "check", "."])
-    run("unit tests", [sys.executable, "-m", "unittest", "discover", "-s", "tests"])
+    run("unit tests", [sys.executable, "-m", "pytest", "tests"])
     print("RAVEN self-check passed")
     return 0
 

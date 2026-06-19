@@ -38,7 +38,7 @@ The command should produce no output.
 3. Run the template applicator tests:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tests
+PYTHONDONTWRITEBYTECODE=1 python -m pytest tests
 ```
 
 4. Preview the Python template:
@@ -83,7 +83,7 @@ If a shared file should not be installed into destination repositories, keep it 
 
 - No broken symlinks.
 - No `.DS_Store` or `__pycache__` artifacts.
-- `python -m unittest discover -s tests` passes.
+- `python -m pytest tests` passes.
 - `raven.py install --dry-run` output is understandable and complete.
 - Generated `.raven/config.toml` is self-documenting and `.raven/manifest.json` is written on apply.
 - Destination-facing files live only in `common/` or language templates.
