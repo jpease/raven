@@ -114,7 +114,7 @@ gitnexus: gitnexus mcp - ✓ Connected
         module._claude_mcp_server_names.cache_clear()
         module._claude_mcp_server_names_from_config.cache_clear()
         module._claude_mcp_server_names_from_cli.cache_clear()
-        module._claude_mcp_config_paths = lambda: []
+        module._claude_mcp_config_paths = list
         try:
             self.assertEqual(module.claude_mcp_server_status("semble"), "timed_out")
             self.assertFalse(module.claude_mcp_server_configured("semble"))

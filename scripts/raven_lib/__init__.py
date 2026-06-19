@@ -8,6 +8,7 @@ from .apply import (
     prompt_for_claude_symlink_adoption,
     reconcile_state,
 )
+from .assess import build_assess_findings
 from .blocks import (
     append_patch_text,
     block_content_matches,
@@ -81,6 +82,8 @@ from .constants import (
     STARTER_TOOL_CONFIG_PATHS,
     _any_exists,
 )
+from .doctor import build_doctor_findings
+from .findings import Finding, Severity, exit_code, summarize
 from .git_hooks import install_git_hooks
 from .hashing import (
     destination_fingerprint,
@@ -116,16 +119,13 @@ from .plan import (
     print_dry_run_summary,
     print_section,
 )
+from .report import render_human, render_json
 from .template import (
     entries_for_destination,
     is_excluded,
     iter_template_entries,
     should_preserve_symlink,
 )
-from .findings import Finding, Severity, exit_code, summarize
-from .report import render_human, render_json
-from .doctor import build_doctor_findings
-from .assess import build_assess_findings
 
 __all__ = [
     # constants

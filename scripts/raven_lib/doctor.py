@@ -16,8 +16,8 @@ from .constants import (
 )
 from .findings import Finding, Severity
 from .gates import gate_spec_for
-from .runner import RunResult, Runner, run_command
 from .manifest import git_ref, load_manifest
+from .runner import Runner, probe_runner
 
 _INTEGRITY = "Install integrity"
 _DRIFT = "Drift & freshness"
@@ -229,11 +229,7 @@ def drift_findings(destination: Path) -> list[Finding]:
 _TOOLCHAIN = "Toolchain"
 
 
-def _default_runner(command: list[str], cwd: Path) -> RunResult:
-    return run_command(command, cwd, timeout=15)
-
-
-def _tool_check_results(destination: Path, runner: Runner) -> list[dict] | None:
+def _tool_check_results(destination: Path, runner: Runner) -> list[dict[str, object]] | None:
     script = destination / ".claude" / "scripts" / "raven-tool-check.py"
     result = runner([sys.executable, str(script), "--json"], destination)
     if result.timed_out:
@@ -246,7 +242,7 @@ def _tool_check_results(destination: Path, runner: Runner) -> list[dict] | None:
     return results if isinstance(results, list) else None
 
 
-def toolchain_findings(destination: Path, runner: Runner = _default_runner) -> list[Finding]:
+def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list[Finding]:
     findings: list[Finding] = []
     results = _tool_check_results(destination, runner)
     if results is None:
@@ -319,7 +315,7 @@ def toolchain_findings(destination: Path, runner: Runner = _default_runner) -> l
     return findings
 
 
-def build_doctor_findings(destination: Path, runner: Runner = _default_runner) -> list[Finding]:
+def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> list[Finding]:
     findings = toolchain_findings(destination, runner)
     integrity = integrity_findings(destination)
     findings.extend(integrity)
