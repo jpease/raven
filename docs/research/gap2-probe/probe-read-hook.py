@@ -8,23 +8,22 @@ was ignored (Read enforces an output schema; rung 3 is not viable as-is).
 
 Throwaway diagnostic -- not part of the shipped Raven templates."""
 
+import contextlib
 import json
 import os
 import sys
 
 # Drain stdin (the hook payload) so the process exits cleanly; contents unused.
-try:
+with contextlib.suppress(Exception):
     json.load(sys.stdin)
-except Exception:
-    pass
 
 # Marker so we can tell "hook never fired" (e.g. untrusted in headless mode)
 # apart from "ran but updatedToolOutput was ignored".
-try:
-    with open(os.path.join(os.getcwd(), "PROBE_HOOK_RAN.marker"), "a", encoding="utf-8") as fh:
-        fh.write("ran\n")
-except Exception:
-    pass
+with (
+    contextlib.suppress(Exception),
+    open(os.path.join(os.getcwd(), "PROBE_HOOK_RAN.marker"), "a", encoding="utf-8") as fh,
+):
+    fh.write("ran\n")
 
 SENTINEL = (
     "RAVEN_GAP2_PROBE_SENTINEL\n"
