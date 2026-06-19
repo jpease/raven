@@ -81,10 +81,13 @@ This makes `--run` a real CI gate while keeping the static/default mode advisory
 
 ### Reuse of existing code
 
-- **Tool probing** (`doctor` toolchain checks) calls the existing tool-check
-  engine in `.claude/scripts/raven-tool-check.py` rather than reimplementing CLI
-  and MCP probing. The engine functions (`check_all_tools`, the `TOOLS` table)
-  are imported/invoked; `assess.py` adapts their results into `Finding`s.
+- **Tool probing** (`doctor` toolchain checks) reuses the existing tool-check
+  engine in `.claude/scripts/raven-tool-check.py` by invoking the installed copy
+  as a subprocess with `--json` and parsing its `results` array into `Finding`s.
+  Subprocess + `--json` (rather than importing a hyphenated-filename script) keeps
+  `doctor` decoupled from that script's internals and uses the destination's own
+  installed copy. The subprocess call goes through the same injectable runner as
+  `--run`, so tests stub it.
 - **Config & manifest reading** reuses `config.py` and `manifest.py`.
 - **Drift detection** reuses the same template-vs-installed comparison the
   `upgrade` path already computes (in `plan.py` / `apply.py`), surfaced as
@@ -94,11 +97,18 @@ This makes `--run` a real CI gate while keeping the static/default mode advisory
 
 Category: **Toolchain**
 
-- Recommended Raven tools present (wraps the tool-check engine). A missing
-  required tool → `error`; a missing tool that has `optionalWhen` → `warn`.
+- Recommended Raven tools present (wraps the tool-check engine). Missing tool →
+  `warn`, not `error`: Raven ships documented fallbacks for every recommended
+  tool, so a gap degrades quality rather than breaking Raven. `optionalWhen`
+  tools also `warn` but their `detail` notes the condition under which they are
+  unneeded.
 - The active template's gate tools present (e.g. `ruff`, `pyright` for python),
-  drawn from the per-language gate table (see below). Missing → `error` (the
-  gates cannot run without them).
+  drawn from the per-language gate table (see below). Missing → `warn`, with a
+  `fix` pointing at install guidance.
+
+Because every toolchain finding is at most `warn`, the `Toolchain` category
+never drives a non-zero exit. `doctor` exits non-zero only when **Install
+integrity** reports an `error`.
 
 Category: **Install integrity**
 
