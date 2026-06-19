@@ -103,6 +103,11 @@ Deliver three rungs:
 
 ### Rung 2 — Claude PreToolUse gate (unblocked)
 
+Decision (2026-06-18): the gate ships **opt-in, default off** via a config flag.
+Installs are unchanged until a team enables it; rung-0 guidance + the
+`raven-skeleton` skill remain active everywhere.
+
+
 8. Add `PreToolUse` hook matching `Read`: stat size/line count; if over threshold
    AND a supported language AND the read is unbounded (no `offset`/`limit`), deny
    with an actionable reason (run the skeleton helper, then read ranges).
