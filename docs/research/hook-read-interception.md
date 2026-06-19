@@ -388,12 +388,19 @@ only infer approximate ending lines.
 
 Detailed generator research appears below under **Source-code skeleton generators**.
 
-### 2. Claude's exact `Read` output schema
+### 2. Claude's exact `Read` output schema — RESOLVED (empirically)
 
-`PostToolUse.updatedToolOutput` is silently ignored unless it matches the built-in
-tool's output schema. Capture the precise `Read` result contract (e.g. whether the
-replacement must mimic the `cat -n` line-numbered format) or the transform path is
-unbuildable.
+Tested with a live headless probe (Claude Code 2.1.183): a `PostToolUse` hook on
+`Read` returned a valid, correctly-shaped `hookSpecificOutput.updatedToolOutput`
+(a plain string sentinel). A marker file confirmed the hook fired, yet Claude
+received the **original file contents**, not the sentinel.
+
+**Conclusion: `updatedToolOutput` does not replace the built-in `Read` tool's
+result.** A plain-string replacement is silently ignored. The public docs never
+document a `Read` output schema, so a "schema-matching" replacement cannot be
+constructed reliably either. Therefore the rung-3 transparent transform is **not
+viable** for `Read`; rung 2 (the gate) is the correct mechanism. Probe preserved
+under `docs/research/gap2-probe/` for re-verification against future versions.
 
 ### 3. Codex read *behavior*, not just tool surface
 
