@@ -216,9 +216,9 @@
       "sourceSha256": "f4b302632ceb0e171f9008a161d7b8ed369322451a40ee8da7de2cb5c653d2ed"
     },
     ".claude/scripts/raven-tool-check.py": {
-      "installedSha256": "0fb3fd3b0ee5ffecbd26c339989e06b75cc9f7bb4a6b85dbdfe43683f5711d23",
+      "installedSha256": "a08ff73a2170dfe578b50e256ff2ccd4203782594539def205913e0df11be62f",
       "kind": "file",
-      "sourceSha256": "0fb3fd3b0ee5ffecbd26c339989e06b75cc9f7bb4a6b85dbdfe43683f5711d23"
+      "sourceSha256": "a08ff73a2170dfe578b50e256ff2ccd4203782594539def205913e0df11be62f"
     },
     ".claude/settings.json": {
       "installedSha256": "5fe9b03c90aa8814023d51a236598379f03a48eef623b4603b9c3c434c05775b",
@@ -302,9 +302,9 @@
       "sourceSha256": "f4b302632ceb0e171f9008a161d7b8ed369322451a40ee8da7de2cb5c653d2ed"
     },
     ".codex/scripts/raven-tool-check.py": {
-      "installedSha256": "0fb3fd3b0ee5ffecbd26c339989e06b75cc9f7bb4a6b85dbdfe43683f5711d23",
+      "installedSha256": "a08ff73a2170dfe578b50e256ff2ccd4203782594539def205913e0df11be62f",
       "kind": "file",
-      "sourceSha256": "0fb3fd3b0ee5ffecbd26c339989e06b75cc9f7bb4a6b85dbdfe43683f5711d23"
+      "sourceSha256": "a08ff73a2170dfe578b50e256ff2ccd4203782594539def205913e0df11be62f"
     },
     ".mcp.json": {
       "installedSha256": "792dfd7a6a441f528e7ce98e9fe37850a41517828b21fc4878bc303af95e2cf8",
@@ -373,8 +373,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "984532ddb778",
+  "ravenVersion": "ce10df574905",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-06-19T08:14:04.231508+00:00"
+  "updatedAt": "2026-06-19T08:15:31.006419+00:00"
 }

@@ -126,7 +126,11 @@ TOOLS = [
     {
         "id": "ast-grep",
         "name": "ast-grep",
-        "commands": [["ast-grep", "--version"], ["sg", "--version"]],
+        # Probe only `ast-grep`, never the `sg` alias: on some Linux systems
+        # /usr/bin/sg is the unrelated setgroups utility, which would yield a
+        # false positive (or an interactive hang). Raven always invokes ast-grep
+        # by its full name anyway.
+        "commands": [["ast-grep", "--version"]],
         "purpose": "syntax-aware search and mechanical rewrites",
         "install": {
             "darwin": "official install docs: https://ast-grep.github.io/guide/quick-start.html",
