@@ -154,12 +154,30 @@ def cmd_init(args: list[str]) -> int:
     return 0
 
 
+def _existing_ignore_patterns(text: str) -> set:  # type: ignore[type-arg]
+    """Effective ignore patterns from .gitignore text.
+
+    Compares by exact pattern, not substring, so a comment or a longer path that
+    merely contains an entry does not count as the entry. Per gitignore syntax a
+    line is a comment only when it starts with ``#``; surrounding whitespace is
+    not significant for these simple path patterns, so it is stripped.
+    """
+    patterns = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        patterns.add(line)
+    return patterns
+
+
 def _update_gitignore() -> None:
     """Append session file entries to .gitignore if not already present."""
     gitignore = Path(".gitignore")
     entries = [".raven/session.md", ".raven/session.lock", ".raven/session-archive.md"]
     existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
-    missing = [e for e in entries if e not in existing]
+    present = _existing_ignore_patterns(existing)
+    missing = [e for e in entries if e not in present]
     if missing:
         block = "\n# Raven session state\n" + "\n".join(missing) + "\n"
         with gitignore.open("a", encoding="utf-8") as f:

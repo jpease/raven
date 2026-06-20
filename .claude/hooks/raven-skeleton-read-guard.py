@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -40,26 +39,39 @@ SUPPORTED_EXTENSIONS = {
     ".exs",
 }
 
-_GATE_RE = re.compile(r"^\s*read_gate\s*=\s*true\b", re.IGNORECASE)
-_THRESHOLD_RE = re.compile(r"^\s*read_gate_threshold_lines\s*=\s*(\d+)")
-
 
 def parse_gate_config(text: str) -> tuple[bool, int]:
-    """Parse the opt-in gate config from raw ``.raven/config.toml`` text.
+    """Parse the opt-in gate config from the ``[skeleton]`` table of raw
+    ``.raven/config.toml`` text.
 
-    Returns ``(enabled, threshold)``. Default off with a default threshold; a
-    line scan (no TOML parser) keeps the hook self-contained, matching the
-    existing checkpoint hook. The threshold key shares the ``read_gate`` prefix,
-    so the gate key is matched precisely to avoid enabling on the threshold line.
+    Returns ``(enabled, threshold)``. Default off with the default threshold.
+    Only assignments inside the ``[skeleton]`` table are honored; keys in other
+    tables (including the implicit root table), comments, and similarly named
+    keys have no effect. A section-aware line scan (no TOML parser) keeps the
+    hook self-contained, matching the checkpoint hook. Malformed values fall back
+    to the documented safe defaults without raising: a non-boolean ``read_gate``
+    keeps the prior value and a non-integer threshold keeps the prior threshold.
     """
     enabled = False
     threshold = DEFAULT_THRESHOLD
-    for line in text.splitlines():
-        if _GATE_RE.match(line):
-            enabled = True
-        match = _THRESHOLD_RE.match(line)
-        if match:
-            threshold = int(match.group(1))
+    section: str | None = None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1].strip()
+            continue
+        if section != "skeleton" or "=" not in line:
+            continue
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key == "read_gate":
+            if value == "true":
+                enabled = True
+            elif value == "false":
+                enabled = False
+        elif key == "read_gate_threshold_lines" and value.isdigit():
+            threshold = int(value)
     return (enabled, threshold)
 
 
