@@ -16,7 +16,7 @@ from .constants import (
 )
 from .findings import Finding, Severity
 from .gates import gate_spec_for
-from .manifest import git_ref, load_manifest
+from .manifest import ManifestStatus, git_ref, validate_manifest
 from .runner import Runner, probe_runner
 
 _INTEGRITY = "Install integrity"
@@ -47,28 +47,7 @@ def integrity_findings(destination: Path) -> list[Finding]:
         )
     ]
 
-    manifest_path = destination / ".raven" / "manifest.json"
-    if manifest_path.exists():
-        findings.append(
-            Finding(
-                id="doctor.install.manifest",
-                severity=Severity.OK,
-                category=_INTEGRITY,
-                title="Manifest present",
-                detail=".raven/manifest.json found",
-            )
-        )
-    else:
-        findings.append(
-            Finding(
-                id="doctor.install.manifest",
-                severity=Severity.WARN,
-                category=_INTEGRITY,
-                title="Manifest missing",
-                detail=".raven/manifest.json not found; upgrade/accept state is unknown",
-                fix="run `raven install` or `raven upgrade` to regenerate it",
-            )
-        )
+    findings.append(_manifest_finding(validate_manifest(destination)))
 
     for name, enabled in config.components.items():
         if not enabled:
@@ -116,6 +95,48 @@ def integrity_findings(destination: Path) -> list[Finding]:
 
         findings.append(_symlink_finding(destination))
     return findings
+
+
+_MANIFEST_FINDINGS: dict[str, tuple[Severity, str, str | None]] = {
+    "ok": (Severity.OK, "Manifest present", None),
+    "missing": (
+        Severity.WARN,
+        "Manifest missing",
+        "run `raven install` or `raven upgrade` to regenerate it",
+    ),
+    "unreadable": (
+        Severity.ERROR,
+        "Manifest unreadable",
+        "fix or regenerate .raven/manifest.json (e.g. `raven upgrade`)",
+    ),
+    "not_object": (
+        Severity.ERROR,
+        "Manifest malformed",
+        "fix or regenerate .raven/manifest.json (e.g. `raven upgrade`)",
+    ),
+    "invalid_files": (
+        Severity.ERROR,
+        "Manifest malformed",
+        "fix or regenerate .raven/manifest.json (e.g. `raven upgrade`)",
+    ),
+    "unsupported_schema": (
+        Severity.WARN,
+        "Manifest schema unsupported",
+        "upgrade Raven to a version that understands this manifest schema",
+    ),
+}
+
+
+def _manifest_finding(status: ManifestStatus) -> Finding:
+    severity, title, fix = _MANIFEST_FINDINGS[status.state]
+    return Finding(
+        id="doctor.install.manifest",
+        severity=severity,
+        category=_INTEGRITY,
+        title=title,
+        detail=status.detail,
+        fix=fix,
+    )
 
 
 def _symlink_finding(destination: Path) -> Finding:
@@ -172,8 +193,19 @@ def drift_findings(destination: Path) -> list[Finding]:
 
     findings: list[Finding] = []
     template = REPO_ROOT / config.template
-    classification = classify(template, destination, set(DEFAULT_EXCLUDES), config)
+    # Validate the manifest once and reuse it: this avoids the stderr warnings
+    # load_manifest emits (which would otherwise fire twice, once here and once
+    # inside classify) and lets an unusable manifest block a "no drift" claim.
+    manifest_status = validate_manifest(destination)
+    manifest = manifest_status.manifest
+    classification = classify(
+        template, destination, set(DEFAULT_EXCLUDES), config, manifest=manifest
+    )
     pending = pending_merge_paths(destination)
+    # Template entries absent from the destination -- individually deleted (or
+    # never installed) managed files. They are drift the user must restore, and
+    # their presence forbids the "no drift detected" OK finding below.
+    missing = sorted(set(classification.will_copy) - set(pending))
     # Files with a pending guided merge are, by construction, also classified as
     # needs_merge. Subtract them so each finding is disjoint: "locally modified"
     # surfaces only drift that has no merge artifact yet, while "pending guided
@@ -186,6 +218,18 @@ def drift_findings(destination: Path) -> list[Finding]:
     # baseline: nothing upstream to merge, so these are informational, not drift
     # that needs action (e.g. an editor reformatting an installed file).
     local_only = sorted(set(classification.local_only) - set(pending))
+    if missing:
+        findings.append(
+            Finding(
+                id="doctor.drift.missing",
+                severity=Severity.WARN,
+                category=_DRIFT,
+                title=f"{len(missing)} expected Raven file(s) missing",
+                detail=", ".join(missing),
+                fix="run `raven upgrade` to restore missing files",
+            )
+        )
+
     if modified:
         findings.append(
             Finding(
@@ -197,7 +241,7 @@ def drift_findings(destination: Path) -> list[Finding]:
                 fix="review and `raven upgrade` or `raven accept`",
             )
         )
-    elif not pending and not local_only:
+    elif not pending and not local_only and not missing and manifest_status.usable:
         findings.append(
             Finding(
                 id="doctor.drift.modified",
@@ -232,7 +276,6 @@ def drift_findings(destination: Path) -> list[Finding]:
             )
         )
 
-    manifest = load_manifest(destination)
     installed_version = manifest.get("ravenVersion")
     current = git_ref()
     if (

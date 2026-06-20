@@ -1,3 +1,6 @@
+import argparse
+import contextlib
+import io
 import json
 import sys
 import unittest
@@ -7,16 +10,16 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from helpers import RavenTestCase
-from raven_lib.doctor import drift_findings, integrity_findings
-from raven_lib.findings import Severity
+from helpers import RavenTestCase, raven
+from raven_lib.doctor import build_doctor_findings, drift_findings, integrity_findings
+from raven_lib.findings import Severity, exit_code
 from raven_lib.models import Classification
 from raven_lib.runner import RunResult
 
 
-def _classification(needs_merge, local_only=()):
+def _classification(needs_merge, local_only=(), will_copy=()):
     return Classification(
-        will_copy=[],
+        will_copy=list(will_copy),
         will_upgrade=[],
         identical=[],
         needs_merge=list(needs_merge),
@@ -24,6 +27,23 @@ def _classification(needs_merge, local_only=()):
         excluded=[],
         local_only=list(local_only),
     )
+
+
+def _install(testcase):
+    """Perform a real Raven install of the python template into the temp dir."""
+    ns = argparse.Namespace(
+        destination=str(testcase.destination),
+        language="python",
+        args=None,
+        overrides=[],
+        dry_run=False,
+        include_readme=False,
+        adopt_claude_symlink=False,
+        platform=None,
+    )
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        rc = raven.cmd_install(ns)
+    testcase.assertEqual(rc, 0)
 
 
 class DoctorIntegrityTests(RavenTestCase):
@@ -101,22 +121,38 @@ class DoctorDriftTests(RavenTestCase):
             'schema = 1\ntemplate = "python"\n', encoding="utf-8"
         )
 
-    def _drift(self, *, needs_merge, pending, local_only=()):
+    def _drift(self, *, needs_merge, pending, local_only=(), will_copy=()):
         self._config()
         with (
             mock.patch(
                 "raven_lib.doctor.classify",
-                return_value=_classification(needs_merge, local_only=local_only),
+                return_value=_classification(
+                    needs_merge, local_only=local_only, will_copy=will_copy
+                ),
             ),
             mock.patch("raven_lib.doctor.pending_merge_paths", return_value=list(pending)),
         ):
             return {f.id: f for f in drift_findings(self.destination)}
 
-    def test_clean_destination_reports_ok_modified(self):
-        self._config()
+    def test_complete_install_reports_ok_modified(self):
+        _install(self)
         findings = drift_findings(self.destination)
         ids = {f.id for f in findings}
         self.assertIn("doctor.drift.modified", ids)
+
+    def test_missing_files_reported_and_suppress_ok(self):
+        # will_copy holds template entries absent from the destination -- i.e.
+        # individually deleted managed files. They must surface as drift, not be
+        # masked by a "no drift detected" OK finding.
+        findings = self._drift(
+            needs_merge=[],
+            pending=[],
+            will_copy=[".claude/docs/raven-authority-map.md"],
+        )
+        self.assertIn("doctor.drift.missing", findings)
+        self.assertEqual(findings["doctor.drift.missing"].severity, Severity.WARN)
+        self.assertIn("raven-authority-map.md", findings["doctor.drift.missing"].detail)
+        self.assertNotIn("doctor.drift.modified", findings)
 
     def test_pending_files_excluded_from_modified_count(self):
         shared = ".claude/rules/raven-python.md"
@@ -150,6 +186,111 @@ class DoctorDriftTests(RavenTestCase):
         self.assertEqual(findings["doctor.drift.local"].severity, Severity.INFO)
         self.assertIn("justfile", findings["doctor.drift.local"].detail)
         self.assertNotIn("doctor.drift.modified", findings)
+
+
+# ---------------------------------------------------------------------------
+# #39 -- doctor must report individually deleted managed files
+# ---------------------------------------------------------------------------
+class DoctorMissingFilesTests(RavenTestCase):
+    def test_complete_install_reports_no_missing(self):
+        _install(self)
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertNotIn("doctor.drift.missing", findings)
+        self.assertEqual(findings["doctor.drift.modified"].severity, Severity.OK)
+
+    def test_deleted_file_from_multifile_component_is_reported(self):
+        _install(self)
+        deleted = self.destination / ".claude" / "docs" / "raven-authority-map.md"
+        self.assertTrue(deleted.exists())
+        deleted.unlink()
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertIn("doctor.drift.missing", findings)
+        self.assertEqual(findings["doctor.drift.missing"].severity, Severity.WARN)
+        self.assertIn(
+            ".claude/docs/raven-authority-map.md", findings["doctor.drift.missing"].detail
+        )
+        # The no-drift OK finding must not claim health while a file is missing.
+        self.assertNotIn("doctor.drift.modified", findings)
+
+    def test_deleted_expected_symlink_is_reported(self):
+        _install(self)
+        symlink = self.destination / ".claude" / "skills"
+        self.assertTrue(symlink.is_symlink())
+        symlink.unlink()
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertIn("doctor.drift.missing", findings)
+        self.assertIn(".claude/skills", findings["doctor.drift.missing"].detail)
+        self.assertNotIn("doctor.drift.modified", findings)
+
+
+# ---------------------------------------------------------------------------
+# #40 -- doctor must validate the manifest before reporting it healthy
+# ---------------------------------------------------------------------------
+class DoctorManifestTests(RavenTestCase):
+    def _config(self):
+        (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n', encoding="utf-8"
+        )
+
+    def _write_manifest(self, text):
+        (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
+        (self.destination / ".raven" / "manifest.json").write_text(text, encoding="utf-8")
+
+    def _manifest_finding(self):
+        self._config()
+        ids = {f.id: f for f in integrity_findings(self.destination)}
+        return ids["doctor.install.manifest"]
+
+    def test_valid_manifest_is_ok(self):
+        self._write_manifest(json.dumps({"schema": 1, "files": {}}))
+        self.assertEqual(self._manifest_finding().severity, Severity.OK)
+
+    def test_missing_manifest_is_warn(self):
+        self._config()
+        ids = {f.id: f for f in integrity_findings(self.destination)}
+        self.assertEqual(ids["doctor.install.manifest"].severity, Severity.WARN)
+
+    def test_malformed_json_is_error(self):
+        self._write_manifest("{bad")
+        self.assertEqual(self._manifest_finding().severity, Severity.ERROR)
+
+    def test_non_object_root_is_error(self):
+        self._write_manifest("[]")
+        self.assertEqual(self._manifest_finding().severity, Severity.ERROR)
+
+    def test_invalid_files_is_error(self):
+        self._write_manifest(json.dumps({"schema": 1, "files": []}))
+        self.assertEqual(self._manifest_finding().severity, Severity.ERROR)
+
+    def test_unsupported_schema_is_warn(self):
+        self._write_manifest(json.dumps({"schema": 99, "files": {}}))
+        finding = self._manifest_finding()
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIsNotNone(finding.fix)
+
+    def test_corrupt_manifest_suppresses_no_drift_ok_without_stderr(self):
+        _install(self)
+        self._write_manifest("{bad")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            drift = {f.id: f for f in drift_findings(self.destination)}
+            integ = {f.id: f for f in integrity_findings(self.destination)}
+        # An unusable manifest must block the "no drift detected" OK finding...
+        self.assertNotIn("doctor.drift.modified", drift)
+        # ...and the manifest finding must be a structured ERROR.
+        self.assertEqual(integ["doctor.install.manifest"].severity, Severity.ERROR)
+        # JSON/structured callers must not depend on stderr for the diagnosis.
+        self.assertEqual(err.getvalue(), "")
+
+    def test_corrupt_manifest_makes_doctor_exit_nonzero(self):
+        _install(self)
+        self._write_manifest("{bad")
+        findings = build_doctor_findings(self.destination, _fake_toolcheck_runner([]))
+        self.assertEqual(exit_code(findings), 1)
+        # The manifest diagnostic is emitted exactly once across the invocation.
+        manifest_findings = [f for f in findings if f.id == "doctor.install.manifest"]
+        self.assertEqual(len(manifest_findings), 1)
 
 
 def _fake_toolcheck_runner(results):
