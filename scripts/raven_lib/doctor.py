@@ -86,30 +86,35 @@ def integrity_findings(destination: Path) -> list[Finding]:
                 )
             )
 
-    agents = destination / "AGENTS.md"
-    if _any_exists(agents):
-        findings.append(
-            Finding(
-                id="doctor.install.agents",
-                severity=Severity.OK,
-                category=_INTEGRITY,
-                title="AGENTS.md present",
-                detail="root instruction file found",
+    # Root-instruction and symlink checks apply only when the root_instructions
+    # component is enabled. A repository that owns its own AGENTS.md/CLAUDE.md
+    # sets root_instructions = false, so their absence is the configured shape,
+    # not an integrity error.
+    if config.components.get("root_instructions", True):
+        agents = destination / "AGENTS.md"
+        if _any_exists(agents):
+            findings.append(
+                Finding(
+                    id="doctor.install.agents",
+                    severity=Severity.OK,
+                    category=_INTEGRITY,
+                    title="AGENTS.md present",
+                    detail="root instruction file found",
+                )
             )
-        )
-    else:
-        findings.append(
-            Finding(
-                id="doctor.install.agents",
-                severity=Severity.ERROR,
-                category=_INTEGRITY,
-                title="AGENTS.md missing",
-                detail="the canonical root instruction file is absent",
-                fix="run `raven install` to create AGENTS.md",
+        else:
+            findings.append(
+                Finding(
+                    id="doctor.install.agents",
+                    severity=Severity.ERROR,
+                    category=_INTEGRITY,
+                    title="AGENTS.md missing",
+                    detail="the canonical root instruction file is absent",
+                    fix="run `raven install` to create AGENTS.md",
+                )
             )
-        )
 
-    findings.append(_symlink_finding(destination))
+        findings.append(_symlink_finding(destination))
     return findings
 
 
