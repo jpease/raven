@@ -3,16 +3,25 @@ from __future__ import annotations
 import argparse
 import platform
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from .apply import classify, claude_symlink_adoption_needed, prompt_for_claude_symlink_adoption
+from .apply import (
+    classify,
+    claude_symlink_adoption_needed,
+    find_path_collisions,
+    prompt_for_claude_symlink_adoption,
+)
 from .assess import build_assess_findings
 from .blocks import pending_merge_paths, remove_merge_artifacts
-from .config import _update_config_platform, default_config_text, load_config
+from .config import ConfigError, _update_config_platform, default_config_text, load_config
 from .constants import (
+    CLAUDE_BACKUP_PATH,
+    CLAUDE_PATH,
     CONFIG_PATH,
     DEFAULT_EXCLUDES,
+    MANIFEST_PATH,
     MERGE_DIR,
     NON_TEMPLATE_DIRS,
     REPO_ROOT,
@@ -22,6 +31,7 @@ from .doctor import build_doctor_findings
 from .findings import exit_code
 from .git_hooks import install_git_hooks
 from .manifest import load_manifest, update_manifest
+from .models import ApplyPlan, RavenConfig
 from .plan import (
     apply_plan,
     build_apply_plan,
@@ -78,6 +88,42 @@ def _parse_install_language(items: list[str]) -> tuple[str | None, list[str]]:
     return None, items
 
 
+def _load_config_or_report(destination: Path) -> RavenConfig | None:
+    """Load config, reporting a malformed file as an error instead of raising."""
+    try:
+        return load_config(destination)
+    except ConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return None
+
+
+def _config_template_or_report(destination: Path, config: RavenConfig) -> str | None:
+    """Template name from an existing config, or None (after reporting) if absent.
+
+    A present config that yields no template (a missing ``template`` line or an
+    unreadable file) must not silently fall back to the first language template.
+    """
+    if config.template is None:
+        print(
+            f"error: {destination / CONFIG_PATH} does not configure a template; "
+            "set a valid `template` value or re-run `raven install <language>`.",
+            file=sys.stderr,
+        )
+        return None
+    return config.template
+
+
+def _planned_write_paths(plan: ApplyPlan) -> list[str]:
+    """Destination-relative paths a live apply of ``plan`` would create or write."""
+    paths: set[str] = set(plan.will_copy) | set(plan.will_upgrade) | set(plan.requested_overrides)
+    paths.add(CONFIG_PATH.as_posix())
+    paths.add(MANIFEST_PATH.as_posix())
+    paths.update((MERGE_DIR / relative).as_posix() for relative in plan.guided_merge_paths)
+    if plan.adopt_claude_symlink:
+        paths.add(CLAUDE_PATH)
+    return sorted(paths)
+
+
 def _run(
     destination: Path,
     template_name: str,
@@ -87,11 +133,13 @@ def _run(
     adopt_claude_symlink_requested: bool = False,
     prompt_claude_symlink: bool = True,
     platform_override: str | None = None,
+    write_config: Callable[[], int] | None = None,
 ) -> int:
     config = load_config(destination)
     if platform_override is not None:
-        # Dry runs must not write config, but the preview should still
-        # reflect the requested platform's skill gating.
+        # The effective config reflects the requested platform's skill gating
+        # for both dry-run previews and the live plan; the durable write happens
+        # only after validation passes (see write_config below).
         config = replace(config, platform=platform_override)
     # Fresh installs have config.template=None until after _create_config writes it.
     # Apply the template being installed so template-gated skills are correctly
@@ -139,6 +187,19 @@ def _run(
         adopt_claude_symlink=adopt_claude_symlink,
     )
 
+    # Preflight the whole write set before printing the plan or touching the
+    # destination, so a path collision fails the same way for dry-run and live
+    # and never leaves a partial install behind.
+    collisions = find_path_collisions(destination, _planned_write_paths(plan))
+    if collisions:
+        print(
+            "error: existing paths block directories Raven must create; nothing was written:",
+            file=sys.stderr,
+        )
+        for path in collisions:
+            print(f"  {path} (exists but is not a directory)", file=sys.stderr)
+        return 2
+
     print(f"Template: {template}")
     print(f"Destination: {destination}")
     print(f"Config: {destination / CONFIG_PATH}")
@@ -146,6 +207,22 @@ def _run(
 
     if dry_run:
         return print_dry_run_plan(destination, classification, entries, plan)
+
+    # Validation has passed. Reject a doomed symlink adoption before any durable
+    # write, then write configuration only once the request is known good, so a
+    # rejected install leaves config and managed files unchanged.
+    if plan.adopt_claude_symlink and _any_exists(destination / CLAUDE_BACKUP_PATH):
+        print(
+            f"error: {CLAUDE_BACKUP_PATH} already exists; "
+            "remove it before adopting the CLAUDE.md symlink.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if write_config is not None:
+        rc = write_config()
+        if rc != 0:
+            return rc
 
     rc, adopted_claude, merge_artifacts = apply_plan(
         destination,
@@ -210,7 +287,10 @@ def cmd_init(args: argparse.Namespace) -> int:
     destination = _resolve_destination(args)
     if destination is None:
         return 2
-    if load_config(destination).exists:
+    config = _load_config_or_report(destination)
+    if config is None:
+        return 2
+    if config.exists:
         print(
             f"error: config already exists at {destination / CONFIG_PATH}; "
             "run `raven upgrade` to update managed files.",
@@ -230,23 +310,30 @@ def cmd_install(args: argparse.Namespace) -> int:
     if install_items is None:
         install_items = ([args.language] if args.language is not None else []) + args.overrides
     language_arg, overrides = _parse_install_language(install_items)
-    config = load_config(destination)
+    config = _load_config_or_report(destination)
+    if config is None:
+        return 2
 
     platform = getattr(args, "platform", None)
+    # Stage the durable config write as a callback so _run can defer it until the
+    # whole request validates; a rejected install must change nothing on disk.
     if config.exists:
-        template_name = config.template or list_language_templates()[0]
+        template_name = _config_template_or_report(destination, config)
+        if template_name is None:
+            return 2
         include_readme = args.include_readme or config.include_readme
-        if platform is not None and not args.dry_run:
-            _update_config_platform(destination / CONFIG_PATH, platform)
+
+        def write_config() -> int:
+            if platform is not None:
+                _update_config_platform(destination / CONFIG_PATH, platform)
+            return 0
     else:
         language = language_arg or select_language_interactively()
         template_name = language
         include_readme = args.include_readme
-        if not args.dry_run:
-            rc = _create_config(destination, language, platform)
-            if rc != 0:
-                return rc
-            config = load_config(destination)
+
+        def write_config() -> int:
+            return _create_config(destination, language, platform)
 
     return _run(
         destination,
@@ -255,7 +342,8 @@ def cmd_install(args: argparse.Namespace) -> int:
         args.dry_run,
         overrides,
         adopt_claude_symlink_requested=args.adopt_claude_symlink,
-        platform_override=platform if args.dry_run else None,
+        platform_override=platform,
+        write_config=write_config,
     )
 
 
@@ -263,7 +351,9 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     destination = _resolve_destination(args)
     if destination is None:
         return 2
-    config = load_config(destination)
+    config = _load_config_or_report(destination)
+    if config is None:
+        return 2
     if not config.exists:
         print(
             "error: no .raven/config.toml found; run `raven install <language>` "
@@ -271,7 +361,9 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    template_name = config.template or list_language_templates()[0]
+    template_name = _config_template_or_report(destination, config)
+    if template_name is None:
+        return 2
     include_readme = args.include_readme or config.include_readme
     return _run(
         destination,
@@ -287,14 +379,18 @@ def cmd_accept(args: argparse.Namespace) -> int:
     destination = _resolve_destination(args)
     if destination is None:
         return 2
-    config = load_config(destination)
+    config = _load_config_or_report(destination)
+    if config is None:
+        return 2
     if not config.exists:
         print(
             "error: no .raven/config.toml found; run `raven install <language>` first.",
             file=sys.stderr,
         )
         return 2
-    template_name = config.template or list_language_templates()[0]
+    template_name = _config_template_or_report(destination, config)
+    if template_name is None:
+        return 2
     template = REPO_ROOT / template_name
     include_readme = getattr(args, "include_readme", False) or config.include_readme
     excludes = set() if include_readme else DEFAULT_EXCLUDES

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .config import load_config
+from .config import ConfigError, load_config
 from .findings import Finding, Severity
 from .gate_run import gate_compliance_findings
 from .gates import gate_spec_for, load_gate_specs, recipe_present
@@ -147,7 +147,19 @@ def template_fit_findings(destination: Path) -> list[Finding]:
 def build_assess_findings(
     destination: Path, run: bool, runner: Runner = gate_runner
 ) -> list[Finding]:
-    config = load_config(destination)
+    try:
+        config = load_config(destination)
+    except ConfigError as exc:
+        return [
+            Finding(
+                id="assess.config.malformed",
+                severity=Severity.ERROR,
+                category=_WIRING,
+                title="Raven config malformed",
+                detail=str(exc),
+                fix="fix the syntax in .raven/config.toml, then re-run",
+            )
+        ]
     if not config.exists:
         return [
             Finding(
