@@ -19,7 +19,13 @@ def _clean_git_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 
 
-def _git_hooks_dir(destination: Path) -> Path | None:
+def git_hooks_dir(destination: Path) -> Path | None:
+    """Resolve Git's effective hooks directory for ``destination``.
+
+    Honors ``core.hooksPath`` and the shared common Git directory used by linked
+    worktrees, so callers inspect the same path Git itself uses. Returns ``None``
+    when ``destination`` is not a usable Git repository.
+    """
     git_env = _clean_git_env()
     try:
         # core.hooksPath overrides the default hooks location entirely.
@@ -65,7 +71,7 @@ def install_git_hooks(destination: Path) -> list[str]:
     git_hooks_src = destination / ".raven" / "git-hooks"
     if not git_hooks_src.is_dir():
         return []
-    hooks_dir = _git_hooks_dir(destination)
+    hooks_dir = git_hooks_dir(destination)
     if hooks_dir is None:
         return []
     hooks_dir.mkdir(exist_ok=True)
