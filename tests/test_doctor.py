@@ -47,6 +47,30 @@ class DoctorIntegrityTests(RavenTestCase):
         self.assertIn("doctor.install.agents", ids)
         self.assertEqual(ids["doctor.install.agents"].severity, Severity.ERROR)
 
+    def test_disabled_root_instructions_skips_agents_and_symlink(self):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n\n[components]\nroot_instructions = false\n',
+            encoding="utf-8",
+        )
+        findings = integrity_findings(self.destination)
+        ids = self._ids(findings)
+        self.assertNotIn("doctor.install.agents", ids)
+        self.assertNotIn("doctor.install.symlink", ids)
+        self.assertFalse(any(f.severity == Severity.ERROR for f in findings))
+
+    def test_enabled_root_instructions_still_errors_when_missing(self):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n\n[components]\nroot_instructions = true\n',
+            encoding="utf-8",
+        )
+        findings = integrity_findings(self.destination)
+        ids = self._ids(findings)
+        self.assertIn("doctor.install.agents", ids)
+        self.assertEqual(ids["doctor.install.agents"].severity, Severity.ERROR)
+        self.assertIn("doctor.install.symlink", ids)
+
     def test_correct_claude_symlink_is_ok(self):
         (self.destination / ".raven").mkdir()
         (self.destination / ".raven" / "config.toml").write_text(

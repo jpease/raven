@@ -47,12 +47,50 @@ def _deny(message: str, payload: dict) -> int:  # type: ignore[type-arg]
 
 
 def _enforcement_enabled() -> bool:
+    """Whether the [lifecycle].checkpoint_enforcement assignment is active.
+
+    Reads only the active boolean assignment of ``checkpoint_enforcement`` inside
+    the ``[lifecycle]`` section. Comments, similarly named keys, and the key in
+    other sections are ignored, so a commented or unrelated ``false`` never
+    silently disables enforcement.
+
+    Fail-safe: a missing config, an unreadable file, or a non-boolean value keeps
+    enforcement enabled (returns True) and emits a diagnostic to stderr.
+    """
     config = Path(".raven/config.toml")
     if not config.exists():
         return True
-    for line in config.read_text(encoding="utf-8").splitlines():
-        if "checkpoint_enforcement" in line and "false" in line:
+    try:
+        text = config.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(
+            f"raven-session-checkpoint: cannot read {config} ({exc}); keeping enforcement enabled",
+            file=sys.stderr,
+        )
+        return True
+    section: str | None = None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1].strip()
+            continue
+        if section != "lifecycle" or "=" not in line:
+            continue
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key != "checkpoint_enforcement":
+            continue
+        if value == "true":
+            return True
+        if value == "false":
             return False
+        print(
+            "raven-session-checkpoint: [lifecycle].checkpoint_enforcement must be true or false, "
+            f"got {value!r}; keeping enforcement enabled",
+            file=sys.stderr,
+        )
+        return True
     return True
 
 
