@@ -318,6 +318,81 @@ class SessionInitGitignoreTests(unittest.TestCase):
             self.assertIn(entry, present)
 
 
+class MultiWordUnitNameTests(unittest.TestCase):
+    """Regression for #34: unit names containing spaces must round-trip."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.raven_dir = self.root / ".raven"
+        self.raven_dir.mkdir()
+        self.session_file = self.raven_dir / "session.md"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run(self, args: list[str]) -> int:
+        mod = load_session()
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            return mod.main(args)
+        finally:
+            os.chdir(orig)
+
+    def test_status_preserves_multi_word_unit_names(self):
+        self._run(["--init", "brownfield", "first unit", "second unit"])
+        from contextlib import redirect_stdout
+
+        f = io.StringIO()
+        with redirect_stdout(f):
+            self._run(["--status"])
+        out = f.getvalue()
+        self.assertIn("Current unit : first unit", out)
+        self.assertIn("Remaining    : second unit", out)
+
+    def test_complete_accepts_multi_word_current_unit(self):
+        self._run(["--init", "brownfield", "first unit", "second unit"])
+        rc = self._run(["--complete", "first unit"])
+        self.assertEqual(rc, 0)
+        content = self.session_file.read_text()
+        self.assertIn("- [x] first unit", content)
+        self.assertIn("- [ ] second unit (current)", content)
+
+    def test_render_parse_round_trip_with_issue_and_completion(self):
+        mod = load_session()
+        data = {
+            "project_type": "brownfield",
+            "started": "2026-01-01T00:00:00Z",
+            "last_updated": "2026-01-01T00:00:00Z",
+            "parent_issue": None,
+            "units": [
+                {
+                    "name": "first unit",
+                    "done": True,
+                    "issue": "#12",
+                    "completed_at": "2026-01-02T03:04:05Z",
+                },
+                {
+                    "name": "second unit: add parser",
+                    "done": False,
+                    "issue": "#13",
+                    "completed_at": None,
+                },
+            ],
+            "context_lines": [""],
+        }
+        reparsed = mod._parse_session(mod._render_session(data))
+        first, second = reparsed["units"]
+        self.assertEqual(first["name"], "first unit")
+        self.assertEqual(first["issue"], "#12")
+        self.assertEqual(first["completed_at"], "2026-01-02T03:04:05Z")
+        self.assertEqual(second["name"], "second unit: add parser")
+        self.assertEqual(second["issue"], "#13")
+
+
 def load_hook():
     spec = importlib.util.spec_from_file_location("raven_session_checkpoint", HOOK_PATH)
     assert spec is not None
@@ -413,6 +488,29 @@ class CheckpointHookTests(unittest.TestCase):
             _claude_payload("python .claude/scripts/raven-session.py --complete unit-b")
         )
         self.assertNotEqual(rc, 0)
+
+    def test_extract_unit_handles_shell_quoted_name(self):
+        mod = load_hook()
+        unit = mod._extract_unit('python .claude/scripts/raven-session.py --complete "first unit"')
+        self.assertEqual(unit, "first unit")
+
+    def test_hook_allows_valid_multi_word_checkpoint(self):
+        self.config_file.write_text(
+            "[lifecycle]\ncheckpoint_enforcement = true\n", encoding="utf-8"
+        )
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            mod = load_session()
+            mod.main(["--init", "greenfield", "first unit", "second unit"])
+        finally:
+            os.chdir(orig)
+        rc = self._run_hook(
+            _claude_payload('python .claude/scripts/raven-session.py --complete "first unit"')
+        )
+        self.assertEqual(rc, 0)
 
 
 class EnforcementEnabledTests(unittest.TestCase):
