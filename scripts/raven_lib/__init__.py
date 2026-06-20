@@ -5,6 +5,7 @@ from .apply import (
     classify,
     claude_symlink_adoption_needed,
     copy_paths,
+    find_path_collisions,
     prompt_for_claude_symlink_adoption,
     reconcile_state,
 )
@@ -42,6 +43,7 @@ from .cli import (
     select_language_interactively,
 )
 from .config import (
+    ConfigError,
     _update_config_platform,
     build_config,
     component_disabled,
@@ -161,6 +163,7 @@ __all__ = [
     "Fingerprint",
     "ManifestRecord",
     # config
+    "ConfigError",
     "strip_comment",
     "parse_value",
     "parse_simple_toml",
@@ -214,6 +217,7 @@ __all__ = [
     # apply
     "classify",
     "copy_paths",
+    "find_path_collisions",
     "reconcile_state",
     "claude_symlink_adoption_needed",
     "adopt_claude_symlink",

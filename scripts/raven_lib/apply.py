@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Literal
 
@@ -162,6 +163,30 @@ def classify(
         **groups,
         excluded=sorted(set(excludes) | set(config.exclude_paths if config else [])),
     )
+
+
+def find_path_collisions(destination: Path, relatives: Iterable[str]) -> list[str]:
+    """Existing non-directory ancestors that block creating the given targets.
+
+    ``copy_paths`` (and the manifest/merge writes) create each target's parent
+    chain with ``mkdir(parents=True)``. If an ancestor that must become a
+    directory already exists as a regular file, a broken symlink, or a symlink
+    to a non-directory, that ``mkdir`` raises mid-copy and leaves a partial
+    install. Returning every blocking ancestor up front lets callers preflight
+    the whole write set and fail before touching the destination.
+    """
+    collisions: set[str] = set()
+    for relative in relatives:
+        parts = Path(relative).parts
+        for depth in range(1, len(parts)):
+            ancestor_rel = "/".join(parts[:depth])
+            ancestor = destination / ancestor_rel
+            # is_dir() follows symlinks, so a symlink to a real directory is
+            # fine; only non-directory ancestors (including broken symlinks)
+            # would make the parent mkdir fail.
+            if _any_exists(ancestor) and not ancestor.is_dir():
+                collisions.add(ancestor_rel)
+    return sorted(collisions)
 
 
 def copy_paths(

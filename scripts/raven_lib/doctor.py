@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .apply import classify
 from .blocks import pending_merge_paths
-from .config import load_config
+from .config import ConfigError, load_config
 from .constants import (
     CLAUDE_PATH,
     COMPONENT_PATHS,
@@ -339,6 +339,19 @@ def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list
 
 
 def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> list[Finding]:
+    try:
+        load_config(destination)
+    except ConfigError as exc:
+        return [
+            Finding(
+                id="doctor.install.config",
+                severity=Severity.ERROR,
+                category=_INTEGRITY,
+                title="Raven config malformed",
+                detail=str(exc),
+                fix="fix the syntax in .raven/config.toml, then re-run",
+            )
+        ]
     findings = toolchain_findings(destination, runner)
     integrity = integrity_findings(destination)
     findings.extend(integrity)

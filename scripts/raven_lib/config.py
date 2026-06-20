@@ -26,6 +26,15 @@ _PLATFORM_LINE_RE = re.compile(r"^\s*platform\s*=")
 ConfigValue: TypeAlias = bool | int | str | list["ConfigValue"]
 
 
+class ConfigError(Exception):
+    """A present .raven/config.toml could not be read or parsed.
+
+    Raised when a config file exists but its structure is invalid, so callers
+    fail closed (report the error and make no changes) instead of falling back
+    to a default template or silently ignoring malformed input.
+    """
+
+
 def strip_comment(line: str) -> str:
     in_double = False
     in_single = False
@@ -139,7 +148,10 @@ def parse_simple_toml(text: str) -> dict[str, object]:
             data.setdefault(section, {})
             continue
         if "=" not in line:
-            continue
+            # Not a section header or a key = value assignment. Rather than
+            # silently dropping it (which lets a malformed file parse to an
+            # empty config and fail open), reject the whole file.
+            raise ConfigError(f"invalid line (expected a section or `key = value`): {line!r}")
         key, value = [part.strip() for part in line.split("=", 1)]
         target = data if section is None else data.setdefault(section, {})
         if isinstance(target, dict):
@@ -195,13 +207,20 @@ def load_config(destination: Path) -> RavenConfig:
     if not path.exists():
         return build_config({}, exists=False)
     try:
-        raw = parse_simple_toml(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
     except (OSError, ValueError) as exc:
+        # Unreadable bytes (e.g. wrong encoding) are reported but tolerated: the
+        # resulting config has no template, so commands still fail closed on the
+        # missing template rather than guessing one.
         print(
             f"warning: could not read {path} ({exc}); using default Raven configuration.",
             file=sys.stderr,
         )
         return build_config({}, exists=True)
+    try:
+        raw = parse_simple_toml(text)
+    except ConfigError as exc:
+        raise ConfigError(f"{path} is not valid Raven config: {exc}") from exc
     return build_config(raw, exists=True)
 
 
