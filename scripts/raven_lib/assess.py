@@ -6,6 +6,7 @@ from .config import ConfigError, load_config
 from .findings import Finding, Severity
 from .gate_run import gate_compliance_findings
 from .gates import gate_spec_for, load_gate_specs, recipe_present
+from .git_hooks import git_hooks_dir
 from .runner import Runner, gate_runner
 
 _WIRING = "Quality-gate wiring"
@@ -83,15 +84,23 @@ def wiring_findings(destination: Path) -> list[Finding]:
             )
         )
 
-    hook = destination / ".git" / "hooks" / "pre-commit"
+    # Inspect Git's effective hooks directory (honoring core.hooksPath and linked
+    # worktrees) -- the same path the installer writes to -- not a hard-coded
+    # .git/hooks, so a custom hooks path is not misreported as uninstalled.
+    hooks_dir = git_hooks_dir(destination) or (destination / ".git" / "hooks")
+    hook = hooks_dir / "pre-commit"
     hook_ok = hook.is_file() and "just check" in hook.read_text(encoding="utf-8")
+    try:
+        hook_display = hook.resolve().relative_to(destination.resolve())
+    except ValueError:
+        hook_display = hook
     findings.append(
         Finding(
             id="assess.wiring.hook",
             severity=Severity.OK if hook_ok else Severity.WARN,
             category=_WIRING,
             title=f"pre-commit gate hook {'installed' if hook_ok else 'not installed'}",
-            detail=".git/hooks/pre-commit running `just check`",
+            detail=f"{hook_display} running `just check`",
             fix=None if hook_ok else "run `just install-hooks`",
         )
     )
