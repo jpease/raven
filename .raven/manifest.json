@@ -186,9 +186,9 @@
       "sourceSha256": "fcb104c3768e3dea9c0715522d52a0d499fc47a702f4f187ee7552e0db7fb0d1"
     },
     ".claude/hooks/raven-skeleton-read-guard.py": {
-      "installedSha256": "7d9a9dc9a25bc642dfe3ce5413cf23bc390e29556aa6b0a552a42ce03094f08f",
+      "installedSha256": "d1d5b946f9bc10ef210beb88533b293ff1ca1545323e9505ef791686bf9d8649",
       "kind": "file",
-      "sourceSha256": "7d9a9dc9a25bc642dfe3ce5413cf23bc390e29556aa6b0a552a42ce03094f08f"
+      "sourceSha256": "d1d5b946f9bc10ef210beb88533b293ff1ca1545323e9505ef791686bf9d8649"
     },
     ".claude/rules/raven-python.md": {
       "installedSha256": "92392b08450e11070c4ad6c10a3eb335a47736007e4d5b80d1df6e782b4f4ee7",
@@ -206,9 +206,9 @@
       "sourceSha256": "9eb7901b5b882afacc6501bc51a0b7388ac459010ad78dab5f23a93a6aa66e81"
     },
     ".claude/scripts/raven-session.py": {
-      "installedSha256": "5b5cb2a6a1f947587a1641ed1f5318097684113273ee15495220bb02ab81fe59",
+      "installedSha256": "ee4f5a048e2bd9f84b84655de6f2ad17522c62a49f24901d811a3668bc2d65cc",
       "kind": "file",
-      "sourceSha256": "5b5cb2a6a1f947587a1641ed1f5318097684113273ee15495220bb02ab81fe59"
+      "sourceSha256": "ee4f5a048e2bd9f84b84655de6f2ad17522c62a49f24901d811a3668bc2d65cc"
     },
     ".claude/scripts/raven-skeleton.py": {
       "installedSha256": "f4b302632ceb0e171f9008a161d7b8ed369322451a40ee8da7de2cb5c653d2ed",
@@ -216,9 +216,9 @@
       "sourceSha256": "f4b302632ceb0e171f9008a161d7b8ed369322451a40ee8da7de2cb5c653d2ed"
     },
     ".claude/scripts/raven-tool-check.py": {
-      "installedSha256": "15249ab10417d8366caeb1d3c122e7a79ab2c445f9037da70bba305e09bafba3",
+      "installedSha256": "03a8db835c7d3a16407ed48354682947d2a9e5b2df0cc4f266260e175f802dd1",
       "kind": "file",
-      "sourceSha256": "15249ab10417d8366caeb1d3c122e7a79ab2c445f9037da70bba305e09bafba3"
+      "sourceSha256": "03a8db835c7d3a16407ed48354682947d2a9e5b2df0cc4f266260e175f802dd1"
     },
     ".claude/settings.json": {
       "installedSha256": "5fe9b03c90aa8814023d51a236598379f03a48eef623b4603b9c3c434c05775b",
@@ -292,9 +292,9 @@
       "sourceSha256": "0a40762439633bde8c21750aad9c218585c91fad8db98fc3805d4c0224fc1270"
     },
     ".codex/scripts/raven-session.py": {
-      "installedSha256": "5b5cb2a6a1f947587a1641ed1f5318097684113273ee15495220bb02ab81fe59",
+      "installedSha256": "ee4f5a048e2bd9f84b84655de6f2ad17522c62a49f24901d811a3668bc2d65cc",
       "kind": "file",
-      "sourceSha256": "5b5cb2a6a1f947587a1641ed1f5318097684113273ee15495220bb02ab81fe59"
+      "sourceSha256": "ee4f5a048e2bd9f84b84655de6f2ad17522c62a49f24901d811a3668bc2d65cc"
     },
     ".codex/scripts/raven-skeleton.py": {
       "installedSha256": "f4b302632ceb0e171f9008a161d7b8ed369322451a40ee8da7de2cb5c653d2ed",
@@ -302,9 +302,9 @@
       "sourceSha256": "f4b302632ceb0e171f9008a161d7b8ed369322451a40ee8da7de2cb5c653d2ed"
     },
     ".codex/scripts/raven-tool-check.py": {
-      "installedSha256": "15249ab10417d8366caeb1d3c122e7a79ab2c445f9037da70bba305e09bafba3",
+      "installedSha256": "03a8db835c7d3a16407ed48354682947d2a9e5b2df0cc4f266260e175f802dd1",
       "kind": "file",
-      "sourceSha256": "15249ab10417d8366caeb1d3c122e7a79ab2c445f9037da70bba305e09bafba3"
+      "sourceSha256": "03a8db835c7d3a16407ed48354682947d2a9e5b2df0cc4f266260e175f802dd1"
     },
     ".mcp.json": {
       "installedSha256": "09cfaec8d8f45e26bd21eb53e0bc4f6a23f2cc7aaa45bc74245f4395ecede2dd",
@@ -352,7 +352,7 @@
       "sourceSha256": "5953156d7e0c564a427251316eaf26f8870e6483ae2197f916b630e4f93e31ae"
     },
     "AGENTS.md": {
-      "installedSha256": "26fe347e06c945d0666df59c9a929827776ac2d0cf1049b30b7bae603d4caa49",
+      "installedSha256": "5eaceacdf6dd59683dd4356f94e610437566ab9ac7dfb23721fc40ca82f3defe",
       "kind": "file",
       "sourceSha256": "9636a60ac3421b53ffce9e1bf69f84d2be459f4362ce050c39b4a34e4e691077"
     },
@@ -373,8 +373,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "c9f0a819c9ff",
+  "ravenVersion": "88f836c1a958",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-06-20T06:24:01.765155+00:00"
+  "updatedAt": "2026-06-20T06:54:07.560356+00:00"
 }

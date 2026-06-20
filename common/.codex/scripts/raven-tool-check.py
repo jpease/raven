@@ -258,13 +258,37 @@ def os_key() -> str:
     return "linux"
 
 
+def _default_memory() -> dict:
+    return {"version": 1, "tools": {}, "preferences": {}}
+
+
+def _normalize_memory(raw: object) -> dict:
+    """Coerce decoded memory into the documented shape.
+
+    Tolerates structurally invalid local memory by falling back to clean defaults
+    for the bad part: a non-object root yields a fresh versioned object, and
+    non-object ``tools``/``preferences`` are reset to empty objects. This keeps a
+    corrupted cache from crashing callers (notably the SessionStart hook) that
+    assume ``setdefault``/``update`` on those containers.
+    """
+    if not isinstance(raw, dict):
+        return _default_memory()
+    memory = dict(raw)
+    if not isinstance(memory.get("tools"), dict):
+        memory["tools"] = {}
+    if not isinstance(memory.get("preferences"), dict):
+        memory["preferences"] = {}
+    return memory
+
+
 def load_memory() -> dict:
     if not MEMORY_PATH.exists():
-        return {"version": 1, "tools": {}, "preferences": {}}
+        return _default_memory()
     try:
-        return json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
     except Exception:
-        return {"version": 1, "tools": {}, "preferences": {}}
+        return _default_memory()
+    return _normalize_memory(raw)
 
 
 def save_memory(memory: dict) -> None:
