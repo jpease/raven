@@ -305,3 +305,66 @@ class CheckpointHookTests(unittest.TestCase):
             _claude_payload("python .claude/scripts/raven-session.py --complete unit-b")
         )
         self.assertNotEqual(rc, 0)
+
+
+class EnforcementEnabledTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.raven_dir = self.root / ".raven"
+        self.raven_dir.mkdir()
+        self.config_file = self.raven_dir / "config.toml"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _enabled(self, config_text: str | None) -> bool:
+        if config_text is not None:
+            self.config_file.write_text(config_text, encoding="utf-8")
+        mod = load_hook()
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            return mod._enforcement_enabled()
+        finally:
+            os.chdir(orig)
+
+    def test_absent_config_defaults_enabled(self):
+        self.assertTrue(self._enabled(None))
+
+    def test_active_true_with_commented_false_stays_enabled(self):
+        self.assertTrue(
+            self._enabled(
+                "[lifecycle]\n"
+                "checkpoint_enforcement = true\n"
+                "# checkpoint_enforcement = false  # old example\n"
+            )
+        )
+
+    def test_active_false_disables(self):
+        self.assertFalse(self._enabled("[lifecycle]\ncheckpoint_enforcement = false\n"))
+
+    def test_absent_key_defaults_enabled(self):
+        self.assertTrue(self._enabled("[lifecycle]\n"))
+
+    def test_false_in_other_section_does_not_disable(self):
+        self.assertTrue(
+            self._enabled(
+                "[lifecycle]\ncheckpoint_enforcement = true\n"
+                "\n[other]\ncheckpoint_enforcement = false\n"
+            )
+        )
+
+    def test_similarly_named_key_does_not_disable(self):
+        self.assertTrue(
+            self._enabled(
+                "[lifecycle]\n"
+                "checkpoint_enforcement_legacy = false\n"
+                "checkpoint_enforcement = true\n"
+            )
+        )
+
+    def test_malformed_value_fails_safe_enabled(self):
+        self.assertTrue(self._enabled('[lifecycle]\ncheckpoint_enforcement = "maybe"\n'))
