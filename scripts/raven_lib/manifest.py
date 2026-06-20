@@ -3,13 +3,76 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from .constants import KIND_SYMLINK, MANIFEST_PATH, REPO_ROOT
 from .hashing import destination_fingerprint, entry_fingerprint
 from .models import Fingerprint, ManifestRecord, RavenConfig, TemplateEntry
 from .template import entries_for_destination
+
+SUPPORTED_MANIFEST_SCHEMAS = frozenset({1})
+
+ManifestState = Literal[
+    "ok", "missing", "unreadable", "not_object", "invalid_files", "unsupported_schema"
+]
+
+
+@dataclass(frozen=True)
+class ManifestStatus:
+    """Result of validating ``.raven/manifest.json`` without raising or printing.
+
+    ``manifest`` is the parsed manifest when ``state == "ok"`` and an empty
+    manifest otherwise, so callers can degrade gracefully while still reporting
+    the precise failure via ``state``/``detail``. ``usable`` distinguishes states
+    that should block "no drift" claims (a corrupt manifest) from a merely absent
+    one, which is a known, recoverable shape.
+    """
+
+    state: ManifestState
+    manifest: dict
+    detail: str
+
+    @property
+    def usable(self) -> bool:
+        return self.state in ("ok", "missing")
+
+
+def validate_manifest(destination: Path) -> ManifestStatus:
+    """Parse and structurally validate the manifest, never printing or raising."""
+    empty: dict = {"schema": 1, "files": {}}
+    path = destination / MANIFEST_PATH
+    if not path.exists():
+        return ManifestStatus(
+            "missing", dict(empty), f"{MANIFEST_PATH} not found; upgrade/accept state is unknown"
+        )
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return ManifestStatus("unreadable", dict(empty), f"could not read {MANIFEST_PATH}: {exc}")
+    try:
+        manifest = json.loads(raw)
+    except ValueError as exc:
+        return ManifestStatus("unreadable", dict(empty), f"invalid JSON in {MANIFEST_PATH}: {exc}")
+    if not isinstance(manifest, dict):
+        return ManifestStatus(
+            "not_object", dict(empty), f"{MANIFEST_PATH} root is not a JSON object"
+        )
+    if not isinstance(manifest.get("files"), dict):
+        return ManifestStatus(
+            "invalid_files", dict(empty), f"{MANIFEST_PATH} 'files' is not a JSON object"
+        )
+    schema = manifest.get("schema")
+    if schema not in SUPPORTED_MANIFEST_SCHEMAS:
+        return ManifestStatus(
+            "unsupported_schema",
+            dict(empty),
+            f"{MANIFEST_PATH} schema {schema!r} is unsupported "
+            f"(expected one of {sorted(SUPPORTED_MANIFEST_SCHEMAS)})",
+        )
+    return ManifestStatus("ok", manifest, f"{MANIFEST_PATH} is valid")
 
 
 def load_manifest(destination: Path) -> dict:
