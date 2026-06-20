@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -95,8 +96,22 @@ def _enforcement_enabled() -> bool:
 
 
 def _extract_unit(command: str) -> str | None:
-    m = re.search(r"--complete\s+(\S+)", command)
-    return m.group(1) if m else None
+    """Return the unit name argument of a ``--complete`` invocation.
+
+    Tokenizes with shell rules so a quoted unit name containing spaces survives
+    intact, matching the positional argument the session CLI receives. Falls
+    back to a single non-whitespace token only when the command is not validly
+    quoted, so a malformed command still defers to the CLI's own validation.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        m = re.search(r"--complete\s+(\S+)", command)
+        return m.group(1) if m else None
+    for i, token in enumerate(tokens):
+        if token == "--complete":
+            return tokens[i + 1] if i + 1 < len(tokens) else None
+    return None
 
 
 def main() -> int:

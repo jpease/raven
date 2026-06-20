@@ -56,16 +56,23 @@ def _parse_session(text: str) -> dict:  # type: ignore[type-arg]
         elif line.strip() == "## Context":
             in_units = False
             in_context = True
-        elif in_units and (m := re.match(r"- \[([ x])\] (\S+)(.*)", line)):
+        elif in_units and (m := re.match(r"- \[([ x])\] (.+)", line)):
             done = m.group(1) == "x"
-            name = m.group(2)
-            rest = m.group(3)
+            rest = m.group(2)
             issue = None
             completed_at = None
-            if im := re.search(r"→ (#\d+)", rest):
-                issue = im.group(1)
-            if cm := re.search(r"\(completed ([^)]+)\)", rest):
+            # Strip the metadata that _render_session appends, from the end
+            # inward, so unit names containing spaces and punctuation round-trip
+            # instead of being truncated at the first whitespace.
+            if cm := re.search(r"\s*\(completed ([^)]+)\)\s*$", rest):
                 completed_at = cm.group(1)
+                rest = rest[: cm.start()]
+            else:
+                rest = re.sub(r"\s*\(current\)\s*$", "", rest)
+            if im := re.search(r"\s*→ (#\d+)\s*$", rest):
+                issue = im.group(1)
+                rest = rest[: im.start()]
+            name = rest
             data["units"].append(
                 {
                     "name": name,
