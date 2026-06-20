@@ -210,6 +210,114 @@ class SessionArchiveTests(unittest.TestCase):
         self.assertIn("unit-b", archive)
 
 
+class ExistingIgnorePatternsTests(unittest.TestCase):
+    def _patterns(self, text: str):
+        return load_session()._existing_ignore_patterns(text)
+
+    def test_comment_is_not_a_pattern(self):
+        self.assertNotIn(".raven/session.md", self._patterns("# Example only: .raven/session.md\n"))
+
+    def test_exact_entry_is_a_pattern(self):
+        self.assertIn(".raven/session.md", self._patterns(".raven/session.md\n"))
+
+    def test_surrounding_whitespace_is_ignored(self):
+        self.assertIn(".raven/session.md", self._patterns("   .raven/session.md  \n"))
+
+    def test_longer_path_is_not_the_entry(self):
+        patterns = self._patterns("project/.raven/session.md.bak\n")
+        self.assertNotIn(".raven/session.md", patterns)
+
+
+class UpdateGitignoreTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.gitignore = self.root / ".gitignore"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run_update(self):
+        import os
+
+        mod = load_session()
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            mod._update_gitignore()
+        finally:
+            os.chdir(orig)
+
+    def _lines(self):
+        return [
+            line.strip()
+            for line in self.gitignore.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+
+    ENTRIES = (".raven/session.md", ".raven/session.lock", ".raven/session-archive.md")
+
+    def test_adds_all_entries_when_missing(self):
+        self._run_update()
+        for entry in self.ENTRIES:
+            self.assertIn(entry, self._lines())
+
+    def test_comment_containing_entry_does_not_suppress_real_rule(self):
+        # Regression for issue #43: a comment mentioning the path must not be
+        # treated as the ignore rule via substring membership.
+        self.gitignore.write_text("# Example only: .raven/session.md\n", encoding="utf-8")
+        self._run_update()
+        self.assertIn(".raven/session.md", self._lines())
+
+    def test_longer_path_does_not_suppress_real_rule(self):
+        self.gitignore.write_text(".raven/session.md.bak\n", encoding="utf-8")
+        self._run_update()
+        self.assertEqual(self._lines().count(".raven/session.md"), 1)
+
+    def test_existing_exact_entry_is_not_duplicated(self):
+        self.gitignore.write_text(
+            ".raven/session.md\n.raven/session.lock\n.raven/session-archive.md\n",
+            encoding="utf-8",
+        )
+        self._run_update()
+        for entry in self.ENTRIES:
+            self.assertEqual(self._lines().count(entry), 1)
+
+    def test_whitespace_padded_existing_entry_is_not_duplicated(self):
+        self.gitignore.write_text("   .raven/session.md  \n", encoding="utf-8")
+        self._run_update()
+        self.assertEqual(self._lines().count(".raven/session.md"), 1)
+
+
+class SessionInitGitignoreTests(unittest.TestCase):
+    """End-to-end: after --init, all three session-state paths are ignored even
+    when .gitignore already contains a misleading comment (issue #43)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        (self.root / ".raven").mkdir()
+        self.gitignore = self.root / ".gitignore"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_init_ignores_all_session_paths(self):
+        import os
+
+        self.gitignore.write_text("# Example only: .raven/session.md\n", encoding="utf-8")
+        mod = load_session()
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            self.assertEqual(mod.main(["--init", "brownfield", "unit-a"]), 0)
+        finally:
+            os.chdir(orig)
+        present = mod._existing_ignore_patterns(self.gitignore.read_text(encoding="utf-8"))
+        for entry in (".raven/session.md", ".raven/session.lock", ".raven/session-archive.md"):
+            self.assertIn(entry, present)
+
+
 def load_hook():
     spec = importlib.util.spec_from_file_location("raven_session_checkpoint", HOOK_PATH)
     assert spec is not None

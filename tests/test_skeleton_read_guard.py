@@ -63,21 +63,73 @@ class ParseGateConfigTests(RavenTestCase):
         module = _module()
         self.assertEqual(module.parse_gate_config("[skeleton]\nread_gate = true\n"), (True, 500))
 
-    def test_explicit_false_stays_disabled(self):
+    def test_explicit_skeleton_false_stays_disabled(self):
         module = _module()
-        self.assertEqual(module.parse_gate_config("read_gate = false\n"), (False, 500))
+        self.assertEqual(module.parse_gate_config("[skeleton]\nread_gate = false\n"), (False, 500))
 
     def test_threshold_key_is_not_confused_with_gate_key(self):
         module = _module()
         # The threshold key shares the read_gate prefix; it must not enable the gate.
         self.assertEqual(
-            module.parse_gate_config("read_gate_threshold_lines = 800\n"), (False, 800)
+            module.parse_gate_config("[skeleton]\nread_gate_threshold_lines = 800\n"), (False, 800)
         )
 
     def test_reads_both_gate_and_threshold(self):
         module = _module()
         text = "[skeleton]\nread_gate = true\nread_gate_threshold_lines = 800\n"
         self.assertEqual(module.parse_gate_config(text), (True, 800))
+
+    def test_keys_outside_skeleton_table_have_no_effect(self):
+        module = _module()
+        # The exact reproduction from issue #41: an unrelated table must not
+        # enable the gate or override the skeleton threshold, and an explicit
+        # [skeleton].read_gate = false must win.
+        text = (
+            "[unrelated]\n"
+            "read_gate = true\n"
+            "read_gate_threshold_lines = 1\n"
+            "\n"
+            "[skeleton]\n"
+            "read_gate = false\n"
+        )
+        self.assertEqual(module.parse_gate_config(text), (False, 500))
+
+    def test_root_table_keys_are_ignored(self):
+        module = _module()
+        # Keys before any table header live in the implicit root table, not
+        # [skeleton], so they must not enable the gate.
+        self.assertEqual(
+            module.parse_gate_config("read_gate = true\nread_gate_threshold_lines = 10\n"),
+            (False, 500),
+        )
+
+    def test_commented_skeleton_key_has_no_effect(self):
+        module = _module()
+        self.assertEqual(module.parse_gate_config("[skeleton]\n# read_gate = true\n"), (False, 500))
+
+    def test_trailing_comment_does_not_break_parsing(self):
+        module = _module()
+        text = (
+            "[skeleton]  # the gate\nread_gate = true  # on\nread_gate_threshold_lines = 42  # n\n"
+        )
+        self.assertEqual(module.parse_gate_config(text), (True, 42))
+
+    def test_malformed_values_use_safe_defaults_without_raising(self):
+        module = _module()
+        text = "[skeleton]\nread_gate = maybe\nread_gate_threshold_lines = lots\n"
+        self.assertEqual(module.parse_gate_config(text), (False, 500))
+
+    def test_last_skeleton_assignment_wins(self):
+        module = _module()
+        text = "[skeleton]\nread_gate = true\nread_gate = false\n"
+        self.assertEqual(module.parse_gate_config(text), (False, 500))
+
+    def test_gate_re_enabled_after_other_section(self):
+        module = _module()
+        # A later [skeleton] re-entry still applies; section tracking resets on
+        # each header rather than latching the first table seen.
+        text = "[skeleton]\nread_gate = true\n[other]\nread_gate = false\n"
+        self.assertEqual(module.parse_gate_config(text), (True, 500))
 
 
 class IsSupportedTests(RavenTestCase):
@@ -163,6 +215,21 @@ class GuardHookEndToEndTests(RavenTestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0)
+
+    def test_unrelated_table_does_not_gate_small_file(self):
+        # Regression for issue #41: a read_gate=true / threshold=1 in an unrelated
+        # table, with [skeleton].read_gate = false, must not deny a tiny read.
+        (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
+        config = (
+            "[unrelated]\nread_gate = true\nread_gate_threshold_lines = 1\n\n"
+            "[skeleton]\nread_gate = false\n"
+        )
+        (self.destination / ".raven" / "config.toml").write_text(config, encoding="utf-8")
+        path = self.destination / "one_line.py"
+        path.write_text("x = 1\n", encoding="utf-8")
+        result = self._run(path)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
 
     def test_tolerates_null_tool_input(self):
         result = subprocess.run(

@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -143,6 +146,87 @@ gitnexus: gitnexus mcp - ✓ Connected
         finally:
             module.shutil.which = original_which
             module.subprocess.run = original_run
+
+
+class LoadMemoryRecoveryTests(RavenTestCase):
+    """Structurally invalid local tool memory must recover to a clean versioned
+    object instead of crashing callers that assume a dict (issue #42)."""
+
+    def _module_with_memory(self, contents: str):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        memory_path = Path(tmp.name) / "tool-memory.json"
+        memory_path.write_text(contents, encoding="utf-8")
+        module = load_script_module(f"raven_tool_check_mem_{id(tmp)}", TOOL_CHECK_SCRIPT)
+        module.MEMORY_PATH = memory_path
+        return module, memory_path
+
+    def test_list_root_falls_back_to_default(self):
+        module, _ = self._module_with_memory("[]")
+        self.assertEqual(module.load_memory(), {"version": 1, "tools": {}, "preferences": {}})
+
+    def test_null_root_falls_back_to_default(self):
+        module, _ = self._module_with_memory("null")
+        self.assertEqual(module.load_memory(), {"version": 1, "tools": {}, "preferences": {}})
+
+    def test_string_root_falls_back_to_default(self):
+        module, _ = self._module_with_memory('"corrupted"')
+        self.assertEqual(module.load_memory(), {"version": 1, "tools": {}, "preferences": {}})
+
+    def test_non_object_tools_is_reset(self):
+        module, _ = self._module_with_memory('{"version": 1, "tools": [], "preferences": {}}')
+        memory = module.load_memory()
+        self.assertEqual(memory["tools"], {})
+        # The bad container is replaced but unrelated keys are preserved.
+        self.assertEqual(memory["preferences"], {})
+
+    def test_non_object_preferences_is_reset(self):
+        module, _ = self._module_with_memory('{"tools": {"jq": {}}, "preferences": "nope"}')
+        memory = module.load_memory()
+        self.assertEqual(memory["preferences"], {})
+        self.assertEqual(memory["tools"], {"jq": {}})
+
+    def test_main_setdefault_survives_list_root(self):
+        # main() immediately calls memory.setdefault(...); a list root previously
+        # raised AttributeError. With recovery it must run cleanly.
+        module, _ = self._module_with_memory("[]")
+        original_argv = sys.argv
+        sys.argv = ["raven-tool-check.py", "--no-reminder"]
+        try:
+            rc = module.main()
+        finally:
+            sys.argv = original_argv
+        self.assertEqual(rc, 0)
+
+
+class ToolCheckJsonEndToEndTests(RavenTestCase):
+    """End-to-end reproduction of issue #42: a damaged cache must not add a
+    traceback to --json or --session-start invocations."""
+
+    def _run(self, memory_contents: str, args: list[str]) -> subprocess.CompletedProcess:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        memory_path = Path(tmp.name) / "tool-memory.json"
+        memory_path.write_text(memory_contents, encoding="utf-8")
+        env = {**os.environ, "RAVEN_TOOL_MEMORY": str(memory_path)}
+        return subprocess.run(
+            [sys.executable, str(TOOL_CHECK_SCRIPT), *args],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+
+    def test_json_with_list_root_exits_clean_and_emits_valid_json(self):
+        result = self._run("[]", ["--json"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        json.loads(result.stdout)  # must be valid JSON
+
+    def test_session_start_with_list_root_exits_clean(self):
+        result = self._run("[]", ["--session-start"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
 
 if __name__ == "__main__":
