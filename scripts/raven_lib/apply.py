@@ -172,8 +172,12 @@ def find_path_collisions(destination: Path, relatives: Iterable[str]) -> list[st
     chain with ``mkdir(parents=True)``. If an ancestor that must become a
     directory already exists as a regular file, a broken symlink, or a symlink
     to a non-directory, that ``mkdir`` raises mid-copy and leaves a partial
-    install. Returning every blocking ancestor up front lets callers preflight
-    the whole write set and fail before touching the destination.
+    install. A symlinked ancestor that resolves to a real directory is worse: it
+    silently redirects every nested write outside the destination tree, so a
+    repository-controlled link such as ``.claude -> /outside`` escapes
+    containment. Ancestors are never final template paths, so any symlink among
+    them is unsafe. Returning every blocking ancestor up front lets callers
+    preflight the whole write set and fail before touching the destination.
     """
     collisions: set[str] = set()
     for relative in relatives:
@@ -181,10 +185,10 @@ def find_path_collisions(destination: Path, relatives: Iterable[str]) -> list[st
         for depth in range(1, len(parts)):
             ancestor_rel = "/".join(parts[:depth])
             ancestor = destination / ancestor_rel
-            # is_dir() follows symlinks, so a symlink to a real directory is
-            # fine; only non-directory ancestors (including broken symlinks)
-            # would make the parent mkdir fail.
-            if _any_exists(ancestor) and not ancestor.is_dir():
+            # A symlink ancestor would route writes through its target (escaping
+            # the destination), and any non-directory ancestor would make the
+            # parent mkdir fail. Both are collisions; a real directory is fine.
+            if _any_exists(ancestor) and (ancestor.is_symlink() or not ancestor.is_dir()):
                 collisions.add(ancestor_rel)
     return sorted(collisions)
 
