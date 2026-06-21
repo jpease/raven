@@ -9,7 +9,9 @@ Covers:
 import argparse
 import contextlib
 import io
+import tempfile
 import unittest
+from pathlib import Path
 
 from helpers import RavenTestCase, raven
 from raven_lib.findings import Severity
@@ -151,12 +153,15 @@ class PathCollisionTests(RavenTestCase):
         )
         self.assertEqual(collisions, [".claude/docs"])
 
-    def test_find_path_collisions_allows_symlink_to_directory(self):
+    def test_find_path_collisions_rejects_symlink_to_directory(self):
+        # A symlinked ancestor resolves through to its target, so writes beneath
+        # it escape the destination tree. Treat it as a collision even though it
+        # points at a real directory.
         real = self.destination / "real_dir"
         real.mkdir()
         (self.destination / ".claude").symlink_to(real)
         collisions = raven.find_path_collisions(self.destination, [".claude/docs/x.md"])
-        self.assertEqual(collisions, [])
+        self.assertEqual(collisions, [".claude"])
 
     def test_find_path_collisions_reports_early_and_late_targets(self):
         (self.destination / ".agents").write_text("x", encoding="utf-8")
@@ -191,6 +196,104 @@ class PathCollisionTests(RavenTestCase):
         self.assertEqual(rc, 2)
         self.assertIn(".agents", err.getvalue())
         self.assertEqual(_tree(self.destination), before)
+
+
+# ---------------------------------------------------------------------------
+# #45 — Block writes through ancestor directory symlinks
+# ---------------------------------------------------------------------------
+class AncestorSymlinkContainmentTests(RavenTestCase):
+    def _external_dir(self):
+        external = tempfile.TemporaryDirectory()
+        self.addCleanup(external.cleanup)
+        return Path(external.name)
+
+    def test_install_through_claude_ancestor_symlink_writes_nothing_external(self):
+        external = self._external_dir()
+        (self.destination / ".claude").symlink_to(external)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_install(_install_ns(self.destination, language="python"))
+        self.assertEqual(rc, 2)
+        self.assertIn(".claude", err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+        # The external directory the symlink points at is untouched.
+        self.assertEqual(list(external.iterdir()), [])
+        # No config was written either.
+        self.assertFalse((self.destination / ".raven" / "config.toml").exists())
+
+    def test_upgrade_through_raven_ancestor_symlink_writes_nothing_external(self):
+        # A symlinked .raven would redirect config, manifest, and merge-state
+        # writes outside the destination.
+        external = self._external_dir()
+        (external / "config.toml").write_text(
+            raven.default_config_text("python", False, "none"), encoding="utf-8"
+        )
+        (self.destination / ".raven").symlink_to(external)
+        before = sorted(p.name for p in external.iterdir())
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_upgrade(_upgrade_ns(self.destination))
+        self.assertEqual(rc, 2)
+        self.assertIn(".raven", err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+        # No manifest or merge artifacts were written through the symlink.
+        self.assertEqual(sorted(p.name for p in external.iterdir()), before)
+
+    def test_dry_run_reports_ancestor_symlink_and_writes_nothing(self):
+        external = self._external_dir()
+        (self.destination / ".claude").symlink_to(external)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_install(_install_ns(self.destination, language="python", dry_run=True))
+        self.assertEqual(rc, 2)
+        self.assertIn(".claude", err.getvalue())
+        self.assertEqual(list(external.iterdir()), [])
+
+
+# ---------------------------------------------------------------------------
+# #47 — Report unreadable Raven config as invalid
+# ---------------------------------------------------------------------------
+class UnreadableConfigTests(RavenTestCase):
+    def _write_bytes(self, raw: bytes):
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_bytes(raw)
+        return config_path
+
+    def test_load_config_raises_on_invalid_utf8(self):
+        self._write_bytes(b"\xff\xfe\x00")
+        with self.assertRaises(raven.ConfigError) as ctx:
+            raven.load_config(self.destination)
+        self.assertIn("config.toml", str(ctx.exception))
+
+    def test_load_config_raises_on_read_oserror(self):
+        # A directory at the config path makes read_text raise IsADirectoryError
+        # (an OSError), standing in for any I/O failure.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").mkdir()
+        with self.assertRaises(raven.ConfigError):
+            raven.load_config(self.destination)
+
+    def test_doctor_reports_unreadable_config_as_single_error(self):
+        self._write_bytes(b"\xff\xfe\x00")
+        findings = raven.build_doctor_findings(self.destination)
+        config_errors = [
+            f for f in findings if f.id == "doctor.install.config" and f.severity is Severity.ERROR
+        ]
+        # Reported once, not five duplicate warnings.
+        self.assertEqual(len(config_errors), 1)
+
+    def test_doctor_cli_exits_non_zero_for_unreadable_config(self):
+        self._write_bytes(b"\xff\xfe\x00")
+        ns = argparse.Namespace(destination=str(self.destination), json=True)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = raven.cmd_doctor(ns)
+        self.assertNotEqual(rc, 0)
+
+    def test_assess_reports_unreadable_config_as_error(self):
+        self._write_bytes(b"\xff\xfe\x00")
+        findings = raven.build_assess_findings(self.destination, run=False)
+        self.assertTrue(any(f.severity is Severity.ERROR for f in findings))
 
 
 if __name__ == "__main__":
