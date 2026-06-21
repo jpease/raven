@@ -4,7 +4,6 @@ import fnmatch
 import functools
 import re
 import string
-import sys
 from pathlib import Path
 from typing import TypeAlias
 
@@ -209,14 +208,11 @@ def load_config(destination: Path) -> RavenConfig:
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, ValueError) as exc:
-        # Unreadable bytes (e.g. wrong encoding) are reported but tolerated: the
-        # resulting config has no template, so commands still fail closed on the
-        # missing template rather than guessing one.
-        print(
-            f"warning: could not read {path} ({exc}); using default Raven configuration.",
-            file=sys.stderr,
-        )
-        return build_config({}, exists=True)
+        # An unreadable config (wrong encoding, I/O error) is a damaged install,
+        # not a healthy default. Fail closed so doctor/assess report an error and
+        # install/upgrade/accept refuse to guess a template, instead of silently
+        # returning a valid-looking default config.
+        raise ConfigError(f"{path} could not be read: {exc}") from exc
     try:
         raw = parse_simple_toml(text)
     except ConfigError as exc:

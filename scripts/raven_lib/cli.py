@@ -197,7 +197,12 @@ def _run(
             file=sys.stderr,
         )
         for path in collisions:
-            print(f"  {path} (exists but is not a directory)", file=sys.stderr)
+            reason = (
+                "is a symlink; writes would escape the destination"
+                if (destination / path).is_symlink()
+                else "exists but is not a directory"
+            )
+            print(f"  {path} ({reason})", file=sys.stderr)
         return 2
 
     print(f"Template: {template}")
