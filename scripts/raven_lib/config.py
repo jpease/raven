@@ -113,6 +113,12 @@ def parse_value(value: str) -> ConfigValue:
             for part in _split_array(inner)
             if part.strip().rstrip(",")
         ]
+    # Detect unterminated strings and arrays: a value starting with a quote or
+    # bracket that did not match the terminated forms above is malformed.
+    if value.startswith(('"', "'")):
+        raise ConfigError(f"unterminated string: {value!r}")
+    if value.startswith("["):
+        raise ConfigError(f"unterminated array: {value!r}")
     try:
         return int(value)
     except ValueError:
@@ -162,11 +168,12 @@ def _merge_component_overrides(
     raw: dict, section_key: str, defaults: dict[str, bool]
 ) -> dict[str, bool]:
     section = raw.get(section_key)
-    overrides = (
-        {k: v for k, v in section.items() if k in defaults and isinstance(v, bool)}
-        if isinstance(section, dict)
-        else {}
-    )
+    if not isinstance(section, dict):
+        return dict(defaults)
+    for k, v in section.items():
+        if k in defaults and not isinstance(v, bool):
+            raise ConfigError(f"[{section_key}].{k} must be true or false, got {v!r}")
+    overrides = {k: v for k, v in section.items() if k in defaults and isinstance(v, bool)}
     return {**defaults, **overrides}
 
 
