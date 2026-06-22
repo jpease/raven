@@ -19,10 +19,12 @@ def wiring_findings(destination: Path) -> list[Finding]:
     spec = gate_spec_for(config.template) if config.template else None
     findings: list[Finding] = []
     if spec is None:
+        # Distinguish "no template set" (warn) from "template set but unsupported" (error).
+        severity = Severity.ERROR if config.template is not None else Severity.WARN
         return [
             Finding(
                 id="assess.wiring.template",
-                severity=Severity.WARN,
+                severity=severity,
                 category=_WIRING,
                 title="No gate spec for template",
                 detail=f"template {config.template!r} has no gate expectations",
@@ -31,6 +33,7 @@ def wiring_findings(destination: Path) -> list[Finding]:
         ]
 
     justfile = destination / "justfile"
+    text = ""
     if not justfile.is_file():
         findings.append(
             Finding(
@@ -42,18 +45,29 @@ def wiring_findings(destination: Path) -> list[Finding]:
                 fix="run `raven install` / `raven upgrade` to add the template justfile",
             )
         )
-        text = ""
     else:
-        text = justfile.read_text(encoding="utf-8")
-        findings.append(
-            Finding(
-                id="assess.wiring.justfile",
-                severity=Severity.OK,
-                category=_WIRING,
-                title="justfile present",
-                detail="quality-gate recipes can be defined here",
+        try:
+            text = justfile.read_text(encoding="utf-8")
+            findings.append(
+                Finding(
+                    id="assess.wiring.justfile",
+                    severity=Severity.OK,
+                    category=_WIRING,
+                    title="justfile present",
+                    detail="quality-gate recipes can be defined here",
+                )
             )
-        )
+        except (OSError, UnicodeDecodeError) as exc:
+            findings.append(
+                Finding(
+                    id="assess.wiring.justfile",
+                    severity=Severity.ERROR,
+                    category=_WIRING,
+                    title="justfile unreadable",
+                    detail=f"{justfile}: {exc}",
+                    fix="fix or restore the justfile",
+                )
+            )
 
     for recipe in spec.recipes:
         present = recipe_present(text, recipe)
@@ -70,40 +84,79 @@ def wiring_findings(destination: Path) -> list[Finding]:
 
     for file, substring in spec.config_signals:
         target = destination / file
-        ok = target.is_file() and (
-            substring is None or substring in target.read_text(encoding="utf-8")
-        )
-        findings.append(
-            Finding(
-                id=f"assess.wiring.config.{file}",
-                severity=Severity.OK if ok else Severity.WARN,
-                category=_WIRING,
-                title=f"tool config {file} {'present' if ok else 'missing'}",
-                detail=f"expected {substring!r} in {file}" if substring else f"expected {file}",
-                fix=None if ok else f"configure the gate tools in {file}",
+        read_error: str | None = None
+        if target.is_file():
+            try:
+                content = target.read_text(encoding="utf-8")
+                ok = substring is None or substring in content
+            except (OSError, UnicodeDecodeError) as exc:
+                ok = False
+                read_error = str(exc)
+        else:
+            ok = False
+        if read_error is not None:
+            findings.append(
+                Finding(
+                    id=f"assess.wiring.config.{file}",
+                    severity=Severity.ERROR,
+                    category=_WIRING,
+                    title=f"tool config {file} unreadable",
+                    detail=f"{target}: {read_error}",
+                    fix=f"fix or restore {file}",
+                )
             )
-        )
+        else:
+            findings.append(
+                Finding(
+                    id=f"assess.wiring.config.{file}",
+                    severity=Severity.OK if ok else Severity.WARN,
+                    category=_WIRING,
+                    title=f"tool config {file} {'present' if ok else 'missing'}",
+                    detail=f"expected {substring!r} in {file}" if substring else f"expected {file}",
+                    fix=None if ok else f"configure the gate tools in {file}",
+                )
+            )
 
     # Inspect Git's effective hooks directory (honoring core.hooksPath and linked
     # worktrees) -- the same path the installer writes to -- not a hard-coded
     # .git/hooks, so a custom hooks path is not misreported as uninstalled.
     hooks_dir = git_hooks_dir(destination) or (destination / ".git" / "hooks")
     hook = hooks_dir / "pre-commit"
-    hook_ok = hook.is_file() and "just check" in hook.read_text(encoding="utf-8")
     try:
         hook_display = hook.resolve().relative_to(destination.resolve())
     except ValueError:
         hook_display = hook
-    findings.append(
-        Finding(
-            id="assess.wiring.hook",
-            severity=Severity.OK if hook_ok else Severity.WARN,
-            category=_WIRING,
-            title=f"pre-commit gate hook {'installed' if hook_ok else 'not installed'}",
-            detail=f"{hook_display} running `just check`",
-            fix=None if hook_ok else "run `just install-hooks`",
+    hook_read_error: str | None = None
+    if hook.is_file():
+        try:
+            hook_ok = "just check" in hook.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            hook_ok = False
+            hook_read_error = str(exc)
+    else:
+        hook_ok = False
+    if hook_read_error is not None:
+        findings.append(
+            Finding(
+                id="assess.wiring.hook",
+                severity=Severity.ERROR,
+                category=_WIRING,
+                title="pre-commit hook unreadable",
+                detail=f"{hook_display}: {hook_read_error}",
+                fix="fix or restore the pre-commit hook",
+            )
         )
-    )
+    else:
+        findings.append(
+            Finding(
+                id="assess.wiring.hook",
+                severity=Severity.OK if hook_ok else Severity.WARN,
+                category=_WIRING,
+                title=f"pre-commit gate hook {'installed' if hook_ok else 'not installed'}",
+                detail=f"{hook_display} running `just check`",
+                fix=None if hook_ok else "run `just install-hooks`",
+            )
+        )
     return findings
 
 

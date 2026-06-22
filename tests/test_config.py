@@ -20,12 +20,17 @@ class BuildConfigTests(unittest.TestCase):
 
     def test_component_overrides_merge_over_defaults(self):
         config = raven.build_config(
-            {"components": {"hooks": False, "unknown": True, "skills": "nope"}},
+            {"components": {"hooks": False, "unknown": True}},
             exists=True,
         )
         self.assertFalse(config.components["hooks"])
-        self.assertTrue(config.components["skills"])  # non-bool override ignored
         self.assertNotIn("unknown", config.components)  # unknown key ignored
+
+    def test_invalid_component_boolean_raises_config_error(self):
+        # Issue #49 — a recognized component key with a non-bool value must
+        # raise ConfigError instead of silently using the default.
+        with self.assertRaises(raven.ConfigError):
+            raven.build_config({"components": {"hooks": "yes"}}, exists=True)
 
     def test_platform_and_template_parsed(self):
         config = raven.build_config(
@@ -76,6 +81,19 @@ class ParseSimpleTomlTests(unittest.TestCase):
     def test_hash_after_value_is_comment(self):
         result = raven.parse_simple_toml('key = "value"  # this is a comment\n')
         self.assertEqual(result["key"], "value")
+
+    def test_unterminated_double_quoted_string_raises(self):
+        # Issue #49 — unterminated string must not silently become a raw scalar.
+        with self.assertRaises(raven.ConfigError):
+            raven.parse_simple_toml('template = "python\n')
+
+    def test_unterminated_single_quoted_string_raises(self):
+        with self.assertRaises(raven.ConfigError):
+            raven.parse_simple_toml("template = 'python\n")
+
+    def test_unterminated_array_raises(self):
+        with self.assertRaises(raven.ConfigError):
+            raven.parse_simple_toml('[exclude]\npaths = ["foo"\n')
 
 
 class PathWithinTests(unittest.TestCase):

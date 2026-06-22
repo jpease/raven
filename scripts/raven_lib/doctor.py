@@ -47,6 +47,19 @@ def integrity_findings(destination: Path) -> list[Finding]:
         )
     ]
 
+    if config.template is not None and gate_spec_for(config.template) is None:
+        findings.append(
+            Finding(
+                id="doctor.install.template",
+                severity=Severity.ERROR,
+                category=_INTEGRITY,
+                title="Unsupported template configured",
+                detail=f"template {config.template!r} is not a supported Raven template",
+                fix="set `template` in .raven/config.toml to a supported value",
+            )
+        )
+        return findings
+
     findings.append(_manifest_finding(validate_manifest(destination)))
 
     for name, enabled in config.components.items():
@@ -188,6 +201,18 @@ def drift_findings(destination: Path) -> list[Finding]:
                 title="No template configured",
                 detail="config has no template; drift cannot be evaluated",
                 fix="set `template` in .raven/config.toml",
+            )
+        ]
+
+    if gate_spec_for(config.template) is None:
+        return [
+            Finding(
+                id="doctor.drift.template",
+                severity=Severity.ERROR,
+                category=_DRIFT,
+                title="Unsupported template; drift cannot be evaluated",
+                detail=f"template {config.template!r} is not a supported Raven template",
+                fix="set a supported `template` in .raven/config.toml",
             )
         ]
 

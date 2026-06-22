@@ -113,6 +113,17 @@ class DoctorIntegrityTests(RavenTestCase):
         ids = self._ids(findings)
         self.assertEqual(ids["doctor.install.symlink"].severity, Severity.WARN)
 
+    def test_unsupported_template_is_error(self):
+        # Issue #50 — a configured but unsupported template must surface as ERROR
+        # so a corrupted or mistyped template name cannot appear healthy.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "bogus"\n', encoding="utf-8"
+        )
+        ids = self._ids(integrity_findings(self.destination))
+        self.assertIn("doctor.install.template", ids)
+        self.assertEqual(ids["doctor.install.template"].severity, Severity.ERROR)
+
 
 class DoctorDriftTests(RavenTestCase):
     def _config(self):
@@ -186,6 +197,20 @@ class DoctorDriftTests(RavenTestCase):
         self.assertEqual(findings["doctor.drift.local"].severity, Severity.INFO)
         self.assertIn("justfile", findings["doctor.drift.local"].detail)
         self.assertNotIn("doctor.drift.modified", findings)
+
+    def test_unsupported_template_drift_returns_error_not_false_ok(self):
+        # Issue #50 — drift with an unsupported template must emit an ERROR and
+        # must never produce a false "No Raven-owned drift detected" OK finding.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "bogus"\n', encoding="utf-8"
+        )
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        # Must not report a healthy "no drift" OK
+        ok_modified = findings.get("doctor.drift.modified")
+        self.assertFalse(ok_modified and ok_modified.severity == Severity.OK)
+        # Must surface an ERROR that explains the unusable template
+        self.assertTrue(any(f.severity == Severity.ERROR for f in findings.values()))
 
 
 # ---------------------------------------------------------------------------

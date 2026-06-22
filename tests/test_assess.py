@@ -3,6 +3,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -46,6 +47,52 @@ class AssessWiringTests(RavenTestCase):
         match = next(f for f in findings if f.id == "assess.wiring.config.pyproject.toml")
         self.assertEqual(match.severity, Severity.OK)
 
+    def test_unsupported_template_is_error_not_warn(self):
+        # Issue #50 — wiring_findings must emit ERROR (not WARN) when the
+        # template is explicitly set to an unsupported name.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "bogus"\n', encoding="utf-8"
+        )
+        findings = wiring_findings(self.destination)
+        match = next(f for f in findings if f.id == "assess.wiring.template")
+        self.assertEqual(match.severity, Severity.ERROR)
+
+    def test_invalid_utf8_justfile_emits_error_finding(self):
+        # Issue #51 — invalid UTF-8 in justfile must produce a structured
+        # ERROR finding, not a Python traceback.
+        self._python_config()
+        (self.destination / "justfile").write_bytes(b"\xff\xfe invalid utf-8")
+        findings = wiring_findings(self.destination)
+        match = next(f for f in findings if f.id == "assess.wiring.justfile")
+        self.assertEqual(match.severity, Severity.ERROR)
+
+    def test_oserror_justfile_emits_error_finding(self):
+        # Issue #51 — an OSError reading justfile must produce ERROR, not traceback.
+        self._python_config()
+        (self.destination / "justfile").write_text("lint:\n", encoding="utf-8")
+        original = Path.read_text
+
+        def fail_for_justfile(self_path: Path, *args, **kwargs):
+            if self_path.name == "justfile":
+                raise OSError("Permission denied")
+            return original(self_path, *args, **kwargs)
+
+        with mock.patch.object(Path, "read_text", fail_for_justfile):
+            findings = wiring_findings(self.destination)
+        match = next(f for f in findings if f.id == "assess.wiring.justfile")
+        self.assertEqual(match.severity, Severity.ERROR)
+
+    def test_invalid_utf8_config_signal_emits_error_finding(self):
+        # Issue #51 — invalid UTF-8 in a config signal file must produce
+        # ERROR, not traceback.
+        self._python_config()
+        (self.destination / "justfile").write_text("lint:\n", encoding="utf-8")
+        (self.destination / "pyproject.toml").write_bytes(b"\xff\xfe invalid utf-8")
+        findings = wiring_findings(self.destination)
+        match = next(f for f in findings if f.id == "assess.wiring.config.pyproject.toml")
+        self.assertEqual(match.severity, Severity.ERROR)
+
 
 class AssessHookPathTests(RavenTestCase):
     """Regression for #36: assess inspects Git's effective hooks path."""
@@ -84,6 +131,15 @@ class AssessHookPathTests(RavenTestCase):
         finding = self._hook_finding()
         self.assertEqual(finding.severity, Severity.WARN)
         self.assertIn(".git/hooks/pre-commit", finding.detail)
+
+    def test_invalid_utf8_hook_emits_error_finding(self):
+        # Issue #51 — invalid UTF-8 in the pre-commit hook must produce ERROR,
+        # not a UnicodeDecodeError traceback.
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_bytes(b"\xff\xfe invalid utf-8")
+        finding = self._hook_finding()
+        self.assertEqual(finding.severity, Severity.ERROR)
 
 
 class AssessFitTests(RavenTestCase):
