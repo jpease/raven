@@ -18,7 +18,7 @@ class GateSpec:
 
 
 def _str_tuple(value: object) -> tuple[str, ...]:
-    """Coerce a TOML list into a tuple of strings; anything else yields ()."""
+    """Coerce a list into a tuple of strings; anything else yields ()."""
     if isinstance(value, list):
         return tuple(str(item) for item in value)
     return ()
