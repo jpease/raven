@@ -21,7 +21,8 @@ def render_human(command: str, os_name: str, findings: list[Finding]) -> str:
         lines.append("")
     counts = summarize(findings)
     lines.append(
-        f"Summary: {counts['errors']} errors, {counts['warnings']} warnings, {counts['ok']} ok"
+        f"Summary: {counts['errors']} errors, {counts['warnings']} warnings, "
+        f"{counts['info']} info, {counts['ok']} ok"
     )
     return "\n".join(lines)
 
