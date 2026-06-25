@@ -3,12 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from types import MappingProxyType
 
-import tomllib
-
-_GATES_PATH = Path(__file__).resolve().parent / "data" / "gates.toml"
+from .data.gate_data import GATE_DATA
 
 
 @dataclass(frozen=True)
@@ -53,8 +50,7 @@ def _build_spec(raw: dict[str, object]) -> GateSpec:
 
 @lru_cache(maxsize=1)
 def load_gate_specs() -> dict[str, GateSpec]:
-    data = tomllib.loads(_GATES_PATH.read_text(encoding="utf-8"))
-    return {name: _build_spec(raw) for name, raw in data.items() if isinstance(raw, dict)}
+    return {name: _build_spec(raw) for name, raw in GATE_DATA.items() if isinstance(raw, dict)}
 
 
 def gate_spec_for(template: str) -> GateSpec | None:

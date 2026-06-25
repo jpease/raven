@@ -11,7 +11,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py39"
 
 # Raven's own development lint bar is intentionally stricter than the shipped
 # python/ template. pyproject.toml is a starter tool config, so this root file
