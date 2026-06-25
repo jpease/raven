@@ -76,26 +76,21 @@ def validate_manifest(destination: Path) -> ManifestStatus:
 
 
 def load_manifest(destination: Path) -> dict:
-    path = destination / MANIFEST_PATH
-    if not path.exists():
-        return {"schema": 1, "files": {}}
-    try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+    """Return the usable manifest, warning on (and discarding) a corrupt one.
+
+    Shares the single parse-and-validate path with ``validate_manifest`` so the
+    two never drift. A missing manifest is a normal, silent empty baseline; any
+    structurally invalid one (bad JSON, wrong shape, unsupported schema) is
+    reported on stderr and treated as empty so callers fail closed rather than
+    acting on records they cannot trust.
+    """
+    status = validate_manifest(destination)
+    if status.state not in ("ok", "missing"):
         print(
-            f"warning: could not read {path} ({exc}); treating Raven manifest as empty.",
+            f"warning: {status.detail}; treating Raven manifest as empty.",
             file=sys.stderr,
         )
-        return {"schema": 1, "files": {}}
-    if not isinstance(manifest, dict):
-        print(
-            f"warning: {path} is not a JSON object; treating Raven manifest as empty.",
-            file=sys.stderr,
-        )
-        return {"schema": 1, "files": {}}
-    if not isinstance(manifest.get("files"), dict):
-        manifest["files"] = {}
-    return manifest
+    return status.manifest
 
 
 def git_ref() -> str:
