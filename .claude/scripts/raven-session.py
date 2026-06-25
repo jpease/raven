@@ -8,6 +8,24 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TypedDict
+
+
+class Unit(TypedDict):
+    name: str
+    done: bool
+    issue: str | None
+    completed_at: str | None
+
+
+class SessionData(TypedDict):
+    project_type: str
+    started: str
+    last_updated: str
+    parent_issue: str | None
+    units: list[Unit]
+    context_lines: list[str]
+
 
 RAVEN_DIR = Path(".raven")
 SESSION_FILE = RAVEN_DIR / "session.md"
@@ -27,9 +45,9 @@ def _atomic_write(path: Path, content: str) -> None:
     tmp.rename(path)
 
 
-def _parse_session(text: str) -> dict:  # type: ignore[type-arg]
+def _parse_session(text: str) -> SessionData:
     """Parse session.md into a structured dict."""
-    data: dict = {  # type: ignore[type-arg]
+    data: SessionData = {
         "project_type": "",
         "started": "",
         "last_updated": "",
@@ -87,7 +105,26 @@ def _parse_session(text: str) -> dict:  # type: ignore[type-arg]
     return data
 
 
-def _render_session(data: dict) -> str:  # type: ignore[type-arg]
+def _format_unit_entry(unit: Unit, *, current: bool = False) -> str:
+    """Render one unit as its ``- [ ] name → #issue`` session/archive line.
+
+    Single source of truth for the unit line shared by ``_render_session`` (both
+    the done and pending branches) and ``cmd_archive``. A done unit shows its
+    completion timestamp; the in-progress unit is tagged ``(current)``.
+    """
+    mark = "x" if unit["done"] else " "
+    entry = f"- [{mark}] {unit['name']}"
+    if unit.get("issue"):
+        entry += f" → {unit['issue']}"
+    if unit["done"]:
+        if unit.get("completed_at"):
+            entry += f" (completed {unit['completed_at']})"
+    elif current:
+        entry += " (current)"
+    return entry
+
+
+def _render_session(data: SessionData) -> str:
     lines = ["# Raven Session", ""]
     lines.append(f"**Project Type:** {data['project_type']}  ")
     lines.append(f"**Started:** {data['started']}  ")
@@ -99,24 +136,10 @@ def _render_session(data: dict) -> str:  # type: ignore[type-arg]
     lines.append("")
     current_set = False
     for u in data["units"]:
-        if u["done"]:
-            entry = f"- [x] {u['name']}"
-            if u.get("issue"):
-                entry += f" → {u['issue']}"
-            if u.get("completed_at"):
-                entry += f" (completed {u['completed_at']})"
-        else:
-            if not current_set:
-                entry = f"- [ ] {u['name']}"
-                if u.get("issue"):
-                    entry += f" → {u['issue']}"
-                entry += " (current)"
-                current_set = True
-            else:
-                entry = f"- [ ] {u['name']}"
-                if u.get("issue"):
-                    entry += f" → {u['issue']}"
-        lines.append(entry)
+        is_current = not u["done"] and not current_set
+        lines.append(_format_unit_entry(u, current=is_current))
+        if is_current:
+            current_set = True
     lines.append("")
     lines.append("## Context")
     lines.extend(data["context_lines"] if data["context_lines"] else [""])
@@ -140,14 +163,15 @@ def cmd_init(args: list[str]) -> int:
         return 1
 
     RAVEN_DIR.mkdir(exist_ok=True)
-    data = {
+    units: list[Unit] = [
+        {"name": u, "done": False, "issue": None, "completed_at": None} for u in ns.units
+    ]
+    data: SessionData = {
         "project_type": ns.project_type,
         "started": _now(),
         "last_updated": _now(),
         "parent_issue": ns.parent,
-        "units": [
-            {"name": u, "done": False, "issue": None, "completed_at": None} for u in ns.units
-        ],
+        "units": units,
         "context_lines": [""],
     }
     _atomic_write(SESSION_FILE, _render_session(data))
@@ -161,7 +185,7 @@ def cmd_init(args: list[str]) -> int:
     return 0
 
 
-def _existing_ignore_patterns(text: str) -> set:  # type: ignore[type-arg]
+def _existing_ignore_patterns(text: str) -> set[str]:
     """Effective ignore patterns from .gitignore text.
 
     Compares by exact pattern, not substring, so a comment or a longer path that
@@ -252,7 +276,7 @@ def _release_lock() -> None:
     LOCK_FILE.unlink(missing_ok=True)
 
 
-def _current_unit(data: dict) -> dict | None:  # type: ignore[type-arg]
+def _current_unit(data: SessionData) -> Unit | None:
     for u in data["units"]:
         if not u["done"]:
             return u
@@ -328,13 +352,7 @@ def cmd_archive(args: list[str]) -> int:
             print("No completed units to archive.")
             return 0
         archive_lines = [f"\n## Archived {_now()}\n"]
-        for u in completed:
-            entry = f"- [x] {u['name']}"
-            if u.get("issue"):
-                entry += f" → {u['issue']}"
-            if u.get("completed_at"):
-                entry += f" (completed {u['completed_at']})"
-            archive_lines.append(entry)
+        archive_lines.extend(_format_unit_entry(u) for u in completed)
         with ARCHIVE_FILE.open("a", encoding="utf-8") as f:
             f.write("\n".join(archive_lines) + "\n")
         data["units"] = [u for u in data["units"] if not u["done"]]
