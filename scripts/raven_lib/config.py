@@ -5,7 +5,7 @@ import functools
 import re
 import string
 from pathlib import Path
-from typing import TypeAlias
+from typing import Union
 
 from .constants import (
     CLAUDE_COMPONENT_PATHS,
@@ -21,8 +21,10 @@ from .models import RavenConfig
 _ISSUE_TRACKER_SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]")
 _PLATFORM_LINE_RE = re.compile(r"^\s*platform\s*=")
 
-# A scalar or list value parsed from the simplified TOML config.
-ConfigValue: TypeAlias = bool | int | str | list["ConfigValue"]
+# A scalar or list value parsed from the simplified TOML config. Spelled with
+# typing.Union (not ``bool | int``) because this alias is evaluated at import
+# time and PEP 604 unions are not available on the 3.9 runtime floor.
+ConfigValue = Union[bool, int, str, list["ConfigValue"]]
 
 
 class ConfigError(Exception):
