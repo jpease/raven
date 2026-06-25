@@ -15,6 +15,7 @@ from pathlib import Path
 
 MEMORY_PATH = Path(os.environ.get("RAVEN_TOOL_MEMORY", Path.home() / ".raven" / "tool-memory.json"))
 _DO_NOT_REMIND_KEY = "doNotRemind"
+_GENERIC_INSTALL_HINT = "follow this tool's current install docs for your OS"
 
 TOOLS = [
     {
@@ -22,11 +23,7 @@ TOOLS = [
         "name": "ripgrep",
         "commands": [["rg", "--version"]],
         "purpose": "exact strings, symbols, errors, and exhaustive confirmation",
-        "install": {
-            "darwin": "official install docs: https://github.com/BurntSushi/ripgrep#installation",
-            "linux": "official install docs: https://github.com/BurntSushi/ripgrep#installation",
-            "windows": "official install docs: https://github.com/BurntSushi/ripgrep#installation",
-        },
+        "install": "official install docs: https://github.com/BurntSushi/ripgrep#installation",
     },
     {
         "id": "just",
@@ -35,22 +32,14 @@ TOOLS = [
         "purpose": (
             "consistent task runner for test, lint, format, typecheck, and hook installation"
         ),
-        "install": {
-            "darwin": "official install docs: https://just.systems/man/en/",
-            "linux": "official install docs: https://just.systems/man/en/",
-            "windows": "official install docs: https://just.systems/man/en/",
-        },
+        "install": "official install docs: https://just.systems/man/en/",
     },
     {
         "id": "fd",
         "name": "fd",
         "commands": [["fd", "--version"]],
         "purpose": "fast file discovery by name, extension, type, or pattern",
-        "install": {
-            "darwin": "official install docs: https://github.com/sharkdp/fd#installation",
-            "linux": "official install docs: https://github.com/sharkdp/fd#installation",
-            "windows": "official install docs: https://github.com/sharkdp/fd#installation",
-        },
+        "install": "official install docs: https://github.com/sharkdp/fd#installation",
     },
     {
         "id": "uvx",
@@ -60,28 +49,14 @@ TOOLS = [
             "running Python-packaged tools such as Semble MCP"
             " without a permanent project dependency"
         ),
-        "install": {
-            "darwin": (
-                "official install docs: https://docs.astral.sh/uv/getting-started/installation/"
-            ),
-            "linux": (
-                "official install docs: https://docs.astral.sh/uv/getting-started/installation/"
-            ),
-            "windows": (
-                "official install docs: https://docs.astral.sh/uv/getting-started/installation/"
-            ),
-        },
+        "install": "official install docs: https://docs.astral.sh/uv/getting-started/installation/",
     },
     {
         "id": "semble",
         "name": "Semble",
         "commands": [["semble", "--version"]],
         "purpose": "intent-based code search when the owning file or symbol is unknown",
-        "install": {
-            "darwin": "official install docs: https://minish.ai/packages/semble/installation/",
-            "linux": "official install docs: https://minish.ai/packages/semble/installation/",
-            "windows": "official install docs: https://minish.ai/packages/semble/installation/",
-        },
+        "install": "official install docs: https://minish.ai/packages/semble/installation/",
         "optionalWhen": "uvx is available and Semble is configured only as an MCP server",
         "claudeMcpServer": "semble",
         "codexMcpServer": "semble",
@@ -132,11 +107,7 @@ TOOLS = [
         # by its full name anyway.
         "commands": [["ast-grep", "--version"]],
         "purpose": "syntax-aware search and mechanical rewrites",
-        "install": {
-            "darwin": "official install docs: https://ast-grep.github.io/guide/quick-start.html",
-            "linux": "official install docs: https://ast-grep.github.io/guide/quick-start.html",
-            "windows": "official install docs: https://ast-grep.github.io/guide/quick-start.html",
-        },
+        "install": "official install docs: https://ast-grep.github.io/guide/quick-start.html",
     },
     {
         "id": "semgrep",
@@ -174,11 +145,7 @@ TOOLS = [
         "name": "jq",
         "commands": [["jq", "--version"]],
         "purpose": "reading and transforming structured JSON without brittle text parsing",
-        "install": {
-            "darwin": "official install docs: https://jqlang.org/download/",
-            "linux": "official install docs: https://jqlang.org/download/",
-            "windows": "official install docs: https://jqlang.org/download/",
-        },
+        "install": "official install docs: https://jqlang.org/download/",
         "optionalWhen": (
             "the task does not involve JSON transformation"
             " or another structured parser is available"
@@ -189,11 +156,7 @@ TOOLS = [
         "name": "yq",
         "commands": [["yq", "--version"]],
         "purpose": "reading and transforming structured YAML without brittle text parsing",
-        "install": {
-            "darwin": "official install docs: https://github.com/mikefarah/yq/#install",
-            "linux": "official install docs: https://github.com/mikefarah/yq/#install",
-            "windows": "official install docs: https://github.com/mikefarah/yq/#install",
-        },
+        "install": "official install docs: https://github.com/mikefarah/yq/#install",
         "optionalWhen": (
             "the task does not involve YAML transformation"
             " or another structured parser is available"
@@ -223,6 +186,20 @@ RUN_COMMAND_PROBES = os.environ.get("RAVEN_TOOL_CHECK_EXECUTE") == "1"
 RUN_CLAUDE_MCP_CLI = os.environ.get("RAVEN_TOOL_CHECK_CLAUDE_CLI") == "1"
 
 
+def result_status(result: dict) -> str:
+    """Map a check result's (available, source) pair to its tri-state label.
+
+    Single source of truth for the "available / timed_out / missing" decision so
+    the report properties, the streamed output, and the cached records can never
+    disagree about what a given result means.
+    """
+    if result["available"]:
+        return "available"
+    if result.get("source") == "timed-out":
+        return "timed_out"
+    return "missing"
+
+
 class ToolCheckReport:
     def __init__(
         self, memory_path: Path, current_os: str, do_not_remind: bool, results: list[dict]
@@ -234,19 +211,15 @@ class ToolCheckReport:
 
     @property
     def present(self) -> list[dict]:
-        return [result for result in self.results if result["available"]]
+        return [result for result in self.results if result_status(result) == "available"]
 
     @property
     def timed_out(self) -> list[dict]:
-        return [result for result in self.results if result.get("source") == "timed-out"]
+        return [result for result in self.results if result_status(result) == "timed_out"]
 
     @property
     def missing(self) -> list[dict]:
-        return [
-            result
-            for result in self.results
-            if not result["available"] and result.get("source") != "timed-out"
-        ]
+        return [result for result in self.results if result_status(result) == "missing"]
 
 
 def os_key() -> str:
@@ -483,6 +456,20 @@ def _memory_has_complete_records(memory: dict, current_os: str) -> bool:
     )
 
 
+def _resolve_install(install: object, current_os: str) -> str:
+    """Resolve a tool's install guidance for ``current_os``.
+
+    ``install`` is a single string when guidance is the same on every OS, or an
+    ``{os: text}`` dict when one OS (typically Windows) needs a caveat. Anything
+    else falls back to a generic hint.
+    """
+    if isinstance(install, str):
+        return install
+    if isinstance(install, dict):
+        return install.get(current_os, _GENERIC_INSTALL_HINT)
+    return _GENERIC_INSTALL_HINT
+
+
 def _tool_result(tool: dict, current_os: str) -> dict:
     available, source = check_tool_with_source(tool)
     return {
@@ -491,18 +478,17 @@ def _tool_result(tool: dict, current_os: str) -> dict:
         "available": available,
         "source": source,
         "purpose": tool["purpose"],
-        "install": tool["install"].get(
-            current_os, "follow this tool's current install docs for your OS"
-        ),
+        "install": _resolve_install(tool["install"], current_os),
         "optionalWhen": tool.get("optionalWhen"),
     }
 
 
 def _print_streamed_result(result: dict) -> None:
-    if result["available"]:
+    status = result_status(result)
+    if status == "available":
         source = f" via {result['source']}" if result.get("source") else ""
         print(f"[ok] {result['name']}: installed or configured{source}", flush=True)
-    elif result.get("source") == "timed-out":
+    elif status == "timed_out":
         print(f"[timed out] {result['name']}: check timed out", flush=True)
     else:
         print(f"[missing] {result['name']}: not installed or configured", flush=True)
@@ -531,11 +517,7 @@ def _build_tool_records(results: list[dict], checked_at: str, current_os: str) -
             "available": result["available"],
             "purpose": result["purpose"],
             "source": result.get("source"),
-            "status": (
-                "available"
-                if result["available"]
-                else ("timed_out" if result.get("source") == "timed-out" else "missing")
-            ),
+            "status": result_status(result),
             "checkedAt": checked_at,
             "os": current_os,
         }
