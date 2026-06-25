@@ -46,7 +46,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("! fd missing", out)
         self.assertIn("✗ config missing", out)
         self.assertIn("fix: install fd", out)
-        self.assertIn("Summary: 1 errors, 1 warnings, 1 ok", out)
+        self.assertIn("Summary: 1 errors, 1 warnings, 0 info, 1 ok", out)
 
     def test_human_omits_fix_for_ok(self):
         out = render_human("doctor", "darwin", _findings())

@@ -475,11 +475,6 @@ def check_tool_with_source(tool: dict) -> tuple[bool, str | None]:
     return False, None
 
 
-def check_tool(tool: dict) -> bool:
-    available, _source = check_tool_with_source(tool)
-    return available
-
-
 def _memory_has_complete_records(memory: dict, current_os: str) -> bool:
     remembered = memory.get("tools", {})
     return all(
