@@ -44,11 +44,11 @@ line-ending = "auto"
 quote-style = "preserve"
 
 [tool.pyright]
-pythonVersion = "3.10"
+pythonVersion = "3.9"
 typeCheckingMode = "standard"
 reportMissingTypeStubs = false
 # Reference-grade extra beyond "standard" (not full "strict", which floods on
-# tomllib/untyped-boundary unknowns): fail the build when a # type: ignore goes
+# untyped-boundary unknowns): fail the build when a # type: ignore goes
 # stale, so suppressions can't silently rot. (reportImplicitStringConcatenation
 # was evaluated and rejected — it flags intentional multi-line string splits;
 # ruff ISC already covers the accidental-concatenation bug class surgically.)
