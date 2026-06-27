@@ -110,11 +110,11 @@ class AssessHookPathTests(RavenTestCase):
             'schema = 1\ntemplate = "python"\n', encoding="utf-8"
         )
 
-    def _hook_finding(self):
+    def _hook_finding(self, name="pre-commit"):
         findings = wiring_findings(self.destination)
-        return next(f for f in findings if f.id == "assess.wiring.hook")
+        return next(f for f in findings if f.id == f"assess.wiring.hook.{name}")
 
-    def test_active_hook_in_custom_hooks_path_is_ok(self):
+    def test_active_hooks_in_custom_hooks_path_are_ok(self):
         custom = self.destination / ".githooks"
         custom.mkdir()
         subprocess.run(
@@ -122,23 +122,39 @@ class AssessHookPathTests(RavenTestCase):
             capture_output=True,
             check=True,
         )
-        (custom / "pre-commit").write_text("#!/bin/sh\njust check\n", encoding="utf-8")
-        finding = self._hook_finding()
-        self.assertEqual(finding.severity, Severity.OK)
-        self.assertIn(".githooks/pre-commit", finding.detail)
+        (custom / "pre-commit").write_text("#!/bin/sh\njust check-fast\n", encoding="utf-8")
+        (custom / "pre-push").write_text("#!/bin/sh\njust check\n", encoding="utf-8")
+        pre_commit = self._hook_finding("pre-commit")
+        pre_push = self._hook_finding("pre-push")
+        self.assertEqual(pre_commit.severity, Severity.OK)
+        self.assertIn(".githooks/pre-commit", pre_commit.detail)
+        self.assertEqual(pre_push.severity, Severity.OK)
+        self.assertIn(".githooks/pre-push", pre_push.detail)
 
-    def test_missing_hook_in_normal_repo_warns(self):
-        finding = self._hook_finding()
-        self.assertEqual(finding.severity, Severity.WARN)
-        self.assertIn(".git/hooks/pre-commit", finding.detail)
+    def test_missing_hooks_in_normal_repo_warn(self):
+        pre_commit = self._hook_finding("pre-commit")
+        pre_push = self._hook_finding("pre-push")
+        self.assertEqual(pre_commit.severity, Severity.WARN)
+        self.assertIn(".git/hooks/pre-commit", pre_commit.detail)
+        self.assertEqual(pre_push.severity, Severity.WARN)
+        self.assertIn(".git/hooks/pre-push", pre_push.detail)
+
+    def test_pre_push_missing_warns_even_when_pre_commit_present(self):
+        # The whole point of verifying both: a project wired for commit-time
+        # checks but missing the push-time gate must not pass as fully wired.
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\njust check-fast\n", encoding="utf-8")
+        self.assertEqual(self._hook_finding("pre-commit").severity, Severity.OK)
+        self.assertEqual(self._hook_finding("pre-push").severity, Severity.WARN)
 
     def test_invalid_utf8_hook_emits_error_finding(self):
-        # Issue #51 — invalid UTF-8 in the pre-commit hook must produce ERROR,
+        # Issue #51 — invalid UTF-8 in a managed hook must produce ERROR,
         # not a UnicodeDecodeError traceback.
         hooks = self.destination / ".git" / "hooks"
         hooks.mkdir(parents=True, exist_ok=True)
         (hooks / "pre-commit").write_bytes(b"\xff\xfe invalid utf-8")
-        finding = self._hook_finding()
+        finding = self._hook_finding("pre-commit")
         self.assertEqual(finding.severity, Severity.ERROR)
 
 

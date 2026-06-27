@@ -14,6 +14,41 @@ _FIT = "Template fit"
 _GATES = "Gate compliance"
 
 
+def _hook_finding(destination: Path, hook: Path, name: str, expected: str) -> Finding:
+    """Build the wiring Finding for one managed git hook (pre-commit or pre-push).
+
+    ``expected`` is the canonical command for display; the OK check stays lenient
+    (any ``just check``-family command) so a hook customized to run the full gate
+    at commit time is still recognized as wired.
+    """
+    try:
+        hook_display = hook.resolve().relative_to(destination.resolve())
+    except ValueError:
+        hook_display = hook
+    if hook.is_file():
+        try:
+            hook_ok = "just check" in hook.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            return Finding(
+                id=f"assess.wiring.hook.{name}",
+                severity=Severity.ERROR,
+                category=_WIRING,
+                title=f"{name} hook unreadable",
+                detail=f"{hook_display}: {exc}",
+                fix=f"fix or restore the {name} hook",
+            )
+    else:
+        hook_ok = False
+    return Finding(
+        id=f"assess.wiring.hook.{name}",
+        severity=Severity.OK if hook_ok else Severity.WARN,
+        category=_WIRING,
+        title=f"{name} gate hook {'installed' if hook_ok else 'not installed'}",
+        detail=f"{hook_display} running `{expected}`",
+        fix=None if hook_ok else "run `just install-hooks`",
+    )
+
+
 def wiring_findings(destination: Path) -> list[Finding]:
     config = load_config(destination)
     spec = gate_spec_for(config.template) if config.template else None
@@ -121,42 +156,11 @@ def wiring_findings(destination: Path) -> list[Finding]:
     # worktrees) -- the same path the installer writes to -- not a hard-coded
     # .git/hooks, so a custom hooks path is not misreported as uninstalled.
     hooks_dir = git_hooks_dir(destination) or (destination / ".git" / "hooks")
-    hook = hooks_dir / "pre-commit"
-    try:
-        hook_display = hook.resolve().relative_to(destination.resolve())
-    except ValueError:
-        hook_display = hook
-    hook_read_error: str | None = None
-    if hook.is_file():
-        try:
-            hook_ok = "just check" in hook.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            hook_ok = False
-            hook_read_error = str(exc)
-    else:
-        hook_ok = False
-    if hook_read_error is not None:
-        findings.append(
-            Finding(
-                id="assess.wiring.hook",
-                severity=Severity.ERROR,
-                category=_WIRING,
-                title="pre-commit hook unreadable",
-                detail=f"{hook_display}: {hook_read_error}",
-                fix="fix or restore the pre-commit hook",
-            )
-        )
-    else:
-        findings.append(
-            Finding(
-                id="assess.wiring.hook",
-                severity=Severity.OK if hook_ok else Severity.WARN,
-                category=_WIRING,
-                title=f"pre-commit gate hook {'installed' if hook_ok else 'not installed'}",
-                detail=f"{hook_display} running `just check`",
-                fix=None if hook_ok else "run `just install-hooks`",
-            )
-        )
+    # pre-commit runs the fast subset; pre-push runs the full gate. Verify both
+    # so a project missing the slower push-time safety net is not graded as
+    # fully wired on the strength of pre-commit alone.
+    for name, expected in (("pre-commit", "just check-fast"), ("pre-push", "just check")):
+        findings.append(_hook_finding(destination, hooks_dir / name, name, expected))
     return findings
 
 
