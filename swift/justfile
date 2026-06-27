@@ -6,16 +6,20 @@ test:
 lint:
     swiftlint lint
 
-# Format the codebase
+# Format the codebase (Apple swift-format via the Xcode toolchain; tracked source only)
 format:
-    swift-format format --recursive --in-place .
+    git ls-files -z '*.swift' | xargs -0 xcrun swift-format format --parallel --in-place
+
+# Verify formatting without modifying files (CI-friendly; exits non-zero on drift)
+lint-format:
+    git ls-files -z '*.swift' | xargs -0 xcrun swift-format lint --parallel --strict
 
 # Build the project
 build:
     swift build
 
 # Run the standard local verification set
-check: lint build test
+check: lint-format lint build test
 
 # Install a pre-commit git hook that runs 'just check'
 install-hooks:
