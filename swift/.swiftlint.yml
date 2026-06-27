@@ -1,4 +1,9 @@
-disabled_rules: []
+# Formatting is owned by swift-format (.swift-format); disable SwiftLint's
+# overlapping formatting rules so the two tools never conflict.
+disabled_rules:
+  - trailing_comma
+  - opening_brace
+  - closure_parameter_position
 opt_in_rules: []
 
 line_length:

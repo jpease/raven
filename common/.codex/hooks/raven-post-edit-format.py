@@ -27,6 +27,15 @@ def run(command: list[str]) -> None:
     subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
 
+def _swift_format_cmd() -> list[str] | None:
+    """Resolve Apple's swift-format: prefer a PATH binary, else the Xcode toolchain via xcrun."""
+    if shutil.which("swift-format"):
+        return ["swift-format"]
+    if shutil.which("xcrun"):
+        return ["xcrun", "swift-format"]
+    return None
+
+
 def main() -> int:
     payload = _load_payload()
     if payload is None:
@@ -45,6 +54,10 @@ def main() -> int:
         run(["ruff", "format", str(path)])
     elif suffix in {".js", ".jsx", ".ts", ".tsx", ".json", ".md"} and shutil.which("prettier"):
         run(["prettier", "--write", str(path)])
+    elif suffix == ".swift":
+        swift_format = _swift_format_cmd()
+        if swift_format:
+            run([*swift_format, "format", "--in-place", str(path)])
 
     return 0
 
