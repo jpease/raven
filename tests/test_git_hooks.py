@@ -242,6 +242,18 @@ class GitHookInstallerTests(unittest.TestCase):
         self.assertIn("just check", pre_push)
         self.assertNotIn("just check-fast", pre_push)
 
+    # A normal push: one ref with a non-zero local SHA. The all-zero remote SHA
+    # (new branch) is irrelevant -- only the local SHA decides if work is leaving.
+    _PUSH_STDIN = (
+        "refs/heads/main 1111111111111111111111111111111111111111 "
+        "refs/heads/main 0000000000000000000000000000000000000000\n"
+    )
+    # A delete-only push: git sends "(delete)" with an all-zero local SHA.
+    _DELETE_STDIN = (
+        "(delete) 0000000000000000000000000000000000000000 "
+        "refs/heads/old 2222222222222222222222222222222222222222\n"
+    )
+
     def test_pre_push_hook_is_optional_when_just_missing(self):
         hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
         git_path = subprocess.run(
@@ -257,6 +269,7 @@ class GitHookInstallerTests(unittest.TestCase):
             ["/bin/sh", str(hook)],
             cwd=self.destination,
             env=env,
+            input=self._PUSH_STDIN,
             capture_output=True,
             text=True,
             check=False,
@@ -284,12 +297,69 @@ class GitHookInstallerTests(unittest.TestCase):
             ["/bin/sh", str(hook)],
             cwd=self.destination,
             env=env,
+            input=self._PUSH_STDIN,
             capture_output=True,
             text=True,
             check=False,
         )
 
         self.assertNotEqual(result.returncode, 0)
+
+    def test_pre_push_hook_skips_heavy_checks_for_delete_only_push(self):
+        # A delete-only push (all local SHAs zero) ships no code, so the hook must
+        # exit 0 without ever running `just check` -- even one rigged to fail.
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+        git_path = subprocess.run(
+            ["which", "git"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        bin_dir = self.destination / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "git").symlink_to(git_path)
+        fake_just = bin_dir / "just"
+        fake_just.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        fake_just.chmod(0o755)
+
+        env = {k: v for k, v in os.environ.items() if k != "PATH"}
+        env["PATH"] = str(bin_dir)
+        result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            input=self._DELETE_STDIN,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_pre_push_hook_skips_heavy_checks_when_nothing_to_push(self):
+        # Empty stdin (no refs in the push range) must also short-circuit before
+        # the gate runs.
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+        git_path = subprocess.run(
+            ["which", "git"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        bin_dir = self.destination / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "git").symlink_to(git_path)
+        fake_just = bin_dir / "just"
+        fake_just.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        fake_just.chmod(0o755)
+
+        env = {k: v for k, v in os.environ.items() if k != "PATH"}
+        env["PATH"] = str(bin_dir)
+        result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            input="",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":
