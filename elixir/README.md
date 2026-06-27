@@ -30,5 +30,5 @@ raven install elixir
 
 After copying:
 
-- Run `just install-hooks` to add a pre-commit git hook that runs `just check`, or add `just check` manually to an existing hook.
+- Run `just install-hooks` to add a pre-commit hook (`just check-fast` — fast lint and format checks) and a pre-push hook (`just check` — the full lint, type, and test gate), or wire those commands into existing hooks manually.
 - Use project-owned files for project-specific guidance. Avoid editing `raven-*` files unless you are intentionally updating the Raven template content.

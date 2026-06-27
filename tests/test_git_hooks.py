@@ -230,6 +230,67 @@ class GitHookInstallerTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
 
+    def test_hook_division_pre_commit_is_fast_pre_push_is_full(self):
+        # The split is the whole point: pre-commit runs only the fast subset so
+        # the commit loop stays quick, while pre-push runs the full gate so the
+        # expensive tests run exactly once before code leaves the machine.
+        hooks = raven.REPO_ROOT / "common" / ".raven" / "git-hooks"
+        pre_commit = (hooks / "pre-commit").read_text(encoding="utf-8")
+        pre_push = (hooks / "pre-push").read_text(encoding="utf-8")
+        self.assertIn("just check-fast", pre_commit)
+        self.assertNotIn("just check ", pre_commit)
+        self.assertIn("just check", pre_push)
+        self.assertNotIn("just check-fast", pre_push)
+
+    def test_pre_push_hook_is_optional_when_just_missing(self):
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+        git_path = subprocess.run(
+            ["which", "git"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        bin_dir = self.destination / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "git").symlink_to(git_path)
+
+        env = {k: v for k, v in os.environ.items() if k != "PATH"}
+        env["PATH"] = str(bin_dir)
+        result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_pre_push_hook_blocks_when_just_check_fails(self):
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+        git_path = subprocess.run(
+            ["which", "git"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        bin_dir = self.destination / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "git").symlink_to(git_path)
+        # A failing `just check` must abort the push -- the last gate before code
+        # leaves the machine.
+        fake_just = bin_dir / "just"
+        fake_just.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        fake_just.chmod(0o755)
+
+        env = {k: v for k, v in os.environ.items() if k != "PATH"}
+        env["PATH"] = str(bin_dir)
+        result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
