@@ -20,6 +20,7 @@ Use `.claude/docs/raven-typescript-quality.md` for detailed TypeScript quality g
   - `pnpm build`
   - `pnpm format --check` or `prettier --check .`
 - Do not assume every project uses pnpm, turbo, vitest, or ESLint. Confirm before using.
+- In monorepos and project-reference layouts, editor-injected `cannot find module` diagnostics are often false positives (one root `tsserver` over a solution-style `tsconfig`); the build/typecheck gate wins on disagreement.
 
 ## Pause And Ask
 
