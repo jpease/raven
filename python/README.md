@@ -21,7 +21,7 @@ After copying:
 
 - Review `.mcp.json` and remove unavailable MCP servers.
 - Review `.claude/settings.json`, `.claude/hooks/`, `.codex/config.toml`, and `.codex/hooks.json`; hooks are included for Claude Code and Codex.
-- Run `just install-hooks` to add a pre-commit git hook that runs `just check`, or add `just check` manually to an existing hook.
+- Run `just install-hooks` to add a pre-commit hook (`just check-fast` — fast lint and format checks) and a pre-push hook (`just check` — the full lint, type, and test gate), or wire those commands into existing hooks manually.
 - Use project-owned files for project-specific guidance. Avoid editing `raven-*` files unless you are intentionally updating the Raven template content.
 
 For Windows teams, WSL generally gives the closest parity with Linux CI and POSIX-heavy Python tooling. Native Windows is also supported, but hooks and commands should stay Python-based rather than Bash-only.

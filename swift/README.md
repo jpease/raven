@@ -21,7 +21,7 @@ After copying:
 
 - Review `.mcp.json` and remove unavailable MCP servers.
 - Review `.claude/settings.json`, `.claude/hooks/`, `.codex/config.toml`, and `.codex/hooks.json`; hooks are included for Claude Code and Codex.
-- Run `just install-hooks` to add a pre-commit git hook that runs `just check`, or add `just check` manually to an existing hook.
+- Run `just install-hooks` to add a pre-commit hook (`just check-fast` — fast format and lint checks) and a pre-push hook (`just check` — the full format, lint, build, and test gate), or wire those commands into existing hooks manually.
 - Use project-owned files for project-specific guidance. Avoid editing `raven-*` files unless you are intentionally updating the Raven template content.
 
 ## Formatting and linting

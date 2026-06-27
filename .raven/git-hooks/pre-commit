@@ -3,10 +3,12 @@
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 cd "$repo_root" || exit 0
 
-# Run the standard checks when the task runner is available; a failure blocks
-# the commit. If `just` is not installed, skip rather than hard-failing.
+# Run the fast static checks (lint + format) when the task runner is available;
+# a failure blocks the commit. The slower type-check and test suite run once in
+# pre-push, not here, to keep the commit loop quick. If `just` is not installed,
+# skip rather than hard-failing.
 if command -v just >/dev/null 2>&1; then
-    just check || exit 1
+    just check-fast || exit 1
 fi
 
 # Optional secret scan for staged changes; a detected leak blocks the commit.

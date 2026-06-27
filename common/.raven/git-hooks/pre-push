@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$repo_root" || exit 0
+
+# Run the full verification set (lint, format, type-check, tests) before code
+# leaves the machine; a failure blocks the push. pre-commit already ran the fast
+# subset, so the only heavy work added here is the type-check and test suite --
+# tests run exactly once across both hooks. Re-running the fast checks is the
+# cheap last line of defense against commits made with `--no-verify`. If `just`
+# is not installed, skip rather than hard-failing.
+if command -v just >/dev/null 2>&1; then
+    just check || exit 1
+fi
