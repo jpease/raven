@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .config import ConfigError, load_config
@@ -14,12 +15,25 @@ _FIT = "Template fit"
 _GATES = "Gate compliance"
 
 
-def _hook_finding(destination: Path, hook: Path, name: str, expected: str) -> Finding:
+def _invokes_just_recipe(text: str, recipe: str) -> bool:
+    """True when ``text`` runs ``just <recipe>`` as a whole token.
+
+    The trailing lookahead stops ``just check`` from matching ``just check-fast``
+    (and vice versa), so the pre-push full-gate check is never satisfied by a hook
+    that only runs the fast subset.
+    """
+    return re.search(rf"\bjust\s+{re.escape(recipe)}(?![\w-])", text) is not None
+
+
+def _hook_finding(
+    destination: Path, hook: Path, name: str, expected: str, accept: tuple[str, ...]
+) -> Finding:
     """Build the wiring Finding for one managed git hook (pre-commit or pre-push).
 
-    ``expected`` is the canonical command for display; the OK check stays lenient
-    (any ``just check``-family command) so a hook customized to run the full gate
-    at commit time is still recognized as wired.
+    ``expected`` is the canonical command for display. ``accept`` lists the
+    ``just`` recipes that count as wired: pre-push requires the full ``check``,
+    while pre-commit accepts ``check-fast`` or a stricter full ``check``. Matching
+    is token-aware so ``just check-fast`` does not pass as the full push gate.
     """
     try:
         hook_display = hook.resolve().relative_to(destination.resolve())
@@ -27,7 +41,7 @@ def _hook_finding(destination: Path, hook: Path, name: str, expected: str) -> Fi
         hook_display = hook
     if hook.is_file():
         try:
-            hook_ok = "just check" in hook.read_text(encoding="utf-8")
+            text = hook.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             return Finding(
                 id=f"assess.wiring.hook.{name}",
@@ -37,6 +51,7 @@ def _hook_finding(destination: Path, hook: Path, name: str, expected: str) -> Fi
                 detail=f"{hook_display}: {exc}",
                 fix=f"fix or restore the {name} hook",
             )
+        hook_ok = any(_invokes_just_recipe(text, recipe) for recipe in accept)
     else:
         hook_ok = False
     return Finding(
@@ -158,9 +173,15 @@ def wiring_findings(destination: Path) -> list[Finding]:
     hooks_dir = git_hooks_dir(destination) or (destination / ".git" / "hooks")
     # pre-commit runs the fast subset; pre-push runs the full gate. Verify both
     # so a project missing the slower push-time safety net is not graded as
-    # fully wired on the strength of pre-commit alone.
-    for name, expected in (("pre-commit", "just check-fast"), ("pre-push", "just check")):
-        findings.append(_hook_finding(destination, hooks_dir / name, name, expected))
+    # fully wired on the strength of pre-commit alone. pre-push must run the full
+    # `check`; a `check-fast`-only pre-push is the missing safety net, so it does
+    # not count.
+    hook_specs = (
+        ("pre-commit", "just check-fast", ("check-fast", "check")),
+        ("pre-push", "just check", ("check",)),
+    )
+    for name, expected, accept in hook_specs:
+        findings.append(_hook_finding(destination, hooks_dir / name, name, expected, accept))
     return findings
 
 

@@ -164,6 +164,25 @@ class AssessHookPathTests(RavenTestCase):
         self.assertEqual(self._hook_finding("pre-commit").severity, Severity.OK)
         self.assertEqual(self._hook_finding("pre-push").severity, Severity.WARN)
 
+    def test_pre_push_running_only_check_fast_warns(self):
+        # Issue #52 — `just check-fast` contains the substring `just check`, so a
+        # lenient match graded a fast-only pre-push as the full push gate. The
+        # token-aware check must WARN: the slow type-check/test gate is missing.
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\njust check-fast\n", encoding="utf-8")
+        (hooks / "pre-push").write_text("#!/bin/sh\njust check-fast\n", encoding="utf-8")
+        self.assertEqual(self._hook_finding("pre-commit").severity, Severity.OK)
+        self.assertEqual(self._hook_finding("pre-push").severity, Severity.WARN)
+
+    def test_pre_commit_running_full_check_is_still_ok(self):
+        # A pre-commit hook customized to run the full `just check` is stricter
+        # than the shipped fast hook, so it must still grade as wired.
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\njust check\n", encoding="utf-8")
+        self.assertEqual(self._hook_finding("pre-commit").severity, Severity.OK)
+
     def test_invalid_utf8_hook_emits_error_finding(self):
         # Issue #51 — invalid UTF-8 in a managed hook must produce ERROR,
         # not a UnicodeDecodeError traceback.
