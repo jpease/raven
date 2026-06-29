@@ -6,7 +6,9 @@ import json
 import sys
 import tempfile
 import unittest
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -20,7 +22,9 @@ def load_session():
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     assert spec.loader is not None
-    spec.loader.exec_module(module)
+    # spec_from_file_location yields a SourceFileLoader; cast past the
+    # importlib.abc.Loader base, whose typeshed stub omits exec_module.
+    cast(SourceFileLoader, spec.loader).exec_module(module)
     return module
 
 
@@ -400,7 +404,9 @@ def load_hook():
     assert spec is not None
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-    spec.loader.exec_module(mod)
+    # spec_from_file_location yields a SourceFileLoader; cast past the
+    # importlib.abc.Loader base, whose typeshed stub omits exec_module.
+    cast(SourceFileLoader, spec.loader).exec_module(mod)
     return mod
 
 
