@@ -47,6 +47,22 @@ class AssessWiringTests(RavenTestCase):
         match = next(f for f in findings if f.id == "assess.wiring.config.pyproject.toml")
         self.assertEqual(match.severity, Severity.OK)
 
+    def test_swift_missing_lint_format_recipe_warns(self):
+        # Issue #53 — a Swift justfile without `lint-format` is missing the
+        # format gate the template treats as standard verification.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "swift"\n', encoding="utf-8"
+        )
+        (self.destination / "justfile").write_text(
+            "lint:\n    swiftlint lint\nbuild:\n    swift build\ntest:\n    swift test\n",
+            encoding="utf-8",
+        )
+        findings = wiring_findings(self.destination)
+        ids = {f.id: f for f in findings}
+        self.assertEqual(ids["assess.wiring.recipe.lint-format"].severity, Severity.WARN)
+        self.assertEqual(ids["assess.wiring.recipe.lint"].severity, Severity.OK)
+
     def test_unsupported_template_is_error_not_warn(self):
         # Issue #50 — wiring_findings must emit ERROR (not WARN) when the
         # template is explicitly set to an unsupported name.
