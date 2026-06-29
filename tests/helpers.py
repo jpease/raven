@@ -2,8 +2,9 @@ import importlib.util
 import sys
 import tempfile
 import unittest
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RAVEN_PATH = REPO_ROOT / "scripts" / "raven.py"
@@ -29,7 +30,9 @@ def load_script_module(name: str, path: Path) -> Any:
     # in sys.modules to evaluate string annotations. This mirrors the import
     # system's own loading order.
     sys.modules[name] = module
-    spec.loader.exec_module(module)
+    # spec_from_file_location yields a SourceFileLoader; cast past the
+    # importlib.abc.Loader base, whose typeshed stub omits exec_module.
+    cast(SourceFileLoader, spec.loader).exec_module(module)
     return module
 
 
