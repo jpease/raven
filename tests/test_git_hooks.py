@@ -38,6 +38,19 @@ class GitHookInstallerTests(unittest.TestCase):
         hook.chmod(0o644)
         return hook
 
+    def _hook_env(self, bin_dir: Path) -> dict[str, str]:
+        # Build a PATH where bin_dir (the chosen `git` plus any fake `just`) wins,
+        # but the system dirs a wrapper-style `git` needs stay resolvable. With
+        # only bin_dir on PATH, a `git` that shells out to `/usr/bin/env bash`
+        # (e.g. Apple's `/usr/bin/git` -> `xcrun`) fails `rev-parse`, so the hook
+        # short-circuits via `|| exit 0` before ever reaching `just` -- making the
+        # failing-`just` tests pass for the wrong reason (issue #54). `just` does
+        # not live in /usr/bin or /bin, so the "just missing" tests still see it
+        # absent, and bin_dir-first keeps a fake `just` ahead of any system one.
+        env = {k: v for k, v in os.environ.items() if k != "PATH"}
+        env["PATH"] = os.pathsep.join([str(bin_dir), "/usr/bin", "/bin"])
+        return env
+
     def test_installs_hook_as_symlink_in_git_hooks(self):
         self._write_hook("commit-msg")
 
@@ -124,12 +137,36 @@ class GitHookInstallerTests(unittest.TestCase):
 
     def test_linked_worktree_installs_into_shared_hooks_dir(self):
         self._write_hook("commit-msg")
-        worktree_dir = self.destination.parent / "linked-wt"
+        # A linked worktree branches from a commit; create one (with an inline
+        # identity so the test does not depend on global git config) so
+        # `worktree add` does not race on an unborn HEAD. If git still cannot
+        # create the worktree here, skip with a clear reason rather than failing.
         subprocess.run(
-            ["git", "-C", str(self.destination), "worktree", "add", str(worktree_dir)],
+            [
+                "git",
+                "-C",
+                str(self.destination),
+                "-c",
+                "user.email=raven@example.com",
+                "-c",
+                "user.name=Raven Test",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
             capture_output=True,
             check=True,
         )
+        worktree_dir = self.destination.parent / "linked-wt"
+        added = subprocess.run(
+            ["git", "-C", str(self.destination), "worktree", "add", str(worktree_dir)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if added.returncode != 0:
+            self.skipTest(f"git could not create a linked worktree here: {added.stderr.strip()}")
         self.addCleanup(
             lambda: subprocess.run(
                 [
@@ -169,8 +206,7 @@ class GitHookInstallerTests(unittest.TestCase):
         bin_dir.mkdir()
         (bin_dir / "git").symlink_to(git_path)
 
-        env = {k: v for k, v in os.environ.items() if k != "PATH"}
-        env["PATH"] = str(bin_dir)
+        env = self._hook_env(bin_dir)
         result = subprocess.run(
             ["/bin/sh", str(hook)],
             cwd=self.destination,
@@ -217,8 +253,7 @@ class GitHookInstallerTests(unittest.TestCase):
         fake_just.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
         fake_just.chmod(0o755)
 
-        env = {k: v for k, v in os.environ.items() if k != "PATH"}
-        env["PATH"] = str(bin_dir)
+        env = self._hook_env(bin_dir)
         result = subprocess.run(
             ["/bin/sh", str(hook)],
             cwd=self.destination,
@@ -263,8 +298,7 @@ class GitHookInstallerTests(unittest.TestCase):
         bin_dir.mkdir()
         (bin_dir / "git").symlink_to(git_path)
 
-        env = {k: v for k, v in os.environ.items() if k != "PATH"}
-        env["PATH"] = str(bin_dir)
+        env = self._hook_env(bin_dir)
         result = subprocess.run(
             ["/bin/sh", str(hook)],
             cwd=self.destination,
@@ -291,8 +325,7 @@ class GitHookInstallerTests(unittest.TestCase):
         fake_just.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
         fake_just.chmod(0o755)
 
-        env = {k: v for k, v in os.environ.items() if k != "PATH"}
-        env["PATH"] = str(bin_dir)
+        env = self._hook_env(bin_dir)
         result = subprocess.run(
             ["/bin/sh", str(hook)],
             cwd=self.destination,
@@ -319,8 +352,7 @@ class GitHookInstallerTests(unittest.TestCase):
         fake_just.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
         fake_just.chmod(0o755)
 
-        env = {k: v for k, v in os.environ.items() if k != "PATH"}
-        env["PATH"] = str(bin_dir)
+        env = self._hook_env(bin_dir)
         result = subprocess.run(
             ["/bin/sh", str(hook)],
             cwd=self.destination,
@@ -347,8 +379,7 @@ class GitHookInstallerTests(unittest.TestCase):
         fake_just.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
         fake_just.chmod(0o755)
 
-        env = {k: v for k, v in os.environ.items() if k != "PATH"}
-        env["PATH"] = str(bin_dir)
+        env = self._hook_env(bin_dir)
         result = subprocess.run(
             ["/bin/sh", str(hook)],
             cwd=self.destination,
