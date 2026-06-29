@@ -92,6 +92,23 @@ class GateRunTests(RavenTestCase):
         self.assertIn("timed out", warning.title.lower() + " " + warning.detail.lower())
         self.assertNotIn("just lint", calls)
 
+    def test_swift_lint_format_runs_via_fallback_when_just_missing(self):
+        # Issue #53 — with `just` unavailable, the Swift format gate must run its
+        # `xcrun swift-format` fallback rather than being silently dropped.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "swift"\n', encoding="utf-8"
+        )
+        calls: list[str] = []
+        runner = _runner(
+            {"just --version": RunResult(False, 127, "", "", False, False)}, calls=calls
+        )
+        findings = gate_compliance_findings(self.destination, runner)
+
+        self.assertIn("xcrun swift-format lint", " ".join(calls))
+        fmt = next(f for f in findings if f.id == "assess.gates.lint-format")
+        self.assertEqual(fmt.severity, Severity.OK)
+
     def test_successful_just_version_does_not_warn(self):
         self._python_config_with_justfile()
         runner = _runner({"just --version": RunResult(True, 0, "", "", True, False)})

@@ -30,6 +30,26 @@ class GatesTests(unittest.TestCase):
         assert spec is not None
         self.assertEqual(spec.fallback_commands["lint"], ("ruff", "check", "."))
 
+    def test_swift_recipes_include_lint_format(self):
+        # Issue #53 — the Swift template's `check` runs `lint-format`, so the gate
+        # spec must declare it alongside lint/build/test.
+        spec = gate_spec_for("swift")
+        assert spec is not None
+        for recipe in ("lint-format", "lint", "build", "test"):
+            self.assertIn(recipe, spec.recipes)
+
+    def test_swift_lint_format_fallback_runs_swift_format(self):
+        spec = gate_spec_for("swift")
+        assert spec is not None
+        fallback = spec.fallback_commands["lint-format"]
+        self.assertEqual(fallback[:3], ("xcrun", "swift-format", "lint"))
+
+    def test_swift_tools_account_for_xcrun(self):
+        # swift-format is reached via `xcrun`, so that is the probeable executable.
+        spec = gate_spec_for("swift")
+        assert spec is not None
+        self.assertIn("xcrun", spec.tools)
+
     def test_unknown_template_returns_none(self):
         self.assertIsNone(gate_spec_for("cobol"))
 

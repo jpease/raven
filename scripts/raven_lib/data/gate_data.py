@@ -68,11 +68,20 @@ GATE_DATA: dict[str, dict[str, object]] = {
         },
     },
     "swift": {
-        "recipes": ["lint", "build", "test"],
-        "tools": ["swift", "swiftlint"],
+        # `check-fast` runs `lint-format` then `lint`; `check` adds `build`/`test`.
+        # `lint-format` (Apple swift-format in lint mode) is part of standard
+        # verification, so assess must require it like any other gate recipe.
+        "recipes": ["lint-format", "lint", "build", "test"],
+        # swift-format ships inside the Xcode toolchain and is invoked as
+        # `xcrun swift-format`, not a standalone PATH binary, so the probeable
+        # executable for the format gate is `xcrun` rather than `swift-format`.
+        "tools": ["swift", "swiftlint", "xcrun"],
         "detect_signals": ["Package.swift"],
         "config_signals": [["Package.swift", ""]],
         "fallback_commands": {
+            # No-pipe equivalent of the justfile's `git ls-files | xargs ... lint`:
+            # the runner has no shell, so lint the tree recursively instead.
+            "lint-format": ["xcrun", "swift-format", "lint", "--recursive", "--strict", "."],
             "lint": ["swiftlint", "lint"],
             "build": ["swift", "build"],
             "test": ["swift", "test"],
