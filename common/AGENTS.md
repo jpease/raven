@@ -23,7 +23,8 @@ Use the cheapest adequate source before reading full files.
 | File discovery by name, type, or extension | `fd` |
 | Unknown implementation location but clear intent | Semble |
 | Definition, references, type info, diagnostics | LSP |
-| Architecture or blast-radius question | code-intelligence index, if configured |
+| "How does X work?" / conceptual flow discovery | `gitnexus_query`, if index configured |
+| Blast-radius before editing a symbol | `gitnexus_impact`, if index configured |
 | Syntax-aware pattern or mechanical rewrite | ast-grep or Semgrep |
 | Build, test, or log output | RTK-wrapped shell command |
 
@@ -31,6 +32,7 @@ Use the cheapest adequate source before reading full files.
 - Skeleton-first: for a large or unfamiliar file, get a symbol map (LSP document symbols, or `ast-grep`/`rg`) before reading, then read only the ranges you need — read a full file only when it is small or the whole structure matters.
 - Return concise findings before editing. Avoid pasting raw command output unless essential.
 - Semble is for conceptual discovery — switch to it when two literal `rg` guesses miss, rather than iterating term variations. It is not proof: verify with `rg`, LSP, targeted reads, or tests before changing code.
+- When a code-intelligence index is configured, prefer `gitnexus_query` over Semble for "how does X work" and flow-based questions — it returns execution paths grouped by process, not just file locations. Results improve further if the index was built with `--embeddings` (semantic ranking).
 - Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried and delegate per the Delegation section, or ask the user.
 - If a tool named above is not installed, fall back to `rg` plus targeted reads and flag the missing capability per Tool Availability Memory.
 - When the repo configures a code-intelligence index (such as GitNexus), its impact analysis before a symbol edit and change-detection before a commit are mandatory, not optional table picks. Compilers and tests confirm callers after the fact but give no pre-edit blast radius and nothing to a scoping subagent; they complement the index, not replace it. If it is stale, reindex or say so — do not silently skip it.
