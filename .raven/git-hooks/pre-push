@@ -3,6 +3,22 @@
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 cd "$repo_root" || exit 0
 
+# Git feeds the push plan on stdin as "<local-ref> <local-sha> <remote-ref>
+# <remote-sha>" lines; a deletion has an all-zero local-sha. If every line is a
+# deletion (or stdin is empty), no code is leaving the machine, so skip the
+# expensive gate. Git already short-circuits a fully up-to-date push before the
+# hook runs, so this only adds coverage for delete-only pushes. The `case` glob
+# treats a SHA as real work iff it holds any non-zero character, which keeps this
+# free of external commands (no `tr`) and agnostic to SHA-1 vs SHA-256 length.
+has_work=0
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+    case "$local_sha" in
+        "") ;;             # blank line, ignore
+        *[!0]*) has_work=1 ;;  # contains a non-zero digit -> a real ref update
+    esac
+done
+[ "$has_work" -eq 0 ] && exit 0
+
 # Run the full verification set (lint, format, type-check, tests) before code
 # leaves the machine; a failure blocks the push. pre-commit already ran the fast
 # subset, so the only heavy work added here is the type-check and test suite --
