@@ -79,7 +79,9 @@ GATE_DATA: dict[str, dict[str, object]] = {
         # SwiftPM packages have Package.swift; Xcode app targets (xcodegen) have
         # project.yml. The justfile dispatches build/test between the two.
         "detect_signals": ["Package.swift", "project.yml"],
-        "config_signals": [["Package.swift", ""]],
+        # The tool config is the linter config the template installs -- present in
+        # both SwiftPM and Xcode-app repos -- not Package.swift (absent in apps).
+        "config_signals": [[".swiftlint.yml", ""]],
         "fallback_commands": {
             # No-pipe equivalent of the justfile's `git ls-files | xargs ... lint`:
             # the runner has no shell, so lint the tree recursively instead.
