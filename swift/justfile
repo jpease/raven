@@ -1,6 +1,16 @@
-# Run the test suite
+# Xcode app targets only (ignored for SwiftPM packages). Set SCHEME to your
+# Xcode scheme -- for xcodegen projects this is the `name:` in project.yml.
+SCHEME := "YourScheme"
+DESTINATION := "platform=iOS Simulator,name=iPhone 16"
+
+# Run the test suite: SwiftPM package -> `swift test`; Xcode app -> `xcodebuild`.
 test:
-    swift test
+    #!/usr/bin/env sh
+    if [ -f Package.swift ]; then
+        swift test
+    else
+        xcodebuild -scheme "{{SCHEME}}" test -destination "{{DESTINATION}}"
+    fi
 
 # Run lint checks
 lint:
@@ -14,15 +24,22 @@ format:
 lint-format:
     git ls-files -z '*.swift' | xargs -0 xcrun swift-format lint --parallel --strict
 
-# Build the project
+# Build: SwiftPM package -> `swift build`; Xcode app -> `xcodebuild`.
 build:
-    swift build
+    #!/usr/bin/env sh
+    if [ -f Package.swift ]; then
+        swift build
+    else
+        xcodebuild -scheme "{{SCHEME}}" build -destination "{{DESTINATION}}"
+    fi
 
 # Fast static checks for the pre-commit hook (no build, no tests)
 check-fast: lint-format lint
 
-# Run the standard local verification set (also runs in the pre-push hook)
-check: check-fast build test
+# Run the standard local verification set (also runs in the pre-push hook).
+# `build` catches compile breaks; `test` is on-demand / CI -- an Xcode app's UI
+# test suite is too heavy for every push. SwiftPM projects can add `test` here.
+check: check-fast build
 
 # Install pre-commit (fast checks) and pre-push (full check) git hooks
 install-hooks:
