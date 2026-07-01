@@ -76,7 +76,9 @@ GATE_DATA: dict[str, dict[str, object]] = {
         # `xcrun swift-format`, not a standalone PATH binary, so the probeable
         # executable for the format gate is `xcrun` rather than `swift-format`.
         "tools": ["swift", "swiftlint", "xcrun"],
-        "detect_signals": ["Package.swift"],
+        # SwiftPM packages have Package.swift; Xcode app targets (xcodegen) have
+        # project.yml. The justfile dispatches build/test between the two.
+        "detect_signals": ["Package.swift", "project.yml"],
         "config_signals": [["Package.swift", ""]],
         "fallback_commands": {
             # No-pipe equivalent of the justfile's `git ls-files | xargs ... lint`:
