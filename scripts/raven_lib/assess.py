@@ -25,6 +25,30 @@ def _invokes_just_recipe(text: str, recipe: str) -> bool:
     return re.search(rf"\bjust\s+{re.escape(recipe)}(?![\w-])", text) is not None
 
 
+def resolve_manager_hook(hooks_dir: Path, name: str) -> Path:
+    """Path to inspect for hook ``name``, following husky's wrapper.
+
+    Husky sets ``core.hooksPath`` to ``.husky/_`` and puts a thin wrapper there
+    that dispatches to the real user hook one level up (``.husky/<name>``). Always
+    grade the real user-hook location, not the wrapper -- if ``.husky/<name>`` is
+    absent the gate is genuinely unwired ("not installed"), never the wrapper.
+    Any other layout is inspected as-is.
+    """
+    if hooks_dir.name == "_" and hooks_dir.parent.name == ".husky":
+        return hooks_dir.parent / name
+    return hooks_dir / name
+
+
+def _hook_is_trivial(text: str) -> bool:
+    """True when a hook has no executable content: only blank lines, a shebang,
+    or ``#`` comments. Such a hook wires no gate, so it is "not installed"."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            return False
+    return True
+
+
 def _hook_finding(
     destination: Path, hook: Path, name: str, expected: str, accept: tuple[str, ...]
 ) -> Finding:
@@ -39,32 +63,58 @@ def _hook_finding(
         hook_display = hook.resolve().relative_to(destination.resolve())
     except ValueError:
         hook_display = hook
-    if hook.is_file():
-        try:
-            text = hook.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            return Finding(
-                id=f"assess.wiring.hook.{name}",
-                severity=Severity.ERROR,
-                category=_WIRING,
-                title=f"{name} hook unreadable",
-                detail=f"{hook_display}: {exc}",
-                fix=f"fix or restore the {name} hook",
-            )
-        hook_ok = any(_invokes_just_recipe(text, recipe) for recipe in accept)
-    else:
-        hook_ok = False
+
+    not_installed = Finding(
+        id=f"assess.wiring.hook.{name}",
+        severity=Severity.WARN,
+        category=_WIRING,
+        title=f"{name} gate hook not installed",
+        detail=f"{hook_display} should run `{expected}`",
+        fix="run `just install-hooks`",
+    )
+    if not hook.is_file():
+        return not_installed
+    try:
+        text = hook.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return Finding(
+            id=f"assess.wiring.hook.{name}",
+            severity=Severity.ERROR,
+            category=_WIRING,
+            title=f"{name} hook unreadable",
+            detail=f"{hook_display}: {exc}",
+            fix=f"fix or restore the {name} hook",
+        )
+    if _hook_is_trivial(text):
+        return not_installed
+    if any(_invokes_just_recipe(text, recipe) for recipe in accept):
+        return Finding(
+            id=f"assess.wiring.hook.{name}",
+            severity=Severity.OK,
+            category=_WIRING,
+            title=f"{name} gate hook installed",
+            detail=f"{hook_display} runs `{expected}`",
+            fix=None,
+        )
+    if name == "pre-push" and _invokes_just_recipe(text, "check-fast"):
+        return Finding(
+            id=f"assess.wiring.hook.{name}",
+            severity=Severity.WARN,
+            category=_WIRING,
+            title=f"{name} gate hook runs only the fast subset",
+            detail=(
+                f"{hook_display} runs `just check-fast`; "
+                "the full `just check` gate never runs at push"
+            ),
+            fix="run `just check` (not `just check-fast`) in the pre-push hook",
+        )
     return Finding(
         id=f"assess.wiring.hook.{name}",
-        severity=Severity.OK if hook_ok else Severity.WARN,
+        severity=Severity.INFO,
         category=_WIRING,
-        title=f"{name} gate hook {'installed' if hook_ok else 'not installed'}",
-        detail=(
-            f"{hook_display} runs `{expected}`"
-            if hook_ok
-            else f"{hook_display} should run `{expected}`"
-        ),
-        fix=None if hook_ok else "run `just install-hooks`",
+        title=f"{name} gate hook present (non-canonical)",
+        detail=f"{hook_display} runs a custom gate, not `{expected}`",
+        fix=None,
     )
 
 
@@ -185,7 +235,8 @@ def wiring_findings(destination: Path) -> list[Finding]:
         ("pre-push", "just check", ("check",)),
     )
     for name, expected, accept in hook_specs:
-        findings.append(_hook_finding(destination, hooks_dir / name, name, expected, accept))
+        hook_path = resolve_manager_hook(hooks_dir, name)
+        findings.append(_hook_finding(destination, hook_path, name, expected, accept))
     return findings
 
 

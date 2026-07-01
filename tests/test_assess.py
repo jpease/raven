@@ -210,6 +210,70 @@ class AssessHookPathTests(RavenTestCase):
         self.assertEqual(finding.severity, Severity.OK)
         self.assertIn("runs `just check-fast`", finding.detail)
 
+    def test_husky_grades_real_hook_not_wrapper(self):
+        # #58: under husky, core.hooksPath is .husky/_ and the file there is a thin
+        # wrapper. The real gate lives in .husky/<name>; assess must grade that.
+        husky = self.destination / ".husky"
+        (husky / "_").mkdir(parents=True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".husky/_"],
+            capture_output=True,
+            check=True,
+        )
+        (husky / "_" / "pre-push").write_text(
+            '#!/usr/bin/env sh\n. "$(dirname "$0")/h"\n', encoding="utf-8"
+        )
+        (husky / "pre-push").write_text("#!/bin/sh\njust check\n", encoding="utf-8")
+        self.assertEqual(self._hook_finding("pre-push").severity, Severity.OK)
+
+    def test_husky_missing_real_hook_is_not_installed(self):
+        # Husky wrapper present but no .husky/pre-push -> the gate hook is absent.
+        husky = self.destination / ".husky"
+        (husky / "_").mkdir(parents=True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".husky/_"],
+            capture_output=True,
+            check=True,
+        )
+        (husky / "_" / "pre-push").write_text(
+            '#!/usr/bin/env sh\n. "$(dirname "$0")/h"\n', encoding="utf-8"
+        )
+        finding = self._hook_finding("pre-push")
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIn("not installed", finding.title)
+
+    def test_custom_hand_rolled_hook_is_info_not_warn(self):
+        # #59: a substantive hook running a real gate a non-canonical way
+        # (swiftlint directly) is INFO "present (non-canonical)", not a WARN.
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text(
+            "#!/bin/sh\nset -e\nswiftlint lint --strict\n", encoding="utf-8"
+        )
+        finding = self._hook_finding("pre-commit")
+        self.assertEqual(finding.severity, Severity.INFO)
+        self.assertIn("non-canonical", finding.title)
+        self.assertIsNone(finding.fix)  # never suggests just install-hooks
+        self.assertNotIn("not installed", finding.title)
+
+    def test_custom_pre_push_gate_is_info(self):
+        # A pre-push running a custom `just` recipe (check-full) is non-canonical
+        # INFO, not the fast-subset WARN and not "not installed".
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-push").write_text("#!/bin/sh\njust check-full\n", encoding="utf-8")
+        finding = self._hook_finding("pre-push")
+        self.assertEqual(finding.severity, Severity.INFO)
+
+    def test_trivial_hook_is_not_installed(self):
+        # A hook that is only a shebang/comments has no gate -> WARN not installed.
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\n# nothing here\n", encoding="utf-8")
+        finding = self._hook_finding("pre-commit")
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIn("not installed", finding.title)
+
 
 class AssessFitTests(RavenTestCase):
     def test_matching_signal_is_ok(self):
