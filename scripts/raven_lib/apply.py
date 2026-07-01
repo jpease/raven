@@ -80,9 +80,17 @@ def _classify_entry(
         return "identical"
     if block_state == "upgradeable":
         return "will_upgrade"
-    if block_state == "modified":
-        return "needs_merge"
     record = parse_record(manifest.get("files", {}).get(entry.relative))
+    if block_state == "modified":
+        # A local edit inside the managed block normally means a guided merge.
+        # But if `raven accept` already recorded this exact file as the
+        # baseline and the template hasn't changed since, that acceptance
+        # stands -- don't re-prompt on every upgrade (#63).
+        if record is not None:
+            reconciled = reconcile_state(record, fingerprint, template_fp)
+            if reconciled in ("identical", "local_only"):
+                return reconciled
+        return "needs_merge"
     if record is None:
         return "unknown_existing"
     return reconcile_state(record, fingerprint, template_fp)
@@ -141,8 +149,10 @@ def classify(
             content_matches = same_content(entry, target)
             block_state = block_managed_state(entry, target)
             fingerprint = destination_fingerprint(target)
-            if not content_matches and block_state is None:
-                # Only the 3-way reconcile path needs the template fingerprint.
+            if not content_matches and block_state in (None, "modified"):
+                # The 3-way reconcile path needs the template fingerprint --
+                # for a "modified" block, to check whether an accepted
+                # baseline already covers the current state (#63).
                 template_fp = entry_fingerprint(entry)
         state = _classify_entry(
             entry,
