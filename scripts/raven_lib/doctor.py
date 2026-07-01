@@ -16,11 +16,13 @@ from .constants import (
 )
 from .findings import Finding, Severity
 from .gates import gate_spec_for
+from .git_hooks import detect_hook_manager, hook_manager_guidance
 from .manifest import ManifestStatus, git_ref, validate_manifest
 from .runner import Runner, probe_runner
 
 _INTEGRITY = "Install integrity"
 _DRIFT = "Drift & freshness"
+_HOOKS = "Git hooks"
 
 
 def integrity_findings(destination: Path) -> list[Finding]:
@@ -411,6 +413,23 @@ def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list
     return findings
 
 
+def hook_manager_findings(destination: Path) -> list[Finding]:
+    """INFO when a hook manager owns the hooks dir, so Raven's hooks are not installed."""
+    manager = detect_hook_manager(destination)
+    if manager is None:
+        return []
+    return [
+        Finding(
+            id="doctor.hooks.manager",
+            severity=Severity.INFO,
+            category=_HOOKS,
+            title=f"hook manager detected ({manager})",
+            detail=hook_manager_guidance(manager),
+            fix=None,
+        )
+    ]
+
+
 def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> list[Finding]:
     try:
         load_config(destination)
@@ -428,6 +447,7 @@ def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> l
     findings = toolchain_findings(destination, runner)
     integrity = integrity_findings(destination)
     findings.extend(integrity)
+    findings.extend(hook_manager_findings(destination))
     config = load_config(destination)
     if config.exists:
         findings.extend(drift_findings(destination))
