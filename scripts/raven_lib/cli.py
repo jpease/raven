@@ -29,7 +29,7 @@ from .constants import (
 )
 from .doctor import build_doctor_findings
 from .findings import exit_code
-from .git_hooks import install_git_hooks
+from .git_hooks import detect_hook_manager, hook_manager_guidance, install_git_hooks
 from .manifest import load_manifest, update_manifest
 from .models import ApplyPlan, RavenConfig
 from .plan import (
@@ -263,6 +263,14 @@ def _run(
     if git_hooks_installed:
         print()
         print_section("Installed git hooks:", [f".git/hooks/{h}" for h in git_hooks_installed])
+    else:
+        manager = detect_hook_manager(destination)
+        if manager:
+            print()
+            print_section(
+                f"Hook manager detected ({manager}) -- Raven's hooks were not installed:",
+                [hook_manager_guidance(manager)],
+            )
 
     return 0
 
