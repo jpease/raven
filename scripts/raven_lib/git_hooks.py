@@ -66,6 +66,35 @@ def git_hooks_dir(destination: Path) -> Path | None:
         return None
 
 
+def _hooks_dir_manager(hooks_dir: Path) -> str | None:
+    """Name of the hook manager that owns ``hooks_dir``, or None.
+
+    Husky sets ``core.hooksPath`` to ``.husky/_``; that directory is husky's, not
+    Raven's. This is the single seam where other managers can be recognized.
+    """
+    if hooks_dir.name == "_" and hooks_dir.parent.name == ".husky":
+        return "husky"
+    return None
+
+
+def detect_hook_manager(destination: Path) -> str | None:
+    """The hook manager owning ``destination``'s effective hooks dir, or None."""
+    hooks_dir = git_hooks_dir(destination)
+    return _hooks_dir_manager(hooks_dir) if hooks_dir is not None else None
+
+
+def hook_manager_guidance(manager: str) -> str:
+    """Human guidance for wiring Raven's gate through ``manager``."""
+    if manager == "husky":
+        return (
+            "Detected husky (core.hooksPath). Raven does not install its own git "
+            "hooks under a hook manager. To run Raven's gate, add `just check-fast` "
+            "to .husky/pre-commit and `just check` to .husky/pre-push. Your hooks "
+            "were left untouched."
+        )
+    return ""
+
+
 def install_git_hooks(destination: Path) -> list[str]:
     """Symlink .raven/git-hooks/* into .git/hooks/. Returns installed hook names."""
     git_hooks_src = destination / ".raven" / "git-hooks"
@@ -73,6 +102,9 @@ def install_git_hooks(destination: Path) -> list[str]:
         return []
     hooks_dir = git_hooks_dir(destination)
     if hooks_dir is None:
+        return []
+    if _hooks_dir_manager(hooks_dir) is not None:
+        # A hook manager (e.g. husky) owns this directory; do not symlink into it.
         return []
     hooks_dir.mkdir(exist_ok=True)
     installed: list[str] = []
@@ -87,8 +119,9 @@ def install_git_hooks(destination: Path) -> list[str]:
             continue
         if hook_link.exists() and not hook_link.is_symlink():
             print(
-                f"warning: .git/hooks/{hook_src.name} already exists as a regular file; "
-                "remove it to let Raven manage it.",
+                f"warning: {hook_link} already exists as a regular file and was left "
+                "untouched. To run Raven's gate, add `just check` / `just check-fast` "
+                "to it, or remove it to let Raven manage the hook.",
                 file=sys.stderr,
             )
             continue
