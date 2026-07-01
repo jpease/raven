@@ -222,6 +222,18 @@ class AssessFitTests(RavenTestCase):
         match = next(f for f in findings if f.id == "assess.fit.signal")
         self.assertEqual(match.severity, Severity.OK)
 
+    def test_swift_xcode_app_project_yml_is_ok(self):
+        # #60: an Xcode app (project.yml, no Package.swift) configured as `swift`
+        # must register as a fit, not warn "no language signal".
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "swift"\n', encoding="utf-8"
+        )
+        (self.destination / "project.yml").write_text("name: MyApp\n", encoding="utf-8")
+        findings = template_fit_findings(self.destination)
+        match = next(f for f in findings if f.id == "assess.fit.signal")
+        self.assertEqual(match.severity, Severity.OK)
+
 
 class AssessBuildTests(RavenTestCase):
     def test_without_run_gates_are_skipped(self):

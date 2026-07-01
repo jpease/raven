@@ -50,6 +50,27 @@ class GatesTests(unittest.TestCase):
         assert spec is not None
         self.assertIn("xcrun", spec.tools)
 
+    def test_swift_detect_signals_cover_package_and_xcode_app(self):
+        # #60: the swift template serves SwiftPM packages (Package.swift) and Xcode
+        # app targets (project.yml/xcodegen), so both must register as a fit.
+        spec = gate_spec_for("swift")
+        assert spec is not None
+        self.assertIn("Package.swift", spec.detect_signals)
+        self.assertIn("project.yml", spec.detect_signals)
+
+    def test_swift_justfile_build_and_test_dispatch_on_package_swift(self):
+        # #60: build/test must dispatch between `swift` (SwiftPM) and `xcodebuild`
+        # (Xcode app), and the push gate (`check`) must not run the heavy test.
+        repo_root = Path(__file__).resolve().parents[1]
+        text = (repo_root / "swift" / "justfile").read_text(encoding="utf-8")
+        self.assertIn("Package.swift", text)
+        self.assertIn("swift build", text)
+        self.assertIn("swift test", text)
+        self.assertIn("xcodebuild", text)
+        self.assertIn('SCHEME := "YourScheme"', text)
+        check_line = next(line for line in text.splitlines() if line.startswith("check:"))
+        self.assertEqual(check_line.strip(), "check: check-fast build")
+
     def test_unknown_template_returns_none(self):
         self.assertIsNone(gate_spec_for("cobol"))
 
