@@ -234,6 +234,24 @@ class AssessFitTests(RavenTestCase):
         match = next(f for f in findings if f.id == "assess.fit.signal")
         self.assertEqual(match.severity, Severity.OK)
 
+    def test_swift_config_signal_is_swiftlint_not_package_swift(self):
+        # #60: the swift tool-config signal must be .swiftlint.yml (present in both
+        # SwiftPM and Xcode-app repos), not Package.swift -- so an Xcode app is not
+        # falsely told "tool config Package.swift missing".
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "swift"\n', encoding="utf-8"
+        )
+        (self.destination / "project.yml").write_text("name: MyApp\n", encoding="utf-8")
+        (self.destination / ".swiftlint.yml").write_text("disabled_rules: []\n", encoding="utf-8")
+        findings = wiring_findings(self.destination)
+        config_findings = [f for f in findings if f.id.startswith("assess.wiring.config.")]
+        self.assertTrue(config_findings)
+        self.assertTrue(all(f.severity == Severity.OK for f in config_findings), config_findings)
+        self.assertFalse(
+            any("Package.swift" in (f.detail or "") for f in config_findings), config_findings
+        )
+
 
 class AssessBuildTests(RavenTestCase):
     def test_without_run_gates_are_skipped(self):
