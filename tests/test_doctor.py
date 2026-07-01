@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import io
 import json
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -368,6 +369,33 @@ class DoctorToolchainTests(RavenTestCase):
         match = next(f for f in findings if f.id == "doctor.tool.fd")
         self.assertEqual(match.severity, Severity.WARN)
         self.assertFalse(any(f.severity == Severity.ERROR for f in findings))
+
+
+class DoctorHookManagerTests(RavenTestCase):
+    def _git_init(self):
+        subprocess.run(["git", "init", str(self.destination)], capture_output=True, check=True)
+
+    def test_hook_manager_finding_for_husky(self):
+        from raven_lib.doctor import hook_manager_findings
+
+        self._git_init()
+        (self.destination / ".husky" / "_").mkdir(parents=True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".husky/_"],
+            capture_output=True,
+            check=True,
+        )
+        findings = hook_manager_findings(self.destination)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].id, "doctor.hooks.manager")
+        self.assertEqual(findings[0].severity, Severity.INFO)
+        self.assertIn("husky", findings[0].title)
+
+    def test_hook_manager_finding_absent_for_normal_repo(self):
+        from raven_lib.doctor import hook_manager_findings
+
+        self._git_init()
+        self.assertEqual(hook_manager_findings(self.destination), [])
 
 
 if __name__ == "__main__":
