@@ -210,6 +210,38 @@ class AssessHookPathTests(RavenTestCase):
         self.assertEqual(finding.severity, Severity.OK)
         self.assertIn("runs `just check-fast`", finding.detail)
 
+    def test_husky_grades_real_hook_not_wrapper(self):
+        # #58: under husky, core.hooksPath is .husky/_ and the file there is a thin
+        # wrapper. The real gate lives in .husky/<name>; assess must grade that.
+        husky = self.destination / ".husky"
+        (husky / "_").mkdir(parents=True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".husky/_"],
+            capture_output=True,
+            check=True,
+        )
+        (husky / "_" / "pre-push").write_text(
+            '#!/usr/bin/env sh\n. "$(dirname "$0")/h"\n', encoding="utf-8"
+        )
+        (husky / "pre-push").write_text("#!/bin/sh\njust check\n", encoding="utf-8")
+        self.assertEqual(self._hook_finding("pre-push").severity, Severity.OK)
+
+    def test_husky_missing_real_hook_is_not_installed(self):
+        # Husky wrapper present but no .husky/pre-push -> the gate hook is absent.
+        husky = self.destination / ".husky"
+        (husky / "_").mkdir(parents=True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".husky/_"],
+            capture_output=True,
+            check=True,
+        )
+        (husky / "_" / "pre-push").write_text(
+            '#!/usr/bin/env sh\n. "$(dirname "$0")/h"\n', encoding="utf-8"
+        )
+        finding = self._hook_finding("pre-push")
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIn("not installed", finding.title)
+
 
 class AssessFitTests(RavenTestCase):
     def test_matching_signal_is_ok(self):
