@@ -192,6 +192,24 @@ class AssessHookPathTests(RavenTestCase):
         finding = self._hook_finding("pre-commit")
         self.assertEqual(finding.severity, Severity.ERROR)
 
+    def test_not_installed_detail_does_not_claim_the_hook_runs(self):
+        # A "not installed" finding must not read as though the hook already runs
+        # the gate. The detail describes the target wiring ("should run"), not a
+        # false present-tense assertion that contradicts the title.
+        finding = self._hook_finding("pre-commit")
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIn("should run `just check-fast`", finding.detail)
+        self.assertNotIn("runs `just check-fast`", finding.detail)
+
+    def test_installed_detail_states_the_hook_runs(self):
+        # A wired hook reads in the present tense: it runs the gate.
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\njust check-fast\n", encoding="utf-8")
+        finding = self._hook_finding("pre-commit")
+        self.assertEqual(finding.severity, Severity.OK)
+        self.assertIn("runs `just check-fast`", finding.detail)
+
 
 class AssessFitTests(RavenTestCase):
     def test_matching_signal_is_ok(self):
