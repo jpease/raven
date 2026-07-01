@@ -1,5 +1,7 @@
 import contextlib
 import io
+import shutil
+import subprocess
 import unittest
 
 from helpers import RavenTestCase, raven
@@ -170,6 +172,76 @@ class GuidedMergeTests(RavenTestCase):
 
         self.assertIn("RAVEN:BEGIN sha256=", patch)
         self.assertIn("RAVEN:END", patch)
+
+    def test_instructions_say_replace_when_block_exists(self):
+        appended = raven.guided_merge_instructions(
+            "AGENTS.md", ".raven/merge/AGENTS.md.raven", ".raven/merge/AGENTS.md.patch"
+        )
+        replaced = raven.guided_merge_instructions(
+            "AGENTS.md",
+            ".raven/merge/AGENTS.md.raven",
+            ".raven/merge/AGENTS.md.patch",
+            replaces_block=True,
+        )
+        self.assertIn("appends a `RAVEN:BEGIN`", appended)
+        self.assertIn("replaces the existing `RAVEN:BEGIN`", replaced)
+        self.assertNotIn("appends a `RAVEN:BEGIN`", replaced)
+
+    def test_patch_for_file_without_block_appends(self):
+        # No existing block: the patch appends one (an all-addition hunk).
+        patch = raven.append_patch_text("AGENTS.md", "# Existing\n\nlocal\n", "# RAVEN\n")
+        self.assertNotIn("\n-", patch)  # no deletion lines -> pure append
+        self.assertIn("+<!-- RAVEN:BEGIN", patch)
+
+    def test_patch_for_file_with_existing_block_replaces_not_appends(self):
+        # #55: an instruction file that already has a RAVEN block must get a patch
+        # that REPLACES that block, not one that appends a duplicate.
+        existing = (
+            "# Local guidance\n\nkeep me\n\n"
+            "<!-- RAVEN:BEGIN sha256=" + "0" * 64 + " -->\n"
+            "# AGENTS.md\n\nOld or edited guidance.\n"
+            "<!-- RAVEN:END -->\n"
+        )
+        patch = raven.append_patch_text("AGENTS.md", existing, "# AGENTS.md\n\nNew guidance.\n")
+
+        # A replace hunk deletes the old block markers and adds new ones.
+        self.assertIn("-<!-- RAVEN:BEGIN", patch)
+        self.assertIn("-<!-- RAVEN:END -->", patch)
+        self.assertIn("+<!-- RAVEN:BEGIN", patch)
+
+    def test_generated_replace_patch_applies_to_exactly_one_block(self):
+        # End-to-end: applying the generated patch must leave exactly ONE managed
+        # block (the #55 regression: the old code produced two).
+        if shutil.which("patch") is None:
+            self.skipTest("patch not installed")
+        existing = (
+            "# Local guidance\n\nkeep me\n\n"
+            "<!-- RAVEN:BEGIN sha256=" + "0" * 64 + " -->\n"
+            "# AGENTS.md\n\nOld guidance.\n"
+            "<!-- RAVEN:END -->\n"
+        )
+        target = self.destination / "AGENTS.md"
+        target.write_text(existing, encoding="utf-8")
+        patch_text = raven.append_patch_text(
+            "AGENTS.md", existing, "# AGENTS.md\n\nNew guidance.\n"
+        )
+        patch_file = self.destination / "block.patch"
+        patch_file.write_text(patch_text, encoding="utf-8")
+
+        result = subprocess.run(
+            ["patch", "-p1", "-i", str(patch_file)],
+            cwd=self.destination,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+        merged = target.read_text(encoding="utf-8")
+        self.assertEqual(merged.count("<!-- RAVEN:BEGIN"), 1, merged)
+        self.assertIn("New guidance.", merged)
+        self.assertNotIn("Old guidance.", merged)
+        self.assertIn("keep me", merged)  # local content preserved
 
 
 if __name__ == "__main__":

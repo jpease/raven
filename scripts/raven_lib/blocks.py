@@ -149,7 +149,30 @@ def template_entry_text(entry: TemplateEntry) -> str:
 
 
 def append_patch_text(relative: str, existing_text: str, raven_text: str) -> str:
+    """Build a ``patch``-appliable hunk that installs the current Raven block.
+
+    If the file already contains a managed block, the hunk **replaces** that block
+    in place; appending a second one would leave two ``RAVEN:BEGIN`` blocks (#55).
+    Only a file with no block yet gets an append hunk.
+    """
     existing_lines = existing_text.splitlines()
+    block = find_raven_block(existing_text)
+    if block is not None:
+        # Replace the existing block region (BEGIN..END inclusive) in place. Drop
+        # the leading blank separator that ``raven_managed_block`` prepends -- the
+        # blank already precedes the existing block in the file.
+        new_lines = raven_managed_block(raven_text).splitlines()[1:]
+        old_lines = existing_lines[block.start : block.end + 1]
+        start = block.start + 1
+        patch_lines = [
+            f"--- a/{relative}",
+            f"+++ b/{relative}",
+            f"@@ -{start},{len(old_lines)} +{start},{len(new_lines)} @@",
+            *[f"-{line}" for line in old_lines],
+            *[f"+{line}" for line in new_lines],
+            "",
+        ]
+        return "\n".join(patch_lines)
     block_lines = raven_managed_block(raven_text).splitlines()
     start = len(existing_lines) + 1
     count = len(block_lines)
@@ -181,14 +204,21 @@ def unified_diff_text(relative: str, existing_text: str, template_text: str) -> 
 
 
 def guided_merge_instructions(
-    relative: str, suggestion: str, patch: str | None, diff: str | None = None
+    relative: str,
+    suggestion: str,
+    patch: str | None,
+    diff: str | None = None,
+    *,
+    replaces_block: bool = False,
 ) -> str:
     """Build the guided-merge instructions body for an existing file.
 
     Pure. At most one of ``patch``/``diff`` is set:
-    ``patch`` is the relative path of an append-only managed-block patch (instruction
-    files only); ``diff`` is the relative path of a review-only unified diff (all other
+    ``patch`` is the relative path of a managed-block patch (instruction files
+    only); ``diff`` is the relative path of a review-only unified diff (all other
     files); both ``None`` means only a fully manual merge is possible.
+    ``replaces_block`` is True when the file already has a managed block the patch
+    replaces in place (vs appending a new one).
     """
     header = (
         f"# Guided Raven merge for `{relative}`\n\n"
@@ -211,16 +241,22 @@ def guided_merge_instructions(
             "Do not apply the template blindly if the repository already has stronger local settings.\n"
         )
     if patch is not None:
+        patch_label = "Block-update patch" if replaces_block else "Append-only patch"
+        effect = (
+            "This replaces the existing `RAVEN:BEGIN` / `RAVEN:END` managed block in place."
+            if replaces_block
+            else "This appends a `RAVEN:BEGIN` / `RAVEN:END` managed block to the existing file."
+        )
         return (
             header + f"- Existing file: `{relative}`\n"
             f"- Raven suggestion for review: `{suggestion}`\n"
-            f"- Append-only patch: `{patch}`\n\n"
+            f"- {patch_label}: `{patch}`\n\n"
             "## Recommended automatic merge\n\n"
             "From the destination repository root, inspect the patch first:\n\n"
             f"```sh\npatch --dry-run -p1 < {patch}\n```\n\n"
-            "If the dry run succeeds and the appended Raven guidance is appropriate, apply it:\n\n"
+            "If the dry run succeeds and the Raven guidance is appropriate, apply it:\n\n"
             f"```sh\npatch -p1 < {patch}\n```\n\n"
-            "This appends a `RAVEN:BEGIN` / `RAVEN:END` managed block to the existing file. "
+            f"{effect} "
             "Future Raven upgrades can update that block automatically as long as it is not edited directly.\n\n"
             "## Manual merge option\n\n"
             f"Review `{suggestion}` and copy only the guidance that applies. If you do this without "
@@ -258,12 +294,16 @@ def write_guided_merge_artifacts(
         suggestion = raven_path.relative_to(destination).as_posix()
         patch_rel: str | None = None
         diff_rel: str | None = None
+        replaces_block = False
         if not entry.copy_as_symlink and target.is_file():
             existing_text = target.read_text(encoding="utf-8")
-            # Instruction files use RAVEN managed blocks, so an append-only patch
+            # Instruction files use RAVEN managed blocks, so a managed-block patch
             # merges cleanly. Any other file gets a review-only diff instead --
             # appending a managed block would corrupt arbitrary JSON/TOML/etc.
             if relative in ROOT_INSTRUCTION_FILES:
+                # A file that already has a block gets a replace patch, not an
+                # append (which would duplicate the block, #55).
+                replaces_block = find_raven_block(existing_text) is not None
                 patch_path = merge_dir / f"{relative}.patch"
                 patch_path.write_text(
                     append_patch_text(relative, existing_text, raven_text), encoding="utf-8"
@@ -277,7 +317,9 @@ def write_guided_merge_artifacts(
                 diff_rel = diff_path.relative_to(destination).as_posix()
 
         instructions_path = merge_dir / f"{relative}.instructions.md"
-        body = guided_merge_instructions(relative, suggestion, patch_rel, diff_rel)
+        body = guided_merge_instructions(
+            relative, suggestion, patch_rel, diff_rel, replaces_block=replaces_block
+        )
         instructions_path.write_text(body, encoding="utf-8")
         written.append(instructions_path.relative_to(destination).as_posix())
         if patch_rel:
