@@ -30,12 +30,12 @@ Use the cheapest adequate source before reading full files.
 
 - Batch independent reads, searches, and inspections per turn.
 - Skeleton-first: for a large or unfamiliar file, get a symbol map (LSP document symbols, or `ast-grep`/`rg`) before reading, then read only the ranges you need — read a full file only when it is small or the whole structure matters.
-- Return concise findings before editing. Avoid pasting raw command output unless essential.
+- Return concise findings before editing.
 - Semble is for conceptual discovery — switch to it when two literal `rg` guesses miss, rather than iterating term variations. It is not proof: verify with `rg`, LSP, targeted reads, or tests before changing code.
-- When a code-intelligence index is configured, prefer `gitnexus_query` over Semble for "how does X work" and flow-based questions — it returns execution paths grouped by process, not just file locations. Results improve further if the index was built with `--embeddings` (semantic ranking).
+- When a code-intelligence index is configured, prefer `gitnexus_query` over Semble for "how does X work" and flow-based questions — it returns execution paths grouped by process, not just file locations.
 - Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried and delegate per the Delegation section, or ask the user.
 - If a tool named above is not installed, fall back to `rg` plus targeted reads and flag the missing capability per Tool Availability Memory.
-- When the repo configures a code-intelligence index (such as GitNexus), its impact analysis before a symbol edit and change-detection before a commit are mandatory, not optional table picks. Compilers and tests confirm callers after the fact but give no pre-edit blast radius and nothing to a scoping subagent; they complement the index, not replace it. If it is stale, reindex or say so — do not silently skip it.
+- When the repo configures a code-intelligence index (such as GitNexus), its impact analysis before a symbol edit and change-detection before a commit are mandatory, not optional table picks. If it is stale, reindex or say so — do not silently skip it.
 
 ## Delegation
 
@@ -51,7 +51,7 @@ How to delegate:
 
 - Frame the task as a self-contained question: state the goal, what is already ruled out, and the expected output shape (file list, yes/no with evidence, root-cause summary).
 - Do not pass the full conversation history — delegation should reduce context, not duplicate it.
-- Before delegating a symbol-editing task, run impact analysis yourself and put the blast radius (callers, affected flows, risk) in the brief; the subagent lacks your context and cannot infer scope. The "before editing" mandate binds whoever edits, and you are the subagent's scope source — so discharge it up front, and have the subagent run change-detection before committing.
+- Before delegating a symbol-editing task, run impact analysis yourself and put the blast radius (callers, affected flows, risk) in the brief; the subagent lacks your context and cannot infer scope. Have the subagent run change-detection before committing.
 - If no delegation mechanism is available, pause and ask the user instead of expanding retrieval indefinitely.
 
 Platform notes:
