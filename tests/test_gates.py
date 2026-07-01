@@ -17,7 +17,7 @@ class GatesTests(unittest.TestCase):
     def test_python_recipes_match_justfile(self):
         spec = gate_spec_for("python")
         assert spec is not None
-        for recipe in ("lint", "format", "typecheck", "test"):
+        for recipe in ("lint", "fmt-check", "typecheck", "test"):
             self.assertIn(recipe, spec.recipes)
 
     def test_python_detect_signals_include_pyproject(self):
