@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import io
 import json
+import subprocess
 
 from helpers import RavenTestCase, raven
 
@@ -70,6 +71,57 @@ class AcceptCommandTests(RavenTestCase):
         after = raven.classify(self.template, self.destination, self.excludes)
         self.assertIn(".mcp.json", after.identical)
         self.assertNotIn(".mcp.json", after.needs_merge)
+        self.assertFalse((self.destination / ".raven" / "merge").exists())
+
+    def test_accept_stops_reprompt_for_modified_managed_block(self):
+        # Reproduces #63: a pre-existing AGENTS.md that predates Raven gets a
+        # guided-merge patch instead of being overwritten. Applying that patch
+        # inserts a RAVEN managed block; editing inside it and accepting must
+        # stop future upgrades from re-prompting.
+        (self.destination / "AGENTS.md").write_text(
+            "# Local preamble\n\nSome existing local guidance.\n", encoding="utf-8"
+        )
+        self._install()
+
+        patch_file = self.destination / ".raven" / "merge" / "AGENTS.md.patch"
+        result = subprocess.run(
+            ["patch", "-p1", "-i", str(patch_file)],
+            cwd=self.destination,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        text = (self.destination / "AGENTS.md").read_text(encoding="utf-8")
+        block = raven.find_raven_block(text)
+        assert block is not None
+        lines = text.splitlines()
+        edited_content_lines = block.content.splitlines()
+        edited_content_lines[0] = edited_content_lines[0] + " (locally edited)"
+        new_lines = lines[: block.start + 1] + edited_content_lines + lines[block.end :]
+        (self.destination / "AGENTS.md").write_text(
+            "\n".join(new_lines) + ("\n" if text.endswith("\n") else ""), encoding="utf-8"
+        )
+
+        before = raven.classify(self.template, self.destination, self.excludes)
+        self.assertIn("AGENTS.md", before.needs_merge)
+
+        entries = raven.entries_for_destination(
+            self.template, self.excludes, raven.load_config(self.destination), self.destination
+        )
+        raven.write_guided_merge_artifacts(self.destination, entries, ["AGENTS.md"])
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_accept(self._ns())
+        self.assertEqual(rc, 0)
+        self.assertFalse((self.destination / ".raven" / "merge").exists())
+
+        after = raven.classify(self.template, self.destination, self.excludes)
+        self.assertNotIn("AGENTS.md", after.needs_merge)
+        self.assertIn("AGENTS.md", after.identical)
+
+        # A second upgrade cycle must not resurrect the merge prompt (#63).
+        again = raven.classify(self.template, self.destination, self.excludes)
+        self.assertNotIn("AGENTS.md", again.needs_merge)
         self.assertFalse((self.destination / ".raven" / "merge").exists())
 
     def test_accept_no_args_removes_all_pending_artifacts(self):
