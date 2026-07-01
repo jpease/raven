@@ -25,6 +25,20 @@ def _invokes_just_recipe(text: str, recipe: str) -> bool:
     return re.search(rf"\bjust\s+{re.escape(recipe)}(?![\w-])", text) is not None
 
 
+def resolve_manager_hook(hooks_dir: Path, name: str) -> Path:
+    """Path to inspect for hook ``name``, following husky's wrapper.
+
+    Husky sets ``core.hooksPath`` to ``.husky/_`` and puts a thin wrapper there
+    that dispatches to the real user hook one level up (``.husky/<name>``). Grade
+    the real hook, not the wrapper. Any other layout is inspected as-is.
+    """
+    if hooks_dir.name == "_" and hooks_dir.parent.name == ".husky":
+        real = hooks_dir.parent / name
+        if real.exists():
+            return real
+    return hooks_dir / name
+
+
 def _hook_finding(
     destination: Path, hook: Path, name: str, expected: str, accept: tuple[str, ...]
 ) -> Finding:
@@ -185,7 +199,8 @@ def wiring_findings(destination: Path) -> list[Finding]:
         ("pre-push", "just check", ("check",)),
     )
     for name, expected, accept in hook_specs:
-        findings.append(_hook_finding(destination, hooks_dir / name, name, expected, accept))
+        hook_path = resolve_manager_hook(hooks_dir, name)
+        findings.append(_hook_finding(destination, hook_path, name, expected, accept))
     return findings
 
 
