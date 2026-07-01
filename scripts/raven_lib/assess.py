@@ -59,7 +59,11 @@ def _hook_finding(
         severity=Severity.OK if hook_ok else Severity.WARN,
         category=_WIRING,
         title=f"{name} gate hook {'installed' if hook_ok else 'not installed'}",
-        detail=f"{hook_display} running `{expected}`",
+        detail=(
+            f"{hook_display} runs `{expected}`"
+            if hook_ok
+            else f"{hook_display} should run `{expected}`"
+        ),
         fix=None if hook_ok else "run `just install-hooks`",
     )
 
