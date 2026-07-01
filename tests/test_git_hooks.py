@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -531,6 +532,72 @@ class GitHookInstallerTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(stamp.exists())
+
+    def _justfiles_with_install_hooks(self):
+        root = raven.REPO_ROOT
+        candidates = [root / "justfile", *sorted(root.glob("*/justfile"))]
+        return [
+            p
+            for p in candidates
+            if p.is_file() and "install-hooks:" in p.read_text(encoding="utf-8")
+        ]
+
+    @staticmethod
+    def _extract_recipe(text: str, name: str) -> str:
+        # Capture the recipe header plus its indented body up to the first blank
+        # line (the install-hooks body is a single shell block with no internal
+        # blank lines).
+        out: list[str] = []
+        capturing = False
+        for line in text.splitlines():
+            if line.startswith(f"{name}:"):
+                capturing = True
+                out.append(line)
+                continue
+            if capturing:
+                if line.strip() == "":
+                    break
+                out.append(line)
+        return "\n".join(out)
+
+    def test_install_hooks_recipe_honors_core_hooks_path(self):
+        # The recipe must resolve Git's effective hooks dir (which honors
+        # core.hooksPath) rather than hard-coding .git/hooks, so hooks land where
+        # Git will actually run them. Guards all language justfiles against drift.
+        justfiles = self._justfiles_with_install_hooks()
+        self.assertGreaterEqual(len(justfiles), 8, [str(p) for p in justfiles])
+        for jf in justfiles:
+            recipe = self._extract_recipe(jf.read_text(encoding="utf-8"), "install-hooks")
+            self.assertIn("git rev-parse --git-path hooks", recipe, str(jf))
+            self.assertNotIn(".git/hooks/", recipe, f"{jf} still hard-codes .git/hooks/")
+
+    def test_just_install_hooks_writes_into_custom_hooks_path(self):
+        # End-to-end: with core.hooksPath set, `just install-hooks` must write the
+        # hooks into that directory, not the ignored .git/hooks default.
+        if shutil.which("just") is None:
+            self.skipTest("just not installed")
+        justfile = raven.REPO_ROOT / "python" / "justfile"
+        (self.destination / "justfile").write_text(
+            justfile.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".githooks"],
+            capture_output=True,
+            check=True,
+        )
+
+        result = subprocess.run(
+            ["just", "install-hooks"],
+            cwd=self.destination,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.destination / ".githooks" / "pre-commit").is_file())
+        self.assertTrue((self.destination / ".githooks" / "pre-push").is_file())
+        self.assertFalse((self.destination / ".git" / "hooks" / "pre-commit").exists())
 
 
 if __name__ == "__main__":
