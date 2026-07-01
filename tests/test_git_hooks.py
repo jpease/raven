@@ -599,6 +599,56 @@ class GitHookInstallerTests(unittest.TestCase):
         self.assertTrue((self.destination / ".githooks" / "pre-push").is_file())
         self.assertFalse((self.destination / ".git" / "hooks" / "pre-commit").exists())
 
+    def _set_husky(self):
+        (self.destination / ".husky" / "_").mkdir(parents=True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".husky/_"],
+            capture_output=True,
+            check=True,
+        )
+
+    def test_detect_hook_manager_identifies_husky(self):
+        self._set_husky()
+        self.assertEqual(raven.detect_hook_manager(self.destination), "husky")
+
+    def test_detect_hook_manager_none_for_normal_and_githooks(self):
+        self.assertIsNone(raven.detect_hook_manager(self.destination))
+        (self.destination / ".githooks").mkdir()
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".githooks"],
+            capture_output=True,
+            check=True,
+        )
+        self.assertIsNone(raven.detect_hook_manager(self.destination))
+
+    def test_install_skips_and_writes_nothing_under_husky(self):
+        self._write_hook("pre-push", "#!/bin/sh\njust check\n")
+        self._set_husky()
+
+        installed = raven.install_git_hooks(self.destination)
+
+        self.assertEqual(installed, [])
+        self.assertFalse((self.destination / ".husky" / "_" / "pre-push").exists())
+
+    def test_hook_manager_guidance_husky_names_husky_hooks(self):
+        text = raven.hook_manager_guidance("husky")
+        self.assertIn(".husky/pre-commit", text)
+        self.assertIn(".husky/pre-push", text)
+
+    def test_regular_file_warning_points_to_wiring(self):
+        self._write_hook("pre-commit")
+        existing = self.git_hooks_dir / "pre-commit"
+        existing.write_text("#!/bin/sh\nmy own hook\n", encoding="utf-8")
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            installed = raven.install_git_hooks(self.destination)
+
+        self.assertEqual(installed, [])
+        msg = stderr.getvalue()
+        self.assertIn("already exists as a regular file", msg)  # preserved substring
+        self.assertIn("add `just check`", msg)  # no longer just "remove it"
+
 
 if __name__ == "__main__":
     unittest.main()
