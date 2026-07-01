@@ -76,8 +76,12 @@ GATE_DATA: dict[str, dict[str, object]] = {
         # `xcrun swift-format`, not a standalone PATH binary, so the probeable
         # executable for the format gate is `xcrun` rather than `swift-format`.
         "tools": ["swift", "swiftlint", "xcrun"],
-        "detect_signals": ["Package.swift"],
-        "config_signals": [["Package.swift", ""]],
+        # SwiftPM packages have Package.swift; Xcode app targets (xcodegen) have
+        # project.yml. The justfile dispatches build/test between the two.
+        "detect_signals": ["Package.swift", "project.yml"],
+        # The tool config is the linter config the template installs -- present in
+        # both SwiftPM and Xcode-app repos -- not Package.swift (absent in apps).
+        "config_signals": [[".swiftlint.yml", ""]],
         "fallback_commands": {
             # No-pipe equivalent of the justfile's `git ls-files | xargs ... lint`:
             # the runner has no shell, so lint the tree recursively instead.
