@@ -41,4 +41,11 @@ fi
 # is not installed, skip rather than hard-failing.
 if command -v just >/dev/null 2>&1; then
     just check || exit 1
+    # Record the verified commit only when the tree is still clean, so a cached
+    # pass can never vouch for uncommitted work. If the gate dirtied the tree
+    # (e.g. build artifacts), skip stamping this run rather than caching a lie.
+    # The stamp is an optimization, so a failed write is swallowed.
+    if [ -n "$head_sha" ] && [ -z "$(git status --porcelain 2>/dev/null)" ]; then
+        printf '%s\n' "$head_sha" > "$stamp" 2>/dev/null || true
+    fi
 fi

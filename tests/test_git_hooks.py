@@ -492,6 +492,46 @@ class GitHookInstallerTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
 
+    def test_pre_push_writes_stamp_after_clean_pass(self):
+        # A clean tree and a passing gate must record HEAD in the stamp so the
+        # next push of the same commit can skip.
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+        env, head, stamp = self._prepare_verified_repo(just_exit=0)
+        self.assertFalse(stamp.exists())
+
+        result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            input=self._PUSH_STDIN,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(stamp.exists())
+        self.assertEqual(stamp.read_text(encoding="utf-8").strip(), head)
+
+    def test_pre_push_does_not_write_stamp_when_gate_fails(self):
+        # A failing gate must not stamp -- a cached "pass" would let unverified
+        # code push on the next attempt.
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+        env, _head, stamp = self._prepare_verified_repo(just_exit=1)
+
+        result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            input=self._PUSH_STDIN,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(stamp.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
