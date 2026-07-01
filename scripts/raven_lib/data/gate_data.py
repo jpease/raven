@@ -46,32 +46,36 @@ GATE_DATA: dict[str, dict[str, object]] = {
         },
     },
     "rust": {
-        "recipes": ["lint", "typecheck", "test"],
+        "recipes": ["lint", "fmt-check", "typecheck", "test"],
         "tools": ["cargo"],
         "detect_signals": ["Cargo.toml", "Cargo.lock"],
         "config_signals": [["Cargo.toml", ""]],
         "fallback_commands": {
             "lint": ["cargo", "clippy", "--", "-D", "warnings"],
+            "fmt-check": ["cargo", "fmt", "--check"],
             "typecheck": ["cargo", "check"],
             "test": ["cargo", "test"],
         },
     },
     "typescript": {
-        "recipes": ["lint", "typecheck", "test"],
+        "recipes": ["lint", "fmt-check", "typecheck", "test"],
         "tools": ["npx"],
         "detect_signals": ["package.json", "tsconfig.json"],
         "config_signals": [["tsconfig.json", ""]],
         "fallback_commands": {
             "lint": ["npx", "eslint", "."],
+            "fmt-check": ["npx", "prettier", "--check", "."],
             "typecheck": ["npx", "tsc", "--noEmit"],
             "test": ["npx", "vitest", "run"],
         },
     },
     "swift": {
-        # `check-fast` runs `lint-format` then `lint`; `check` adds `build`/`test`.
-        # `lint-format` (Apple swift-format in lint mode) is part of standard
-        # verification, so assess must require it like any other gate recipe.
-        "recipes": ["lint-format", "lint", "build", "test"],
+        # `check-fast` runs `lint-format` then `lint`; `check` adds `build` only --
+        # `test` is deliberately excluded (an Xcode app's UI test suite is too
+        # heavy for every push; see swift/README.md). `lint-format` (Apple
+        # swift-format in lint mode) is part of standard verification, so assess
+        # must require it like any other gate recipe.
+        "recipes": ["lint-format", "lint", "build"],
         # swift-format ships inside the Xcode toolchain and is invoked as
         # `xcrun swift-format`, not a standalone PATH binary, so the probeable
         # executable for the format gate is `xcrun` rather than `swift-format`.
@@ -92,12 +96,13 @@ GATE_DATA: dict[str, dict[str, object]] = {
         },
     },
     "elixir": {
-        "recipes": ["lint", "typecheck", "test"],
+        "recipes": ["lint", "fmt-check", "typecheck", "test"],
         "tools": ["mix"],
         "detect_signals": ["mix.exs"],
         "config_signals": [["mix.exs", ""]],
         "fallback_commands": {
             "lint": ["mix", "credo"],
+            "fmt-check": ["mix", "format", "--check-formatted"],
             "typecheck": ["mix", "dialyzer"],
             "test": ["mix", "test"],
         },
