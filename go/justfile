@@ -32,16 +32,20 @@ check: check-fast vet test
 # Install pre-commit (fast checks) and pre-push (full check) git hooks
 install-hooks:
     #!/usr/bin/env sh
+    # Resolve Git's effective hooks dir (honors core.hooksPath and linked
+    # worktrees) so hooks land where Git will run them, not a hard-coded
+    # .git/hooks that a custom hooksPath would ignore.
+    hooks_dir=$(git rev-parse --git-path hooks) || exit 1
     install_hook() {
         name="$1"
         cmd="$2"
-        path=".git/hooks/$name"
+        path="$hooks_dir/$name"
         if [ -f "$path" ]; then
             echo "A $name hook already exists at $path."
             echo "To use RAVEN's gate, add this line to it:"
             printf "  %s\n" "$cmd"
         else
-            mkdir -p .git/hooks
+            mkdir -p "$hooks_dir"
             printf '#!/bin/sh\n%s\n' "$cmd" > "$path"
             chmod +x "$path"
             echo "Installed $path to run '$cmd'."
