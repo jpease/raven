@@ -51,6 +51,48 @@ class GitHookInstallerTests(unittest.TestCase):
         env["PATH"] = os.pathsep.join([str(bin_dir), "/usr/bin", "/bin"])
         return env
 
+    def _prepare_verified_repo(self, just_exit: int):
+        # Make an initial commit so HEAD resolves, and put the fake `git`/`just`
+        # in a bin dir OUTSIDE the repo so they do not show up as untracked files
+        # that would dirty the tree (the skip path requires a clean tree). Returns
+        # (env, head_sha, stamp_path).
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.destination),
+                "-c",
+                "user.email=raven@example.com",
+                "-c",
+                "user.name=Raven Test",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+            capture_output=True,
+            check=True,
+        )
+        head = subprocess.run(
+            ["git", "-C", str(self.destination), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        bin_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(bin_tmp.cleanup)
+        bin_dir = Path(bin_tmp.name)
+        git_path = subprocess.run(
+            ["which", "git"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        (bin_dir / "git").symlink_to(git_path)
+        fake_just = bin_dir / "just"
+        fake_just.write_text(f"#!/bin/sh\nexit {just_exit}\n", encoding="utf-8")
+        fake_just.chmod(0o755)
+        env = self._hook_env(bin_dir)
+        stamp = self.destination / ".git" / "raven-pre-push-verified"
+        return env, head, stamp
+
     def test_installs_hook_as_symlink_in_git_hooks(self):
         self._write_hook("commit-msg")
 
@@ -391,6 +433,64 @@ class GitHookInstallerTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_pre_push_skips_when_head_verified_and_tree_clean(self):
+        # Stamp records the current HEAD and the tree is clean, so the hook must
+        # skip the gate entirely -- even a `just` rigged to fail is never run.
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+        env, head, stamp = self._prepare_verified_repo(just_exit=1)
+        stamp.write_text(head + "\n", encoding="utf-8")
+
+        result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            input=self._PUSH_STDIN,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_pre_push_reruns_when_tree_dirty_despite_matching_stamp(self):
+        # Stamp matches HEAD, but an uncommitted (untracked) change dirties the
+        # tree, so the cached pass is invalid and the failing gate must run.
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+        env, head, stamp = self._prepare_verified_repo(just_exit=1)
+        stamp.write_text(head + "\n", encoding="utf-8")
+        (self.destination / "scratch.txt").write_text("dirty\n", encoding="utf-8")
+
+        result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            input=self._PUSH_STDIN,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_pre_push_reruns_when_head_differs_from_stamp(self):
+        # Stamp holds a different SHA (e.g. a new commit since verification), so
+        # the failing gate must run rather than skip.
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+        env, _head, stamp = self._prepare_verified_repo(just_exit=1)
+        stamp.write_text("0" * 40 + "\n", encoding="utf-8")
+
+        result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            input=self._PUSH_STDIN,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":

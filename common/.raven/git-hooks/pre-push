@@ -19,6 +19,20 @@ while read -r _local_ref local_sha _remote_ref _remote_sha; do
 done
 [ "$has_work" -eq 0 ] && exit 0
 
+# The gate runs against the working tree, so a commit is only safely "already
+# verified" if the tree is also clean. The stamp records the HEAD SHA that last
+# passed `just check` with a clean tree; if HEAD still matches and the tree is
+# still clean, re-running is pure waste. A new commit, amend, or any uncommitted
+# change alters HEAD or dirties the tree and invalidates the stamp. The stamp
+# lives in the (per-worktree) git dir, so it is never committed and is wiped on
+# re-clone. A missing or unreadable stamp simply falls through to the gate.
+stamp="$(git rev-parse --git-dir)/raven-pre-push-verified"
+head_sha=$(git rev-parse HEAD 2>/dev/null)
+if [ -n "$head_sha" ] && [ -z "$(git status --porcelain 2>/dev/null)" ] \
+    && [ "$head_sha" = "$(cat "$stamp" 2>/dev/null)" ]; then
+    exit 0
+fi
+
 # Run the full verification set (lint, format, type-check, tests) before code
 # leaves the machine; a failure blocks the push. pre-commit already ran the fast
 # subset, so the only heavy work added here is the type-check and test suite --
