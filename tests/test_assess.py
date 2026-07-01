@@ -242,6 +242,38 @@ class AssessHookPathTests(RavenTestCase):
         self.assertEqual(finding.severity, Severity.WARN)
         self.assertIn("not installed", finding.title)
 
+    def test_custom_hand_rolled_hook_is_info_not_warn(self):
+        # #59: a substantive hook running a real gate a non-canonical way
+        # (swiftlint directly) is INFO "present (non-canonical)", not a WARN.
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text(
+            "#!/bin/sh\nset -e\nswiftlint lint --strict\n", encoding="utf-8"
+        )
+        finding = self._hook_finding("pre-commit")
+        self.assertEqual(finding.severity, Severity.INFO)
+        self.assertIn("non-canonical", finding.title)
+        self.assertIsNone(finding.fix)  # never suggests just install-hooks
+        self.assertNotIn("not installed", finding.title)
+
+    def test_custom_pre_push_gate_is_info(self):
+        # A pre-push running a custom `just` recipe (check-full) is non-canonical
+        # INFO, not the fast-subset WARN and not "not installed".
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-push").write_text("#!/bin/sh\njust check-full\n", encoding="utf-8")
+        finding = self._hook_finding("pre-push")
+        self.assertEqual(finding.severity, Severity.INFO)
+
+    def test_trivial_hook_is_not_installed(self):
+        # A hook that is only a shebang/comments has no gate -> WARN not installed.
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\n# nothing here\n", encoding="utf-8")
+        finding = self._hook_finding("pre-commit")
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIn("not installed", finding.title)
+
 
 class AssessFitTests(RavenTestCase):
     def test_matching_signal_is_ok(self):
