@@ -32,11 +32,57 @@ class GatesTests(unittest.TestCase):
 
     def test_swift_recipes_include_lint_format(self):
         # Issue #53 — the Swift template's `check` runs `lint-format`, so the gate
-        # spec must declare it alongside lint/build/test.
+        # spec must declare it alongside lint/build.
         spec = gate_spec_for("swift")
         assert spec is not None
-        for recipe in ("lint-format", "lint", "build", "test"):
+        for recipe in ("lint-format", "lint", "build"):
             self.assertIn(recipe, spec.recipes)
+
+    def test_swift_recipes_exclude_test(self):
+        # Issue #62 — `swift/justfile`'s `check` is `check-fast build` (test is
+        # deliberately excluded; UI tests are too heavy for every push), so the
+        # spec must not require `test` either.
+        spec = gate_spec_for("swift")
+        assert spec is not None
+        self.assertNotIn("test", spec.recipes)
+
+    def test_rust_recipes_include_fmt_check(self):
+        # Issue #62 — `rust/justfile`'s `check-fast` runs `fmt-check`, so the
+        # spec must require it like any other gate recipe.
+        spec = gate_spec_for("rust")
+        assert spec is not None
+        self.assertIn("fmt-check", spec.recipes)
+
+    def test_rust_fmt_check_fallback_is_cargo_fmt(self):
+        spec = gate_spec_for("rust")
+        assert spec is not None
+        self.assertEqual(spec.fallback_commands["fmt-check"], ("cargo", "fmt", "--check"))
+
+    def test_typescript_recipes_include_fmt_check(self):
+        # Issue #62 — `typescript/justfile`'s `check-fast` runs `fmt-check`, so
+        # the spec must require it like any other gate recipe.
+        spec = gate_spec_for("typescript")
+        assert spec is not None
+        self.assertIn("fmt-check", spec.recipes)
+
+    def test_typescript_fmt_check_fallback_is_prettier(self):
+        spec = gate_spec_for("typescript")
+        assert spec is not None
+        self.assertEqual(spec.fallback_commands["fmt-check"], ("npx", "prettier", "--check", "."))
+
+    def test_elixir_recipes_include_fmt_check(self):
+        # Issue #62 — `elixir/justfile`'s `check-fast` runs `fmt-check`, so the
+        # spec must require it like any other gate recipe.
+        spec = gate_spec_for("elixir")
+        assert spec is not None
+        self.assertIn("fmt-check", spec.recipes)
+
+    def test_elixir_fmt_check_fallback_is_mix_format(self):
+        spec = gate_spec_for("elixir")
+        assert spec is not None
+        self.assertEqual(
+            spec.fallback_commands["fmt-check"], ("mix", "format", "--check-formatted")
+        )
 
     def test_swift_lint_format_fallback_runs_swift_format(self):
         spec = gate_spec_for("swift")
