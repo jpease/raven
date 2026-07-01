@@ -22,13 +22,13 @@ from __future__ import annotations
 
 GATE_DATA: dict[str, dict[str, object]] = {
     "python": {
-        "recipes": ["lint", "format", "typecheck", "test"],
+        "recipes": ["lint", "fmt-check", "typecheck", "test"],
         "tools": ["ruff", "pyright"],
         "detect_signals": ["pyproject.toml", "setup.py", "setup.cfg"],
         "config_signals": [["pyproject.toml", "[tool.ruff]"]],
         "fallback_commands": {
             "lint": ["ruff", "check", "."],
-            "format": ["ruff", "format", "--check", "."],
+            "fmt-check": ["ruff", "format", "--check", "."],
             "typecheck": ["pyright"],
             "test": ["python", "-m", "pytest"],
         },
