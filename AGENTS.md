@@ -21,7 +21,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=d2e9ecc47c846479a1e6f67770e7f869ae98e23b9785601e8426824c59540f8b -->
+<!-- RAVEN:BEGIN sha256=4cefe83622200293cc577845d9c1d91bc504e70b7501a8cc53296c4421c30e25 -->
 # AGENTS.md
 
 ## Primary Objective
