@@ -36,6 +36,21 @@ Codex-specific files:
 
 Codex reads `.agents/skills` directly, so Raven does not install a `.codex/skills` copy.
 
+## Known Asymmetries
+
+Some Claude adapter files intentionally have no Codex counterpart because the underlying
+agent capability does not exist in Codex, not because of an oversight. Recorded here so
+audits don't re-flag them:
+
+- **`.claude/hooks/raven-skeleton-read-guard.py`** (the rung-2 skeleton-first read gate,
+  wired to the `Read` matcher in `.claude/settings.json`) has no `.codex/hooks/`
+  counterpart and no entry in `.codex/hooks.json`. Codex has no discrete, universally
+  matchable `Read` tool — its `PreToolUse` hook coverage is `Bash`, `apply_patch`, and MCP
+  calls only, so there is nothing to gate the same way. See
+  `docs/research/hook-read-interception.md` for the capability comparison and
+  `docs/superpowers/plans/2026-06-18-skeleton-first-reads.md` for the decision to keep
+  Codex at advisory guidance (rung 0/1) instead of a deny gate.
+
 ## Maintenance Rules
 
 - Keep `AGENTS.md` and `.agents/skills` canonical.
