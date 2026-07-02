@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from helpers import REPO_ROOT, RavenTestCase, raven
+from raven_lib.constants import STARTER_TOOL_CONFIG_PATHS
 
 
 class TemplateTests(RavenTestCase):
@@ -18,7 +19,7 @@ class TemplateTests(RavenTestCase):
             "go": [".golangci.yml"],
             "rust": ["rustfmt.toml"],
             "swift": [".swiftlint.yml"],
-            "elixir": [".formatter.exs"],
+            "elixir": [".credo.exs", ".formatter.exs"],
             "lua": ["stylua.toml", ".luacheckrc"],
         }
 
@@ -41,6 +42,20 @@ class TemplateTests(RavenTestCase):
 
                 for path in paths:
                     self.assertIn(path, classification.will_copy)
+
+    def test_every_starter_tool_config_path_ships_in_some_template(self):
+        languages = raven.list_language_templates()
+        shipped = set()
+        for language in languages:
+            for relative in STARTER_TOOL_CONFIG_PATHS:
+                if (REPO_ROOT / language / relative).exists():
+                    shipped.add(relative)
+
+        missing = STARTER_TOOL_CONFIG_PATHS - shipped
+        self.assertFalse(
+            missing,
+            f"STARTER_TOOL_CONFIG_PATHS entries not shipped by any template: {sorted(missing)}",
+        )
 
     def test_existing_starter_tool_config_is_skipped_without_merge(self):
         target = self.destination / "pyproject.toml"
