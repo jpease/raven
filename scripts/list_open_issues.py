@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""List open issues as a nested tree built from GitHub's native sub-issue links.
+"""List open issues as a nested tree.
 
-Hierarchy comes from each issue's formal `parent` (sub-issue) relationship, not from
-`#number` text mentions. Issues whose parent is closed (or otherwise not open) surface as
-top-level roots. Within each level, items sort by priority label then issue number.
+Hierarchy is assembled in priority order from three sources:
+  Pass 0: GitHub's native sub-issue (`parent`) links — authoritative.
+  Pass 1: a "Parent epic: #N" line in the issue body (legacy/manual).
+  Pass 2: references to non-epic issues in an epic's own body/comments.
+Issues with no parent from any pass surface as top-level roots. Within each
+level, epics sort first, then by an explicit `[X:x/y]` title order tag if
+present, otherwise by priority label then issue number.
 """
 
 import json
+import re
 import subprocess
 import sys
+from collections import defaultdict
 
 OWNER = "jpease"
 REPO = "raven"
@@ -31,8 +37,10 @@ def get_issues():
           nodes {{
             number
             title
+            body
             labels(first: 20) {{ nodes {{ name }} }}
             parent {{ number }}
+            comments(first: 100) {{ nodes {{ body }} }}
           }}
         }}
       }}
@@ -72,6 +80,10 @@ def get_priority(issue):
     return 99
 
 
+def is_epic(issue):
+    return any(label["name"] == "type:epic" for label in issue["labels"]["nodes"])
+
+
 def main():
     issues = get_issues()
     if not issues:
@@ -79,31 +91,88 @@ def main():
 
     issue_map = {issue["number"]: issue for issue in issues}
 
-    children = {num: [] for num in issue_map}
+    children = defaultdict(list)  # parent_num -> [child_num, ...]
+    child_of = {}  # child_num -> parent_num
+
+    # Pass 0: native sub-issue relationships take precedence over body text.
     for issue in issues:
-        parent = issue.get("parent")
-        parent_num = parent["number"] if parent else None
-        if parent_num in issue_map:
-            children[parent_num].append(issue["number"])
-        else:
-            children.setdefault(None, []).append(issue["number"])
+        num = issue["number"]
+        parent_obj = issue.get("parent")
+        if parent_obj:
+            parent = parent_obj["number"]
+            if parent in issue_map and num not in child_of:
+                child_of[num] = parent
+                children[parent].append(num)
 
-    roots = children.get(None, [])
+    # Pass 1: task/epic bodies declare their own parent via "Parent epic: #N".
+    for issue in issues:
+        num = issue["number"]
+        body = issue.get("body", "") or ""
+        match = re.search(r"^Parent epic[^:]*: #(\d+)", body, re.MULTILINE)
+        if match:
+            parent = int(match.group(1))
+            if parent in issue_map and num not in child_of:
+                child_of[num] = parent
+                children[parent].append(num)
 
-    def sort_nums(nums):
-        return sorted(nums, key=lambda n: (get_priority(issue_map[n]), n))
+    # Pass 2: epics list children in body/comments (catches any not already assigned).
+    for issue in issues:
+        num = issue["number"]
+        if not is_epic(issue):
+            continue
+        all_text = (
+            (issue.get("body", "") or "")
+            + "\n"
+            + "\n".join(comment["body"] for comment in issue["comments"]["nodes"])
+        )
+        for ref_str in re.findall(r"#(\d+)", all_text):
+            ref = int(ref_str)
+            if ref == num or ref not in issue_map:
+                continue
+            # Only pull in non-epics as children this way; epics declare their
+            # own parents via "Parent epic: #N" in their body (Pass 1).
+            if is_epic(issue_map[ref]):
+                continue
+            if ref not in child_of:
+                child_of[ref] = num
+                children[num].append(ref)
 
-    def render(num, depth):
-        issue = issue_map[num]
+    # Sort children: epics first, then by explicit [X:x/y] order tag when present,
+    # otherwise fall back to priority then issue number.
+    def order_tag(issue):
+        match = re.match(r"\s*\[[A-Za-z]+:(\d+)/\d+\]", issue.get("title", "") or "")
+        return int(match.group(1)) if match else None
+
+    def child_sort_key(n):
+        issue = issue_map.get(n, {})
+        epic_first = 0 if is_epic(issue) else 1
+        tag = order_tag(issue)
+        if tag is not None:
+            return (epic_first, 0, tag, 0)
+        return (epic_first, 1, get_priority(issue), n)
+
+    for parent in children:
+        children[parent].sort(key=child_sort_key)
+
+    roots = [issue["number"] for issue in issues if issue["number"] not in child_of]
+    roots.sort(key=lambda n: (0 if is_epic(issue_map[n]) else 1, get_priority(issue_map[n]), n))
+
+    def print_tree(num, indent=0):
+        issue = issue_map.get(num)
+        if not issue:
+            return
         priority = get_priority(issue)
         p_str = f"P{priority}" if priority < 99 else "---"
-        indent = "  " * depth
-        print(f"{indent}[{p_str}] #{num} - {issue['title']}")
-        for child in sort_nums(children.get(num, [])):
-            render(child, depth + 1)
+        prefix = "  " * indent
+        marker = "↳ " if indent > 0 else ""
+        print(f"{prefix}{marker}[{p_str}] #{num} - {issue['title']}")
+        for child in children.get(num, []):
+            print_tree(child, indent + 1)
 
-    for root in sort_nums(roots):
-        render(root, 0)
+    for root in roots:
+        print_tree(root)
+        if children.get(root):
+            print()
 
 
 if __name__ == "__main__":
