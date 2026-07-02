@@ -85,8 +85,11 @@ def entries_for_destination(
         for relative, entry in list(entries.items()):
             if relative.startswith(".agents/skills/") and not entry.copy_as_symlink:
                 suffix = relative.removeprefix(".agents/skills/")
-                entries[f".claude/skills/{suffix}"] = TemplateEntry(
-                    relative=f".claude/skills/{suffix}",
+                new_relative = f".claude/skills/{suffix}"
+                if is_excluded(entry.source, new_relative, excludes, config):
+                    continue
+                entries[new_relative] = TemplateEntry(
+                    relative=new_relative,
                     source=entry.source,
                     copy_as_symlink=False,
                 )
