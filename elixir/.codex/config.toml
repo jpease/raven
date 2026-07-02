@@ -19,4 +19,4 @@ args = ["mcp"]
 
 [mcp_servers.lsp]
 command = "mcp-language-server"
-args = ["--workspace", ".", "--lsp", "expert"]
+args = ["--workspace", ".", "--lsp", "expert", "--", "--stdio"]

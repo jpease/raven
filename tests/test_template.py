@@ -271,7 +271,7 @@ paths = [".claude/skills/raven-plan/**"]
             "rust": ["--workspace", ".", "--lsp", "rust-analyzer"],
             "go": ["--workspace", ".", "--lsp", "gopls"],
             "swift": ["--workspace", ".", "--lsp", "sourcekit-lsp"],
-            "elixir": ["--workspace", ".", "--lsp", "expert"],
+            "elixir": ["--workspace", ".", "--lsp", "expert", "--", "--stdio"],
             "lua": ["--workspace", ".", "--lsp", "lua-language-server"],
         }
 
@@ -299,7 +299,7 @@ paths = [".claude/skills/raven-plan/**"]
             "rust": ["--workspace", ".", "--lsp", "rust-analyzer"],
             "go": ["--workspace", ".", "--lsp", "gopls"],
             "swift": ["--workspace", ".", "--lsp", "sourcekit-lsp"],
-            "elixir": ["--workspace", ".", "--lsp", "expert"],
+            "elixir": ["--workspace", ".", "--lsp", "expert", "--", "--stdio"],
             "lua": ["--workspace", ".", "--lsp", "lua-language-server"],
         }
 
