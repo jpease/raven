@@ -16,7 +16,7 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 | GitNexus | Architecture, dependency, call-path, and blast-radius reasoning | Best for structural questions. Treat as a graph/static-analysis layer, not as a replacement for LSP. |
 | ast-grep | Syntax-aware search and mechanical rewrites | Best when code shape matters more than raw text. Good for reviewable structural edits. |
 | Semgrep | Security, policy, and multi-language static-analysis rules | Best for finding risky patterns and enforcing rules across codebases. Heavier than ast-grep for simple rewrites. |
-| Gitleaks | Deterministic secret scanning | Best for checking staged changes with `gitleaks git --staged` and repository history with `gitleaks git`. |
+| Gitleaks | Deterministic secret scanning | Best for checking staged changes with `gitleaks git --staged` (gitleaks >= 8.19) or `gitleaks protect --staged` (older releases) and repository history with `gitleaks git` / `gitleaks detect`. |
 | `jq` | Structured JSON reads and transformations | Use for JSON output when a purpose-built parser is not already available. This is a transform tool, not a retrieval source. |
 | `yq` | Structured YAML reads and transformations | Use for YAML output when a purpose-built parser is not already available. This is a transform tool, not a retrieval source. |
 | RTK | Compressing noisy command output before it enters model context | Best for tests, builds, logs, and large CLI output. Bypass it when exact output is required. |
@@ -51,7 +51,7 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 - Use `just --list` to discover available project recipes before invoking tools directly. Prefer `just test`, `just lint`, `just check`, and `just install-hooks` over raw tool commands when a justfile is present.
 - Check tool presence before relying on optional tools. If an optional tool is unavailable, fall back to the retrieval ladder.
 - Use `jq` and `yq` for structured JSON/YAML transformations instead of brittle line-oriented parsing.
-- Use Gitleaks as the deterministic secret scan when the project has no stronger local policy; Raven's optional pre-commit hook runs `gitleaks git --staged` only when Gitleaks is installed.
+- Use Gitleaks as the deterministic secret scan when the project has no stronger local policy; Raven's optional pre-commit hook runs `gitleaks git --staged` only when Gitleaks is installed, and falls back to `gitleaks protect --staged` when the installed Gitleaks predates 8.19 and lacks the `git` subcommand (its "unknown command" failure would otherwise look identical to a detected leak).
 - Use `.claude/scripts/raven-tool-check.py` to print recommended-tool status. Agent workflows may use `--write` to cache checked results in `~/.raven/tool-memory.json`.
 
 ## Retrieval Discipline
@@ -74,7 +74,7 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 - RTK documents prebuilt binaries for Windows, Linux, and macOS and is designed to compress command output.
 - ast-grep is installable through cross-platform package managers including npm, pip, cargo, Homebrew, and Scoop.
 - Semgrep documents macOS, Linux, and Windows support, though Windows support should still be validated for team workflows.
-- Gitleaks documents Homebrew, Docker, binary, pre-commit, and git scanning modes. Current releases keep `detect` and `protect` hidden/deprecated, so Raven uses `gitleaks git` and `gitleaks git --staged`.
+- Gitleaks documents Homebrew, Docker, binary, pre-commit, and git scanning modes. Releases >= 8.19 keep `detect`/`protect` hidden/deprecated in favor of `gitleaks git` and `gitleaks git --staged`; releases before 8.19 do not have the `git` subcommand at all, so Raven's pre-commit hook falls back to `gitleaks protect --staged` when it detects an "unknown command" failure.
 - jq and yq provide cross-platform install paths and are appropriate for structured transformations, not semantic code discovery.
 
 - `mcp-language-server` documents installation, stdio language-server configuration, and semantic tools including definition, references, diagnostics, hover, and rename in its official repository.

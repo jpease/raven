@@ -13,5 +13,17 @@ fi
 
 # Optional secret scan for staged changes; a detected leak blocks the commit.
 if command -v gitleaks >/dev/null 2>&1; then
-    gitleaks git --staged --redact || exit 1
+    gitleaks_output=$(gitleaks git --staged --redact 2>&1)
+    gitleaks_status=$?
+    if [ "$gitleaks_status" -ne 0 ] && printf '%s' "$gitleaks_output" | grep -qi 'unknown command'; then
+        # gitleaks < 8.19 does not have the `git` subcommand (added in 8.19);
+        # that failure looks identical to a detected leak, so fall back to the
+        # older `protect` subcommand instead of blocking every commit.
+        gitleaks_output=$(gitleaks protect --staged --redact 2>&1)
+        gitleaks_status=$?
+    fi
+    if [ "$gitleaks_status" -ne 0 ]; then
+        printf '%s\n' "$gitleaks_output" >&2
+        exit 1
+    fi
 fi
