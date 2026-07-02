@@ -261,6 +261,77 @@ class GitHookInstallerTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def _bin_dir_with_git(self) -> Path:
+        git_path = subprocess.run(
+            ["which", "git"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        bin_dir = self.destination / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        if not (bin_dir / "git").exists():
+            (bin_dir / "git").symlink_to(git_path)
+        return bin_dir
+
+    def test_pre_commit_hook_falls_back_to_protect_on_pre_8_19_gitleaks(self):
+        # gitleaks < 8.19 has no `git` subcommand and exits with a cobra
+        # "unknown command" error indistinguishable from a real leak (issue #81).
+        # The hook must recognize that failure and retry with the older
+        # `protect` subcommand instead of blocking every commit.
+        bin_dir = self._bin_dir_with_git()
+        fake_gitleaks = bin_dir / "gitleaks"
+        fake_gitleaks.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "git" ]; then\n'
+            '    echo \'Error: unknown command "git" for "gitleaks"\' >&2\n'
+            "    exit 1\n"
+            'elif [ "$1" = "protect" ]; then\n'
+            "    exit 0\n"
+            "fi\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        fake_gitleaks.chmod(0o755)
+
+        env = self._hook_env(bin_dir)
+        result = subprocess.run(
+            ["/bin/sh", str(raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-commit")],
+            cwd=self.destination,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_pre_commit_hook_blocks_on_detected_leak_with_modern_gitleaks(self):
+        # A real leak from a modern gitleaks (the `git` subcommand exists and
+        # runs) must still block the commit -- the fallback must not swallow
+        # genuine findings.
+        bin_dir = self._bin_dir_with_git()
+        fake_gitleaks = bin_dir / "gitleaks"
+        fake_gitleaks.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "git" ]; then\n'
+            "    echo 'leak detected' >&2\n"
+            "    exit 1\n"
+            "fi\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        fake_gitleaks.chmod(0o755)
+
+        env = self._hook_env(bin_dir)
+        result = subprocess.run(
+            ["/bin/sh", str(raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-commit")],
+            cwd=self.destination,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+
     def test_install_targets_destination_despite_inherited_git_dir(self):
         # Reproduces the corruption: running inside another repo's hook exports
         # GIT_DIR/GIT_INDEX_FILE. install_git_hooks must still target the passed
