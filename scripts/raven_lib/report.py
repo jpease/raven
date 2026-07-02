@@ -5,15 +5,30 @@ import json
 from .findings import Finding, Severity, summarize
 
 _MARK = {Severity.INFO: "ⓘ", Severity.OK: "✓", Severity.WARN: "!", Severity.ERROR: "✗"}
+_MARK_ASCII = {Severity.INFO: "i", Severity.OK: "ok", Severity.WARN: "!", Severity.ERROR: "x"}
 
 
-def render_human(command: str, os_name: str, findings: list[Finding]) -> str:
+def supports_unicode_marks(encoding: str | None) -> bool:
+    """Return whether the given stream encoding can represent the human-output severity marks."""
+    if not encoding:
+        return False
+    try:
+        "".join(_MARK.values()).encode(encoding)
+    except (LookupError, UnicodeEncodeError):
+        return False
+    return True
+
+
+def render_human(
+    command: str, os_name: str, findings: list[Finding], *, ascii_marks: bool = False
+) -> str:
+    marks = _MARK_ASCII if ascii_marks else _MARK
     lines: list[str] = [f"raven {command} ({os_name})", ""]
     categories = list(dict.fromkeys(f.category for f in findings))
     for category in categories:
         lines.append(category)
         for finding in [f for f in findings if f.category == category]:
-            lines.append(f"  {_MARK[finding.severity]} {finding.title}")
+            lines.append(f"  {marks[finding.severity]} {finding.title}")
             if finding.severity is not Severity.OK:
                 lines.append(f"      {finding.detail}")
                 if finding.fix:
