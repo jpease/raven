@@ -41,7 +41,7 @@ from .plan import (
     print_dry_run_plan,
     print_section,
 )
-from .report import render_human, render_json
+from .report import render_human, render_json, supports_unicode_marks
 from .template import entries_for_destination
 
 
@@ -515,6 +515,10 @@ def _os_name() -> str:
     return "linux"
 
 
+def _ascii_marks_needed() -> bool:
+    return not supports_unicode_marks(getattr(sys.stdout, "encoding", None))
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     destination = _resolve_destination(args)
     if destination is None:
@@ -523,7 +527,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     output = (
         render_json("doctor", _os_name(), findings)
         if args.json
-        else render_human("doctor", _os_name(), findings)
+        else render_human("doctor", _os_name(), findings, ascii_marks=_ascii_marks_needed())
     )
     print(output)
     return exit_code(findings)
@@ -537,7 +541,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
     output = (
         render_json("assess", _os_name(), findings)
         if args.json
-        else render_human("assess", _os_name(), findings)
+        else render_human("assess", _os_name(), findings, ascii_marks=_ascii_marks_needed())
     )
     print(output)
     return exit_code(findings)

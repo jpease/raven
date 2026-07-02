@@ -55,12 +55,13 @@ class CliTests(RavenTestCase):
 
 
 class DoctorAssessCliTests(RavenTestCase):
-    def _run(self, *cli_args):
+    def _run(self, *cli_args, env=None):
         return subprocess.run(
             [sys.executable, str(RAVEN_PATH), "-d", str(self.destination), *cli_args],
             capture_output=True,
             text=True,
             check=False,
+            env=env,
         )
 
     def test_doctor_help_lists_command(self):
@@ -95,6 +96,16 @@ class DoctorAssessCliTests(RavenTestCase):
         self.assertEqual(result.returncode, 0)
         data = _json.loads(result.stdout)
         self.assertEqual(data["command"], "assess")
+
+    def test_doctor_human_output_survives_legacy_codepage_stdout(self):
+        env = dict(os.environ, PYTHONIOENCODING="cp1252")
+        result = self._run("doctor", env=env)
+        self.assertNotIn("UnicodeEncodeError", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        # Legacy codepage can't encode the unicode marks, so ASCII fallback marks are used instead.
+        self.assertNotIn("✓", result.stdout)
+        self.assertNotIn("✗", result.stdout)
+        self.assertNotIn("ⓘ", result.stdout)
 
 
 if __name__ == "__main__":

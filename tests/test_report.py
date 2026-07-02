@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from raven_lib.findings import Finding, Severity
-from raven_lib.report import render_human, render_json
+from raven_lib.report import render_human, render_json, supports_unicode_marks
 
 
 def _findings() -> list[Finding]:
@@ -61,6 +61,28 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(data["summary"], {"errors": 1, "warnings": 1, "info": 0, "ok": 1})
         self.assertEqual(data["findings"][1]["severity"], "warn")
         self.assertEqual(data["findings"][2]["fix"], "run raven install")
+
+    def test_human_ascii_marks_fallback_avoids_unicode(self):
+        out = render_human("doctor", "darwin", _findings(), ascii_marks=True)
+        self.assertIn("ok ripgrep present", out)
+        self.assertIn("! fd missing", out)
+        self.assertIn("x config missing", out)
+        # No non-ASCII characters should appear anywhere in the output.
+        out.encode("ascii")
+
+
+class SupportsUnicodeMarksTests(unittest.TestCase):
+    def test_utf8_supports_marks(self):
+        self.assertTrue(supports_unicode_marks("utf-8"))
+
+    def test_legacy_codepage_does_not_support_marks(self):
+        self.assertFalse(supports_unicode_marks("cp1252"))
+
+    def test_missing_encoding_assumes_no_support(self):
+        self.assertFalse(supports_unicode_marks(None))
+
+    def test_unknown_encoding_assumes_no_support(self):
+        self.assertFalse(supports_unicode_marks("not-a-real-codec"))
 
 
 if __name__ == "__main__":
