@@ -1,5 +1,6 @@
 import contextlib
 import io
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -105,6 +106,49 @@ class TemplateDiscoveryGuardTest(unittest.TestCase):
         with contextlib.redirect_stdout(buf):
             module.validate_aggregate_budget()
         self.assertIn("aggregate context budget ok", buf.getvalue())
+
+
+class StrictFreshnessTest(unittest.TestCase):
+    """Regression tests for issue #82: the weekly scheduled CI run must be
+    able to fail on stale third-party setup docs instead of only logging a
+    warning inside an otherwise-green run."""
+
+    def setUp(self) -> None:
+        self.module = load_script_module("self_check_under_test", SELF_CHECK)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.module.REPO_ROOT = self.root
+        self.docs_dir = self.root / "common" / ".claude" / "docs"
+        self.docs_dir.mkdir(parents=True)
+        self.addCleanup(os.environ.pop, "RAVEN_SELF_CHECK_STRICT_FRESHNESS", None)
+
+    def _write_doc(self, name: str, verified: str) -> None:
+        (self.docs_dir / name).write_text(f"Last verified: {verified}\n", encoding="utf-8")
+
+    def test_stale_doc_is_non_fatal_by_default(self) -> None:
+        self._write_doc("raven-lsp-mcp.md", "2020-01-01")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.module.warn_stale_docs()
+        self.assertIn("STALE", buf.getvalue())
+
+    def test_stale_doc_raises_when_strict_env_set(self) -> None:
+        self._write_doc("raven-lsp-mcp.md", "2020-01-01")
+        os.environ["RAVEN_SELF_CHECK_STRICT_FRESHNESS"] = "1"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
+            self.module.warn_stale_docs()
+        self.assertIn("raven-lsp-mcp.md", buf.getvalue())
+
+    def test_fresh_docs_do_not_raise_when_strict(self) -> None:
+        today = self.module.datetime.date.today().isoformat()
+        self._write_doc("raven-lsp-mcp.md", today)
+        os.environ["RAVEN_SELF_CHECK_STRICT_FRESHNESS"] = "1"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.module.warn_stale_docs()
+        self.assertIn("freshness check ok", buf.getvalue())
 
 
 if __name__ == "__main__":

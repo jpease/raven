@@ -68,6 +68,8 @@ jobs:
 
       - name: Self-check
         run: python scripts/self-check.py
+        env:
+          RAVEN_SELF_CHECK_STRICT_FRESHNESS: ${{ github.event_name == 'schedule' && '1' || '0' }}
 
   template-smoke:
     if: github.event_name != 'schedule'
