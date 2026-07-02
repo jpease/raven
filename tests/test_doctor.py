@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import io
 import json
+import shutil
 import subprocess
 import sys
 import unittest
@@ -430,6 +431,24 @@ class DoctorHookManagerTests(RavenTestCase):
 
         self._git_init()
         self.assertEqual(hook_manager_findings(self.destination), [])
+
+    def test_hook_manager_finding_for_external_hooks_path(self):
+        from raven_lib.doctor import hook_manager_findings
+
+        self._git_init()
+        global_hooks = self.destination.parent / "global-githooks-doctor"
+        global_hooks.mkdir()
+        self.addCleanup(shutil.rmtree, global_hooks, True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", str(global_hooks)],
+            capture_output=True,
+            check=True,
+        )
+        findings = hook_manager_findings(self.destination)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].id, "doctor.hooks.manager")
+        self.assertEqual(findings[0].severity, Severity.INFO)
+        self.assertIn("external-hooks-path", findings[0].title)
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ from .constants import (
 )
 from .doctor import build_doctor_findings
 from .findings import exit_code
-from .git_hooks import detect_hook_manager, hook_manager_guidance, install_git_hooks
+from .git_hooks import detect_hook_manager, git_hooks_dir, hook_manager_guidance, install_git_hooks
 from .manifest import load_manifest, update_manifest
 from .models import ApplyPlan, RavenConfig
 from .plan import (
@@ -268,7 +268,15 @@ def _run(
         )
     if git_hooks_installed:
         print()
-        print_section("Installed git hooks:", [f".git/hooks/{h}" for h in git_hooks_installed])
+        # install_git_hooks only reports installed hooks once it has resolved a
+        # concrete hooks dir, so this cannot be None here.
+        hooks_dir = git_hooks_dir(destination)
+        assert hooks_dir is not None
+        try:
+            hooks_label = hooks_dir.relative_to(destination)
+        except ValueError:
+            hooks_label = hooks_dir
+        print_section("Installed git hooks:", [f"{hooks_label}/{h}" for h in git_hooks_installed])
     else:
         manager = detect_hook_manager(destination)
         if manager:

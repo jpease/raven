@@ -86,7 +86,7 @@ from .constants import (
 )
 from .doctor import build_doctor_findings
 from .findings import Finding, Severity, exit_code, summarize
-from .git_hooks import detect_hook_manager, hook_manager_guidance, install_git_hooks
+from .git_hooks import detect_hook_manager, git_hooks_dir, hook_manager_guidance, install_git_hooks
 from .hashing import (
     destination_fingerprint,
     entry_fingerprint,
@@ -233,6 +233,7 @@ __all__ = [
     "normalize_override",
     # git_hooks
     "detect_hook_manager",
+    "git_hooks_dir",
     "hook_manager_guidance",
     "install_git_hooks",
     # cli

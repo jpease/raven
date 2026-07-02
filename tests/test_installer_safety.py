@@ -11,6 +11,7 @@ Covers:
 import argparse
 import contextlib
 import io
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -371,6 +372,29 @@ class LanguageHandlingTests(RavenTestCase):
         self.assertIn("go", err.getvalue())
         # The configured template is untouched by the conflicting request.
         self.assertEqual((self.destination / ".raven" / "config.toml").read_bytes(), before)
+
+
+# ---------------------------------------------------------------------------
+# #70 — install_git_hooks core.hooksPath edge cases
+# ---------------------------------------------------------------------------
+class GitHooksInstallMessageTests(RavenTestCase):
+    def test_install_reports_actual_custom_hooks_path_not_dot_git(self):
+        # Regression: the success message hard-coded ".git/hooks/<h>" even when
+        # core.hooksPath pointed elsewhere.
+        subprocess.run(["git", "init", str(self.destination)], capture_output=True, check=True)
+        (self.destination / ".githooks").mkdir()
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".githooks"],
+            capture_output=True,
+            check=True,
+        )
+        out = io.StringIO()
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(out):
+            rc = raven.cmd_install(_install_ns(self.destination, language="python"))
+        self.assertEqual(rc, 0)
+        stdout = out.getvalue()
+        self.assertIn(".githooks/pre-commit", stdout)
+        self.assertNotIn(".git/hooks/", stdout)
 
 
 if __name__ == "__main__":
