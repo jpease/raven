@@ -22,7 +22,7 @@ Use this skill when changing:
 1. Check for broken symlinks:
 
 ```sh
-find -L common python rust swift typescript -type l -print
+find -L . -path ./.git -prune -o -type l -print
 ```
 
 The command should produce no output.
@@ -30,7 +30,7 @@ The command should produce no output.
 2. Check for generated files that should not be committed:
 
 ```sh
-find common python rust swift typescript scripts tests -name .DS_Store -o -name __pycache__ -print
+find . -path ./.git -prune -o \( -name .DS_Store -o -name __pycache__ \) -print
 ```
 
 The command should produce no output.
