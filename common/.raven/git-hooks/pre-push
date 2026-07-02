@@ -3,6 +3,11 @@
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 cd "$repo_root" || exit 0
 
+# HEAD is resolved up front: the delete-only/no-op check below only cares
+# whether any ref update is real, but the stamp check further down needs it to
+# confirm the pushed ref actually is this worktree's HEAD (see refs_match_head).
+head_sha=$(git rev-parse HEAD 2>/dev/null)
+
 # Git feeds the push plan on stdin as "<local-ref> <local-sha> <remote-ref>
 # <remote-sha>" lines; a deletion has an all-zero local-sha. If every line is a
 # deletion (or stdin is empty), no code is leaving the machine, so skip the
@@ -10,25 +15,48 @@ cd "$repo_root" || exit 0
 # hook runs, so this only adds coverage for delete-only pushes. The `case` glob
 # treats a SHA as real work iff it holds any non-zero character, which keeps this
 # free of external commands (no `tr`) and agnostic to SHA-1 vs SHA-256 length.
+#
+# refs_match_head also tracks whether every pushed local-sha equals head_sha.
+# The stamp only proves that *this* worktree's checked-out HEAD passed `just
+# check`; it says nothing about a different commit being pushed (a different
+# branch than the one checked out here, or a commit made in another worktree
+# sharing this git dir). Without this check, a stamped worktree on `main`
+# could rubber-stamp `git push origin feature` with zero checks run
+# (issue #80).
 has_work=0
+refs_match_head=1
 while read -r _local_ref local_sha _remote_ref _remote_sha; do
     case "$local_sha" in
         "") ;;             # blank line, ignore
-        *[!0]*) has_work=1 ;;  # contains a non-zero digit -> a real ref update
+        *[!0]*)            # contains a non-zero digit -> a real ref update
+            has_work=1
+            [ "$local_sha" = "$head_sha" ] || refs_match_head=0
+            ;;
     esac
 done
 [ "$has_work" -eq 0 ] && exit 0
 
 # The gate runs against the working tree, so a commit is only safely "already
-# verified" if the tree is also clean. The stamp records the HEAD SHA that last
-# passed `just check` with a clean tree; if HEAD still matches and the tree is
-# still clean, re-running is pure waste. A new commit, amend, or any uncommitted
-# change alters HEAD or dirties the tree and invalidates the stamp. The stamp
-# lives in the (per-worktree) git dir, so it is never committed and is wiped on
-# re-clone. A missing or unreadable stamp simply falls through to the gate.
+# verified" if the tree is also clean and every pushed ref is this worktree's
+# HEAD (see refs_match_head above). The stamp records the HEAD SHA that last
+# passed `just check` with a clean tree; if HEAD still matches, every pushed
+# ref is that HEAD, and the tree is still clean, re-running is pure waste. A
+# new commit, amend, or any uncommitted change alters HEAD or dirties the
+# tree and invalidates the stamp; pushing a ref other than HEAD falls back to
+# running the gate too, same as before the stamp existed for that case. That
+# fallback still only checks the working tree, not the pushed ref's actual
+# content, so it does not fully verify e.g. a cross-worktree push of a
+# different branch -- closing that would require checking out the pushed
+# ref, which this hook intentionally does not do. A second, unrelated gap the
+# working-tree design cannot close either: committing broken code and then
+# fixing it locally without committing lets `just check` pass against the
+# fixed tree while HEAD (the broken commit) is what actually gets pushed. The
+# stamp lives in the (per-worktree) git dir, so it is never committed and is
+# wiped on re-clone. A missing or unreadable stamp simply falls through to
+# the gate.
 stamp="$(git rev-parse --git-dir)/raven-pre-push-verified"
-head_sha=$(git rev-parse HEAD 2>/dev/null)
-if [ -n "$head_sha" ] && [ -z "$(git status --porcelain 2>/dev/null)" ] \
+if [ -n "$head_sha" ] && [ "$refs_match_head" -eq 1 ] \
+    && [ -z "$(git status --porcelain 2>/dev/null)" ] \
     && [ "$head_sha" = "$(cat "$stamp" 2>/dev/null)" ]; then
     exit 0
 fi

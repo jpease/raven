@@ -332,6 +332,15 @@ class GitHookInstallerTests(unittest.TestCase):
         "refs/heads/old 2222222222222222222222222222222222222222\n"
     )
 
+    @staticmethod
+    def _push_stdin(local_sha: str) -> str:
+        # Same shape as _PUSH_STDIN but with a caller-chosen local SHA, so tests
+        # can assert on whether that SHA does or does not match HEAD.
+        return (
+            f"refs/heads/main {local_sha} "
+            "refs/heads/main 0000000000000000000000000000000000000000\n"
+        )
+
     def test_pre_push_hook_is_optional_when_just_missing(self):
         hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
         git_path = subprocess.run(
@@ -436,8 +445,9 @@ class GitHookInstallerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_pre_push_skips_when_head_verified_and_tree_clean(self):
-        # Stamp records the current HEAD and the tree is clean, so the hook must
-        # skip the gate entirely -- even a `just` rigged to fail is never run.
+        # Stamp records the current HEAD and the tree is clean, and the pushed
+        # ref *is* that HEAD, so the hook must skip the gate entirely -- even a
+        # `just` rigged to fail is never run.
         hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
         env, head, stamp = self._prepare_verified_repo(just_exit=1)
         stamp.write_text(head + "\n", encoding="utf-8")
@@ -446,7 +456,7 @@ class GitHookInstallerTests(unittest.TestCase):
             ["/bin/sh", str(hook)],
             cwd=self.destination,
             env=env,
-            input=self._PUSH_STDIN,
+            input=self._push_stdin(head),
             capture_output=True,
             text=True,
             check=False,
@@ -466,7 +476,7 @@ class GitHookInstallerTests(unittest.TestCase):
             ["/bin/sh", str(hook)],
             cwd=self.destination,
             env=env,
-            input=self._PUSH_STDIN,
+            input=self._push_stdin(head),
             capture_output=True,
             text=True,
             check=False,
@@ -478,14 +488,39 @@ class GitHookInstallerTests(unittest.TestCase):
         # Stamp holds a different SHA (e.g. a new commit since verification), so
         # the failing gate must run rather than skip.
         hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
-        env, _head, stamp = self._prepare_verified_repo(just_exit=1)
+        env, head, stamp = self._prepare_verified_repo(just_exit=1)
         stamp.write_text("0" * 40 + "\n", encoding="utf-8")
 
         result = subprocess.run(
             ["/bin/sh", str(hook)],
             cwd=self.destination,
             env=env,
-            input=self._PUSH_STDIN,
+            input=self._push_stdin(head),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_pre_push_reruns_when_pushed_sha_does_not_match_head(self):
+        # Regression for issue #80: a stamp that matches THIS worktree's HEAD
+        # must not vouch for a push whose local SHA is a different commit (e.g.
+        # `git push origin feature` from a worktree sitting on `main`, or a
+        # commit made in another worktree sharing this git dir). The failing
+        # gate must run rather than skip, even though the stamp and tree are
+        # otherwise valid.
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+        env, head, stamp = self._prepare_verified_repo(just_exit=1)
+        stamp.write_text(head + "\n", encoding="utf-8")
+        other_sha = "3" * 40
+        self.assertNotEqual(other_sha, head)
+
+        result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            input=self._push_stdin(other_sha),
             capture_output=True,
             text=True,
             check=False,
