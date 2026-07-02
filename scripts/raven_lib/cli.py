@@ -447,11 +447,16 @@ def cmd_accept(args: argparse.Namespace) -> int:
         )
         return 0
 
+    pending = set(pending_merge_paths(destination))
     accepted: list[str] = []
+    stale: list[str] = []
     skipped: list[str] = []
     for relative in requested:
         if entries.get(relative) is None:
-            skipped.append(f"{relative} (not a Raven-managed template file)")
+            if relative in pending:
+                stale.append(relative)
+            else:
+                skipped.append(f"{relative} (not a Raven-managed template file)")
         elif not _any_exists(destination / relative):
             skipped.append(f"{relative} (no such file in destination)")
         else:
@@ -459,6 +464,9 @@ def cmd_accept(args: argparse.Namespace) -> int:
 
     if args.dry_run:
         print_section("Would record as the accepted Raven baseline:", accepted)
+        if stale:
+            print()
+            print_section("Would clear stale merge artifacts (no longer Raven-managed):", stale)
         if skipped:
             print()
             print_section("Would skip:", skipped)
@@ -480,12 +488,18 @@ def cmd_accept(args: argparse.Namespace) -> int:
             manifest=manifest,
             entries=entries,
         )
-        removed = remove_merge_artifacts(destination, accepted)
+        removed.extend(remove_merge_artifacts(destination, accepted))
+    if stale:
+        removed.extend(remove_merge_artifacts(destination, stale))
+        removed.sort()
 
     print_section("Recorded accepted Raven baseline for:", accepted)
     if removed:
         print()
         print_section("Removed merge artifacts:", removed)
+    if stale:
+        print()
+        print_section("Cleared stale merge artifacts (no longer Raven-managed):", stale)
     if skipped:
         print()
         print_section("Skipped:", skipped)

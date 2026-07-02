@@ -173,6 +173,41 @@ class AcceptCommandTests(RavenTestCase):
         self.assertIn("does/not/exist.txt", output.getvalue())
         self.assertNotIn("does/not/exist.txt", self._manifest()["files"])
 
+    def test_accept_clears_stale_merge_artifacts_no_longer_managed(self):
+        # Reproduces #74: a file with pending merge artifacts that later
+        # leaves the template set (component disabled / config excluded)
+        # could never be cleared -- `accept` unconditionally skipped it and
+        # `doctor` warned forever.
+        self._install()
+        mcp = self.destination / ".mcp.json"
+        mcp.write_text('{"local": "kept"}\n', encoding="utf-8")
+        entries = raven.entries_for_destination(
+            self.template, self.excludes, raven.load_config(self.destination), self.destination
+        )
+        raven.write_guided_merge_artifacts(self.destination, entries, [".mcp.json"])
+        self.assertIn(".mcp.json", raven.pending_merge_paths(self.destination))
+        installed_sha_before = self._manifest()["files"][".mcp.json"]["installedSha256"]
+
+        config_path = self.destination / ".raven" / "config.toml"
+        config_text = config_path.read_text(encoding="utf-8")
+        config_path.write_text(
+            config_text + '\n[exclude]\npaths = [".mcp.json"]\n', encoding="utf-8"
+        )
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            rc = raven.cmd_accept(self._ns())
+
+        self.assertEqual(rc, 0)
+        self.assertIn(".mcp.json", output.getvalue())
+        self.assertNotIn(".mcp.json", raven.pending_merge_paths(self.destination))
+        self.assertFalse((self.destination / ".raven" / "merge").exists())
+        # Artifacts are cleared, but the stale path is never recorded as an
+        # accepted baseline -- it's no longer Raven-managed.
+        self.assertEqual(
+            self._manifest()["files"][".mcp.json"]["installedSha256"], installed_sha_before
+        )
+
     def test_accept_nothing_pending_is_noop(self):
         self._install()
         output = io.StringIO()
