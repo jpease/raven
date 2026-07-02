@@ -24,6 +24,12 @@ _INTEGRITY = "Install integrity"
 _DRIFT = "Drift & freshness"
 _HOOKS = "Git hooks"
 
+# Gate tools with no reliable --version flag: probing them with --version
+# exits non-zero even when the binary is installed and working (e.g. gofmt
+# exits 2 with "flag provided but not defined: -version"). For these, being
+# found on PATH is sufficient evidence of availability.
+_NO_VERSION_FLAG = {"gofmt"}
+
 
 def integrity_findings(destination: Path) -> list[Finding]:
     config = load_config(destination)
@@ -397,7 +403,10 @@ def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list
             if tool in seen_ids:
                 continue
             probe = runner([tool, "--version"], destination)
-            severity = Severity.OK if probe.found and probe.ok else Severity.WARN
+            if tool in _NO_VERSION_FLAG:
+                severity = Severity.OK if probe.found else Severity.WARN
+            else:
+                severity = Severity.OK if probe.found and probe.ok else Severity.WARN
             findings.append(
                 Finding(
                     id=f"doctor.gate-tool.{tool}",

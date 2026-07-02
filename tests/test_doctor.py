@@ -370,6 +370,40 @@ class DoctorToolchainTests(RavenTestCase):
         self.assertEqual(match.severity, Severity.WARN)
         self.assertFalse(any(f.severity == Severity.ERROR for f in findings))
 
+    def test_gofmt_present_is_ok_despite_unsupported_version_flag(self):
+        # gofmt has no --version flag: it exits 2 with "flag provided but not
+        # defined: -version" even when the binary is installed and working.
+        from raven_lib.doctor import toolchain_findings
+        from raven_lib.findings import Severity
+
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "go"\n', encoding="utf-8"
+        )
+        payload = json.dumps({"os": "darwin", "results": []})
+
+        def runner(command, cwd):
+            if any("raven-tool-check.py" in part for part in command):
+                return RunResult(
+                    ok=True, code=0, stdout=payload, stderr="", found=True, timed_out=False
+                )
+            if command[0] == "gofmt":
+                return RunResult(
+                    ok=False,
+                    code=2,
+                    stdout="",
+                    stderr="flag provided but not defined: -version",
+                    found=True,
+                    timed_out=False,
+                )
+            return RunResult(
+                ok=True, code=0, stdout="1.0\n", stderr="", found=True, timed_out=False
+            )
+
+        findings = toolchain_findings(self.destination, runner)
+        match = next(f for f in findings if f.id == "doctor.gate-tool.gofmt")
+        self.assertEqual(match.severity, Severity.OK)
+
 
 class DoctorHookManagerTests(RavenTestCase):
     def _git_init(self):
