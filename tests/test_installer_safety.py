@@ -17,14 +17,22 @@ from helpers import RavenTestCase, raven
 from raven_lib.findings import Severity
 
 
-def _install_ns(destination, *, language=None, overrides=None, dry_run=False, platform=None):
+def _install_ns(
+    destination,
+    *,
+    language=None,
+    overrides=None,
+    dry_run=False,
+    platform=None,
+    include_readme=False,
+):
     return argparse.Namespace(
         destination=str(destination),
         language=language,
         args=None,
         overrides=overrides or [],
         dry_run=dry_run,
-        include_readme=False,
+        include_readme=include_readme,
         adopt_claude_symlink=False,
         platform=platform,
     )
@@ -139,6 +147,20 @@ class InstallValidationTests(RavenTestCase):
         self.assertEqual(rc, 0)
         self.assertTrue((self.destination / ".raven" / "config.toml").exists())
         self.assertTrue((self.destination / "AGENTS.md").exists())
+
+    def test_fresh_install_with_include_readme_persists_flag_in_config(self):
+        # Regression for #65: --include-readme on a fresh install must survive
+        # into config.toml, not just the one-off copy, so later plain
+        # `raven upgrade` runs keep including README.md.
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_install(
+                _install_ns(self.destination, language="python", include_readme=True)
+            )
+        self.assertEqual(rc, 0)
+        config_path = self.destination / ".raven" / "config.toml"
+        self.assertTrue(config_path.exists())
+        self.assertIn("include_readme = true", config_path.read_text(encoding="utf-8"))
+        self.assertEqual(raven.load_config(self.destination).include_readme, True)
 
 
 # ---------------------------------------------------------------------------

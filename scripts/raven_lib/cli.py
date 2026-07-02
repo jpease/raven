@@ -283,7 +283,9 @@ def _resolve_destination(args: argparse.Namespace) -> Path | None:
     return destination
 
 
-def _create_config(destination: Path, language: str, platform: str | None) -> int:
+def _create_config(
+    destination: Path, language: str, platform: str | None, include_readme: bool = False
+) -> int:
     """Write a fresh .raven/config.toml for a known-missing destination config."""
     template = REPO_ROOT / language
     if not template.is_dir():
@@ -291,7 +293,9 @@ def _create_config(destination: Path, language: str, platform: str | None) -> in
         return 2
     path = destination / CONFIG_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(default_config_text(language, False, platform or "none"), encoding="utf-8")
+    path.write_text(
+        default_config_text(language, include_readme, platform or "none"), encoding="utf-8"
+    )
     print(f"Created {destination / CONFIG_PATH}")
     return 0
 
@@ -346,7 +350,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         include_readme = args.include_readme
 
         def write_config() -> int:
-            return _create_config(destination, language, platform)
+            return _create_config(destination, language, platform, include_readme)
 
     return _run(
         destination,
