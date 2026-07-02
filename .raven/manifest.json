@@ -312,9 +312,9 @@
       "sourceSha256": "09cfaec8d8f45e26bd21eb53e0bc4f6a23f2cc7aaa45bc74245f4395ecede2dd"
     },
     ".raven/git-hooks/commit-msg": {
-      "installedSha256": "c5f5c32d03322e1acd19ac92a58a27022cde5c64cc4f1c846a7f049e3ec213a0",
+      "installedSha256": "3795876dc4f71f936566c82b0ad9aa3d240441442b9940b7aa2296776308276b",
       "kind": "file",
-      "sourceSha256": "c5f5c32d03322e1acd19ac92a58a27022cde5c64cc4f1c846a7f049e3ec213a0"
+      "sourceSha256": "3795876dc4f71f936566c82b0ad9aa3d240441442b9940b7aa2296776308276b"
     },
     ".raven/git-hooks/pre-commit": {
       "installedSha256": "f701fba60d9dba6059761c012efebd692be032fe08d1b61ba78e089bf8e0b0f7",

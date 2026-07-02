@@ -60,17 +60,23 @@ def main() -> int:
             return 0
 
     msg_file = Path(sys.argv[1])
-    lines = msg_file.read_text(encoding="utf-8").splitlines()
+    try:
+        lines = msg_file.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        # Cosmetic hook: fail open rather than block a commit over an encoding we can't read.
+        return 0
+
+    removed = [line for line in lines if _AI_TRAILER.match(line)]
+    if not removed:
+        return 0
 
     cleaned = [line for line in lines if not _AI_TRAILER.match(line)]
     while cleaned and not cleaned[-1].strip():
         cleaned.pop()
 
-    if cleaned != lines:
-        removed = [line for line in lines if line not in cleaned]
-        msg_file.write_text("\n".join(cleaned) + "\n", encoding="utf-8")
-        for trailer in removed:
-            print(f"raven commit-msg: removed AI attribution: {trailer}", file=sys.stderr)
+    msg_file.write_text("\n".join(cleaned) + "\n", encoding="utf-8")
+    for trailer in removed:
+        print(f"raven commit-msg: removed AI attribution: {trailer}", file=sys.stderr)
 
     return 0
 
