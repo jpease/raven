@@ -314,6 +314,25 @@ paths = [".claude/skills/raven-plan/**"]
                 self.assertEqual(lsp["command"], "mcp-language-server")
                 self.assertEqual(lsp["args"], args)
 
+    def test_common_mcp_json_servers_ship_in_every_language_template(self):
+        # common/.mcp.json is never installed directly (each language tree ships
+        # its own real .mcp.json so it can set a language-specific "lsp" server),
+        # but it documents the shared server set every tree must include. Guard
+        # against it drifting from what trees actually ship, per #83.
+        common_servers = json.loads(
+            (REPO_ROOT / "common" / ".mcp.json").read_text(encoding="utf-8")
+        )["mcpServers"]
+
+        for language in raven.list_language_templates():
+            with self.subTest(language=language):
+                tree_servers = json.loads(
+                    (REPO_ROOT / language / ".mcp.json").read_text(encoding="utf-8")
+                )["mcpServers"]
+
+                for name, config in common_servers.items():
+                    self.assertIn(name, tree_servers)
+                    self.assertEqual(tree_servers[name], config)
+
     def test_dotfiles_stack_shape(self):
         languages = raven.list_language_templates()
         self.assertIn("dotfiles", languages)
