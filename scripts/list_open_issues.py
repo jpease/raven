@@ -46,8 +46,13 @@ def get_issues():
         if cursor:
             args += ["-f", f"cursor={cursor}"]
         stdout = run_gh_command(args)
-        if not stdout:
-            break
+        if stdout is None:
+            print(
+                "Error: gh command failed while paginating issues; "
+                "aborting to avoid rendering a truncated tree.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         page = json.loads(stdout)["data"]["repository"]["issues"]
         nodes.extend(page["nodes"])
         if not page["pageInfo"]["hasNextPage"]:
