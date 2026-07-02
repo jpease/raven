@@ -72,6 +72,19 @@ def validate_shared_docs_sync() -> None:
     print("shared docs sync ok")
 
 
+def _template_rules_files() -> dict[str, Path]:
+    """Map template dir name -> its always-loaded raven-<name>.md rules file, if any."""
+    non_template_dirs = load_raven_module().NON_TEMPLATE_DIRS
+    found: dict[str, Path] = {}
+    for d in sorted(REPO_ROOT.iterdir()):
+        if not d.is_dir() or d.name.startswith(".") or d.name in non_template_dirs:
+            continue
+        rules_file = d / ".claude" / "rules" / f"raven-{d.name}.md"
+        if rules_file.exists():
+            found[d.name] = rules_file
+    return found
+
+
 def validate_context_budget() -> None:
     # always-loaded tier — raise thresholds only with deliberate justification
     THRESHOLDS: dict[str, int] = {
@@ -82,11 +95,27 @@ def validate_context_budget() -> None:
         "rust/.claude/rules/raven-rust.md": 820,
         "swift/.claude/rules/raven-swift.md": 640,
         "typescript/.claude/rules/raven-typescript.md": 660,
+        "go/.claude/rules/raven-go.md": 840,
+        "lua/.claude/rules/raven-lua.md": 680,
+        "dotfiles/.claude/rules/raven-dotfiles.md": 530,
         # shared rules files (symlinked from language dirs)
         "common/.claude/rules/raven-security.md": 70,
         "common/.claude/rules/raven-tests.md": 70,
     }
     print("==> validate context budget for always-loaded guidance")
+
+    unbudgeted = [
+        str(path.relative_to(REPO_ROOT))
+        for path in _template_rules_files().values()
+        if str(path.relative_to(REPO_ROOT)) not in THRESHOLDS
+    ]
+    if unbudgeted:
+        raise SystemExit(
+            "Always-loaded rules file(s) with no context budget threshold: "
+            f"{', '.join(sorted(unbudgeted))}. Add them to THRESHOLDS in "
+            "validate_context_budget()."
+        )
+
     offenders: list[str] = []
     for rel, limit in THRESHOLDS.items():
         path = REPO_ROOT / rel
@@ -125,8 +154,20 @@ def validate_aggregate_budget() -> None:
         "rust": (2010, "rust/.claude/rules/raven-rust.md"),
         "swift": (1850, "swift/.claude/rules/raven-swift.md"),
         "typescript": (1870, "typescript/.claude/rules/raven-typescript.md"),
+        "go": (2030, "go/.claude/rules/raven-go.md"),
+        "lua": (1870, "lua/.claude/rules/raven-lua.md"),
+        "dotfiles": (1720, "dotfiles/.claude/rules/raven-dotfiles.md"),
     }
     print("==> validate aggregate context budget per language profile")
+
+    unprofiled = [name for name in _template_rules_files() if name not in PROFILES]
+    if unprofiled:
+        raise SystemExit(
+            "Template(s) with always-loaded rules but no aggregate context budget "
+            f"profile: {', '.join(sorted(unprofiled))}. Add them to PROFILES in "
+            "validate_aggregate_budget()."
+        )
+
     offenders: list[str] = []
     for lang, (limit, rules_rel) in PROFILES.items():
         total = 0

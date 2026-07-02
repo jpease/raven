@@ -63,5 +63,49 @@ class AggregateBudgetTest(unittest.TestCase):
         self.assertIn("python", buf.getvalue())
 
 
+class TemplateDiscoveryGuardTest(unittest.TestCase):
+    """Regression tests for issue #73: a template's rules file must be
+    covered by THRESHOLDS/PROFILES, or the checks must fail loudly instead
+    of silently skipping it."""
+
+    def setUp(self) -> None:
+        self.module = load_script_module("self_check_under_test", SELF_CHECK)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.module.REPO_ROOT = self.root
+
+    def test_context_budget_raises_for_unbudgeted_language(self) -> None:
+        _write_words(self.root / "newlang/.claude/rules/raven-newlang.md", 10)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit) as ctx:
+            self.module.validate_context_budget()
+        self.assertIn("newlang", str(ctx.exception))
+
+    def test_aggregate_budget_raises_for_unprofiled_language(self) -> None:
+        _write_words(self.root / "newlang/.claude/rules/raven-newlang.md", 10)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit) as ctx:
+            self.module.validate_aggregate_budget()
+        self.assertIn("newlang", str(ctx.exception))
+
+    def test_context_budget_covers_all_real_template_languages(self) -> None:
+        # Runs against the real repo (no REPO_ROOT monkeypatch): if go, lua,
+        # or dotfiles ever drop out of THRESHOLDS again, the discovery guard
+        # raises instead of silently passing.
+        module = load_script_module("self_check_real_repo", SELF_CHECK)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            module.validate_context_budget()
+        self.assertIn("context budget ok", buf.getvalue())
+
+    def test_aggregate_budget_covers_all_real_template_languages(self) -> None:
+        module = load_script_module("self_check_real_repo", SELF_CHECK)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            module.validate_aggregate_budget()
+        self.assertIn("aggregate context budget ok", buf.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
