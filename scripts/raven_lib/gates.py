@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
@@ -58,5 +59,11 @@ def gate_spec_for(template: str) -> GateSpec | None:
 
 
 def recipe_present(justfile_text: str, recipe: str) -> bool:
-    """True when the justfile declares a top-level recipe with this name."""
-    return any(line.rstrip().startswith(f"{recipe}:") for line in justfile_text.splitlines())
+    """True when the justfile declares a top-level recipe with this name.
+
+    Tolerant of just's declaration syntax: an optional quiet ``@`` prefix and
+    optional parameters/dependencies between the name and the colon. Excludes
+    ``:=`` assignments, which otherwise startswith-match a same-named recipe.
+    """
+    pattern = re.compile(rf"^\s*@?{re.escape(recipe)}(?:\s+[^:=]*)?:(?!=)")
+    return any(pattern.match(line) for line in justfile_text.splitlines())

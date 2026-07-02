@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from raven_lib.gates import GateSpec, gate_spec_for, load_gate_specs
+from raven_lib.gates import GateSpec, gate_spec_for, load_gate_specs, recipe_present
 
 
 class GatesTests(unittest.TestCase):
@@ -119,6 +119,38 @@ class GatesTests(unittest.TestCase):
 
     def test_unknown_template_returns_none(self):
         self.assertIsNone(gate_spec_for("cobol"))
+
+
+class RecipePresentTests(unittest.TestCase):
+    def test_matches_plain_recipe(self):
+        self.assertTrue(recipe_present("test:\n    pytest\n", "test"))
+
+    def test_matches_recipe_with_dependencies(self):
+        self.assertTrue(recipe_present("check: lint test\n", "check"))
+
+    def test_matches_parameterized_recipe(self):
+        # Issue #85 — `test *ARGS:` was missed by the old startswith("test:") check.
+        self.assertTrue(recipe_present("test *ARGS:\n    pytest {{ARGS}}\n", "test"))
+
+    def test_matches_quiet_recipe(self):
+        # Issue #85 — `@check:` was missed by the old startswith("check:") check.
+        self.assertTrue(recipe_present("@check:\n    just lint\n", "check"))
+
+    def test_matches_quiet_parameterized_recipe(self):
+        self.assertTrue(recipe_present("@test *ARGS:\n    pytest {{ARGS}}\n", "test"))
+
+    def test_excludes_colon_equals_assignment(self):
+        # Issue #85 — `test:="x"` false-positive matched startswith("test:").
+        self.assertFalse(recipe_present('test:="x"\n', "test"))
+
+    def test_excludes_colon_equals_assignment_with_space(self):
+        self.assertFalse(recipe_present('test := "x"\n', "test"))
+
+    def test_excludes_prefixed_recipe_name(self):
+        self.assertFalse(recipe_present("test-unit:\n    pytest\n", "test"))
+
+    def test_missing_recipe_returns_false(self):
+        self.assertFalse(recipe_present("lint:\n    ruff check .\n", "test"))
 
 
 if __name__ == "__main__":
