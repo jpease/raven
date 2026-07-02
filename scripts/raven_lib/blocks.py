@@ -282,6 +282,39 @@ def guided_merge_instructions(
     )
 
 
+def _existing_ignore_patterns(text: str) -> set[str]:
+    """Effective ignore patterns from .gitignore text.
+
+    Compares by exact pattern, not substring, so a comment or a longer path
+    that merely contains an entry does not count as the entry (see #43).
+    """
+    patterns = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        patterns.add(line)
+    return patterns
+
+
+def _ensure_merge_dir_gitignored(destination: Path) -> None:
+    """Ignore MERGE_DIR in the destination's .gitignore.
+
+    Guided-merge scratch artifacts are transient review material, not
+    something meant to be committed. Without this, a broad `git add` run
+    before `raven accept` picks them up as ordinary untracked files.
+    """
+    entry = f"{MERGE_DIR.as_posix()}/"
+    gitignore = destination / ".gitignore"
+    existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+    if entry in _existing_ignore_patterns(existing):
+        return
+    prefix = "" if not existing or existing.endswith("\n") else "\n"
+    block = f"{prefix}\n# Raven guided-merge scratch artifacts\n{entry}\n"
+    with gitignore.open("a", encoding="utf-8") as f:
+        f.write(block)
+
+
 def write_guided_merge_artifacts(
     destination: Path, entries: dict[str, TemplateEntry], paths: list[str]
 ) -> list[str]:
@@ -340,6 +373,8 @@ def write_guided_merge_artifacts(
             written.append(patch_rel)
         if diff_rel:
             written.append(diff_rel)
+    if written:
+        _ensure_merge_dir_gitignored(destination)
     return written
 
 

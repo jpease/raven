@@ -127,6 +127,83 @@ class GuidedMergeTests(RavenTestCase):
             (self.destination / ".raven" / "merge" / ".codex" / "config.toml.diff").is_file()
         )
 
+    def test_write_guided_merge_artifacts_gitignores_merge_dir(self):
+        (self.destination / "AGENTS.md").write_text("# Existing\n", encoding="utf-8")
+        entries = raven.entries_for_destination(
+            self.template,
+            self.excludes,
+            raven.load_config(self.destination),
+            self.destination,
+        )
+
+        raven.write_guided_merge_artifacts(self.destination, entries, ["AGENTS.md"])
+
+        gitignore = (self.destination / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn(".raven/merge/", gitignore.splitlines())
+
+    def test_write_guided_merge_artifacts_appends_to_existing_gitignore(self):
+        (self.destination / ".gitignore").write_text("DerivedData/\n", encoding="utf-8")
+        (self.destination / "AGENTS.md").write_text("# Existing\n", encoding="utf-8")
+        entries = raven.entries_for_destination(
+            self.template,
+            self.excludes,
+            raven.load_config(self.destination),
+            self.destination,
+        )
+
+        raven.write_guided_merge_artifacts(self.destination, entries, ["AGENTS.md"])
+
+        gitignore_lines = (self.destination / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertIn("DerivedData/", gitignore_lines)
+        self.assertIn(".raven/merge/", gitignore_lines)
+
+    def test_write_guided_merge_artifacts_does_not_duplicate_gitignore_entry(self):
+        (self.destination / "AGENTS.md").write_text("# Existing\n", encoding="utf-8")
+        entries = raven.entries_for_destination(
+            self.template,
+            self.excludes,
+            raven.load_config(self.destination),
+            self.destination,
+        )
+
+        raven.write_guided_merge_artifacts(self.destination, entries, ["AGENTS.md"])
+        raven.write_guided_merge_artifacts(self.destination, entries, ["AGENTS.md"])
+
+        gitignore_lines = (self.destination / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(gitignore_lines.count(".raven/merge/"), 1)
+
+    def test_write_guided_merge_artifacts_comment_does_not_suppress_real_rule(self):
+        # Regression for the same class of bug fixed under #43 for session state:
+        # a comment mentioning the path must not be treated as the ignore rule.
+        (self.destination / ".gitignore").write_text(
+            "# Example only: .raven/merge/\n", encoding="utf-8"
+        )
+        (self.destination / "AGENTS.md").write_text("# Existing\n", encoding="utf-8")
+        entries = raven.entries_for_destination(
+            self.template,
+            self.excludes,
+            raven.load_config(self.destination),
+            self.destination,
+        )
+
+        raven.write_guided_merge_artifacts(self.destination, entries, ["AGENTS.md"])
+
+        gitignore_lines = (self.destination / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertIn(".raven/merge/", gitignore_lines)
+
+    def test_write_guided_merge_artifacts_no_conflicts_leaves_gitignore_untouched(self):
+        entries = raven.entries_for_destination(
+            self.template,
+            self.excludes,
+            raven.load_config(self.destination),
+            self.destination,
+        )
+
+        written = raven.write_guided_merge_artifacts(self.destination, entries, [])
+
+        self.assertEqual(written, [])
+        self.assertFalse((self.destination / ".gitignore").exists())
+
     def test_unified_diff_text_shows_local_and_template(self):
         diff = raven.unified_diff_text("x.toml", "old = 1\n", "new = 2\n")
 
