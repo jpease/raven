@@ -224,7 +224,12 @@ _FRESHNESS_REQUIRED = {
 
 
 def warn_stale_docs() -> None:
-    """Non-fatal: warn if third-party setup docs are missing or stale freshness markers."""
+    """Warn if third-party setup docs are missing or stale freshness markers.
+
+    Fatal when RAVEN_SELF_CHECK_STRICT_FRESHNESS=1 (set by the scheduled CI
+    run), so the weekly cron actually fails instead of logging a warning
+    inside an otherwise-green run nobody watches.
+    """
     docs_dir = REPO_ROOT / "common" / ".claude" / "docs"
     today = datetime.date.today()
     warnings: list[str] = []
@@ -247,12 +252,19 @@ def warn_stale_docs() -> None:
         elif doc.name in _FRESHNESS_REQUIRED:
             warnings.append(f"  MISSING: {doc.name} — no 'Last verified:' marker found")
 
-    if warnings:
-        print("==> freshness warnings (non-fatal)")
-        for w in warnings:
-            print(w)
-    else:
+    if not warnings:
         print("==> freshness check ok")
+        return
+
+    strict = os.environ.get("RAVEN_SELF_CHECK_STRICT_FRESHNESS") == "1"
+    print(f"==> freshness warnings ({'fatal' if strict else 'non-fatal'})")
+    for w in warnings:
+        print(w)
+    if strict:
+        raise SystemExit(
+            "Stale or missing freshness markers in common/.claude/docs "
+            "(RAVEN_SELF_CHECK_STRICT_FRESHNESS=1)."
+        )
 
 
 def main() -> int:
