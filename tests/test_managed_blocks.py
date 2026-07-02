@@ -234,6 +234,36 @@ class TokenBoundaryTests(unittest.TestCase):
         state = raven.block_managed_state(entry, target_path)
         self.assertEqual(state, "modified")
 
+    def test_non_utf8_destination_file_does_not_crash_block_managed_state(self):
+        source_path = Path(tempfile.mkdtemp()) / "AGENTS.md"
+        source_path.write_text("# RAVEN guidance\n", encoding="utf-8")
+        entry = raven.TemplateEntry("AGENTS.md", source_path)
+
+        target_path = source_path.parent / "dest" / "AGENTS.md"
+        target_path.parent.mkdir()
+        target_path.write_bytes(b"# Local guidance\n\xff\xfe binary byte\n")
+
+        state = raven.block_managed_state(entry, target_path)
+        self.assertIsNone(state)
+
+
+class ClassifyNonUtf8Tests(RavenTestCase):
+    def test_non_utf8_agents_md_is_classified_instead_of_crashing(self):
+        source = self.destination / "source" / "AGENTS.md"
+        source.parent.mkdir()
+        source.write_text("# RAVEN guidance\n", encoding="utf-8")
+        target = self.destination / "AGENTS.md"
+        target.write_bytes(b"# Local guidance\n\xff\xfe binary byte\n")
+
+        classification = raven.classify(
+            self.template,
+            self.destination,
+            self.excludes,
+            entries={"AGENTS.md": raven.TemplateEntry("AGENTS.md", source)},
+        )
+
+        self.assertIn("AGENTS.md", classification.unknown_existing)
+
 
 class SymlinkSafetyTests(RavenTestCase):
     """Issue #27 — writes must not follow destination symlinks outside the tree."""

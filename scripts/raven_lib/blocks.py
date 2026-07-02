@@ -102,7 +102,14 @@ def block_managed_state(entry: TemplateEntry, target: Path) -> BlockState | None
         or not target.is_file()
     ):
         return None
-    block = find_raven_block(target.read_text(encoding="utf-8"))
+    try:
+        target_text = target.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        # An unreadable or non-UTF-8 destination file has no managed block we can
+        # detect. Report "no block state" rather than crash; classify() falls back
+        # to its hash-based/unknown_existing path for a file like this.
+        return None
+    block = find_raven_block(target_text)
     if block is None:
         return None
     source_text = normalized_block_content(entry.source.read_text(encoding="utf-8"))
@@ -295,8 +302,15 @@ def write_guided_merge_artifacts(
         patch_rel: str | None = None
         diff_rel: str | None = None
         replaces_block = False
+        existing_text: str | None = None
         if not entry.copy_as_symlink and target.is_file():
-            existing_text = target.read_text(encoding="utf-8")
+            try:
+                existing_text = target.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                # Unreadable or non-UTF-8 existing file: fall through to the
+                # manual-merge-only instructions below rather than crash mid-apply.
+                existing_text = None
+        if existing_text is not None:
             # Instruction files use RAVEN managed blocks, so a managed-block patch
             # merges cleanly. Any other file gets a review-only diff instead --
             # appending a managed block would corrupt arbitrary JSON/TOML/etc.
