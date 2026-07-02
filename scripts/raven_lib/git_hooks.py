@@ -26,6 +26,17 @@ def git_hooks_dir(destination: Path) -> Path | None:
     worktrees, so callers inspect the same path Git itself uses. Returns ``None``
     when ``destination`` is not a usable Git repository.
     """
+    hooks_dir, _ = _resolve_hooks_dir(destination)
+    return hooks_dir
+
+
+def _resolve_hooks_dir(destination: Path) -> tuple[Path | None, bool]:
+    """Resolve the hooks dir and whether ``core.hooksPath`` escapes the repo.
+
+    The second element is True only when an explicit ``core.hooksPath`` resolves
+    outside the repo's toplevel (e.g. a user-global hooks dir) -- callers use this
+    to avoid writing Raven's hooks where they would affect other repositories.
+    """
     git_env = _clean_git_env()
     try:
         # core.hooksPath overrides the default hooks location entirely.
@@ -39,17 +50,29 @@ def git_hooks_dir(destination: Path) -> Path | None:
         if result.returncode == 0:
             hooks_path = result.stdout.strip()
             if hooks_path:
-                p = Path(hooks_path)
+                # Git tilde-expands path-type config values; do the same, since an
+                # unexpanded "~/..." is relative in Python's eyes and would
+                # otherwise be joined onto the repo toplevel instead.
+                p = Path(hooks_path).expanduser()
+                toplevel_result = subprocess.run(
+                    ["git", "-C", str(destination), "rev-parse", "--show-toplevel"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    env=git_env,
+                )
+                toplevel = (
+                    Path(toplevel_result.stdout.strip()).resolve()
+                    if toplevel_result.returncode == 0
+                    else None
+                )
                 if not p.is_absolute():
-                    toplevel = subprocess.run(
-                        ["git", "-C", str(destination), "rev-parse", "--show-toplevel"],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                        env=git_env,
-                    ).stdout.strip()
-                    p = Path(toplevel) / p
-                return p.resolve()
+                    if toplevel is None:
+                        return None, False
+                    p = toplevel / p
+                resolved = p.resolve()
+                outside_repo = toplevel is not None and not resolved.is_relative_to(toplevel)
+                return resolved, outside_repo
 
         # Fall back to the common git directory, which is shared across linked worktrees.
         result = subprocess.run(
@@ -61,26 +84,35 @@ def git_hooks_dir(destination: Path) -> Path | None:
         )
         git_common_dir = result.stdout.strip()
         hooks_dir = (destination / git_common_dir / "hooks").resolve()
-        return hooks_dir if hooks_dir.parent.is_dir() else None
+        return (hooks_dir, False) if hooks_dir.parent.is_dir() else (None, False)
     except subprocess.CalledProcessError:
-        return None
+        return None, False
 
 
 def _hooks_dir_manager(hooks_dir: Path) -> str | None:
     """Name of the hook manager that owns ``hooks_dir``, or None.
 
-    Husky sets ``core.hooksPath`` to ``.husky/_``; that directory is husky's, not
-    Raven's. This is the single seam where other managers can be recognized.
+    Husky v9+ sets ``core.hooksPath`` to ``.husky/_``; husky v5-v8 (``husky
+    install``) sets it to ``.husky`` directly. Either way that directory is
+    husky's, not Raven's. This is the single seam where other managers can be
+    recognized.
     """
     if hooks_dir.name == "_" and hooks_dir.parent.name == ".husky":
+        return "husky"
+    if hooks_dir.name == ".husky":
         return "husky"
     return None
 
 
 def detect_hook_manager(destination: Path) -> str | None:
     """The hook manager owning ``destination``'s effective hooks dir, or None."""
-    hooks_dir = git_hooks_dir(destination)
-    return _hooks_dir_manager(hooks_dir) if hooks_dir is not None else None
+    hooks_dir, outside_repo = _resolve_hooks_dir(destination)
+    if hooks_dir is None:
+        return None
+    manager = _hooks_dir_manager(hooks_dir)
+    if manager is not None:
+        return manager
+    return "external-hooks-path" if outside_repo else None
 
 
 def hook_manager_guidance(manager: str) -> str:
@@ -92,21 +124,38 @@ def hook_manager_guidance(manager: str) -> str:
             "to .husky/pre-commit and `just check` to .husky/pre-push. Your hooks "
             "were left untouched."
         )
+    if manager == "external-hooks-path":
+        return (
+            "core.hooksPath points outside this repository (a shared/global hooks "
+            "directory). Raven does not install its own git hooks there, since "
+            "that would affect every repository using that hooksPath. To run "
+            "Raven's gate, add `just check-fast` and `just check` to your hooks "
+            "in that directory."
+        )
     return ""
 
 
 def install_git_hooks(destination: Path) -> list[str]:
-    """Symlink .raven/git-hooks/* into .git/hooks/. Returns installed hook names."""
+    """Symlink .raven/git-hooks/* into the effective git hooks dir. Returns installed hook names."""
     git_hooks_src = destination / ".raven" / "git-hooks"
     if not git_hooks_src.is_dir():
         return []
-    hooks_dir = git_hooks_dir(destination)
+    hooks_dir, outside_repo = _resolve_hooks_dir(destination)
     if hooks_dir is None:
         return []
-    if _hooks_dir_manager(hooks_dir) is not None:
-        # A hook manager (e.g. husky) owns this directory; do not symlink into it.
+    if outside_repo or _hooks_dir_manager(hooks_dir) is not None:
+        # A hook manager (e.g. husky) owns this directory, or it lives outside
+        # the repo (a user-global hooksPath); do not symlink into it.
         return []
-    hooks_dir.mkdir(exist_ok=True)
+    try:
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(
+            f"warning: could not create hooks directory {hooks_dir}: {exc}. "
+            "Git hooks were not installed.",
+            file=sys.stderr,
+        )
+        return []
     installed: list[str] = []
     for hook_src in sorted(git_hooks_src.iterdir()):
         if hook_src.name.startswith(".") or not hook_src.is_file():

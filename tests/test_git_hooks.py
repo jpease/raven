@@ -635,6 +635,122 @@ class GitHookInstallerTests(unittest.TestCase):
         self.assertIn(".husky/pre-commit", text)
         self.assertIn(".husky/pre-push", text)
 
+    def _set_husky_v5_v8(self):
+        # husky install (v5-v8) sets core.hooksPath directly to .husky, not
+        # .husky/_ (that wrapper subdirectory is a v9+ convention).
+        (self.destination / ".husky").mkdir(parents=True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".husky"],
+            capture_output=True,
+            check=True,
+        )
+
+    def test_detect_hook_manager_identifies_husky_v5_v8_direct_layout(self):
+        self._set_husky_v5_v8()
+        self.assertEqual(raven.detect_hook_manager(self.destination), "husky")
+
+    def test_install_skips_and_writes_nothing_under_husky_v5_v8_direct_layout(self):
+        self._write_hook("pre-push", "#!/bin/sh\njust check\n")
+        self._set_husky_v5_v8()
+
+        installed = raven.install_git_hooks(self.destination)
+
+        self.assertEqual(installed, [])
+        self.assertFalse((self.destination / ".husky" / "pre-push").exists())
+
+    def test_install_creates_missing_nested_parent_for_in_repo_hooks_path(self):
+        # An in-repo core.hooksPath whose parent directories do not exist yet
+        # must not crash -- Raven should create them, same as it would for the
+        # top-level hooks dir.
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.destination),
+                "config",
+                "core.hooksPath",
+                "nested/missing/hooks",
+            ],
+            capture_output=True,
+            check=True,
+        )
+        self._write_hook("commit-msg")
+
+        installed = raven.install_git_hooks(self.destination)
+
+        self.assertEqual(installed, ["commit-msg"])
+        link = self.destination / "nested" / "missing" / "hooks" / "commit-msg"
+        self.assertTrue(link.is_symlink())
+
+    def test_install_skips_hooks_path_outside_repo(self):
+        # A user-global core.hooksPath (e.g. set via --global) must not be
+        # written into -- doing so would affect every repo using that path.
+        global_hooks = self.destination.parent / "global-githooks"
+        global_hooks.mkdir()
+        self.addCleanup(shutil.rmtree, global_hooks, True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", str(global_hooks)],
+            capture_output=True,
+            check=True,
+        )
+        self._write_hook("commit-msg")
+
+        installed = raven.install_git_hooks(self.destination)
+
+        self.assertEqual(installed, [])
+        self.assertFalse((global_hooks / "commit-msg").exists())
+
+    def test_install_does_not_crash_on_missing_global_hooks_path_parent(self):
+        # Reproduces the reported crash: an absolute core.hooksPath whose
+        # parent does not exist on disk must degrade gracefully, not traceback.
+        missing_global_hooks = self.destination.parent / "does-not-exist-yet" / "githooks"
+        self.addCleanup(shutil.rmtree, missing_global_hooks.parent, True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.destination),
+                "config",
+                "core.hooksPath",
+                str(missing_global_hooks),
+            ],
+            capture_output=True,
+            check=True,
+        )
+        self._write_hook("commit-msg")
+
+        installed = raven.install_git_hooks(self.destination)
+
+        self.assertEqual(installed, [])
+        self.assertFalse(missing_global_hooks.exists())
+
+    def test_detect_hook_manager_identifies_external_hooks_path(self):
+        global_hooks = self.destination.parent / "global-githooks-detect"
+        global_hooks.mkdir()
+        self.addCleanup(shutil.rmtree, global_hooks, True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", str(global_hooks)],
+            capture_output=True,
+            check=True,
+        )
+
+        self.assertEqual(raven.detect_hook_manager(self.destination), "external-hooks-path")
+
+    def test_hook_manager_guidance_external_hooks_path_names_gate_commands(self):
+        text = raven.hook_manager_guidance("external-hooks-path")
+        self.assertIn("just check-fast", text)
+        self.assertIn("just check", text)
+
+    def test_git_hooks_dir_reports_actual_custom_path(self):
+        custom_hooks = self.destination / ".githooks"
+        custom_hooks.mkdir()
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".githooks"],
+            check=True,
+        )
+
+        self.assertEqual(raven.git_hooks_dir(self.destination), custom_hooks.resolve())
+
     def test_regular_file_warning_points_to_wiring(self):
         self._write_hook("pre-commit")
         existing = self.git_hooks_dir / "pre-commit"
