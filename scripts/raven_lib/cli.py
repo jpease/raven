@@ -70,10 +70,17 @@ def select_language_interactively() -> str:
     while True:
         try:
             raw = input("Select language: ").strip()
+        except EOFError:
+            print(
+                "error: language required; pass it as an argument (e.g. raven install python)",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        try:
             idx = int(raw) - 1
             if 0 <= idx < len(languages):
                 return languages[idx]
-        except (ValueError, EOFError):
+        except ValueError:
             pass
         print(f"  Enter a number between 1 and {len(languages)}.")
 
@@ -82,8 +89,7 @@ def _parse_install_language(items: list[str]) -> tuple[str | None, list[str]]:
     if not items:
         return None, []
     first = items[0]
-    candidate = REPO_ROOT / first
-    if candidate.is_dir() and first not in NON_TEMPLATE_DIRS and not first.startswith("."):
+    if first in list_language_templates():
         return first, items[1:]
     return None, items
 
@@ -287,8 +293,7 @@ def _create_config(
     destination: Path, language: str, platform: str | None, include_readme: bool = False
 ) -> int:
     """Write a fresh .raven/config.toml for a known-missing destination config."""
-    template = REPO_ROOT / language
-    if not template.is_dir():
+    if language not in list_language_templates():
         print(f"error: unknown language template: {language}", file=sys.stderr)
         return 2
     path = destination / CONFIG_PATH
@@ -337,6 +342,14 @@ def cmd_install(args: argparse.Namespace) -> int:
     if config.exists:
         template_name = _config_template_or_report(destination, config)
         if template_name is None:
+            return 2
+        if language_arg is not None and language_arg != template_name:
+            print(
+                f"error: {destination / CONFIG_PATH} already configures template "
+                f"'{template_name}'; '{language_arg}' conflicts with it. Edit or remove "
+                "the config to switch languages.",
+                file=sys.stderr,
+            )
             return 2
         include_readme = args.include_readme or config.include_readme
 

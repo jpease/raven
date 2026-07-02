@@ -4,6 +4,8 @@ Covers:
 - #30 reject malformed config instead of falling back to the default template
 - #31 validate install requests before writing any configuration
 - #32 preflight destination path collisions before copying files
+- #68 EOF at the interactive prompt, case-variant template names, and
+  conflicting explicit languages
 """
 
 import argparse
@@ -12,6 +14,7 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from helpers import RavenTestCase, raven
 from raven_lib.findings import Severity
@@ -316,6 +319,58 @@ class UnreadableConfigTests(RavenTestCase):
         self._write_bytes(b"\xff\xfe\x00")
         findings = raven.build_assess_findings(self.destination, run=False)
         self.assertTrue(any(f.severity is Severity.ERROR for f in findings))
+
+
+# ---------------------------------------------------------------------------
+# #68 — EOF, case-variant templates, and conflicting explicit languages
+# ---------------------------------------------------------------------------
+class LanguageHandlingTests(RavenTestCase):
+    def test_select_language_eof_aborts_instead_of_looping(self):
+        # Ctrl-D at the prompt must abort like the non-tty path, not loop
+        # forever re-printing the range prompt on every EOFError.
+        with (
+            mock.patch("sys.stdin.isatty", return_value=True),
+            mock.patch("builtins.input", side_effect=EOFError),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()) as err,
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            raven.select_language_interactively()
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("language required", err.getvalue())
+
+    def test_init_rejects_case_variant_language_name(self):
+        # "Python" must not silently resolve to the "python" template
+        # directory via a case-insensitive filesystem lookup.
+        err = io.StringIO()
+        ns = argparse.Namespace(destination=str(self.destination), language="Python")
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_init(ns)
+        self.assertEqual(rc, 2)
+        self.assertIn("unknown language template", err.getvalue())
+        self.assertFalse((self.destination / ".raven" / "config.toml").exists())
+
+    def test_install_rejects_case_variant_language_name(self):
+        err = io.StringIO()
+        with (
+            contextlib.redirect_stderr(err),
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaises(SystemExit),
+        ):
+            raven.cmd_install(_install_ns(self.destination, language="Python"))
+        self.assertFalse((self.destination / ".raven" / "config.toml").exists())
+
+    def test_install_rejects_conflicting_explicit_language(self):
+        _write_config(self.destination, raven.default_config_text("python", False, "none"))
+        before = (self.destination / ".raven" / "config.toml").read_bytes()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_install(_install_ns(self.destination, language="go"))
+        self.assertEqual(rc, 2)
+        self.assertIn("python", err.getvalue())
+        self.assertIn("go", err.getvalue())
+        # The configured template is untouched by the conflicting request.
+        self.assertEqual((self.destination / ".raven" / "config.toml").read_bytes(), before)
 
 
 if __name__ == "__main__":
