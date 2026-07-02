@@ -124,6 +124,27 @@ class CommitMsgHookTests(unittest.TestCase):
         self.assertIn("[git_hooks]", config_text)
         self.assertIn("strip_ai_attribution = true", config_text)
 
+    def test_non_utf8_message_does_not_crash(self):
+        raw = b"fix: bug \xff\xfe invalid utf8\n"
+        self.msg_file.write_bytes(raw)
+        result = subprocess.run(
+            [sys.executable, str(self.HOOK_PATH), str(self.msg_file)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.msg_file.read_bytes(), raw)
+
+    def test_no_bogus_removed_message_for_trailing_blank_only(self):
+        self.msg_file.write_text("fix: x\n\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(self.HOOK_PATH), str(self.msg_file)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("removed AI attribution", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
