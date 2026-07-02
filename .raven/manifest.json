@@ -322,9 +322,9 @@
       "sourceSha256": "f701fba60d9dba6059761c012efebd692be032fe08d1b61ba78e089bf8e0b0f7"
     },
     ".raven/git-hooks/pre-push": {
-      "installedSha256": "57138755f46951b6b0929ebe733c092f56e61e39dc0c5a3bb9e56c502b5c4cc0",
+      "installedSha256": "2439730cbe456d6cca004cb466d2be02791327ac977a6a4bcef9fbab1db45ade",
       "kind": "file",
-      "sourceSha256": "57138755f46951b6b0929ebe733c092f56e61e39dc0c5a3bb9e56c502b5c4cc0"
+      "sourceSha256": "2439730cbe456d6cca004cb466d2be02791327ac977a6a4bcef9fbab1db45ade"
     },
     ".ruff_cache/.gitignore": {
       "installedSha256": "9e3a60f1e6ec4ae60215c11d54b171392745ec25e9dded433d5bd921363af316",
