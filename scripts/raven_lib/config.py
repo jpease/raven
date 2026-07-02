@@ -98,6 +98,29 @@ def _split_array(inner: str) -> list[str]:
     return parts
 
 
+def _unquoted_contains(line: str, target: str) -> bool:
+    """Whether `target` appears in `line` outside single/double quotes."""
+    in_double = False
+    in_single = False
+    escaped = False
+    for char in line:
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and in_double:
+            escaped = True
+            continue
+        if char == "'" and not in_double:
+            in_single = not in_single
+            continue
+        if char == '"' and not in_single:
+            in_double = not in_double
+            continue
+        if char == target and not in_double and not in_single:
+            return True
+    return False
+
+
 def parse_value(value: str) -> ConfigValue:
     value = value.strip()
     if value in {"true", "false"}:
@@ -138,11 +161,11 @@ def parse_simple_toml(text: str) -> dict[str, object]:
             continue
         if pending:
             pending = f"{pending} {line}"
-            if "]" in line:
+            if _unquoted_contains(line, "]"):
                 lines.append(pending)
                 pending = ""
             continue
-        if "=" in line and "[" in line and "]" not in line:
+        if "=" in line and _unquoted_contains(line, "[") and not _unquoted_contains(line, "]"):
             pending = line
             continue
         lines.append(line)

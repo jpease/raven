@@ -95,6 +95,22 @@ class ParseSimpleTomlTests(unittest.TestCase):
         with self.assertRaises(raven.ConfigError):
             raven.parse_simple_toml('[exclude]\npaths = ["foo"\n')
 
+    def test_multiline_array_with_bracket_glob_in_quoted_element(self):
+        # Issue #66 — a `]` inside a quoted fnmatch pattern must not terminate
+        # the array continuation early.
+        result = raven.parse_simple_toml(
+            '[exclude]\npaths = [\n  "src/[ab]*.py",\n  "docs/other.md"\n]\n'
+        )
+        paths = result["exclude"]["paths"]  # type: ignore[index]
+        self.assertEqual(paths, ["src/[ab]*.py", "docs/other.md"])
+
+    def test_single_line_bracket_in_quoted_value_not_misdetected_as_array(self):
+        # Issue #66 — a quoted value containing `[` but no `]` must not be
+        # treated as the start of a multiline array, swallowing later keys.
+        result = raven.parse_simple_toml('note = "see [1"\ntemplate = "python"\n')
+        self.assertEqual(result["note"], "see [1")
+        self.assertEqual(result["template"], "python")
+
 
 class PathWithinTests(unittest.TestCase):
     def test_matches_exact_and_descendants_only(self):
