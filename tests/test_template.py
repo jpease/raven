@@ -91,6 +91,40 @@ tool_configs = false
         self.assertNotIn("pyproject.toml", entries)
         self.assertIn("justfile", entries)
 
+    def test_claude_skills_remap_honors_per_skill_excludes(self):
+        skills_dir = self.destination / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "keep-me.txt").write_text("placeholder\n", encoding="utf-8")
+
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir()
+        config_path.write_text(
+            """
+schema = 1
+template = "python"
+
+[exclude]
+paths = [".claude/skills/raven-plan/**"]
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        config = raven.load_config(self.destination)
+        entries = raven.entries_for_destination(
+            self.template, self.excludes, config, self.destination
+        )
+
+        self.assertFalse(
+            any(relative.startswith(".claude/skills/raven-plan/") for relative in entries)
+        )
+        self.assertTrue(
+            any(relative.startswith(".agents/skills/raven-plan/") for relative in entries)
+        )
+        self.assertTrue(
+            any(relative.startswith(".claude/skills/raven-commit/") for relative in entries)
+        )
+
     def test_all_language_templates_install_and_upgrade_cleanly(self):
         languages = raven.list_language_templates()
 
