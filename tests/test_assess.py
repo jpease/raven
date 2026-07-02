@@ -274,6 +274,35 @@ class AssessHookPathTests(RavenTestCase):
         self.assertEqual(finding.severity, Severity.WARN)
         self.assertIn("not installed", finding.title)
 
+    def test_commented_out_recipe_is_not_graded_as_wired(self):
+        # #72 — a disabled `# just check` line is not executable content, so it
+        # must not grade as the gate being wired (Severity.OK) even though
+        # `exit 0` keeps the hook non-trivial. Falls through to the generic
+        # non-canonical bucket, same as any other hook whose content assess
+        # cannot otherwise recognize as the expected recipe.
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-push").write_text(
+            "#!/bin/sh\n# just check   (disabled while debugging)\nexit 0\n",
+            encoding="utf-8",
+        )
+        finding = self._hook_finding("pre-push")
+        self.assertEqual(finding.severity, Severity.INFO)
+        self.assertNotIn("runs `just check`", finding.detail)
+
+    def test_echoed_recipe_reference_is_not_graded_as_wired(self):
+        # #72 — a recipe name inside an echoed string is never actually invoked,
+        # so it must not grade as the gate being wired (Severity.OK).
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-push").write_text(
+            '#!/bin/sh\necho "run just check manually"\nexit 0\n',
+            encoding="utf-8",
+        )
+        finding = self._hook_finding("pre-push")
+        self.assertEqual(finding.severity, Severity.INFO)
+        self.assertNotIn("runs `just check`", finding.detail)
+
 
 class AssessFitTests(RavenTestCase):
     def test_matching_signal_is_ok(self):

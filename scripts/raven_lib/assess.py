@@ -15,6 +15,33 @@ _FIT = "Template fit"
 _GATES = "Gate compliance"
 
 
+def _strip_shell_noise(text: str) -> str:
+    """Remove comments and quoted string contents from shell hook text.
+
+    Only unquoted, uncommented tokens can actually execute, so a commented-out
+    ``# just check`` or an echoed ``"run just check manually"`` must not read as
+    the gate being wired (#72). This is grading, not parsing, so the quote/comment
+    tracking is intentionally crude: it does not handle shell escapes.
+    """
+    out_lines = []
+    for line in text.splitlines():
+        kept = []
+        quote = None
+        for char in line:
+            if quote:
+                if char == quote:
+                    quote = None
+                continue
+            if char in "'\"":
+                quote = char
+                continue
+            if char == "#":
+                break
+            kept.append(char)
+        out_lines.append("".join(kept))
+    return "\n".join(out_lines)
+
+
 def _invokes_just_recipe(text: str, recipe: str) -> bool:
     """True when ``text`` runs ``just <recipe>`` as a whole token.
 
@@ -22,7 +49,8 @@ def _invokes_just_recipe(text: str, recipe: str) -> bool:
     (and vice versa), so the pre-push full-gate check is never satisfied by a hook
     that only runs the fast subset.
     """
-    return re.search(rf"\bjust\s+{re.escape(recipe)}(?![\w-])", text) is not None
+    executable = _strip_shell_noise(text)
+    return re.search(rf"\bjust\s+{re.escape(recipe)}(?![\w-])", executable) is not None
 
 
 def resolve_manager_hook(hooks_dir: Path, name: str) -> Path:
