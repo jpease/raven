@@ -88,6 +88,25 @@ class GuidedMergeTests(RavenTestCase):
         self.assertIn(".raven/merge/.mcp.json.diff", instructions)
         self.assertNotIn("patch -p1", instructions)
 
+    def test_guided_merge_artifacts_handle_non_utf8_existing_file(self):
+        (self.destination / ".mcp.json").write_bytes(b'{"local": true}\n\xff\xfe binary byte')
+        entries = raven.entries_for_destination(
+            self.template,
+            self.excludes,
+            raven.load_config(self.destination),
+            self.destination,
+        )
+
+        written = raven.write_guided_merge_artifacts(self.destination, entries, [".mcp.json"])
+
+        self.assertIn(".raven/merge/.mcp.json.raven", written)
+        self.assertIn(".raven/merge/.mcp.json.instructions.md", written)
+        self.assertNotIn(".raven/merge/.mcp.json.diff", written)
+        instructions = (
+            self.destination / ".raven" / "merge" / ".mcp.json.instructions.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("could not generate an automatic text patch", instructions)
+
     def test_guided_merge_artifacts_handle_nested_paths(self):
         (self.destination / ".codex").mkdir()
         (self.destination / ".codex" / "config.toml").write_text("local = true\n", encoding="utf-8")
