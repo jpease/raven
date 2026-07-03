@@ -67,10 +67,10 @@ TOOLS = [
         "commands": [["gitnexus", "--version"]],
         "purpose": "architecture, dependency, call-path, and blast-radius reasoning",
         "install": {
-            "darwin": "official install docs: https://gitnexus.vercel.app/",
-            "linux": "official install docs: https://gitnexus.vercel.app/",
+            "darwin": "official install docs: https://github.com/abhigyanpatwari/GitNexus",
+            "linux": "official install docs: https://github.com/abhigyanpatwari/GitNexus",
             "windows": (
-                "official install docs: https://gitnexus.vercel.app/; "
+                "official install docs: https://github.com/abhigyanpatwari/GitNexus; "
                 "validate native Windows vs WSL for this repo"
             ),
         },
