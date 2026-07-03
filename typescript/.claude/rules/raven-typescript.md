@@ -6,7 +6,7 @@ Use these rules for TypeScript projects, monorepos, Node.js services, React appl
 
 Project-specific `AGENTS.md`, nested `AGENTS.md`, local docs, and existing task-runner commands override this file when they are more specific.
 
-Use `.claude/docs/raven-typescript-quality.md` for detailed TypeScript quality guidance when the task touches type system design, error handling patterns, React architecture, module structure, testing strategy, or dependency policy.
+Use `.claude/docs/raven-typescript-quality.md` for detailed TypeScript quality guidance when the task touches type system design, error handling patterns, React architecture, module structure, async and concurrency, testing strategy, dependency policy, or performance.
 
 ## Setup And Commands
 
@@ -27,8 +27,6 @@ Use `.claude/docs/raven-typescript-quality.md` for detailed TypeScript quality g
 In addition to the guardrails in AGENTS.md, ask before changing:
 
 - Serialization formats, persisted data, or API contracts.
-- Database queries, schema definitions, or migration files.
-- CI/CD workflows, deployment config, or release behavior.
 
 ## TypeScript Safety
 
@@ -45,8 +43,6 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Prefer typed errors or `Result`-like patterns in domain and application code.
 - Preserve error context when wrapping; do not replace useful errors with generic strings.
 
-For full error design, architecture, and async concurrency guidance, see `.claude/docs/raven-typescript-quality.md`.
-
 ## Architecture
 
 - Preserve existing module and package boundaries unless the task is explicitly architectural.
@@ -57,8 +53,6 @@ For full error design, architecture, and async concurrency guidance, see `.claud
 
 - Always handle Promise rejections. Unhandled rejections are errors, not warnings.
 - Do not spawn unbounded parallel async work in server contexts; batch or queue concurrent operations.
-
-For full async and React concurrency guidance, see `.claude/docs/raven-typescript-quality.md`.
 
 ## Testing
 
@@ -71,15 +65,12 @@ For full async and React concurrency guidance, see `.claude/docs/raven-typescrip
 
 ## Dependencies
 
-- Prefer existing dependencies before adding new packages.
 - Resolve peer dependency warnings; track accepted exceptions explicitly.
 - Use `--frozen-lockfile` (or equivalent) in CI to prevent drift.
 
 ## Performance And Benchmarks
 
 - Profile before broad optimization; do not make performance claims from a single local run.
-
-For full performance guidance, see `.claude/docs/raven-typescript-quality.md`.
 
 ## Quality Gates
 

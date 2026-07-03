@@ -6,7 +6,7 @@ Use these rules for Swift, SwiftUI, SwiftData, WatchConnectivity, HealthKit, Clo
 
 Project-specific `AGENTS.md`, nested `AGENTS.md`, and local docs override this file when they are more specific.
 
-Use `.claude/docs/raven-swift-quality.md` for detailed Swift quality guidance when the task touches security, accessibility, localization, privacy, platform behavior, or larger architecture decisions.
+Use `.claude/docs/raven-swift-quality.md` for detailed Swift quality guidance when the task touches security, accessibility, localization, privacy, platform behavior, async/actor isolation, SwiftUI patterns, performance, or larger architecture decisions.
 
 ## Setup And Commands
 
@@ -43,8 +43,6 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Do not pass SwiftData `@Model` objects or `ModelContext` across actor boundaries.
 - Avoid `try!`, unjustified force unwraps, and broad concurrency workarounds.
 
-For full async and actor-isolation guidance, see `.claude/docs/raven-swift-quality.md`.
-
 ## SwiftData
 
 - Add, remove, rename, or change persisted fields only with migration and data-safety reasoning.
@@ -57,8 +55,6 @@ For full async and actor-isolation guidance, see `.claude/docs/raven-swift-quali
 - Keep view code focused on presentation. Move persistence, sync, and service logic into existing service layers.
 - Prefer native controls, SF Symbols, and Apple platform conventions.
 
-For full SwiftUI, accessibility, and localization guidance, see `.claude/docs/raven-swift-quality.md`.
-
 ## Testing
 
 - Prefer Swift Testing for new tests: `@Suite`, `@Test`, `#expect`, and `#require`.
@@ -69,8 +65,6 @@ For full SwiftUI, accessibility, and localization guidance, see `.claude/docs/ra
 ## Performance And Benchmarks
 
 - Profile with Instruments before optimizing; do not make performance claims from a single local run.
-
-For full performance guidance, see `.claude/docs/raven-swift-quality.md`.
 
 ## Quality Gates
 

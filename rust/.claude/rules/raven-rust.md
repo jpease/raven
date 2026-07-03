@@ -6,7 +6,7 @@ Use these rules for Rust crates, workspaces, command-line tools, services, libra
 
 Project-specific `AGENTS.md`, nested `AGENTS.md`, local docs, and existing task-runner commands override this file when they are more specific.
 
-Use `.claude/docs/raven-rust-quality.md` for detailed Rust quality guidance when the task touches public APIs, unsafe code, concurrency, dependency policy, security, benchmarking, or larger architecture decisions.
+Use `.claude/docs/raven-rust-quality.md` for detailed Rust quality guidance when the task touches public APIs, error design, unsafe code, FFI, async and concurrency, dependency policy, security, benchmarking, or larger architecture decisions.
 
 ## Setup And Commands
 
@@ -27,7 +27,6 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 - `unsafe`, FFI, ABI, linking, build scripts, generated bindings, or platform-specific packaging.
 - CI/release workflows, publishing settings, benchmark baselines, or golden/reference outputs.
-- Serialization formats, persisted data, config schemas, or compatibility contracts.
 
 ## Rust Safety
 
@@ -44,8 +43,6 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Preserve error sources and context. Do not replace useful errors with generic strings.
 - Keep recoverable failures as `Result`; reserve panics for impossible internal invariants.
 
-For full error design, unsafe/FFI, and concurrency guidance, see `.claude/docs/raven-rust-quality.md`.
-
 ## Architecture
 
 - Preserve existing crate and module boundaries unless the task is explicitly architectural.
@@ -57,8 +54,6 @@ For full error design, unsafe/FFI, and concurrency guidance, see `.claude/docs/r
 - Do not block async runtimes with synchronous work unless the project pattern permits it.
 - Avoid holding locks across `.await`.
 
-For full async and concurrency guidance, see `.claude/docs/raven-rust-quality.md`.
-
 ## Testing
 
 - Inspect nearby tests and fixtures before adding new patterns.
@@ -68,18 +63,13 @@ For full async and concurrency guidance, see `.claude/docs/raven-rust-quality.md
 
 ## Dependencies
 
-- Prefer the standard library and existing dependencies before adding new crates.
 - Check license compatibility and maintenance status for new dependencies.
 - Treat security audit findings as real risk.
-
-For full dependency and license hygiene, see `.claude/docs/raven-rust-quality.md`.
 
 ## Performance And Benchmarks
 
 - Measure before broad optimization unless the inefficiency is obvious and local.
 - Do not make broad performance claims from a single local run.
-
-For full benchmark guidance, see `.claude/docs/raven-rust-quality.md`.
 
 ## Clippy And Lint Handling
 
