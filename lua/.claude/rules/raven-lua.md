@@ -58,8 +58,6 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - When re-raising, preserve context (include the original message); do not swallow
   errors silently.
 
-For full error-design guidance, see `.claude/docs/raven-lua-quality.md`.
-
 ## Architecture
 
 - Modules should return a table and avoid mutating globals on require.
@@ -67,9 +65,6 @@ For full error-design guidance, see `.claude/docs/raven-lua-quality.md`.
 - Preserve existing module boundaries unless the task is explicitly architectural.
 - Use metatables intentionally; do not add metatable magic where a plain table or
   function is clearer.
-
-For full architecture and metatable guidance, see
-`.claude/docs/raven-lua-quality.md`.
 
 ## Testing
 
@@ -81,11 +76,8 @@ For full architecture and metatable guidance, see
 
 ## Dependencies
 
-- Prefer the standard library and existing dependencies before adding new rocks.
 - Check license compatibility and maintenance status for new `luarocks` packages.
 - Be explicit about the Lua version a dependency supports.
-
-For full dependency and license hygiene, see `.claude/docs/raven-lua-quality.md`.
 
 ## Quality Gates
 

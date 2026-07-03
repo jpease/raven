@@ -6,7 +6,7 @@ Use these rules for Elixir applications, Phoenix projects, Mix libraries, OTP se
 
 Project-specific `AGENTS.md`, nested `AGENTS.md`, local docs, and existing task-runner commands override this file when they are more specific.
 
-Use `.claude/docs/raven-elixir-quality.md` for detailed Elixir quality guidance when the task touches OTP supervision, Ecto migrations, Phoenix/LiveView behavior, security, deployment, testing strategy, or larger architecture decisions.
+Use `.claude/docs/raven-elixir-quality.md` for detailed Elixir quality guidance when the task touches OTP supervision, Ecto migrations and data safety, Phoenix/LiveView behavior, security, deployment, testing strategy, dependency and license hygiene, or larger architecture decisions.
 
 ## Setup And Commands
 
@@ -52,23 +52,17 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Avoid `Process.sleep/1` in tests; prefer monitors, messages, or `assert_receive`.
 - Do not introduce unbounded processes, queues, tasks, or retries without backpressure.
 
-For full OTP design guidance, see `.claude/docs/raven-elixir-quality.md`.
-
 ## Ecto And Persistence
 
 - Treat migrations, constraints, indexes, and data backfills as high-risk durable changes.
 - Do not put server-controlled fields such as `user_id`, `account_id`, or role flags in user-cast parameter lists.
 - Keep query logic in the appropriate context or repository boundary.
 
-For full Ecto and data-safety guidance, see `.claude/docs/raven-elixir-quality.md`.
-
 ## Phoenix, HEEx, And LiveView
 
 - Use HEEx (`~H` or `.html.heex`) for templates; do not introduce legacy `~E`.
 - Add stable DOM IDs to forms, buttons, and interactive elements that tests or LiveView updates need.
 - Do not add inline scripts to templates.
-
-For full Phoenix/LiveView guidance, see `.claude/docs/raven-elixir-quality.md`.
 
 ## Testing
 
@@ -79,10 +73,7 @@ For full Phoenix/LiveView guidance, see `.claude/docs/raven-elixir-quality.md`.
 
 ## Dependencies
 
-- Prefer Elixir/Erlang standard library and existing dependencies before adding new packages.
 - Do not change `mix.lock` unless dependency resolution is required by the task.
-
-For full dependency and license hygiene, see `.claude/docs/raven-elixir-quality.md`.
 
 ## Security
 
@@ -90,8 +81,6 @@ For full dependency and license hygiene, see `.claude/docs/raven-elixir-quality.
 - Verify webhook signatures before processing payloads.
 - Do not log secrets, tokens, magic links, private keys, or payment details.
 - Preserve `config :logger, :filter_parameters` and equivalent filtering behavior.
-
-For full security guidance, see `.claude/docs/raven-elixir-quality.md`.
 
 ## Quality Gates
 

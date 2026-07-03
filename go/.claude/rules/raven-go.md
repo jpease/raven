@@ -6,7 +6,7 @@ Use these rules for Go modules, workspaces, command-line tools, services, librar
 
 Project-specific `AGENTS.md`, nested `AGENTS.md`, local docs, and existing task-runner commands override this file when they are more specific.
 
-Use `.claude/docs/raven-go-quality.md` for detailed Go quality guidance when the task touches public APIs, concurrency, dependency policy, security, benchmarking, or larger architecture decisions.
+Use `.claude/docs/raven-go-quality.md` for detailed Go quality guidance when the task touches public APIs, error design, unsafe/cgo, concurrency, dependency policy, security, benchmarking, or larger architecture decisions.
 
 ## Setup And Commands
 
@@ -26,7 +26,6 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 - cgo, `unsafe`, FFI, ABI, linking, generated bindings, or platform-specific packaging.
 - CI/release workflows, publishing settings, benchmark baselines, or golden/reference outputs.
-- Serialization formats, persisted data, config schemas, or compatibility contracts.
 
 ## Go Safety
 
@@ -42,8 +41,6 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Preserve error causes with `%w` when wrapping.
 - Keep recoverable failures as returned errors; reserve panics for impossible internal invariants.
 
-For full error design, unsafe/cgo, and concurrency guidance, see `.claude/docs/raven-go-quality.md`.
-
 ## Architecture
 
 - Preserve existing module and package boundaries unless the task is explicitly architectural.
@@ -58,8 +55,6 @@ For full error design, unsafe/cgo, and concurrency guidance, see `.claude/docs/r
 - Do not hold locks while performing blocking I/O or calling into unknown code.
 - Run race tests when concurrency behavior changed and the project supports it.
 
-For full concurrency guidance, see `.claude/docs/raven-go-quality.md`.
-
 ## Testing
 
 - Inspect nearby tests and fixtures before adding new patterns.
@@ -69,18 +64,13 @@ For full concurrency guidance, see `.claude/docs/raven-go-quality.md`.
 
 ## Dependencies
 
-- Prefer the standard library and existing dependencies before adding new modules.
 - Check license compatibility and maintenance status for new dependencies.
 - Treat security audit findings as real risk.
-
-For full dependency and license hygiene, see `.claude/docs/raven-go-quality.md`.
 
 ## Performance And Benchmarks
 
 - Measure before broad optimization unless the inefficiency is obvious and local.
 - Do not make broad performance claims from a single local run.
-
-For full benchmark guidance, see `.claude/docs/raven-go-quality.md`.
 
 ## Lint Handling
 
