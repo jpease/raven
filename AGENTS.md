@@ -21,7 +21,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=e8bf222f315fd1e26908178495bac36370e82a15bbd54397856a1ab023a9f3e4 -->
+<!-- RAVEN:BEGIN sha256=a1d637ab15867f22cf780f2b4f1c24cb9f292f5d71e8e1c44d56974227da37d8 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -80,7 +80,7 @@ How to delegate:
 
 Platform notes:
 
-- Claude Code: use the Agent tool with an appropriate subagent type, or a project-defined subagent if one matches the audit.
+- Claude Code: use the Agent tool with an appropriate subagent type, or a project-defined subagent if one matches the audit (Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-test-debugger`, `raven-codebase-cartographer`).
 - Other harnesses: fall back to asking the user to scope the task further, or use any equivalent delegation mechanism the harness provides.
 
 ## Shell Command Policy
@@ -146,7 +146,7 @@ Pause and ask before work that is ambiguous or could create durable harm:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **raven** (2173 symbols, 3952 relationships, 109 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **raven** (2188 symbols, 3981 relationships, 110 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

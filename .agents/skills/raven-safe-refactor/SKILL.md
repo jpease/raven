@@ -32,4 +32,4 @@ description: Use for renames, shared abstraction changes, API changes, moved cod
 
 ## When To Stop
 
-Stop before editing when LSP, GitNexus, text search, or syntax-aware search cannot establish the references, ownership, or blast radius of the refactor. Summarize the missing evidence and delegate per AGENTS.md Delegation guidance, or pause and ask the user if the safe change depends on intent or compatibility decisions.
+Stop before editing when LSP, GitNexus, text search, or syntax-aware search cannot establish the references, ownership, or blast radius of the refactor. Summarize the missing evidence and delegate per AGENTS.md Delegation guidance, or pause and ask the user if the safe change depends on intent or compatibility decisions. For a review pass before a broad refactor, delegate to the `raven-refactor-reviewer` subagent with a scoped brief: the planned change, the references and dependencies found, and the blast-radius question that remains open.
