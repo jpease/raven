@@ -12,6 +12,9 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+# scripts/list_open_issues.py is a symlink to jpease/scripts/list_open_issues.py
+# (shared across repos) -- it is not raven's code to lint/format to raven's style.
+extend-exclude = ["scripts/list_open_issues.py"]
 
 # Raven's own development lint bar is intentionally stricter than the shipped
 # python/ template. pyproject.toml is a starter tool config, so this root file
