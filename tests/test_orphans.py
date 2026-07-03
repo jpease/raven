@@ -7,7 +7,9 @@ from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from raven_lib.orphans import classify_orphans, shipped_relatives
+from raven_lib.constants import KIND_FILE, KIND_SYMLINK
+from raven_lib.models import Fingerprint, ManifestRecord
+from raven_lib.orphans import _unmodified_baseline, classify_orphans, shipped_relatives
 
 
 def _write(path: Path, text: str) -> None:
@@ -157,6 +159,38 @@ class ClassifyOrphansTests(unittest.TestCase):
         self.assertEqual(result.will_remove, [])
 
 
+class UnmodifiedBaselineTests(unittest.TestCase):
+    """Direct-call coverage for the symlink branches of the safety gate.
+
+    These lock in the checks that prevent an orphaned symlink from being
+    auto-removed unless its kind and target still match the recorded baseline.
+    """
+
+    def test_kind_mismatch_is_not_unmodified(self) -> None:
+        sha = "a" * 64
+        record = ManifestRecord(
+            kind=KIND_SYMLINK, installed_sha256=sha, source_sha256=sha, target="a"
+        )
+        fingerprint = Fingerprint(kind=KIND_FILE, sha256=sha)
+        self.assertFalse(_unmodified_baseline(record, fingerprint))
+
+    def test_symlink_target_mismatch_is_not_unmodified(self) -> None:
+        sha = "a" * 64
+        record = ManifestRecord(
+            kind=KIND_SYMLINK, installed_sha256=sha, source_sha256=sha, target="a"
+        )
+        fingerprint = Fingerprint(kind=KIND_SYMLINK, sha256=sha, target="b")
+        self.assertFalse(_unmodified_baseline(record, fingerprint))
+
+    def test_symlink_clean_match_is_unmodified(self) -> None:
+        sha = "a" * 64
+        record = ManifestRecord(
+            kind=KIND_SYMLINK, installed_sha256=sha, source_sha256=sha, target="a"
+        )
+        fingerprint = Fingerprint(kind=KIND_SYMLINK, sha256=sha, target="a")
+        self.assertTrue(_unmodified_baseline(record, fingerprint))
+
+
 class RemoveOrphansTests(unittest.TestCase):
     def test_removes_file_and_prunes_empty_parent(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -196,6 +230,21 @@ class RemoveOrphansTests(unittest.TestCase):
             removed = remove_orphans(dest, ["docs/link.md"])
             self.assertEqual(removed, ["docs/link.md"])
             self.assertFalse(link.is_symlink())
+
+    def test_rejects_path_traversal_key(self) -> None:
+        # Defense-in-depth: the delete primitive must fail closed even on a
+        # malformed manifest key that tries to escape the destination root.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dest = root / "dest"
+            dest.mkdir()
+            sentinel = root / "evil.md"
+            _write(sentinel, "outside the destination\n")
+            from raven_lib.orphans import remove_orphans
+
+            removed = remove_orphans(dest, ["../evil.md"])
+            self.assertEqual(removed, [])
+            self.assertTrue(sentinel.exists())
 
 
 class UpdateManifestRemoveTests(unittest.TestCase):
