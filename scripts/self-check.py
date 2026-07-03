@@ -193,6 +193,80 @@ def validate_aggregate_budget() -> None:
     print("aggregate context budget ok")
 
 
+def _parse_frontmatter_description(text: str) -> str | None:
+    """Return the `description:` value from a SKILL.md's leading `---` block.
+
+    Stdlib-only, Python 3.9+: a simple line-prefix parse over the frontmatter
+    (the block between the first two `---` lines), not a YAML dependency. Raven
+    skill descriptions are single-line, which this assumes.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if line.startswith("description:"):
+            return line[len("description:") :].strip()
+    return None
+
+
+def validate_skill_description_budget() -> None:
+    # Each skill's `description:` frontmatter is injected into every session's
+    # skill index whether or not the skill is invoked, so it is an always-loaded
+    # surface like AGENTS.md and the rules files — but the per-file and aggregate
+    # rules budgets above never see it. Cap the SUM so the index cannot bloat
+    # unnoticed, and cap each single description so one skill cannot eat the pool.
+    # Skills are canonical in common/.agents/skills (language trees symlink to
+    # it), so counting common/ once matches what a session actually loads.
+    AGGREGATE_LIMIT = 362  # ~329 words in-tree + ~10% margin
+    PER_SKILL_LIMIT = 30
+    print("==> validate context budget for skill-index descriptions")
+
+    skills_dir = REPO_ROOT / "common" / ".agents" / "skills"
+    skill_files = sorted(skills_dir.glob("*/SKILL.md"))
+    if not skill_files:
+        raise SystemExit(
+            f"No SKILL.md files under {skills_dir.relative_to(REPO_ROOT)}; "
+            "skill-description budget cannot be validated."
+        )
+
+    total = 0
+    unparseable: list[str] = []
+    over_cap: list[str] = []
+    for path in skill_files:
+        description = _parse_frontmatter_description(path.read_text(encoding="utf-8"))
+        if description is None:
+            unparseable.append(str(path.relative_to(REPO_ROOT)))
+            continue
+        count = len(description.split())
+        total += count
+        if count > PER_SKILL_LIMIT:
+            over_cap.append(
+                f"  {path.parent.name}: {count} words (per-skill limit {PER_SKILL_LIMIT})"
+            )
+
+    if unparseable:
+        raise SystemExit(
+            "SKILL.md file(s) with no parseable description frontmatter: "
+            f"{', '.join(sorted(unparseable))}."
+        )
+    if over_cap:
+        for line in over_cap:
+            print(line)
+        raise SystemExit(
+            f"Skill description exceeds the per-skill cap. Trim it to {PER_SKILL_LIMIT} "
+            "words or fewer so one skill cannot dominate the skill-index budget."
+        )
+    if total > AGGREGATE_LIMIT:
+        raise SystemExit(
+            f"Skill-index description budget exceeded: {total} words "
+            f"(limit {AGGREGATE_LIMIT}). Trim skill descriptions or raise the "
+            "threshold with justification."
+        )
+    print(f"skill description budget ok ({total} words)")
+
+
 def validate_installed_shape() -> None:
     print("==> validate installed RAVEN shape")
     raven = load_raven_module()
@@ -271,6 +345,7 @@ def main() -> int:
     validate_shared_docs_sync()
     validate_context_budget()
     validate_aggregate_budget()
+    validate_skill_description_budget()
     warn_stale_docs()
     validate_installed_shape()
     run(

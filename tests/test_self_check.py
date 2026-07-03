@@ -151,5 +151,69 @@ class StrictFreshnessTest(unittest.TestCase):
         self.assertIn("freshness check ok", buf.getvalue())
 
 
+# Mirrors the caps in validate_skill_description_budget(). Kept here so the
+# test's word totals straddle the real thresholds; update both together if the
+# budget changes.
+SKILL_DESC_AGGREGATE = 362
+SKILL_DESC_PER_SKILL = 30
+
+
+class SkillDescriptionBudgetTest(unittest.TestCase):
+    """Issue #92: skill `description:` frontmatter is injected into every
+    session's skill index, an always-loaded surface the file/aggregate rules
+    budgets never counted. Cap the sum and each single description."""
+
+    def setUp(self) -> None:
+        self.module = load_script_module("self_check_under_test", SELF_CHECK)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.module.REPO_ROOT = self.root
+
+    def _write_skill(self, name: str, description: str) -> None:
+        path = self.root / "common" / ".agents" / "skills" / name / "SKILL.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"---\nname: {name}\ndescription: {description}\n---\n\nBody.\n",
+            encoding="utf-8",
+        )
+
+    def test_passes_on_real_tree(self) -> None:
+        module = load_script_module("self_check_real_repo", SELF_CHECK)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            module.validate_skill_description_budget()
+        self.assertIn("skill description budget ok", buf.getvalue())
+
+    def test_raises_when_single_description_exceeds_cap(self) -> None:
+        over = SKILL_DESC_PER_SKILL + 5
+        self._write_skill("raven-example", "word " * over)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
+            self.module.validate_skill_description_budget()
+        self.assertIn("raven-example", buf.getvalue())
+
+    def test_raises_when_aggregate_exceeds_budget(self) -> None:
+        # Each description stays under the per-skill cap, but their sum clears
+        # the aggregate limit — the case per-file caps alone cannot catch.
+        per_skill = 20
+        skill_count = SKILL_DESC_AGGREGATE // per_skill + 1
+        self.assertLessEqual(per_skill, SKILL_DESC_PER_SKILL)
+        self.assertGreater(per_skill * skill_count, SKILL_DESC_AGGREGATE)
+        for i in range(skill_count):
+            self._write_skill(f"raven-skill-{i}", "word " * per_skill)
+        with self.assertRaises(SystemExit) as ctx:
+            self.module.validate_skill_description_budget()
+        self.assertIn("budget exceeded", str(ctx.exception))
+
+    def test_raises_when_description_frontmatter_missing(self) -> None:
+        path = self.root / "common" / ".agents" / "skills" / "raven-broken" / "SKILL.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("---\nname: raven-broken\n---\n\nBody.\n", encoding="utf-8")
+        with self.assertRaises(SystemExit) as ctx:
+            self.module.validate_skill_description_budget()
+        self.assertIn("raven-broken", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

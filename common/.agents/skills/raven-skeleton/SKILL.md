@@ -1,6 +1,6 @@
 ---
 name: raven-skeleton
-description: Use before reading a large or unfamiliar source file. Get a symbol map (declarations with exact line ranges) first, then read only the ranges you need instead of the whole file.
+description: Use before reading a large or unfamiliar source file. Get a symbol map with exact line ranges first, then read only the ranges you need.
 ---
 
 # Skeleton-First Reads
