@@ -1,6 +1,6 @@
 # Semgrep Setup
 
-Last verified: 2026-06-12
+Last verified: 2026-07-02
 
 Raven defaults to the **community (free) edition** of Semgrep. No account or login is required.
 
@@ -13,7 +13,7 @@ Use Semgrep's official CLI installation documentation: https://semgrep.dev/docs/
 ### MCP Server
 
 Raven's `.mcp.json` includes `semgrep mcp` as an MCP server. This enables the
-`mcp__plugin_semgrep_semgrep__*` tools for on-demand scanning during a session —
+`mcp__semgrep__*` tools (e.g. `mcp__semgrep__semgrep_scan`) for on-demand scanning during a session —
 no authentication needed.
 
 ### Pre-commit Hook (Recommended)
@@ -23,7 +23,7 @@ Add a `.pre-commit-config.yaml` to your project to scan commits automatically:
 ```yaml
 repos:
   - repo: https://github.com/semgrep/pre-commit
-    rev: 'v1.163.0'
+    rev: ''  # pin to the latest tag from https://github.com/semgrep/pre-commit/releases
     hooks:
       - id: semgrep
         entry: semgrep
