@@ -4,6 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
+from raven_lib import list_language_templates
 from raven_lib.gates import GateSpec, gate_spec_for, load_gate_specs, recipe_present
 
 
@@ -14,11 +15,31 @@ class GatesTests(unittest.TestCase):
         spec = specs["python"]
         self.assertIsInstance(spec, GateSpec)
 
-    def test_python_recipes_match_justfile(self):
-        spec = gate_spec_for("python")
-        assert spec is not None
-        for recipe in ("lint", "fmt-check", "typecheck", "test"):
-            self.assertIn(recipe, spec.recipes)
+    def test_gate_data_recipes_present_in_justfile(self):
+        # #89 -- generalizes the python-only justfile check across every
+        # GATE_DATA language, so a recipe rename on one side can't go unnoticed.
+        repo_root = Path(__file__).resolve().parents[1]
+        for template, spec in load_gate_specs().items():
+            with self.subTest(template=template):
+                justfile_text = (repo_root / template / "justfile").read_text(encoding="utf-8")
+                for recipe in spec.recipes:
+                    self.assertTrue(
+                        recipe_present(justfile_text, recipe),
+                        f"{template}/justfile is missing recipe {recipe!r} declared in GATE_DATA",
+                    )
+
+    def test_gate_data_keys_match_shipped_justfiles(self):
+        # #89 -- ties GATE_DATA to the shipped justfile set so a new language
+        # tree (or a justfile added to dotfiles) can't silently leave `assess`
+        # without a gate spec.
+        repo_root = Path(__file__).resolve().parents[1]
+        templates_with_justfile = {
+            name for name in list_language_templates() if (repo_root / name / "justfile").is_file()
+        }
+        self.assertEqual(templates_with_justfile, set(load_gate_specs().keys()))
+        # dotfiles deliberately ships no justfile and therefore no gate spec (v1).
+        self.assertNotIn("dotfiles", templates_with_justfile)
+        self.assertIsNone(gate_spec_for("dotfiles"))
 
     def test_python_detect_signals_include_pyproject(self):
         spec = gate_spec_for("python")
