@@ -214,6 +214,46 @@ class DoctorDriftTests(RavenTestCase):
         # Must surface an ERROR that explains the unusable template
         self.assertTrue(any(f.severity == Severity.ERROR for f in findings.values()))
 
+    def _add_orphan_record(self, *, installed_sha256, source_sha256):
+        # docs/dropped.md is not shipped anywhere in the python template, so
+        # classify_orphans always treats it as an orphan once it is manifest-tracked.
+        manifest = raven.load_manifest(self.destination)
+        manifest["files"]["docs/dropped.md"] = {
+            "kind": "file",
+            "installedSha256": installed_sha256,
+            "sourceSha256": source_sha256,
+        }
+        raven.save_manifest(self.destination, manifest)
+
+    def test_doctor_reports_removable_orphan(self) -> None:
+        # An orphan whose on-disk content still matches its recorded,
+        # non-customized baseline is safe to remove automatically.
+        _install(self)
+        orphan_file = self.destination / "docs" / "dropped.md"
+        orphan_file.parent.mkdir(parents=True, exist_ok=True)
+        orphan_file.write_text("dropped content\n", encoding="utf-8")
+        sha = raven.file_sha256(orphan_file)
+        self._add_orphan_record(installed_sha256=sha, source_sha256=sha)
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertIn("doctor.orphan.removable", findings)
+        self.assertEqual(findings["doctor.orphan.removable"].severity, Severity.WARN)
+        self.assertIn("docs/dropped.md", findings["doctor.orphan.removable"].detail)
+        self.assertNotIn("doctor.orphan.modified", findings)
+
+    def test_doctor_reports_modified_orphan(self) -> None:
+        # An orphan whose on-disk content diverges from its recorded baseline
+        # must be reported for manual review, never auto-removed.
+        _install(self)
+        orphan_file = self.destination / "docs" / "dropped.md"
+        orphan_file.parent.mkdir(parents=True, exist_ok=True)
+        orphan_file.write_text("dropped content\n", encoding="utf-8")
+        self._add_orphan_record(installed_sha256="a" * 64, source_sha256="a" * 64)
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertIn("doctor.orphan.modified", findings)
+        self.assertEqual(findings["doctor.orphan.modified"].severity, Severity.WARN)
+        self.assertIn("docs/dropped.md", findings["doctor.orphan.modified"].detail)
+        self.assertNotIn("doctor.orphan.removable", findings)
+
 
 # ---------------------------------------------------------------------------
 # #39 -- doctor must report individually deleted managed files

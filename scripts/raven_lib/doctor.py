@@ -18,6 +18,7 @@ from .findings import Finding, Severity
 from .gates import gate_spec_for
 from .git_hooks import detect_hook_manager, hook_manager_guidance
 from .manifest import ManifestStatus, git_ref, validate_manifest
+from .orphans import classify_orphans
 from .runner import Runner, probe_runner
 
 _INTEGRITY = "Install integrity"
@@ -234,6 +235,7 @@ def drift_findings(destination: Path) -> list[Finding]:
     classification = classify(
         template, destination, set(DEFAULT_EXCLUDES), config, manifest=manifest
     )
+    orphans = classify_orphans(template, destination, manifest)
     pending = pending_merge_paths(destination)
     # Template entries absent from the destination -- individually deleted (or
     # never installed) managed files. They are drift the user must restore, and
@@ -325,6 +327,29 @@ def drift_findings(destination: Path) -> list[Finding]:
                 title="Raven templates may be out of date",
                 detail=f"installed {installed_version}, current {current}",
                 fix="run `raven upgrade --dry-run` to preview updates",
+            )
+        )
+
+    if orphans.will_remove:
+        findings.append(
+            Finding(
+                id="doctor.orphan.removable",
+                severity=Severity.WARN,
+                category=_DRIFT,
+                title=f"{len(orphans.will_remove)} orphaned Raven file(s) the template no longer ships",
+                detail=", ".join(orphans.will_remove),
+                fix="run `raven upgrade` to remove them",
+            )
+        )
+    if orphans.orphan_modified:
+        findings.append(
+            Finding(
+                id="doctor.orphan.modified",
+                severity=Severity.WARN,
+                category=_DRIFT,
+                title=f"{len(orphans.orphan_modified)} orphaned + locally modified Raven file(s)",
+                detail=", ".join(orphans.orphan_modified),
+                fix="template no longer ships these; review and delete manually if unwanted",
             )
         )
     return findings
