@@ -65,3 +65,28 @@ def classify_orphans(template: Path, destination: Path, manifest: dict) -> Orpha
         else:
             orphan_modified.append(relative)
     return OrphanClassification(will_remove, orphan_modified, already_gone)
+
+
+def remove_orphans(destination: Path, relatives: list[str]) -> list[str]:
+    """Delete each managed orphan file/symlink and prune now-empty parents.
+
+    Only the exact paths passed in are removed; parent directories are removed
+    only when they become empty, and the destination root is never touched.
+    """
+    removed: list[str] = []
+    for relative in relatives:
+        target = destination / relative
+        if target.is_symlink() or target.exists():
+            target.unlink()
+        else:
+            continue
+        removed.append(relative)
+        # Prune empty parents, stopping before the destination root.
+        parent = target.parent
+        while parent != destination and parent.is_dir():
+            try:
+                parent.rmdir()
+            except OSError:
+                break  # not empty (or race) -- leave it and everything above.
+            parent = parent.parent
+    return removed

@@ -135,6 +135,7 @@ def update_manifest(
     paths: list[str],
     manifest: dict | None = None,
     entries: dict[str, TemplateEntry] | None = None,
+    remove: list[str] | None = None,
 ) -> None:
     if manifest is None:
         manifest = load_manifest(destination)
@@ -153,6 +154,8 @@ def update_manifest(
         if (record := _make_manifest_record(entry, destination / relative)) is not None
     }
     manifest["files"].update(new_records)
+    for relative in remove or []:
+        manifest["files"].pop(relative, None)
 
     save_manifest(destination, manifest)
 

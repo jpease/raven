@@ -157,5 +157,77 @@ class ClassifyOrphansTests(unittest.TestCase):
         self.assertEqual(result.will_remove, [])
 
 
+class RemoveOrphansTests(unittest.TestCase):
+    def test_removes_file_and_prunes_empty_parent(self) -> None:
+        with TemporaryDirectory() as tmp:
+            dest = Path(tmp)
+            target = dest / "docs" / "sub" / "dropped.md"
+            _write(target, "x\n")
+            from raven_lib.orphans import remove_orphans
+
+            removed = remove_orphans(dest, ["docs/sub/dropped.md"])
+            self.assertEqual(removed, ["docs/sub/dropped.md"])
+            self.assertFalse(target.exists())
+            # Now-empty parents are pruned...
+            self.assertFalse((dest / "docs" / "sub").exists())
+            self.assertFalse((dest / "docs").exists())
+            # ...but the destination root is never removed.
+            self.assertTrue(dest.exists())
+
+    def test_keeps_parent_with_other_files(self) -> None:
+        with TemporaryDirectory() as tmp:
+            dest = Path(tmp)
+            _write(dest / "docs" / "dropped.md", "x\n")
+            _write(dest / "docs" / "kept.md", "y\n")
+            from raven_lib.orphans import remove_orphans
+
+            remove_orphans(dest, ["docs/dropped.md"])
+            self.assertTrue((dest / "docs" / "kept.md").exists())
+            self.assertTrue((dest / "docs").exists())
+
+    def test_removes_symlink_orphan(self) -> None:
+        with TemporaryDirectory() as tmp:
+            dest = Path(tmp)
+            (dest / "docs").mkdir()
+            link = dest / "docs" / "link.md"
+            link.symlink_to("../common/real.md")
+            from raven_lib.orphans import remove_orphans
+
+            removed = remove_orphans(dest, ["docs/link.md"])
+            self.assertEqual(removed, ["docs/link.md"])
+            self.assertFalse(link.is_symlink())
+
+
+class UpdateManifestRemoveTests(unittest.TestCase):
+    def test_remove_pops_records_before_save(self) -> None:
+        with TemporaryDirectory() as tmp:
+            dest = Path(tmp)
+            (dest / ".raven").mkdir()
+            import json
+
+            (dest / ".raven" / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "files": {
+                            "docs/gone.md": {"kind": "file", "installedSha256": "a" * 64},
+                            "docs/kept.md": {"kind": "file", "installedSha256": "b" * 64},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            from raven_lib.manifest import load_manifest, update_manifest
+            from raven_lib.models import RavenConfig
+
+            config = RavenConfig(None, False, {}, {}, {}, [])
+            template = dest / "template"
+            template.mkdir()
+            update_manifest(dest, "python", template, set(), config, [], remove=["docs/gone.md"])
+            files = load_manifest(dest)["files"]
+            self.assertNotIn("docs/gone.md", files)
+            self.assertIn("docs/kept.md", files)
+
+
 if __name__ == "__main__":
     unittest.main()
