@@ -99,7 +99,7 @@ def validate_context_budget() -> None:
         "lua/.claude/rules/raven-lua.md": 680,
         "dotfiles/.claude/rules/raven-dotfiles.md": 530,
         # shared rules files (symlinked from language dirs)
-        "common/.claude/rules/raven-security.md": 70,
+        "common/.claude/rules/raven-security.md": 45,
         "common/.claude/rules/raven-tests.md": 70,
     }
     print("==> validate context budget for always-loaded guidance")
