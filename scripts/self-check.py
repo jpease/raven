@@ -100,7 +100,6 @@ def validate_context_budget() -> None:
         "dotfiles/.claude/rules/raven-dotfiles.md": 530,
         # shared rules files (symlinked from language dirs)
         "common/.claude/rules/raven-security.md": 45,
-        "common/.claude/rules/raven-tests.md": 70,
     }
     print("==> validate context budget for always-loaded guidance")
 
@@ -137,7 +136,7 @@ def validate_context_budget() -> None:
 
 def validate_aggregate_budget() -> None:
     # Per-language always-loaded tier = AGENTS.md + that language's rules file +
-    # the shared security and tests rules (symlinked into each language dir).
+    # the shared security rules (symlinked into each language dir).
     # Per-file thresholds cap each file alone; this caps the SUM, which they do
     # not. Without it, every file could spend its individual headroom at once and
     # silently bloat the context window. Keep each budget below the sum of the
@@ -145,18 +144,17 @@ def validate_aggregate_budget() -> None:
     SHARED = [
         "common/AGENTS.md",
         "common/.claude/rules/raven-security.md",
-        "common/.claude/rules/raven-tests.md",
     ]
     PROFILES: dict[str, tuple[int, str]] = {
         # language: (aggregate word budget, language rules file)
-        "python": (1950, "python/.claude/rules/raven-python.md"),
-        "elixir": (2080, "elixir/.claude/rules/raven-elixir.md"),
-        "rust": (2010, "rust/.claude/rules/raven-rust.md"),
-        "swift": (1850, "swift/.claude/rules/raven-swift.md"),
-        "typescript": (1870, "typescript/.claude/rules/raven-typescript.md"),
-        "go": (2030, "go/.claude/rules/raven-go.md"),
-        "lua": (1870, "lua/.claude/rules/raven-lua.md"),
-        "dotfiles": (1720, "dotfiles/.claude/rules/raven-dotfiles.md"),
+        "python": (1918, "python/.claude/rules/raven-python.md"),
+        "elixir": (2048, "elixir/.claude/rules/raven-elixir.md"),
+        "rust": (1978, "rust/.claude/rules/raven-rust.md"),
+        "swift": (1818, "swift/.claude/rules/raven-swift.md"),
+        "typescript": (1838, "typescript/.claude/rules/raven-typescript.md"),
+        "go": (1998, "go/.claude/rules/raven-go.md"),
+        "lua": (1838, "lua/.claude/rules/raven-lua.md"),
+        "dotfiles": (1672, "dotfiles/.claude/rules/raven-dotfiles.md"),
     }
     print("==> validate aggregate context budget per language profile")
 

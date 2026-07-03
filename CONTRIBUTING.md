@@ -43,7 +43,7 @@ This validates the installed shape, runs `upgrade --dry-run`, applies `upgrade`,
 `common/` is the single source of truth for shared content. Each language tree
 **symlinks** its shared paths back to `common/` rather than holding its own copy:
 `.agents/skills`, `.claude/agents/*`, the shared `.claude/docs/raven-*` docs,
-`.claude/hooks`, `.claude/rules/{raven-security,raven-tests}.md`, `.claude/scripts`,
+`.claude/hooks`, `.claude/rules/raven-security.md`, `.claude/scripts`,
 `.claude/settings.json`, `.codex/*`, `.raven/git-hooks`, and `AGENTS.md`.
 
 To change shared content, **edit the file under `common/` only** — every language

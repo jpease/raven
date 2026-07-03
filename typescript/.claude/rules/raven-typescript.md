@@ -62,6 +62,7 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Use integration tests for API routes, repositories, and service layers.
 - Do not delete or weaken tests to make a change pass unless explicitly requested.
 - Add regression tests for bug fixes when the failure can be reproduced deterministically.
+- Avoid brittle sleeps, timing assumptions, and oversized snapshots unless the codebase already relies on them.
 
 ## Dependencies
 

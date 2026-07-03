@@ -63,6 +63,7 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Add regression tests for bug fixes when the failure can be reproduced deterministically.
 - Do not delete or weaken tests to make a change pass unless explicitly requested.
 - Broaden to the repository's standard test or quality command only after targeted tests pass.
+- Avoid brittle sleeps, timing assumptions, and oversized snapshots unless the codebase already relies on them.
 
 ## Dependencies
 
