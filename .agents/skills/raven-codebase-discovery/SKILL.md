@@ -41,7 +41,7 @@ When that happens, stop and report:
 - the best candidate paths or symbols, if any
 - the unresolved question blocking progress
 
-Then delegate per AGENTS.md Delegation guidance, or pause and ask the user if no delegation mechanism is available.
+Then delegate per AGENTS.md Delegation guidance, or pause and ask the user if no delegation mechanism is available. For a broad mapping question, hand off to the `raven-codebase-cartographer` subagent with a scoped brief: the behavior or question to locate, the tools or queries already tried, and the best candidate paths so far.
 
 ## Broad Exploration
 

@@ -37,6 +37,7 @@ Use this skill when a change touches:
 - Review scanner findings manually before reporting them. Separate confirmed findings from false positives and open questions.
 - Keep the checklist language-neutral. Put language-specific remediation details in the relevant language quality docs or local project conventions.
 - If Semgrep is unavailable, state that gap and continue with the manual checklist rather than skipping the review.
+- For an independent audit pass, or when the change set is large, delegate to the `raven-security-reviewer` subagent with a scoped brief: the files and boundaries touched, what was already checked, and the expected output shape.
 
 ## Process
 

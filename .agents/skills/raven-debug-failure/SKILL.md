@@ -39,7 +39,7 @@ description: Use when tests, builds, runtime commands, or user-reported behavior
 
 ## When To Stop
 
-Stop when the failing signal has been captured but targeted retrieval cannot identify the owning file, symbol, or integration point after two or more appropriate lookups. Report the failing command or behavior, the searches or diagnostics already checked, and the unresolved ownership question. Then delegate per AGENTS.md Delegation guidance or pause and ask rather than broadening into unrelated code.
+Stop when the failing signal has been captured but targeted retrieval cannot identify the owning file, symbol, or integration point after two or more appropriate lookups. Report the failing command or behavior, the searches or diagnostics already checked, and the unresolved ownership question. Then delegate per AGENTS.md Delegation guidance or pause and ask rather than broadening into unrelated code. When delegating, hand off to the `raven-test-debugger` subagent with a scoped brief: the exact failing command, the lookups already tried, and the unresolved ownership question.
 
 ## Output
 

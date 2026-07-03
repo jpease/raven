@@ -56,7 +56,7 @@ How to delegate:
 
 Platform notes:
 
-- Claude Code: use the Agent tool with an appropriate subagent type, or a project-defined subagent if one matches the audit.
+- Claude Code: use the Agent tool with an appropriate subagent type, or a project-defined subagent if one matches the audit (Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-test-debugger`, `raven-codebase-cartographer`).
 - Other harnesses: fall back to asking the user to scope the task further, or use any equivalent delegation mechanism the harness provides.
 
 ## Shell Command Policy
