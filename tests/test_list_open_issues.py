@@ -33,7 +33,7 @@ class GetIssuesPaginationTest(unittest.TestCase):
             patch.object(self.module, "run_gh_command", side_effect=[first_page, None]),
             self.assertRaises(SystemExit) as ctx,
         ):
-            self.module.get_issues()
+            self.module.get_issues("owner", "repo")
 
         self.assertNotEqual(ctx.exception.code, 0)
 
@@ -42,7 +42,7 @@ class GetIssuesPaginationTest(unittest.TestCase):
         second_page = _page([{"number": 2, "title": "two"}], has_next=False)
 
         with patch.object(self.module, "run_gh_command", side_effect=[first_page, second_page]):
-            issues = self.module.get_issues()
+            issues = self.module.get_issues("owner", "repo")
 
         self.assertEqual([issue["number"] for issue in issues], [1, 2])
 
