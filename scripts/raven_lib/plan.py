@@ -11,7 +11,8 @@ from .apply import (
 from .blocks import write_guided_merge_artifacts
 from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH
 from .manifest import update_manifest
-from .models import ApplyPlan, Classification, RavenConfig, TemplateEntry
+from .models import ApplyPlan, Classification, OrphanClassification, RavenConfig, TemplateEntry
+from .orphans import remove_orphans
 
 
 def print_section(title: str, paths: list[str]) -> None:
@@ -31,6 +32,8 @@ def print_apply_summary(
     identical: list[str],
     needs_merge: list[str],
     unknown_existing: list[str],
+    removed_orphans: list[str],
+    orphan_modified: list[str],
 ) -> None:
     print_section(f"Copied {len(copied)} file(s):", copied)
 
@@ -66,6 +69,21 @@ def print_apply_summary(
             "!!! Manual merge still required: these files exist but Raven does not manage them; "
             "the template ships its own version. Compare .raven/merge/<file>.diff before merging. !!!",
             unknown_existing,
+        )
+
+    if removed_orphans:
+        print()
+        print_section(
+            f"Removed {len(removed_orphans)} orphaned file(s) the template no longer ships:",
+            removed_orphans,
+        )
+
+    if orphan_modified:
+        print()
+        print_section(
+            "Orphaned but left in place because you modified them "
+            "(template no longer ships these; remove manually if unwanted):",
+            orphan_modified,
         )
 
 
@@ -161,6 +179,7 @@ def print_dry_run_plan(
     classification: Classification,
     entries: dict[str, TemplateEntry],
     plan: ApplyPlan,
+    orphans: OrphanClassification,
 ) -> int:
     if plan.requested_overrides:
         print_section("Would overwrite explicitly requested file(s):", plan.overwritten)
@@ -201,6 +220,20 @@ def print_dry_run_plan(
             "(.patch for instruction files, .diff for others):",
             plan.guided_merge_paths,
         )
+    if orphans.will_remove:
+        print()
+        print_section(
+            "Will remove orphaned Raven files (template no longer ships them; "
+            "destination still matches the recorded baseline):",
+            orphans.will_remove,
+        )
+    if orphans.orphan_modified:
+        print()
+        print_section(
+            "Orphaned but locally modified; left in place (template no longer "
+            "ships them, but you changed them — delete manually if unwanted):",
+            orphans.orphan_modified,
+        )
     return 0
 
 
@@ -213,14 +246,15 @@ def apply_plan(
     manifest: dict,
     entries: dict[str, TemplateEntry],
     plan: ApplyPlan,
-) -> tuple[int, list[str], list[str]]:
+    orphans: OrphanClassification,
+) -> tuple[int, list[str], list[str], list[str]]:
     adopted_claude: list[str] = []
     if plan.adopt_claude_symlink:
         try:
             adopted_claude = adopt_claude_symlink(destination, entries)
         except FileExistsError as exc:
             print(f"error: {exc}", file=sys.stderr)
-            return 2, [], []
+            return 2, [], [], []
 
     try:
         if plan.requested_overrides:
@@ -238,7 +272,9 @@ def apply_plan(
             )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2, adopted_claude, []
+        return 2, adopted_claude, [], []
+
+    removed_orphans = remove_orphans(destination, orphans.will_remove)
 
     managed_paths = (
         plan.copied
@@ -247,7 +283,7 @@ def apply_plan(
         + plan.identical
         + ([CLAUDE_PATH] if adopted_claude else [])
     )
-    if managed_paths:
+    if managed_paths or removed_orphans or orphans.already_gone:
         update_manifest(
             destination,
             template_name,
@@ -257,10 +293,11 @@ def apply_plan(
             managed_paths,
             manifest=manifest,
             entries=entries,
+            remove=removed_orphans + orphans.already_gone,
         )
 
     merge_artifacts = write_guided_merge_artifacts(destination, entries, plan.guided_merge_paths)
-    return 0, adopted_claude, merge_artifacts
+    return 0, adopted_claude, merge_artifacts, removed_orphans
 
 
 def normalize_override(path: str) -> str:
