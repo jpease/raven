@@ -66,6 +66,22 @@ class Classification:
 
 
 @dataclass(frozen=True)
+class OrphanClassification:
+    """Manifest-tracked files the current template no longer ships.
+
+    ``will_remove``: destination still matches the recorded baseline and the
+    baseline is not a customization, so upgrade can safely delete it.
+    ``orphan_modified``: destination differs from the baseline or the baseline
+    is a customization; upgrade reports and keeps it. ``already_gone``: the file
+    is absent on disk, so only the stale manifest record needs pruning.
+    """
+
+    will_remove: list[str]
+    orphan_modified: list[str]
+    already_gone: list[str]
+
+
+@dataclass(frozen=True)
 class ApplyPlan:
     requested_overrides: list[str]
     overwritten: list[str]
