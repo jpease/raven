@@ -70,6 +70,7 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Prefer domain tests for business rules; integration tests for routes, jobs, webhooks, and external boundaries.
 - Add regression tests for bug fixes when the failure can be reproduced deterministically.
 - Do not delete or weaken tests to make a change pass unless explicitly requested.
+- Avoid brittle sleeps, timing assumptions, and oversized snapshots unless the codebase already relies on them.
 
 ## Dependencies
 

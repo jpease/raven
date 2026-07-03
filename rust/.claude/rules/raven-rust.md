@@ -60,6 +60,7 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Prefer focused unit tests for pure helpers and integration tests for public behavior.
 - Add regression tests for bug fixes when the failure can be reproduced deterministically.
 - Do not delete or weaken tests to make a change pass unless explicitly requested.
+- Avoid brittle sleeps, timing assumptions, and oversized snapshots unless the codebase already relies on them.
 
 ## Dependencies
 
