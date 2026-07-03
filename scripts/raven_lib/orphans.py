@@ -75,6 +75,8 @@ def remove_orphans(destination: Path, relatives: list[str]) -> list[str]:
     """
     removed: list[str] = []
     for relative in relatives:
+        if ".." in Path(relative).parts:
+            continue
         target = destination / relative
         if target.is_symlink() or target.exists():
             target.unlink()

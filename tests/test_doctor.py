@@ -240,6 +240,28 @@ class DoctorDriftTests(RavenTestCase):
         self.assertIn("docs/dropped.md", findings["doctor.orphan.removable"].detail)
         self.assertNotIn("doctor.orphan.modified", findings)
 
+    def test_removable_orphan_suppresses_no_drift_ok(self) -> None:
+        # A removable orphan is real drift the user should act on (or let
+        # `raven upgrade` clean up); it must not be masked by a "no drift
+        # detected" OK finding just because everything else is pristine.
+        _install(self)
+        orphan_file = self.destination / "docs" / "dropped.md"
+        orphan_file.parent.mkdir(parents=True, exist_ok=True)
+        orphan_file.write_text("dropped content\n", encoding="utf-8")
+        sha = raven.file_sha256(orphan_file)
+        self._add_orphan_record(installed_sha256=sha, source_sha256=sha)
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertIn("doctor.orphan.removable", findings)
+        self.assertNotIn("doctor.drift.modified", findings)
+
+    def test_clean_install_with_no_orphans_still_reports_ok(self) -> None:
+        # Regression guard: a genuinely clean install (no orphans at all) must
+        # still emit the "no drift detected" OK finding.
+        _install(self)
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertIn("doctor.drift.modified", findings)
+        self.assertEqual(findings["doctor.drift.modified"].severity, Severity.OK)
+
     def test_doctor_reports_modified_orphan(self) -> None:
         # An orphan whose on-disk content diverges from its recorded baseline
         # must be reported for manual review, never auto-removed.

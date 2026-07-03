@@ -276,7 +276,14 @@ def drift_findings(destination: Path) -> list[Finding]:
                 fix="review and `raven upgrade` or `raven accept`",
             )
         )
-    elif not pending and not local_only and not missing and manifest_status.usable:
+    elif (
+        not pending
+        and not local_only
+        and not missing
+        and manifest_status.usable
+        and not orphans.will_remove
+        and not orphans.orphan_modified
+    ):
         findings.append(
             Finding(
                 id="doctor.drift.modified",
