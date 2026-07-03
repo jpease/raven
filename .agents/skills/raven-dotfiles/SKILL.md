@@ -1,6 +1,6 @@
 ---
 name: raven-dotfiles
-description: Use when editing home-directory configuration (dotfiles) — shell rc files, editor/WM/app config under ~/.config or $HOME — especially when files may be symlinked, generated, or managed by a tool like chezmoi, stow, yadm, bare-git, or Nix home-manager.
+description: Use when editing home-directory dotfiles — shell rc files, editor/WM/app config under ~/.config or $HOME — especially when files may be symlinked, generated, or managed by a dotfiles tool.
 ---
 
 # Editing Dotfiles Safely
