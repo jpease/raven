@@ -32,6 +32,7 @@ from .findings import exit_code
 from .git_hooks import detect_hook_manager, git_hooks_dir, hook_manager_guidance, install_git_hooks
 from .manifest import load_manifest, update_manifest
 from .models import ApplyPlan, RavenConfig
+from .orphans import classify_orphans
 from .plan import (
     apply_plan,
     build_apply_plan,
@@ -176,6 +177,7 @@ def _run(
     classification = classify(
         template, destination, excludes, config, manifest=manifest, entries=entries
     )
+    orphans = classify_orphans(template, destination, manifest)
     existing_overrides = {p for p in requested_overrides_norm if _any_exists(destination / p)}
     symlink_adoption_needed = claude_symlink_adoption_needed(destination, entries)
     adopt_claude_symlink = False
@@ -217,7 +219,7 @@ def _run(
     print()
 
     if dry_run:
-        return print_dry_run_plan(destination, classification, entries, plan)
+        return print_dry_run_plan(destination, classification, entries, plan, orphans)
 
     # Validation has passed. Reject a doomed symlink adoption before any durable
     # write, then write configuration only once the request is known good, so a
@@ -235,7 +237,7 @@ def _run(
         if rc != 0:
             return rc
 
-    rc, adopted_claude, merge_artifacts = apply_plan(
+    rc, adopted_claude, merge_artifacts, removed_orphans = apply_plan(
         destination,
         template_name,
         template,
@@ -244,6 +246,7 @@ def _run(
         manifest,
         entries,
         plan,
+        orphans,
     )
     if rc != 0:
         return rc
@@ -258,6 +261,8 @@ def _run(
         plan.identical,
         plan.needs_merge,
         plan.unknown_existing,
+        removed_orphans,
+        orphans.orphan_modified,
     )
     if merge_artifacts:
         print()
