@@ -216,9 +216,9 @@
       "sourceSha256": "f4b302632ceb0e171f9008a161d7b8ed369322451a40ee8da7de2cb5c653d2ed"
     },
     ".claude/scripts/raven-tool-check.py": {
-      "installedSha256": "768dc729eb9a80d1052592e9339b49606219f8c1eb43bb486d0c12edabcb4ea9",
+      "installedSha256": "ef0db64856a10218d1b9606b188f2c3bcb0e2bce01e5b1c1ffbf8b7b47358b51",
       "kind": "file",
-      "sourceSha256": "768dc729eb9a80d1052592e9339b49606219f8c1eb43bb486d0c12edabcb4ea9"
+      "sourceSha256": "ef0db64856a10218d1b9606b188f2c3bcb0e2bce01e5b1c1ffbf8b7b47358b51"
     },
     ".claude/settings.json": {
       "installedSha256": "5fe9b03c90aa8814023d51a236598379f03a48eef623b4603b9c3c434c05775b",
@@ -302,9 +302,9 @@
       "sourceSha256": "f4b302632ceb0e171f9008a161d7b8ed369322451a40ee8da7de2cb5c653d2ed"
     },
     ".codex/scripts/raven-tool-check.py": {
-      "installedSha256": "768dc729eb9a80d1052592e9339b49606219f8c1eb43bb486d0c12edabcb4ea9",
+      "installedSha256": "ef0db64856a10218d1b9606b188f2c3bcb0e2bce01e5b1c1ffbf8b7b47358b51",
       "kind": "file",
-      "sourceSha256": "768dc729eb9a80d1052592e9339b49606219f8c1eb43bb486d0c12edabcb4ea9"
+      "sourceSha256": "ef0db64856a10218d1b9606b188f2c3bcb0e2bce01e5b1c1ffbf8b7b47358b51"
     },
     ".mcp.json": {
       "installedSha256": "09cfaec8d8f45e26bd21eb53e0bc4f6a23f2cc7aaa45bc74245f4395ecede2dd",
@@ -357,7 +357,7 @@
       "sourceSha256": "5953156d7e0c564a427251316eaf26f8870e6483ae2197f916b630e4f93e31ae"
     },
     "AGENTS.md": {
-      "installedSha256": "a517791b32424bd159aa3c99611ceb70666ad5488753c1dfd997ae8e01663330",
+      "installedSha256": "46a502a17cf7fc71936e4e2cf14efecb41c52eec6549a34e9d50654da57d9341",
       "kind": "file",
       "sourceSha256": "651188c300162779d984b585cf6b4ea609c8c6d7b0c5fdfd5e4a54a67460bf53"
     },
@@ -378,8 +378,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "a6779863c32c",
+  "ravenVersion": "5957a1dbacbc",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-07-02T08:27:45.134067+00:00"
+  "updatedAt": "2026-07-03T01:25:14.902636+00:00"
 }
