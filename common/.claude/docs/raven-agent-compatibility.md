@@ -35,6 +35,17 @@ Codex-specific files:
 - `.codex/scripts/raven-*.py`: Codex helper scripts.
 
 Codex reads `.agents/skills` directly, so Raven does not install a `.codex/skills` copy.
+Per the Codex skills documentation, "Codex scans `.agents/skills` in every directory from
+your current working directory up to the repository root," loading each subdirectory that
+contains a `SKILL.md` with `name` and `description` frontmatter — the exact shape Raven
+ships at `.agents/skills/raven-*/SKILL.md`. The canonical skills are therefore live for
+Codex, not inert files, and the shared `AGENTS.md` can safely instruct both harnesses to
+invoke `raven-*` skills.
+
+- Source: <https://developers.openai.com/codex/skills>
+- Last verified: 2026-07-02 (Codex CLI skills GA; feature present in the 2026-06-22
+  changelog, v0.142.0). Re-verify against the source if this ages past the doc-freshness
+  window in `scripts/self-check.py`.
 
 ## Known Asymmetries
 
