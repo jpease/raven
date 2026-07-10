@@ -39,6 +39,15 @@ Use this skill when a change touches:
 - If Semgrep is unavailable, state that gap and continue with the manual checklist rather than skipping the review.
 - For an independent audit pass, or when the change set is large, delegate to the `raven-security-reviewer` subagent with a scoped brief: the files and boundaries touched, what was already checked, and the expected output shape.
 
+## Rationalization Check
+
+| Thought | Reality |
+|---|---|
+| "This change is small, it probably doesn't need review" | Check `Trigger Heuristics`. Size doesn't determine risk — boundary contact does. |
+| "Semgrep came back clean, we're good" | A clean scan is evidence for mechanical patterns only, not proof of security. |
+| "I already reviewed something similar earlier" | `Skip When` requires the same *unchanged* diff. Re-review if the diff moved. |
+| "This is an internal tool, exposure is low" | Trust boundaries and reachability decide whether a finding matters, not deployment context. |
+
 ## Process
 
 1. Identify changed files and the security-sensitive boundaries they touch.
