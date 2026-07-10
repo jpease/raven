@@ -20,6 +20,15 @@ description: Use for renames, shared abstraction changes, API changes, moved cod
 - Do not reformat unrelated files.
 - Run targeted tests or explain why no targeted verification exists.
 
+## Rationalization Check
+
+| Thought | Reality |
+|---|---|
+| "This symbol is only used in one obvious place" | Confirm with LSP references or GitNexus impact — don't assume from memory. |
+| "It's a small rename, nothing will break" | Small renames break silently in strings, configs, and docs. Verify with `rg` after. |
+| "I already have blast-radius context from earlier" | Re-check if the target, scope, or codebase changed since. |
+| "No tests cover this path, so it's probably safe" | Missing coverage raises risk — note the gap, don't treat silence as a pass. |
+
 ## Process
 
 1. Identify public surface area.

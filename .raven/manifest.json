@@ -66,9 +66,9 @@
       "sourceSha256": "9e03729e1a35abc8911ccbdd0285c026ff86fa523e6a8438c36312f031a4422e"
     },
     ".agents/skills/raven-safe-refactor/SKILL.md": {
-      "installedSha256": "f2b6f44934ead1da93cabe990d23d00305a0565158804feb1006bfe2e2082f7a",
+      "installedSha256": "56c279466d4ccc6d40984f6760de206b240d9bc87fd6e0e2fa1e9612d5f2c837",
       "kind": "file",
-      "sourceSha256": "f2b6f44934ead1da93cabe990d23d00305a0565158804feb1006bfe2e2082f7a"
+      "sourceSha256": "56c279466d4ccc6d40984f6760de206b240d9bc87fd6e0e2fa1e9612d5f2c837"
     },
     ".agents/skills/raven-security-review/SKILL.md": {
       "installedSha256": "8597d225659a2978dee7189d8f05cfc7b2545fc3bdb1360374be65e493fd9046",
@@ -81,9 +81,9 @@
       "sourceSha256": "c0d0e7f0cee83af48d0f64cd6c208385fcbfe994ff49ef58bc48e33eed963ce9"
     },
     ".agents/skills/raven-task-complete/SKILL.md": {
-      "installedSha256": "9cf4b6d7edc36eac6f24e6f02b675d3e534514652863f9b6ad15b05275fd988b",
+      "installedSha256": "ab32d776c4c6c3dc30bc65aa665fd5fef9f2700c4fde9491ab5b571463762e41",
       "kind": "file",
-      "sourceSha256": "9cf4b6d7edc36eac6f24e6f02b675d3e534514652863f9b6ad15b05275fd988b"
+      "sourceSha256": "ab32d776c4c6c3dc30bc65aa665fd5fef9f2700c4fde9491ab5b571463762e41"
     },
     ".agents/skills/raven-tool-bootstrap/SKILL.md": {
       "installedSha256": "e790fc85ce05c256de58788954f9c93265b4b7d19daade47afaefdcc3c5226f0",
@@ -322,7 +322,7 @@
       "sourceSha256": "2439730cbe456d6cca004cb466d2be02791327ac977a6a4bcef9fbab1db45ade"
     },
     "AGENTS.md": {
-      "installedSha256": "6e46c993e81d3c440cbe7aacc51c604dd54f787e40c76f422d2503afa15466c2",
+      "installedSha256": "edd621bf309116af31840b43fb66732179f75c25743cf6a830c675162590222f",
       "kind": "file",
       "sourceSha256": "9a63d0f5568f19024e222c620a8fec04f552ab266b24e6db3a2b737735d9d41f"
     },
@@ -343,8 +343,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "bbd203123c85",
+  "ravenVersion": "989cb3400ff2",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-07-03T05:34:00.550983+00:00"
+  "updatedAt": "2026-07-10T00:27:10.538755+00:00"
 }
