@@ -22,6 +22,15 @@ description: Use when adding, fixing, or reviewing tests.
 - Broaden test scope only after narrow tests pass.
 - Do not delete, weaken, or over-mock tests just to make a change pass.
 
+## Rationalization Check
+
+| Thought | Reality |
+|---|---|
+| "This is a small change, existing tests are enough" | `Skip When` already covers no-behavior-change cases. A real change needs new or updated coverage. |
+| "I'll mock this to make the test simpler" | Mock only true external boundaries. Mocking internals just restates the implementation. |
+| "The test broke, I'll update it to match" | Classify the failure first. Updating a stale assertion without classifying it can mask a regression. |
+| "Coverage looks thin but the main path works" | Missing edge cases and regressions are the gap this skill exists to close, not something to wave off. |
+
 ## When Existing Tests Fail
 
 Classify the failure before acting:
