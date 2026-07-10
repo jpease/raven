@@ -20,6 +20,15 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 - Do not generalize a narrow check into a broad claim. If you ran one test file, say that — not "all tests pass." Name the exact scope you verified.
 - If a verification step fails, address it before proceeding.
 
+## Rationalization Check
+
+| Thought | Reality |
+|---|---|
+| "This is too simple to need verification" | `Skip When` already covers docs-only/one-line edits. Anything else runs the narrowest check. |
+| "It looks right, I'll say it's verified" | Looking right isn't verifying. Run the check or state the gap. |
+| "Nothing I touched affects the tests" | That's an assumption, not evidence. Run the narrowest relevant test to confirm. |
+| "I verified this earlier in the session" | State what changed since, or re-run against the current diff. |
+
 ## Process
 
 1. **Run the narrowest test** covering the changed behavior — the single test file, test case, or command most directly relevant. If no test exists and one should, note the gap explicitly.
