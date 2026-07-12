@@ -54,6 +54,23 @@ def list_language_templates() -> list[str]:
     )
 
 
+def swift_install_note() -> list[str]:
+    """Post-install guidance for the swift template.
+
+    The swift justfile resolves the Xcode scheme at build/test time, so there is
+    no placeholder to edit and no XcodeGen assumption. This surfaces that up
+    front -- and reassures the common case of installing Raven before the Xcode
+    app exists, where the gate skips cleanly rather than failing at push time.
+    """
+    return [
+        "The scheme is auto-detected -- nothing to edit: $SCHEME override, else an "
+        "XcodeGen project.yml name:, else the first scheme from `xcodebuild -list`.",
+        "Override for one run with SCHEME=<name>, e.g. `SCHEME=MyApp just build`.",
+        "No Package.swift or .xcodeproj yet? `just build`/`test` skip cleanly, so "
+        "your first commit and push still pass before the app is generated.",
+    ]
+
+
 def select_language_interactively() -> str:
     if not sys.stdin.isatty():
         print(
@@ -290,6 +307,10 @@ def _run(
                 f"Hook manager detected ({manager}) -- Raven's hooks were not installed:",
                 [hook_manager_guidance(manager)],
             )
+
+    if template_name == "swift":
+        print()
+        print_section("Swift scheme (Xcode targets only):", swift_install_note())
 
     return 0
 
