@@ -134,7 +134,13 @@ class GatesTests(unittest.TestCase):
         self.assertIn("swift build", text)
         self.assertIn("swift test", text)
         self.assertIn("xcodebuild", text)
-        self.assertIn('SCHEME := "YourScheme"', text)
+        # The scheme is resolved at runtime (no XcodeGen assumption, no
+        # placeholder to fill in); a fresh repo with no build system skips
+        # build/test cleanly instead of failing the push gate.
+        self.assertNotIn("YourScheme", text)
+        self.assertIn("_scheme:", text)
+        self.assertIn("$SCHEME", text)
+        self.assertIn("skipping build", text)
         check_line = next(line for line in text.splitlines() if line.startswith("check:"))
         self.assertEqual(check_line.strip(), "check: check-fast build")
 

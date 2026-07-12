@@ -1,19 +1,58 @@
-# Xcode app targets only (ignored for SwiftPM packages). Set SCHEME to your
-# Xcode scheme -- for xcodegen projects this is the `name:` in project.yml.
-SCHEME := "YourScheme"
+# Xcode app targets only (ignored for SwiftPM packages). The scheme is resolved
+# automatically at build/test time (see the private `_scheme` recipe below), so
+# there is no placeholder to fill in. Override it for one invocation by setting
+# the SCHEME environment variable, e.g. `SCHEME=MyApp just build`.
 DESTINATION := "platform=iOS Simulator,name=iPhone 16"
 
-# Run the test suite: SwiftPM package -> `swift test`; Xcode app -> `xcodebuild`.
+# Resolve the Xcode scheme without hard-coding it or assuming XcodeGen: honor a
+# $SCHEME override, then an XcodeGen `project.yml` name:, then the first scheme
+# `xcodebuild -list` reports. Only the Xcode path calls this, and only once a
+# project exists, so an empty result here means a real misconfiguration -- exit
+# with guidance instead of running xcodebuild with an empty scheme.
+_scheme:
+    #!/usr/bin/env sh
+    if [ -n "$SCHEME" ]; then
+        printf '%s\n' "$SCHEME"
+        exit 0
+    fi
+    if [ -f project.yml ]; then
+        name=$(sed -n 's/^name:[[:space:]]*//p' project.yml | head -1 | tr -d "\"'")
+        if [ -n "$name" ]; then
+            printf '%s\n' "$name"
+            exit 0
+        fi
+    fi
+    scheme=$(xcodebuild -list 2>/dev/null | awk 'p && NF { sub(/^[ \t]+/, ""); print; exit } /Schemes:/ { p=1 }')
+    if [ -n "$scheme" ]; then
+        printf '%s\n' "$scheme"
+        exit 0
+    fi
+    echo "error: could not resolve an Xcode scheme. Set SCHEME=<name> (run 'xcodebuild -list' to see them)." >&2
+    exit 1
+
+# SwiftPM package -> `swift test`; Xcode project -> `xcodebuild`; neither present
+# yet -> skip cleanly so a freshly-scaffolded repo is not blocked before its app
+# exists.
+# Run the test suite (dispatches on project type).
 test:
     #!/usr/bin/env sh
     if [ -f Package.swift ]; then
         swift test
+    elif find . -maxdepth 1 \( -name '*.xcodeproj' -o -name '*.xcworkspace' \) 2>/dev/null | grep -q .; then
+        scheme=$(just _scheme) || exit 1
+        xcodebuild -scheme "$scheme" test -destination "{{DESTINATION}}"
     else
-        xcodebuild -scheme "{{SCHEME}}" test -destination "{{DESTINATION}}"
+        echo "No Package.swift or Xcode project found yet; skipping tests."
     fi
 
-# Run lint checks
+# Run lint checks (skip cleanly when no Swift files are tracked yet, so a
+# freshly-scaffolded repo can make its first commit; swiftlint errors on empty)
 lint:
+    #!/usr/bin/env sh
+    if [ -z "$(git ls-files '*.swift')" ]; then
+        echo "No Swift files tracked; skipping swiftlint."
+        exit 0
+    fi
     swiftlint lint
 
 # Format the codebase (Apple swift-format via the Xcode toolchain; tracked source only)
@@ -24,13 +63,19 @@ format:
 lint-format:
     git ls-files -z '*.swift' | xargs -0 xcrun swift-format lint --parallel --strict
 
-# Build: SwiftPM package -> `swift build`; Xcode app -> `xcodebuild`.
+# SwiftPM package -> `swift build`; Xcode project -> `xcodebuild`; neither
+# present yet -> skip cleanly so the first commit/push is not blocked before the
+# app has been generated.
+# Build the project (dispatches on project type).
 build:
     #!/usr/bin/env sh
     if [ -f Package.swift ]; then
         swift build
+    elif find . -maxdepth 1 \( -name '*.xcodeproj' -o -name '*.xcworkspace' \) 2>/dev/null | grep -q .; then
+        scheme=$(just _scheme) || exit 1
+        xcodebuild -scheme "$scheme" build -destination "{{DESTINATION}}"
     else
-        xcodebuild -scheme "{{SCHEME}}" build -destination "{{DESTINATION}}"
+        echo "No Package.swift or Xcode project found yet; skipping build."
     fi
 
 # Fast static checks for the pre-commit hook (no build, no tests)
