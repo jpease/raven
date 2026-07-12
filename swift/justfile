@@ -1,8 +1,8 @@
-# Xcode app targets only (ignored for SwiftPM packages). The scheme is resolved
-# automatically at build/test time (see the private `_scheme` recipe below), so
-# there is no placeholder to fill in. Override it for one invocation by setting
-# the SCHEME environment variable, e.g. `SCHEME=MyApp just build`.
-DESTINATION := "platform=iOS Simulator,name=iPhone 16"
+# Xcode app targets only (ignored for SwiftPM packages). Both the scheme and the
+# build/test destination are resolved automatically at build/test time (see the
+# private `_scheme` and `_destination` recipes below), so there is nothing to
+# fill in. Override either for one invocation via an environment variable, e.g.
+# `SCHEME=MyApp just build` or `DESTINATION='platform=macOS' just test`.
 
 # Resolve the Xcode scheme without hard-coding it or assuming XcodeGen: honor a
 # $SCHEME override, then an XcodeGen `project.yml` name:, then the first scheme
@@ -30,6 +30,43 @@ _scheme:
     echo "error: could not resolve an Xcode scheme. Set SCHEME=<name> (run 'xcodebuild -list' to see them)." >&2
     exit 1
 
+# Resolve a build/test destination for the scheme without assuming iOS/iPhone --
+# an Xcode scheme may target macOS, iOS, tvOS, watchOS, or visionOS. Honor a
+# $DESTINATION override, otherwise ask xcodebuild which destinations are eligible
+# for THIS scheme and pick a local one (a Simulator if any, else this Mac),
+# returned as an unambiguous `id=<udid>`. Skips physical devices, which would
+# need code signing. Empty means no runnable destination -- exit with guidance.
+_destination scheme:
+    #!/usr/bin/env sh
+    if [ -n "$DESTINATION" ]; then
+        printf '%s\n' "$DESTINATION"
+        exit 0
+    fi
+    id=$(xcodebuild -showdestinations -scheme "{{scheme}}" 2>/dev/null | awk '
+        /Available destinations/ { p = 1; next }
+        /Ineligible destinations/ { p = 0 }
+        !p { next }
+        !match($0, /id:[^,}]+/) { next }
+        {
+            id = substr($0, RSTART + 3, RLENGTH - 3)
+            gsub(/^[ \t]+|[ \t]+$/, "", id)
+            plat = ""
+            if (match($0, /platform:[^,}]+/)) {
+                plat = substr($0, RSTART + 9, RLENGTH - 9)
+                gsub(/^[ \t]+|[ \t]+$/, "", plat)
+            }
+            if (plat ~ /Simulator/ && sim == "") sim = id
+            else if (plat == "macOS" && mac == "") mac = id
+        }
+        END { if (sim != "") print sim; else if (mac != "") print mac }
+    ')
+    if [ -n "$id" ]; then
+        printf 'id=%s\n' "$id"
+        exit 0
+    fi
+    echo "error: could not resolve a destination for scheme '{{scheme}}'. Set DESTINATION=<value> (run 'xcodebuild -showdestinations -scheme {{scheme}}' to see options)." >&2
+    exit 1
+
 # SwiftPM package -> `swift test`; Xcode project -> `xcodebuild`; neither present
 # yet -> skip cleanly so a freshly-scaffolded repo is not blocked before its app
 # exists.
@@ -40,7 +77,8 @@ test:
         swift test
     elif find . -maxdepth 1 \( -name '*.xcodeproj' -o -name '*.xcworkspace' \) 2>/dev/null | grep -q .; then
         scheme=$(just _scheme) || exit 1
-        xcodebuild -scheme "$scheme" test -destination "{{DESTINATION}}"
+        dest=$(just _destination "$scheme") || exit 1
+        xcodebuild -scheme "$scheme" test -destination "$dest"
     else
         echo "No Package.swift or Xcode project found yet; skipping tests."
     fi
@@ -73,7 +111,8 @@ build:
         swift build
     elif find . -maxdepth 1 \( -name '*.xcodeproj' -o -name '*.xcworkspace' \) 2>/dev/null | grep -q .; then
         scheme=$(just _scheme) || exit 1
-        xcodebuild -scheme "$scheme" build -destination "{{DESTINATION}}"
+        dest=$(just _destination "$scheme") || exit 1
+        xcodebuild -scheme "$scheme" build -destination "$dest"
     else
         echo "No Package.swift or Xcode project found yet; skipping build."
     fi

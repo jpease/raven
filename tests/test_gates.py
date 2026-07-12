@@ -141,6 +141,14 @@ class GatesTests(unittest.TestCase):
         self.assertIn("_scheme:", text)
         self.assertIn("$SCHEME", text)
         self.assertIn("skipping build", text)
+        # The destination is resolved per-scheme, not hardcoded to iPhone/iOS --
+        # an Xcode scheme may target macOS, tvOS, watchOS, or visionOS, so a
+        # hardcoded iOS-Simulator destination would break the build gate for
+        # every non-iOS project.
+        self.assertNotIn("iPhone 16", text)
+        self.assertIn("_destination", text)
+        self.assertIn("-showdestinations", text)
+        self.assertIn("$DESTINATION", text)
         check_line = next(line for line in text.splitlines() if line.startswith("check:"))
         self.assertEqual(check_line.strip(), "check: check-fast build")
 
