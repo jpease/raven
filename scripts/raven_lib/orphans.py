@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from .constants import KIND_SYMLINK, STARTER_TOOL_CONFIG_PATHS
@@ -22,6 +23,53 @@ def shipped_relatives(template: Path, destination: Path) -> set[str]:
     raw = {entry.relative for entry in iter_template_entries(template, set(), None)}
     resolved |= raw & set(STARTER_TOOL_CONFIG_PATHS)
     return resolved
+
+
+def _safe_relative(destination: Path, relative: object) -> Path | None:
+    """Resolve a manifest file key to its in-destination target, or None if unsafe.
+
+    A valid Raven manifest key is a canonical, destination-relative POSIX path.
+    Anything else is rejected (with a stderr warning) so orphan classification
+    and removal can never name or mutate a file outside ``destination``:
+
+    - a non-string key, or one containing a backslash;
+    - a non-canonical form: an absolute path, a ``..`` traversal, a ``.`` or
+      empty segment (leading ``./``, a bare ``.``, an empty string, a trailing
+      slash, or a doubled slash);
+    - a path whose parent directory escapes ``destination`` through a symlinked
+      ancestor. The leaf itself may legitimately be a managed symlink that
+      ``remove_orphans`` unlinks without following, so only the parent is
+      resolved. A not-yet-created parent is not an escape: the nearest existing
+      ancestor is resolved instead.
+    """
+    if not isinstance(relative, str) or "\\" in relative:
+        return _reject(relative)
+    segments = relative.split("/")
+    if any(segment in ("", ".", "..") for segment in segments):
+        return _reject(relative)
+    if Path(relative).is_absolute():
+        return _reject(relative)
+    target = destination / relative
+    probe = target.parent
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    try:
+        resolved_parent = probe.resolve()
+        resolved_dest = destination.resolve()
+    except OSError:
+        return _reject(relative)
+    if not resolved_parent.is_relative_to(resolved_dest):
+        return _reject(relative)
+    return target
+
+
+def _reject(relative: object) -> None:
+    """Warn that a manifest key is unsafe and skip it; returns None for callers."""
+    print(
+        f"warning: ignoring unsafe Raven manifest path {relative!r} "
+        "(not a canonical path inside the destination); skipping it.",
+        file=sys.stderr,
+    )
 
 
 def _unmodified_baseline(record: ManifestRecord, fingerprint: Fingerprint) -> bool:
@@ -56,8 +104,11 @@ def classify_orphans(template: Path, destination: Path, manifest: dict) -> Orpha
     orphan_modified: list[str] = []
     already_gone: list[str] = []
     for relative in orphans:
+        target = _safe_relative(destination, relative)
+        if target is None:
+            continue
         record = parse_record(tracked.get(relative))
-        fingerprint = destination_fingerprint(destination / relative)
+        fingerprint = destination_fingerprint(target)
         if fingerprint is None:
             already_gone.append(relative)
         elif record is not None and _unmodified_baseline(record, fingerprint):
@@ -75,9 +126,9 @@ def remove_orphans(destination: Path, relatives: list[str]) -> list[str]:
     """
     removed: list[str] = []
     for relative in relatives:
-        if ".." in Path(relative).parts:
+        target = _safe_relative(destination, relative)
+        if target is None:
             continue
-        target = destination / relative
         if target.is_symlink() or target.exists():
             target.unlink()
         else:

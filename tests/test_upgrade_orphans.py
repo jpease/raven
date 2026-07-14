@@ -134,6 +134,30 @@ class UpgradeOrphanTests(RavenTestCase):
         self.assertIn(starter, load_manifest(self.destination)["files"])
         self.assertNotIn("Removed", output)
 
+    def test_absolute_manifest_key_never_deletes_external_file(self) -> None:
+        # A crafted/corrupted manifest with an absolute key pointing outside the
+        # destination must never lead a live upgrade to name or delete that file.
+        from raven_lib.hashing import file_sha256
+        from raven_lib.manifest import save_manifest
+
+        self._install()
+        outside = self.fake_repo_root / "evil.md"  # outside the destination
+        _write(outside, "precious\n")
+        sha = file_sha256(outside)
+
+        manifest = load_manifest(self.destination)
+        manifest["files"][str(outside)] = {
+            "kind": "file",
+            "installedSha256": sha,
+            "sourceSha256": sha,
+        }
+        save_manifest(self.destination, manifest)
+
+        rc, output = self._upgrade()
+        self.assertEqual(rc, 0)
+        self.assertTrue(outside.exists(), "live upgrade deleted a file outside the destination")
+        self.assertNotIn(str(outside), output)
+
 
 if __name__ == "__main__":
     unittest.main()
