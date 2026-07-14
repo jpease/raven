@@ -47,6 +47,56 @@ class BuildConfigTests(unittest.TestCase):
         self.assertEqual(config.platform, "github")
         self.assertEqual(config.exclude_paths, ["a/b", "c/d"])
 
+    def test_include_readme_true_parses_to_bool_true(self):
+        config = raven.build_config({"include_readme": True}, exists=True)
+        self.assertIs(config.include_readme, True)
+
+    def test_include_readme_false_parses_to_bool_false(self):
+        config = raven.build_config({"include_readme": False}, exists=True)
+        self.assertIs(config.include_readme, False)
+
+    def test_include_readme_absent_defaults_to_false(self):
+        config = raven.build_config({}, exists=True)
+        self.assertIs(config.include_readme, False)
+
+    def test_include_readme_quoted_false_string_raises_config_error(self):
+        # Issue #106 — bool("false") coerces to True; a quoted TOML string
+        # must not silently flip the meaning of the value.
+        with self.assertRaises(raven.ConfigError):
+            raven.build_config({"include_readme": "false"}, exists=True)
+
+    def test_include_readme_quoted_true_string_raises_config_error(self):
+        with self.assertRaises(raven.ConfigError):
+            raven.build_config({"include_readme": "true"}, exists=True)
+
+    def test_include_readme_numeric_raises_config_error(self):
+        with self.assertRaises(raven.ConfigError):
+            raven.build_config({"include_readme": 1}, exists=True)
+
+    def test_include_readme_array_raises_config_error(self):
+        with self.assertRaises(raven.ConfigError):
+            raven.build_config({"include_readme": [True]}, exists=True)
+
+    def test_include_readme_table_raises_config_error(self):
+        with self.assertRaises(raven.ConfigError):
+            raven.build_config({"include_readme": {"nested": True}}, exists=True)
+
+    def test_include_readme_error_message_names_key_and_value(self):
+        with self.assertRaises(raven.ConfigError) as ctx:
+            raven.build_config({"include_readme": "false"}, exists=True)
+        self.assertIn("include_readme", str(ctx.exception))
+        self.assertIn("must be true or false", str(ctx.exception))
+        self.assertIn("'false'", str(ctx.exception))
+
+    def test_load_config_rejects_quoted_include_readme_from_toml_text(self):
+        # The TOML parser turns a quoted `include_readme = "false"` into the
+        # Python string "false" -- confirm the end-to-end path (parse -> build)
+        # also raises, not just a synthetic dict passed directly to build_config.
+        raw = raven.parse_simple_toml('include_readme = "false"\n')
+        self.assertEqual(raw["include_readme"], "false")
+        with self.assertRaises(raven.ConfigError):
+            raven.build_config(raw, exists=True)
+
 
 class ParseSimpleTomlTests(unittest.TestCase):
     """Issue #28 — TOML parser must handle literal strings, quoted commas, and hash in strings."""

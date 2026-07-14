@@ -117,6 +117,61 @@ class MalformedConfigTests(RavenTestCase):
             any(f.severity is Severity.ERROR and "malformed" in f.title.lower() for f in findings)
         )
 
+    def test_upgrade_rejects_quoted_include_readme_and_writes_nothing(self):
+        # Issue #106 -- a structurally valid config with include_readme = "false"
+        # (a quoted string) must be rejected, not silently coerced to True via
+        # bool("false"). Nothing should be written on rejection.
+        _write_config(
+            self.destination,
+            'template = "python"\ninclude_readme = "false"\n[issue_tracker]\nplatform = "none"\n',
+        )
+        before = _tree(self.destination)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_upgrade(_upgrade_ns(self.destination))
+        self.assertEqual(rc, 2)
+        self.assertIn("include_readme must be true or false", err.getvalue())
+        self.assertEqual(_tree(self.destination), before)
+
+    def test_install_rejects_quoted_include_readme(self):
+        _write_config(
+            self.destination,
+            'template = "python"\ninclude_readme = "false"\n[issue_tracker]\nplatform = "none"\n',
+        )
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_install(_install_ns(self.destination))
+        self.assertEqual(rc, 2)
+
+    def test_doctor_reports_quoted_include_readme_as_malformed(self):
+        _write_config(
+            self.destination,
+            'template = "python"\ninclude_readme = "false"\n[issue_tracker]\nplatform = "none"\n',
+        )
+        findings = raven.build_doctor_findings(self.destination)
+        self.assertTrue(
+            any(
+                f.severity is Severity.ERROR
+                and "malformed" in f.title.lower()
+                and "include_readme" in f.detail
+                for f in findings
+            )
+        )
+
+    def test_assess_reports_quoted_include_readme_as_malformed(self):
+        _write_config(
+            self.destination,
+            'template = "python"\ninclude_readme = "false"\n[issue_tracker]\nplatform = "none"\n',
+        )
+        findings = raven.build_assess_findings(self.destination, run=False)
+        self.assertTrue(
+            any(
+                f.severity is Severity.ERROR
+                and "malformed" in f.title.lower()
+                and "include_readme" in f.detail
+                for f in findings
+            )
+        )
+
 
 # ---------------------------------------------------------------------------
 # #31 — Validate install requests before writing configuration

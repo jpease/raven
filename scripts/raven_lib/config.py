@@ -217,9 +217,12 @@ def build_config(raw: dict, *, exists: bool) -> RavenConfig:
         raw_issue_tracker.get("platform") if isinstance(raw_issue_tracker, dict) else None
     )
     platform = raw_platform if isinstance(raw_platform, str) else "none"
+    raw_include_readme = raw.get("include_readme", False)
+    if not isinstance(raw_include_readme, bool):
+        raise ConfigError(f"include_readme must be true or false, got {raw_include_readme!r}")
     return RavenConfig(
         template=template if isinstance(template, str) else None,
-        include_readme=bool(raw.get("include_readme", False)),
+        include_readme=raw_include_readme,
         components=_merge_component_overrides(raw, "components", DEFAULT_COMPONENTS),
         claude_components=_merge_component_overrides(
             raw, "components.claude", DEFAULT_CLAUDE_COMPONENTS
