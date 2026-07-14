@@ -9,7 +9,7 @@ from .apply import (
     copy_paths,
 )
 from .blocks import write_guided_merge_artifacts
-from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH
+from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH, _any_exists
 from .manifest import update_manifest
 from .models import ApplyPlan, Classification, OrphanClassification, RavenConfig, TemplateEntry
 from .orphans import remove_orphans
@@ -190,7 +190,7 @@ def print_dry_run_plan(
         )
         print()
     if plan.adopt_claude_symlink:
-        if (destination / CLAUDE_BACKUP_PATH).exists():
+        if _any_exists(destination / CLAUDE_BACKUP_PATH):
             print(
                 f"error: {CLAUDE_BACKUP_PATH} already exists; "
                 "remove it before adopting the CLAUDE.md symlink.",

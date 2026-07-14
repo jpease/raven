@@ -142,6 +142,82 @@ class ClaudeSymlinkTests(RavenTestCase):
         )
         self.assertIn("CLAUDE.md.bak already exists", output.getvalue())
 
+    def test_dry_run_with_adopt_claude_symlink_fails_if_backup_is_broken_symlink(self):
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / "CLAUDE.md").write_text("custom claude guidance\n", encoding="utf-8")
+        missing_target = self.destination / "missing-target"
+        (self.destination / "CLAUDE.md.bak").symlink_to(missing_target)
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            rc = raven._run(
+                self.destination,
+                "python",
+                False,
+                True,
+                [],
+                adopt_claude_symlink_requested=True,
+                prompt_claude_symlink=False,
+            )
+
+        self.assertEqual(rc, 2)
+        self.assertIn("CLAUDE.md.bak already exists", output.getvalue())
+        self.assertTrue((self.destination / "AGENTS.md").is_file())
+        self.assertFalse((self.destination / "CLAUDE.md").is_symlink())
+        self.assertTrue((self.destination / "CLAUDE.md.bak").is_symlink())
+        self.assertEqual(os.readlink(self.destination / "CLAUDE.md.bak"), str(missing_target))
+
+    def test_run_with_adopt_claude_symlink_fails_if_backup_is_broken_symlink(self):
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / "CLAUDE.md").write_text("custom claude guidance\n", encoding="utf-8")
+        missing_target = self.destination / "missing-target"
+        (self.destination / "CLAUDE.md.bak").symlink_to(missing_target)
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            rc = raven._run(
+                self.destination,
+                "python",
+                False,
+                False,
+                [],
+                adopt_claude_symlink_requested=True,
+                prompt_claude_symlink=False,
+            )
+
+        self.assertEqual(rc, 2)
+        self.assertIn("CLAUDE.md.bak already exists", output.getvalue())
+        self.assertTrue((self.destination / "AGENTS.md").is_file())
+        self.assertFalse((self.destination / "CLAUDE.md").is_symlink())
+        self.assertTrue((self.destination / "CLAUDE.md.bak").is_symlink())
+        self.assertEqual(os.readlink(self.destination / "CLAUDE.md.bak"), str(missing_target))
+
+    def test_dry_run_with_adopt_claude_symlink_fails_if_backup_is_valid_symlink(self):
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / "CLAUDE.md").write_text("custom claude guidance\n", encoding="utf-8")
+        real_target = self.destination / "real-backup-target.md"
+        real_target.write_text("real backup contents\n", encoding="utf-8")
+        (self.destination / "CLAUDE.md.bak").symlink_to(real_target)
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            rc = raven._run(
+                self.destination,
+                "python",
+                False,
+                True,
+                [],
+                adopt_claude_symlink_requested=True,
+                prompt_claude_symlink=False,
+            )
+
+        self.assertEqual(rc, 2)
+        self.assertIn("CLAUDE.md.bak already exists", output.getvalue())
+        self.assertTrue((self.destination / "AGENTS.md").is_file())
+        self.assertFalse((self.destination / "CLAUDE.md").is_symlink())
+        self.assertTrue((self.destination / "CLAUDE.md.bak").is_symlink())
+        self.assertEqual(os.readlink(self.destination / "CLAUDE.md.bak"), str(real_target))
+
 
 if __name__ == "__main__":
     unittest.main()
