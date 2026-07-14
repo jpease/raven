@@ -141,7 +141,7 @@ def main() -> int:
         return _deny("No active session. Run raven-session.py --init first.", payload)
 
     result = subprocess.run(
-        [sys.executable, ".claude/scripts/raven-session.py", "--validate", unit],
+        [sys.executable, ".codex/scripts/raven-session.py", "--validate", unit],
         capture_output=True,
         text=True,
     )

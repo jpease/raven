@@ -1,14 +1,17 @@
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 from helpers import REPO_ROOT, RavenTestCase, load_script_module
 
 TOOL_CHECK_SCRIPT = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
+CODEX_TOOL_CHECK_SCRIPT = REPO_ROOT / "common" / ".codex" / "scripts" / "raven-tool-check.py"
 
 
 class ToolCheckTests(RavenTestCase):
@@ -227,6 +230,76 @@ class ToolCheckJsonEndToEndTests(RavenTestCase):
         result = self._run("[]", ["--session-start"])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("Traceback", result.stderr)
+
+
+class AdapterHelpPathTests(unittest.TestCase):
+    """Regression for #105: a Codex-only install (no .claude tree) must
+    advertise `.codex/scripts/raven-tool-check.py`, not the Claude adapter's
+    path, in its --help output and remediation guidance."""
+
+    def _help_output(self, script: Path) -> str:
+        result = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def test_codex_help_advertises_codex_script_path(self):
+        output = self._help_output(CODEX_TOOL_CHECK_SCRIPT)
+        self.assertIn(".codex/scripts/raven-tool-check.py", output)
+        self.assertNotIn(".claude/scripts/raven-tool-check.py", output)
+
+    def test_claude_help_advertises_claude_script_path(self):
+        output = self._help_output(TOOL_CHECK_SCRIPT)
+        self.assertIn(".claude/scripts/raven-tool-check.py", output)
+        self.assertNotIn(".codex/scripts/raven-tool-check.py", output)
+
+    def _session_start_prompt(self, script: Path) -> str:
+        module = load_script_module(f"raven_tool_check_prompt_{script.parent.parent.name}", script)
+        missing = [
+            {
+                "name": "example-tool",
+                "purpose": "example purpose",
+                "install": "example install guidance",
+            }
+        ]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            module.print_session_start_prompt(missing, Path("/tmp/tool-memory.json"))
+        return buf.getvalue()
+
+    def test_codex_remediation_advertises_codex_script_path(self):
+        output = self._session_start_prompt(CODEX_TOOL_CHECK_SCRIPT)
+        self.assertIn(".codex/scripts/raven-tool-check.py", output)
+        self.assertNotIn(".claude/scripts/raven-tool-check.py", output)
+
+    def test_claude_remediation_advertises_claude_script_path(self):
+        output = self._session_start_prompt(TOOL_CHECK_SCRIPT)
+        self.assertIn(".claude/scripts/raven-tool-check.py", output)
+        self.assertNotIn(".codex/scripts/raven-tool-check.py", output)
+
+    def test_codex_docs_install_guidance_still_points_at_claude_docs(self):
+        # The `docs` component always installs to .claude/docs (there is no
+        # .codex/docs), so the mcp-language-server install guidance must keep
+        # referencing .claude/docs even in the Codex adapter copy.
+        module = load_script_module("raven_tool_check_codex_docs", CODEX_TOOL_CHECK_SCRIPT)
+        tool = next(tool for tool in module.TOOLS if tool["id"] == "mcp-language-server")
+        self.assertIn(".claude/docs/raven-lsp-mcp.md", tool["install"]["darwin"])
+        self.assertIn(".claude/docs/raven-lsp-mcp.md", tool["install"]["linux"])
+
+    def test_codex_claude_app_detection_paths_are_unchanged(self):
+        # _claude_mcp_config_paths() detects the globally-installed Claude
+        # Code app under $HOME, unrelated to which project adapter is
+        # installed, so it must keep referencing ~/.claude.json and
+        # ~/.claude/settings.json even in the Codex adapter copy.
+        module = load_script_module("raven_tool_check_codex_claude_app", CODEX_TOOL_CHECK_SCRIPT)
+        home = Path.home()
+        paths = module._claude_mcp_config_paths()
+        self.assertIn(home / ".claude.json", paths)
+        self.assertIn(home / ".claude" / "settings.json", paths)
 
 
 if __name__ == "__main__":
