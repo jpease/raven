@@ -497,10 +497,36 @@ class CheckpointHookTests(unittest.TestCase):
         )
         self.assertNotEqual(rc, 0)
 
-    def test_extract_unit_handles_shell_quoted_name(self):
+    def test_hook_allows_unrelated_command_without_session(self):
+        # Core fix for #104: an unrelated Bash command must not be denied just
+        # because there is no active session. With enforcement ON and no
+        # .raven/session.md, `git status` should pass through untouched.
+        self.config_file.write_text(
+            "[lifecycle]\ncheckpoint_enforcement = true\n", encoding="utf-8"
+        )
+        rc = self._run_hook(_claude_payload("git status"))
+        self.assertEqual(rc, 0)
+
+    def test_hook_allows_command_mentioning_complete_word(self):
+        # A command that merely mentions --complete but does not invoke
+        # raven-session.py must not be treated as a checkpoint completion.
+        self.config_file.write_text(
+            "[lifecycle]\ncheckpoint_enforcement = true\n", encoding="utf-8"
+        )
+        rc = self._run_hook(_claude_payload("echo --complete foo"))
+        self.assertEqual(rc, 0)
+
+    def test_completion_unit_handles_shell_quoted_name(self):
         mod = load_hook()
-        unit = mod._extract_unit('python .claude/scripts/raven-session.py --complete "first unit"')
+        unit = mod._completion_unit(
+            'python .claude/scripts/raven-session.py --complete "first unit"'
+        )
         self.assertEqual(unit, "first unit")
+
+    def test_completion_unit_ignores_non_session_command(self):
+        mod = load_hook()
+        self.assertIsNone(mod._completion_unit("echo --complete foo"))
+        self.assertIsNone(mod._completion_unit("git status"))
 
     def test_hook_allows_valid_multi_word_checkpoint(self):
         self.config_file.write_text(
@@ -519,6 +545,36 @@ class CheckpointHookTests(unittest.TestCase):
             _claude_payload('python .claude/scripts/raven-session.py --complete "first unit"')
         )
         self.assertEqual(rc, 0)
+
+
+def _find_checkpoint_entry(config: dict) -> dict:
+    for entry in config["hooks"]["PreToolUse"]:
+        for hook in entry.get("hooks", []):
+            if "raven-session-checkpoint.py" in hook.get("command", ""):
+                return entry
+    raise AssertionError("no PreToolUse entry invokes raven-session-checkpoint.py")
+
+
+class CheckpointConfigTests(unittest.TestCase):
+    """The installed configs must invoke the checkpoint hook for Bash calls.
+
+    Hook matchers select tools, not Bash command text, so the old
+    ``raven-session.*--complete`` matcher never fired (issue #104).
+    """
+
+    def test_claude_settings_matcher_targets_bash(self):
+        config = json.loads(
+            (REPO_ROOT / "common" / ".claude" / "settings.json").read_text(encoding="utf-8")
+        )
+        entry = _find_checkpoint_entry(config)
+        self.assertEqual(entry["matcher"], "Bash")
+
+    def test_codex_hooks_matcher_targets_bash(self):
+        config = json.loads(
+            (REPO_ROOT / "common" / ".codex" / "hooks.json").read_text(encoding="utf-8")
+        )
+        entry = _find_checkpoint_entry(config)
+        self.assertEqual(entry["matcher"], "^Bash$")
 
 
 class EnforcementEnabledTests(unittest.TestCase):

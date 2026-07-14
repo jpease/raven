@@ -95,19 +95,29 @@ def _enforcement_enabled() -> bool:
     return True
 
 
-def _extract_unit(command: str) -> str | None:
-    """Return the unit name argument of a ``--complete`` invocation.
+def _completion_unit(command: str) -> str | None:
+    """Return the unit argument only for a genuine ``raven-session.py --complete``.
+
+    A completion command must actually invoke the session CLI: some token's
+    basename must be ``raven-session.py`` and a ``--complete`` token must be
+    present. The unit is the token immediately following ``--complete``. Any
+    other command — including one that merely mentions ``--complete`` — yields
+    ``None`` so unrelated shell commands are allowed through untouched.
 
     Tokenizes with shell rules so a quoted unit name containing spaces survives
     intact, matching the positional argument the session CLI receives. Falls
-    back to a single non-whitespace token only when the command is not validly
-    quoted, so a malformed command still defers to the CLI's own validation.
+    back to regexes only when the command is not validly quoted, so a malformed
+    command still defers to the CLI's own validation.
     """
     try:
         tokens = shlex.split(command)
     except ValueError:
+        if not re.search(r"(?:^|[\s/])raven-session\.py(?:\s|$)", command):
+            return None
         m = re.search(r"--complete\s+(\S+)", command)
         return m.group(1) if m else None
+    if not any(Path(token).name == "raven-session.py" for token in tokens):
+        return None
     for i, token in enumerate(tokens):
         if token == "--complete":
             return tokens[i + 1] if i + 1 < len(tokens) else None
@@ -119,16 +129,16 @@ def main() -> int:
     if payload is None:
         return 0
 
+    command = _extract_command(payload)
+    unit = _completion_unit(command)
+    if not unit:
+        return 0
+
     if not _enforcement_enabled():
         return 0
 
     if not Path(".raven/session.md").exists():
         return _deny("No active session. Run raven-session.py --init first.", payload)
-
-    command = _extract_command(payload)
-    unit = _extract_unit(command)
-    if not unit:
-        return 0
 
     result = subprocess.run(
         [sys.executable, ".claude/scripts/raven-session.py", "--validate", unit],

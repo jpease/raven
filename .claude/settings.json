@@ -30,7 +30,7 @@
         ]
       },
       {
-        "matcher": "raven-session.*--complete",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
