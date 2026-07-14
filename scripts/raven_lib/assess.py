@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from pathlib import Path
 
 from .config import ConfigError, load_config
@@ -14,43 +15,85 @@ _WIRING = "Quality-gate wiring"
 _FIT = "Template fit"
 _GATES = "Gate compliance"
 
+# Tokens made up solely of these characters are top-level shell operators that
+# separate one simple command from the next.
+_OPERATOR_CHARS = frozenset(";|&()<>")
 
-def _strip_shell_noise(text: str) -> str:
-    """Remove comments and quoted string contents from shell hook text.
+# Commands that pass through to their argument list without changing what
+# actually runs, so `exec just check` / `env just check` still count as `just`
+# being the effective command.
+_TRANSPARENT_WRAPPERS = frozenset({"exec", "command", "env", "sudo", "time", "nice", "builtin"})
 
-    Only unquoted, uncommented tokens can actually execute, so a commented-out
-    ``# just check`` or an echoed ``"run just check manually"`` must not read as
-    the gate being wired (#72). This is grading, not parsing, so the quote/comment
-    tracking is intentionally crude: it does not handle shell escapes.
+_ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _command_segments(text: str) -> list[list[str]]:
+    """Split hook text into simple-command segments of tokens.
+
+    Splits on top-level shell operators (``;`` ``|`` ``&`` ``(`` ``)`` ``<``
+    ``>``) while respecting quotes, and drops ``#`` comments -- shlex handles
+    both natively. On a lexer error such as unbalanced quotes, that line falls
+    back to a whitespace split so a malformed-but-real invocation still has a
+    chance (best effort -- err toward more checking).
     """
-    out_lines = []
+    segments: list[list[str]] = []
     for line in text.splitlines():
-        kept = []
-        quote = None
-        for char in line:
-            if quote:
-                if char == quote:
-                    quote = None
-                continue
-            if char in "'\"":
-                quote = char
-                continue
-            if char == "#":
-                break
-            kept.append(char)
-        out_lines.append("".join(kept))
-    return "\n".join(out_lines)
+        try:
+            lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+            lexer.whitespace_split = True
+            tokens = list(lexer)
+        except ValueError:
+            segments.append(line.split())
+            continue
+
+        current: list[str] = []
+        for token in tokens:
+            if token and all(ch in _OPERATOR_CHARS for ch in token):
+                segments.append(current)
+                current = []
+            else:
+                current.append(token)
+        segments.append(current)
+
+    return [segment for segment in segments if segment]
+
+
+def _effective_command(segment: list[str]) -> tuple[str, str | None]:
+    """Return (command, arg-right-after-command) for one simple-command segment.
+
+    Skips leading environment assignments (``RAVEN=1``) and transparent
+    wrappers (``exec``, ``sudo``, ...) so ``exec just check`` still resolves to
+    the command ``just``.
+    """
+    index = 0
+    while index < len(segment):
+        token = segment[index]
+        if token in _TRANSPARENT_WRAPPERS or _ENV_ASSIGNMENT_RE.match(token):
+            index += 1
+            continue
+        break
+    if index >= len(segment):
+        return "", None
+    command = segment[index]
+    arg = segment[index + 1] if index + 1 < len(segment) else None
+    return command, arg
 
 
 def _invokes_just_recipe(text: str, recipe: str) -> bool:
-    """True when ``text`` runs ``just <recipe>`` as a whole token.
+    """True when ``text`` actually runs ``just <recipe>`` as a command.
 
-    The trailing lookahead stops ``just check`` from matching ``just check-fast``
-    (and vice versa), so the pre-push full-gate check is never satisfied by a hook
-    that only runs the fast subset.
+    Tokenizes with shell semantics (quotes, comments, escapes) instead of
+    substring-matching, so quoting the recipe (``just "check"``) does not
+    hide it (#108) and an echoed/printed/commented-out reference (``echo "just
+    check"``, ``# just check``) is never mistaken for the gate actually
+    running (#72). The recipe must be the exact token right after ``just``, so
+    ``just check-fast`` never satisfies a check for ``check`` (and vice versa).
     """
-    executable = _strip_shell_noise(text)
-    return re.search(rf"\bjust\s+{re.escape(recipe)}(?![\w-])", executable) is not None
+    for segment in _command_segments(text):
+        command, arg = _effective_command(segment)
+        if command == "just" and arg == recipe:
+            return True
+    return False
 
 
 def resolve_manager_hook(hooks_dir: Path, name: str) -> Path:
