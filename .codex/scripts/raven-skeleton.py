@@ -84,6 +84,48 @@ STRUCTURAL_RULES: dict[str, str] = {
     ),
 }
 
+# Languages that get a SUPPLEMENTAL ast-grep structural query in addition to
+# their --kind query (see NODE_KINDS above). TS/JS/TSX top-level
+# arrow-function and function-expression `const`/`let` declarations
+# (`export const f = () => {...}`) are not covered by any node-kind union --
+# adding `lexical_declaration` wholesale to NODE_KINDS would also match every
+# ordinary `const x = 42`, flooding the symbol map. Instead this rule matches
+# only lexical/variable declarations whose initializer is itself a function
+# (arrow or function-expression), and its rows are merged with the --kind
+# rows in astgrep_skeleton. Verified against ast-grep 0.44.1 and exercised by
+# golden tests (issue #110).
+LEXICAL_FUNCTION_LANGS: frozenset[str] = frozenset({"typescript", "tsx", "javascript"})
+
+
+def lexical_function_rule(language: str) -> str | None:
+    """Return the supplemental ast-grep YAML rule that matches function-valued
+    `const`/`let` declarations for ``language``, or None when the language has
+    no such supplement."""
+    if language not in LEXICAL_FUNCTION_LANGS:
+        return None
+    return (
+        "id: raven-lexical-fn-decls\n"
+        f"language: {language}\n"
+        "rule:\n"
+        "  any:\n"
+        "    - kind: lexical_declaration\n"
+        "      has:\n"
+        "        kind: variable_declarator\n"
+        "        has:\n"
+        "          field: value\n"
+        "          any:\n"
+        "            - kind: arrow_function\n"
+        "            - kind: function_expression\n"
+        "    - kind: variable_declaration\n"
+        "      has:\n"
+        "        kind: variable_declarator\n"
+        "        has:\n"
+        "          field: value\n"
+        "          any:\n"
+        "            - kind: arrow_function\n"
+        "            - kind: function_expression\n"
+    )
+
 
 def detect_language(path: str) -> str | None:
     """Map a file path to an ast-grep language name by extension, or None."""
@@ -208,6 +250,10 @@ def astgrep_skeleton(path: str, language: str | None = None) -> list[dict] | Non
     rule = astgrep_rule(language)
     if rule is not None:
         command = [binary, "scan", "--inline-rules", rule, "--json=stream", "--", path]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            return None
+        rows = parse_astgrep_stream(result.stdout)
     else:
         kinds = node_kinds(language)
         if not kinds:
@@ -223,11 +269,40 @@ def astgrep_skeleton(path: str, language: str | None = None) -> list[dict] | Non
             "--",
             path,
         ]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        # ``ast-grep run`` follows the grep/rg convention: exit 1 means "ran
+        # fine, zero matches" (verified against ast-grep 0.44.1), not an
+        # error -- only other codes (e.g. an invalid --kind) are real
+        # failures. Treating 1 as fatal would wrongly discard the primary
+        # tier's (empty) result before the lexical-function supplement below
+        # ever runs, degrading all-arrow-function files to the ctags/rg tier.
+        if result.returncode not in (0, 1):
+            return None
+        rows = parse_astgrep_stream(result.stdout)
 
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        return None
-    return sort_rows(parse_astgrep_stream(result.stdout))
+    # Supplement TS/JS/TSX with function-valued lexical/variable
+    # declarations (arrow functions, function expressions) that no --kind
+    # union can select without also matching ordinary constants. Best
+    # effort: if the supplemental scan fails for any reason, keep the
+    # primary rows rather than lose them.
+    supplement_rule = lexical_function_rule(language)
+    if supplement_rule is not None:
+        supplement_command = [
+            binary,
+            "scan",
+            "--inline-rules",
+            supplement_rule,
+            "--json=stream",
+            "--",
+            path,
+        ]
+        supplement_result = subprocess.run(
+            supplement_command, capture_output=True, text=True, check=False
+        )
+        if supplement_result.returncode == 0:
+            rows = rows + parse_astgrep_stream(supplement_result.stdout)
+
+    return sort_rows(rows)
 
 
 def ctags_binary() -> str | None:

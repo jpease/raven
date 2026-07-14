@@ -25,6 +25,7 @@ def _have_universal_ctags() -> bool:
 HAVE_UNIVERSAL_CTAGS = _have_universal_ctags()
 
 SKELETON_SCRIPT = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-skeleton.py"
+CODEX_SKELETON_SCRIPT = REPO_ROOT / "common" / ".codex" / "scripts" / "raven-skeleton.py"
 
 
 def _module():
@@ -259,6 +260,136 @@ class AstgrepSkeletonTests(RavenTestCase):
         )
 
     @unittest.skipUnless(HAVE_ASTGREP, "ast-grep not installed")
+    def test_typescript_arrow_and_function_expression_lexical_declarations(self):
+        # Regression golden test for issue #110: top-level arrow-function and
+        # function-expression `const`/`let` declarations were silently omitted
+        # because NODE_KINDS has no lexical/variable declaration kind. This
+        # fixture reproduces the issue verbatim.
+        module = _module()
+        path = self._write(
+            "issue110.ts",
+            "export function visible() { return 1 }\nexport const omitted = () => { return 2 }\n",
+        )
+
+        rows = module.astgrep_skeleton(str(path))
+        headers = {r["header"] for r in rows}
+        self.assertIn("function visible() { return 1 }", headers)
+        self.assertIn(
+            "const omitted = () => { return 2 }",
+            headers,
+            "arrow-function const declaration should not be silently omitted (issue #110)",
+        )
+
+    @unittest.skipUnless(HAVE_ASTGREP, "ast-grep not installed")
+    def test_typescript_lexical_function_declarations_edge_cases(self):
+        # Broader golden coverage of the issue #110 supplement: exported and
+        # non-exported arrows, a typed arrow, an async arrow, a multiline
+        # arrow, a function-expression const, a plain `function` and `class`
+        # (both syntax styles retained together), and two NEGATIVES that must
+        # stay absent -- an ordinary constant and a destructuring assignment
+        # -- proving the rule does not flood the symbol map.
+        module = _module()
+        path = self._write(
+            "edge.ts",
+            "export const exportedArrow = () => { return 1 }\n\n"
+            "const localArrow = (x: number) => { return x + 1 }\n\n"
+            "const typedArrow = (x: number): number => { return x * 2 }\n\n"
+            "const asyncArrow = async () => { return 3 }\n\n"
+            "const multilineArrow = (x: number) => {\n"
+            "  const y = x + 1\n"
+            "  return y\n"
+            "}\n\n"
+            "const fnExpr = function () { return 4 }\n\n"
+            "function foo() { return 5 }\n\n"
+            "class C {\n"
+            "  method() { return 6 }\n"
+            "}\n\n"
+            "const notAFunc = 42\n\n"
+            "const { destructured } = makeThing()\n",
+        )
+
+        self.assertEqual(
+            module.astgrep_skeleton(str(path)),
+            [
+                {
+                    "start_line": 1,
+                    "end_line": 1,
+                    "header": "const exportedArrow = () => { return 1 }",
+                },
+                {
+                    "start_line": 3,
+                    "end_line": 3,
+                    "header": "const localArrow = (x: number) => { return x + 1 }",
+                },
+                {
+                    "start_line": 5,
+                    "end_line": 5,
+                    "header": "const typedArrow = (x: number): number => { return x * 2 }",
+                },
+                {
+                    "start_line": 7,
+                    "end_line": 7,
+                    "header": "const asyncArrow = async () => { return 3 }",
+                },
+                {
+                    "start_line": 9,
+                    "end_line": 12,
+                    "header": "const multilineArrow = (x: number) => {",
+                },
+                {
+                    "start_line": 14,
+                    "end_line": 14,
+                    "header": "const fnExpr = function () { return 4 }",
+                },
+                {"start_line": 16, "end_line": 16, "header": "function foo() { return 5 }"},
+                {"start_line": 18, "end_line": 20, "header": "class C {"},
+                {"start_line": 19, "end_line": 19, "header": "method() { return 6 }"},
+            ],
+        )
+
+    @unittest.skipUnless(HAVE_ASTGREP, "ast-grep not installed")
+    def test_javascript_arrow_lexical_declaration(self):
+        # Confirms the supplement also works for plain JavaScript, not just
+        # TypeScript.
+        module = _module()
+        path = self._write(
+            "arrow.js",
+            'export const greet = (name) => { return "hi " + name }\n',
+        )
+
+        self.assertEqual(
+            module.astgrep_skeleton(str(path)),
+            [
+                {
+                    "start_line": 1,
+                    "end_line": 1,
+                    "header": 'const greet = (name) => { return "hi " + name }',
+                },
+            ],
+        )
+
+    @unittest.skipUnless(HAVE_ASTGREP, "ast-grep not installed")
+    def test_all_arrow_file_stays_on_exact_astgrep_backend(self):
+        # A file with ONLY arrow-function declarations (no `function`/`class`)
+        # must not degrade to the approximate rg tier: the primary --kind
+        # query returns zero matches (ast-grep exits 1, the grep/rg "ran
+        # fine, nothing found" convention) but the lexical-function
+        # supplement must still populate the exact skeleton.
+        module = _module()
+        path = self._write(
+            "allarrow.ts",
+            "export const alpha = () => { return 1 }\nexport const beta = () => { return 2 }\n",
+        )
+
+        skeleton = module.generate_skeleton(str(path))
+        self.assertIsNotNone(skeleton)
+        self.assertEqual(skeleton.backend, "ast-grep")
+        self.assertFalse(skeleton.approximate)
+        headers = {r["header"] for r in skeleton.rows}
+        self.assertIn("const alpha = () => { return 1 }", headers)
+        self.assertIn("const beta = () => { return 2 }", headers)
+
+    @unittest.skipUnless(HAVE_ASTGREP, "ast-grep not installed")
     def test_elixir_golden_via_structural_rule(self):
         module = _module()
         path = self._write(
@@ -432,6 +563,19 @@ class CtagsSkeletonEndToEndTests(RavenTestCase):
         headers = {r["header"] for r in rows}
         self.assertIn("def alpha(x):", headers)
         self.assertIn("class Beta:", headers)
+
+
+class CommonCopyParityTests(RavenTestCase):
+    """The Claude and Codex adapters ship the same skeleton generator under
+    different roots; they must stay byte-identical so a fix applied to one
+    isn't silently missing from the other."""
+
+    def test_claude_and_codex_skeleton_scripts_are_byte_identical(self):
+        self.assertEqual(
+            SKELETON_SCRIPT.read_bytes(),
+            CODEX_SKELETON_SCRIPT.read_bytes(),
+            "common/.claude and common/.codex raven-skeleton.py copies have diverged",
+        )
 
 
 class CliTests(RavenTestCase):
