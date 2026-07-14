@@ -545,12 +545,12 @@ def print_session_start_prompt(missing: list[dict], memory_path: Path) -> None:
         " receive install instructions, be reminded later, or stop being reminded."
     )
     print(
-        "If tools are installed, run `python .claude/scripts/raven-tool-check.py --write` "
+        "If tools are installed, run `python .codex/scripts/raven-tool-check.py --write` "
         "afterward to update local memory."
     )
     print(
         "If the user chooses not to be reminded, run"
-        " `python .claude/scripts/raven-tool-check.py --no-reminder`."
+        " `python .codex/scripts/raven-tool-check.py --no-reminder`."
     )
 
 
@@ -627,12 +627,12 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Default human use:
-  python .claude/scripts/raven-tool-check.py
+  python .codex/scripts/raven-tool-check.py
 
 Agent/cache use:
-  python .claude/scripts/raven-tool-check.py --write
-  python .claude/scripts/raven-tool-check.py --session-start
-  python .claude/scripts/raven-tool-check.py --no-reminder
+  python .codex/scripts/raven-tool-check.py --write
+  python .codex/scripts/raven-tool-check.py --session-start
+  python .codex/scripts/raven-tool-check.py --no-reminder
 
 Cache location:
   ~/.raven/tool-memory.json, or RAVEN_TOOL_MEMORY if set.

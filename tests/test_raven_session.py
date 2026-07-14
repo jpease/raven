@@ -14,6 +14,8 @@ from unittest.mock import patch
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-session.py"
 HOOK_PATH = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-session-checkpoint.py"
+CODEX_SCRIPT_PATH = REPO_ROOT / "common" / ".codex" / "scripts" / "raven-session.py"
+CODEX_HOOK_PATH = REPO_ROOT / "common" / ".codex" / "hooks" / "raven-session-checkpoint.py"
 
 
 def load_session():
@@ -545,6 +547,97 @@ class CheckpointHookTests(unittest.TestCase):
             _claude_payload('python .claude/scripts/raven-session.py --complete "first unit"')
         )
         self.assertEqual(rc, 0)
+
+
+def load_codex_hook():
+    spec = importlib.util.spec_from_file_location("raven_session_checkpoint_codex", CODEX_HOOK_PATH)
+    assert spec is not None
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    # spec_from_file_location yields a SourceFileLoader; cast past the
+    # importlib.abc.Loader base, whose typeshed stub omits exec_module.
+    cast(SourceFileLoader, spec.loader).exec_module(mod)
+    return mod
+
+
+def _codex_payload(command: str) -> str:
+    return json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+        }
+    )
+
+
+class CodexCheckpointHookTests(unittest.TestCase):
+    """Regression for #105: the Codex checkpoint hook must resolve
+    ``.codex/scripts/raven-session.py``, not the Claude adapter's path, in a
+    Codex-only install (one without a ``.claude`` tree)."""
+
+    def setUp(self):
+        import shutil
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.raven_dir = self.root / ".raven"
+        self.raven_dir.mkdir()
+        self.config_file = self.raven_dir / "config.toml"
+        # Simulate a Codex-only installed project: no .claude tree at all, the
+        # session CLI lives only under .codex/scripts.
+        scripts_dir = self.root / ".codex" / "scripts"
+        scripts_dir.mkdir(parents=True)
+        shutil.copy(CODEX_SCRIPT_PATH, scripts_dir / "raven-session.py")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run_hook(self, payload_str: str) -> tuple[int, str]:
+        # A Codex PreToolUse hook always exits 0: an allow is silent, a deny
+        # is signaled via a "permissionDecision": "deny" JSON payload on
+        # stdout rather than a nonzero return code. So callers must inspect
+        # stdout, not just the return code, to tell allow from deny.
+        mod = load_codex_hook()
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            with patch("sys.stdin", io.StringIO(payload_str)):
+                f = io.StringIO()
+                with patch("sys.stdout", f):
+                    rc = mod.main()
+                return rc, f.getvalue()
+        finally:
+            os.chdir(orig)
+
+    def test_hook_allows_valid_checkpoint(self):
+        self.config_file.write_text(
+            "[lifecycle]\ncheckpoint_enforcement = true\n", encoding="utf-8"
+        )
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            mod = load_session()
+            mod.main(["--init", "greenfield", "unit-a", "unit-b"])
+        finally:
+            os.chdir(orig)
+        rc, output = self._run_hook(
+            _codex_payload("python .codex/scripts/raven-session.py --complete unit-a")
+        )
+        self.assertEqual(rc, 0)
+        self.assertNotIn("deny", output, output)
+
+    def test_claude_hook_source_references_claude_scripts_path(self):
+        source = HOOK_PATH.read_text(encoding="utf-8")
+        self.assertIn(".claude/scripts/raven-session.py", source)
+
+    def test_codex_hook_source_references_codex_scripts_path(self):
+        source = CODEX_HOOK_PATH.read_text(encoding="utf-8")
+        self.assertIn(".codex/scripts/raven-session.py", source)
+        self.assertNotIn(".claude/scripts/raven-session.py", source)
 
 
 def _find_checkpoint_entry(config: dict) -> dict:
