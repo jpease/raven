@@ -9,7 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from raven_lib.constants import KIND_FILE, KIND_SYMLINK
 from raven_lib.models import Fingerprint, ManifestRecord
-from raven_lib.orphans import _unmodified_baseline, classify_orphans, shipped_relatives
+from raven_lib.orphans import (
+    _unmodified_baseline,
+    classify_orphans,
+    remove_orphans,
+    shipped_relatives,
+)
 
 
 def _write(path: Path, text: str) -> None:
@@ -158,6 +163,49 @@ class ClassifyOrphansTests(unittest.TestCase):
         self.assertEqual(result.orphan_modified, ["docs/dropped.md"])
         self.assertEqual(result.will_remove, [])
 
+    def test_absolute_key_is_ignored_not_classified(self) -> None:
+        # A crafted absolute manifest key must never be classified: dry-run must
+        # not even NAME an external path, let alone stage it for deletion.
+        template, dest = self._setup()
+        from raven_lib.hashing import file_sha256
+
+        outside = dest.parent / "evil.md"  # a sibling of dest, outside it
+        _write(outside, "content\n")
+        sha = file_sha256(outside)
+        key = str(outside)  # absolute path
+        manifest = {
+            "schema": 1,
+            "files": {key: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        result = classify_orphans(template, dest, manifest)
+        self.assertNotIn(key, result.will_remove)
+        self.assertNotIn(key, result.orphan_modified)
+        self.assertNotIn(key, result.already_gone)
+        self.assertTrue(outside.exists())
+
+    def test_symlinked_ancestor_escape_is_ignored_not_classified(self) -> None:
+        # A relative key whose parent traverses a symlinked directory escapes the
+        # destination when joined. Classification must reject it, not fingerprint
+        # (and thereby name) the external target.
+        template, dest = self._setup()
+        from raven_lib.hashing import file_sha256
+
+        outside_dir = dest.parent / "outside"
+        secret = outside_dir / "secret.md"
+        _write(secret, "content\n")
+        sha = file_sha256(secret)
+        (dest / "link").symlink_to(outside_dir, target_is_directory=True)
+        key = "link/secret.md"
+        manifest = {
+            "schema": 1,
+            "files": {key: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        result = classify_orphans(template, dest, manifest)
+        self.assertNotIn(key, result.will_remove)
+        self.assertNotIn(key, result.orphan_modified)
+        self.assertNotIn(key, result.already_gone)
+        self.assertTrue(secret.exists())
+
 
 class UnmodifiedBaselineTests(unittest.TestCase):
     """Direct-call coverage for the symlink branches of the safety gate.
@@ -245,6 +293,49 @@ class RemoveOrphansTests(unittest.TestCase):
             removed = remove_orphans(dest, ["../evil.md"])
             self.assertEqual(removed, [])
             self.assertTrue(sentinel.exists())
+
+    def test_rejects_absolute_key(self) -> None:
+        # An absolute manifest key discards the destination when joined; the
+        # delete primitive must fail closed and leave the external file intact.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dest = root / "dest"
+            dest.mkdir()
+            outside = root / "evil.md"
+            _write(outside, "outside the destination\n")
+
+            removed = remove_orphans(dest, [str(outside)])
+            self.assertEqual(removed, [])
+            self.assertTrue(outside.exists())
+
+    def test_rejects_symlinked_ancestor_key(self) -> None:
+        # A relative key routed through a symlinked ancestor directory resolves
+        # outside the destination; removal must not follow it and delete the
+        # external target.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dest = root / "dest"
+            dest.mkdir()
+            outside_dir = root / "outside"
+            secret = outside_dir / "secret.md"
+            _write(secret, "precious\n")
+            (dest / "link").symlink_to(outside_dir, target_is_directory=True)
+
+            removed = remove_orphans(dest, ["link/secret.md"])
+            self.assertEqual(removed, [])
+            self.assertTrue(secret.exists())
+
+    def test_rejects_non_canonical_keys(self) -> None:
+        # Non-canonical forms (leading ./, trailing/doubled slash, bare dot,
+        # empty, backslash) are rejected. A legit file is only ever removable via
+        # its canonical key, so rejecting these cannot lose a real orphan.
+        with TemporaryDirectory() as tmp:
+            dest = Path(tmp)
+            _write(dest / "a.md", "x\n")
+            for key in ["./a.md", "a.md/", "sub//a.md", ".", "", "sub\\a.md"]:
+                removed = remove_orphans(dest, [key])
+                self.assertEqual(removed, [], f"non-canonical key not rejected: {key!r}")
+            self.assertTrue((dest / "a.md").exists())
 
 
 class UpdateManifestRemoveTests(unittest.TestCase):
