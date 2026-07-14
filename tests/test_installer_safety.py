@@ -536,5 +536,65 @@ class GitHooksInstallMessageTests(RavenTestCase):
         self.assertNotIn(".git/hooks/", stdout)
 
 
+# ---------------------------------------------------------------------------
+# #102 — `raven init` must preflight containment like install/upgrade
+# ---------------------------------------------------------------------------
+class InitContainmentTests(RavenTestCase):
+    """`raven init` writes a fresh config; it must reject the same unsafe path
+    shapes (symlinked ancestors, symlinked/broken final state files, non-dir
+    ancestors) that install/upgrade already reject, and never write externally
+    or raise an uncaught FileExistsError.
+    """
+
+    def _external_dir(self):
+        external = tempfile.TemporaryDirectory()
+        self.addCleanup(external.cleanup)
+        return Path(external.name)
+
+    def _init_ns(self, *, language="python", platform="github"):
+        return argparse.Namespace(
+            destination=str(self.destination), language=language, platform=platform
+        )
+
+    def test_init_through_raven_ancestor_symlink_writes_nothing_external(self):
+        external = self._external_dir()
+        (self.destination / ".raven").symlink_to(external)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_init(self._init_ns())
+        self.assertEqual(rc, 2)
+        self.assertIn(".raven", err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+        # The external target the symlink points at is untouched.
+        self.assertEqual(list(external.iterdir()), [])
+
+    def test_init_with_regular_file_raven_exits_2_no_traceback(self):
+        (self.destination / ".raven").write_text("not a directory", encoding="utf-8")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_init(self._init_ns())
+        # Must exit 2 with a diagnostic, not raise FileExistsError (rc 1 + traceback).
+        self.assertEqual(rc, 2)
+        self.assertIn(".raven", err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+
+    def test_init_through_broken_config_symlink_exits_2(self):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").symlink_to(self.destination / "gone.toml")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_init(self._init_ns())
+        self.assertEqual(rc, 2)
+        self.assertIn("config.toml", err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+
+    def test_init_clean_destination_creates_config(self):
+        out = io.StringIO()
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(out):
+            rc = raven.cmd_init(self._init_ns())
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.destination / ".raven" / "config.toml").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

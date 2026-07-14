@@ -351,6 +351,28 @@ def _create_config(
     if language not in list_language_templates():
         print(f"error: unknown language template: {language}", file=sys.stderr)
         return 2
+    # Preflight the config write path before any mutation, so a repo-controlled
+    # symlinked ancestor, symlinked/broken final config file, or non-directory
+    # ancestor is rejected instead of redirecting the write outside the
+    # destination or raising an uncaught FileExistsError. Mirrors _run's own
+    # containment guard, giving both callers one robust guarantee (a redundant
+    # no-op on the install path, which _run already preflighted).
+    rel = CONFIG_PATH.as_posix()
+    blocking = list(find_path_collisions(destination, [rel]))
+    blocking += [p for p in find_state_symlink_collisions(destination, [rel]) if p not in blocking]
+    if blocking:
+        print(
+            "error: existing paths block the Raven config write; nothing was written:",
+            file=sys.stderr,
+        )
+        for blocked in blocking:
+            reason = (
+                "is a symlink; writes would escape the destination"
+                if (destination / blocked).is_symlink()
+                else "exists but is not a directory"
+            )
+            print(f"  {blocked} ({reason})", file=sys.stderr)
+        return 2
     path = destination / CONFIG_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
