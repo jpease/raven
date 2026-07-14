@@ -374,6 +374,8 @@ def _tool_check_results(destination: Path, runner: Runner) -> list[dict[str, obj
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
         return None
+    if not isinstance(data, dict):
+        return None
     results = data.get("results")
     return results if isinstance(results, list) else None
 

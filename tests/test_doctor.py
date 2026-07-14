@@ -467,6 +467,61 @@ class DoctorToolchainTests(RavenTestCase):
         match = next(f for f in findings if f.id == "doctor.gate-tool.gofmt")
         self.assertEqual(match.severity, Severity.OK)
 
+    def test_non_object_json_returns_degraded_warning(self):
+        """Test that invalid top-level JSON (non-object) returns degraded path with warning."""
+        from raven_lib.doctor import toolchain_findings
+
+        self._config()
+
+        # Test cases: (raw_json_string, description)
+        test_cases = [
+            ("[]", "list"),
+            ('"a string"', "string"),
+            ("123", "number"),
+            ("true", "boolean"),
+            ("null", "null"),
+            ('{"results": "notalist"}', "object with non-list results"),
+        ]
+
+        for raw_json, description in test_cases:
+            with self.subTest(json_type=description):
+
+                def runner(command, cwd, _raw_json=raw_json):
+                    if any("raven-tool-check.py" in part for part in command):
+                        return RunResult(
+                            ok=True,
+                            code=0,
+                            stdout=_raw_json,
+                            stderr="",
+                            found=True,
+                            timed_out=False,
+                        )
+                    return RunResult(
+                        ok=True,
+                        code=0,
+                        stdout="1.0\n",
+                        stderr="",
+                        found=True,
+                        timed_out=False,
+                    )
+
+                # Should not raise AttributeError
+                findings = toolchain_findings(self.destination, runner)
+
+                # Should contain the degraded warning
+                warning_findings = [f for f in findings if f.id == "doctor.tool.script"]
+                self.assertEqual(len(warning_findings), 1, f"Failed for {description}")
+                self.assertEqual(
+                    warning_findings[0].severity,
+                    Severity.WARN,
+                    f"Failed for {description}",
+                )
+                self.assertEqual(
+                    warning_findings[0].title,
+                    "Tool-check script unavailable",
+                    f"Failed for {description}",
+                )
+
 
 class DoctorHookManagerTests(RavenTestCase):
     def _git_init(self):
