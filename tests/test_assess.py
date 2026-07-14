@@ -3,14 +3,73 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from helpers import RavenTestCase
-from raven_lib.assess import build_assess_findings, template_fit_findings, wiring_findings
+from raven_lib.assess import (
+    _invokes_just_recipe,
+    build_assess_findings,
+    template_fit_findings,
+    wiring_findings,
+)
 from raven_lib.findings import Severity
+
+
+class InvokesJustRecipeTests(unittest.TestCase):
+    """Unit tests for `_invokes_just_recipe` directly (issue #108).
+
+    Shell quoting doesn't change the argument `just` receives, so `just "check"`
+    and `just 'check'` must be recognized the same as `just check`. Conversely,
+    the recipe name appearing in a comment, an echo/printf argument, or as a
+    longer recipe (`check-fast`) must never count as actually running `check`.
+    """
+
+    ACCEPT_CASES: ClassVar[list[tuple[str, str]]] = [
+        ("plain", "just check\n"),
+        ("double-quoted recipe", 'just "check"\n'),
+        ("single-quoted recipe", "just 'check'\n"),
+        ("leading env assignment", "RAVEN=1 just check\n"),
+        ("exec wrapper", "exec just check\n"),
+        ("trailing flag", "just check --verbose\n"),
+        ("preceded by another command", "lint && just check\n"),
+    ]
+
+    REJECT_CASES: ClassVar[list[tuple[str, str]]] = [
+        ("commented out", "# just check\n"),
+        ("echoed double-quoted", 'echo "just check"\n'),
+        ("echoed unquoted", "echo just check\n"),
+        ("printf'd", "printf 'just check'\n"),
+        ("longer recipe check-fast", "just check-fast\n"),
+        ("longer recipe check-full", "just check-full\n"),
+        ("empty", ""),
+        ("unrelated command", "exit 0\n"),
+    ]
+
+    def test_accepts_real_just_check_invocations(self):
+        for label, text in self.ACCEPT_CASES:
+            with self.subTest(label):
+                self.assertTrue(
+                    _invokes_just_recipe(text, "check"),
+                    f"expected {text!r} to be recognized as running `just check`",
+                )
+
+    def test_rejects_non_invocations_of_check(self):
+        for label, text in self.REJECT_CASES:
+            with self.subTest(label):
+                self.assertFalse(
+                    _invokes_just_recipe(text, "check"),
+                    f"expected {text!r} to NOT be recognized as running `just check`",
+                )
+
+    def test_recognizes_check_fast_recipe_for_the_fast_subset_path(self):
+        # The pre-push fast-subset warning path checks the recipe "check-fast"
+        # directly; it must still be recognized when actually invoked.
+        self.assertTrue(_invokes_just_recipe("just check-fast\n", "check-fast"))
+        self.assertFalse(_invokes_just_recipe("just check\n", "check-fast"))
 
 
 class AssessWiringTests(RavenTestCase):
