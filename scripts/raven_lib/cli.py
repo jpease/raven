@@ -11,6 +11,7 @@ from .apply import (
     classify,
     claude_symlink_adoption_needed,
     find_path_collisions,
+    find_state_symlink_collisions,
     prompt_for_claude_symlink_adoption,
 )
 from .assess import build_assess_findings
@@ -228,6 +229,26 @@ def _run(
                 else "exists but is not a directory"
             )
             print(f"  {path} ({reason})", file=sys.stderr)
+        return 2
+
+    # The ancestor check above only inspects directories, so a symlinked final
+    # state file (with .raven a real directory) slips past it and would route the
+    # config/manifest write through the link to a file outside the destination.
+    # Reject those before printing the plan, so dry-run and live fail identically.
+    state_symlinks = find_state_symlink_collisions(
+        destination, [CONFIG_PATH.as_posix(), MANIFEST_PATH.as_posix()]
+    )
+    if state_symlinks:
+        print(
+            "error: Raven state files are symlinks; writes would escape the "
+            "destination. Nothing was written:",
+            file=sys.stderr,
+        )
+        for path in state_symlinks:
+            print(
+                f"  {path} (is a symlink; refusing to write Raven state through it)",
+                file=sys.stderr,
+            )
         return 2
 
     print(f"Template: {template}")

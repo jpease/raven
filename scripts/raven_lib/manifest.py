@@ -109,6 +109,12 @@ def git_ref() -> str:
 def save_manifest(destination: Path, manifest: dict) -> None:
     path = destination / MANIFEST_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
+    # A symlinked manifest would route the write to a file outside the
+    # destination. Replace it in place so the write lands on a real file inside
+    # .raven/ -- durable containment for callers (e.g. cmd_accept) that do not go
+    # through the _run preflight.
+    if path.is_symlink():
+        path.unlink()
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
