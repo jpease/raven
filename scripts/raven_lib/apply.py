@@ -203,6 +203,29 @@ def find_path_collisions(destination: Path, relatives: Iterable[str]) -> list[st
     return sorted(collisions)
 
 
+def find_state_symlink_collisions(destination: Path, relatives: Iterable[str]) -> list[str]:
+    """State-file targets whose final component is a symlink (broken ones too).
+
+    Unlike ``find_path_collisions``, which inspects only ancestor directories,
+    this checks each *final* path itself. A ``.raven/config.toml`` or
+    ``.raven/manifest.json`` that is a symlink (while ``.raven`` is a real
+    directory) would route the state read/write through the link to a file
+    outside the destination tree, silently mutating it. These state files are
+    always plain files Raven owns -- never a legitimate symlink -- so any symlink
+    at the final path is a containment breach and is returned as a collision. A
+    broken symlink is rejected the same way (``is_symlink`` is True regardless of
+    whether the target resolves). This deliberately does not generalize to
+    ``find_path_collisions``: managed copy targets may legitimately be symlinks
+    that ``copy_paths`` unlink-replaces, and ``.claude`` symlink adoption creates
+    one on purpose, so only these known state paths are checked here.
+    """
+    collisions: set[str] = set()
+    for relative in relatives:
+        if (destination / relative).is_symlink():
+            collisions.add(relative)
+    return sorted(collisions)
+
+
 def copy_paths(
     template: Path,
     destination: Path,

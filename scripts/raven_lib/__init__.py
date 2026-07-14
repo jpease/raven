@@ -6,6 +6,7 @@ from .apply import (
     claude_symlink_adoption_needed,
     copy_paths,
     find_path_collisions,
+    find_state_symlink_collisions,
     prompt_for_claude_symlink_adoption,
     reconcile_state,
 )
@@ -218,6 +219,7 @@ __all__ = [
     "classify",
     "copy_paths",
     "find_path_collisions",
+    "find_state_symlink_collisions",
     "reconcile_state",
     "claude_symlink_adoption_needed",
     "adopt_claude_symlink",

@@ -315,6 +315,18 @@ def _ensure_merge_dir_gitignored(destination: Path) -> None:
         f.write(block)
 
 
+def _write_merge_artifact(path: Path, text: str) -> None:
+    """Write a merge artifact, replacing a symlink in place.
+
+    A merge-state path that is a symlink would route the write outside the
+    destination. Unlinking it first keeps every guided-merge write inside
+    ``.raven/merge/``.
+    """
+    if path.is_symlink():
+        path.unlink()
+    path.write_text(text, encoding="utf-8")
+
+
 def write_guided_merge_artifacts(
     destination: Path, entries: dict[str, TemplateEntry], paths: list[str]
 ) -> list[str]:
@@ -328,7 +340,7 @@ def write_guided_merge_artifacts(
         raven_path = merge_dir / f"{relative}.raven"
         raven_path.parent.mkdir(parents=True, exist_ok=True)
         raven_text = template_entry_text(entry)
-        raven_path.write_text(raven_text, encoding="utf-8")
+        _write_merge_artifact(raven_path, raven_text)
         written.append(raven_path.relative_to(destination).as_posix())
 
         suggestion = raven_path.relative_to(destination).as_posix()
@@ -352,14 +364,14 @@ def write_guided_merge_artifacts(
                 # append (which would duplicate the block, #55).
                 replaces_block = find_raven_block(existing_text) is not None
                 patch_path = merge_dir / f"{relative}.patch"
-                patch_path.write_text(
-                    append_patch_text(relative, existing_text, raven_text), encoding="utf-8"
+                _write_merge_artifact(
+                    patch_path, append_patch_text(relative, existing_text, raven_text)
                 )
                 patch_rel = patch_path.relative_to(destination).as_posix()
             else:
                 diff_path = merge_dir / f"{relative}.diff"
-                diff_path.write_text(
-                    unified_diff_text(relative, existing_text, raven_text), encoding="utf-8"
+                _write_merge_artifact(
+                    diff_path, unified_diff_text(relative, existing_text, raven_text)
                 )
                 diff_rel = diff_path.relative_to(destination).as_posix()
 
@@ -367,7 +379,7 @@ def write_guided_merge_artifacts(
         body = guided_merge_instructions(
             relative, suggestion, patch_rel, diff_rel, replaces_block=replaces_block
         )
-        instructions_path.write_text(body, encoding="utf-8")
+        _write_merge_artifact(instructions_path, body)
         written.append(instructions_path.relative_to(destination).as_posix())
         if patch_rel:
             written.append(patch_rel)

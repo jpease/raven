@@ -277,6 +277,145 @@ class AncestorSymlinkContainmentTests(RavenTestCase):
 
 
 # ---------------------------------------------------------------------------
+# #101 — Block writes through a symlinked final state file (.raven is a real dir)
+# ---------------------------------------------------------------------------
+class StateFileSymlinkContainmentTests(RavenTestCase):
+    """A symlinked .raven/config.toml or .raven/manifest.json (while .raven is a
+    real directory) must not let Raven read/write through it to an external file.
+
+    The ancestor collision check only inspects directories, so it never sees a
+    symlinked *final* state file; these tests cover that gap.
+    """
+
+    def _external_dir(self):
+        external = tempfile.TemporaryDirectory()
+        self.addCleanup(external.cleanup)
+        return Path(external.name)
+
+    def _install_python(self):
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_install(_install_ns(self.destination, language="python"))
+        self.assertEqual(rc, 0)
+
+    def test_find_state_symlink_collisions_flags_symlinked_state_path(self):
+        (self.destination / ".raven").mkdir()
+        real = self.destination / "elsewhere.json"
+        real.write_text("{}", encoding="utf-8")
+        (self.destination / ".raven" / "manifest.json").symlink_to(real)
+        result = raven.find_state_symlink_collisions(
+            self.destination, [".raven/manifest.json", ".raven/config.toml"]
+        )
+        self.assertEqual(result, [".raven/manifest.json"])
+
+    def test_find_state_symlink_collisions_ignores_real_and_absent(self):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text("x", encoding="utf-8")
+        # config.toml is a real file; manifest.json is absent. Neither is a symlink.
+        result = raven.find_state_symlink_collisions(
+            self.destination, [".raven/config.toml", ".raven/manifest.json"]
+        )
+        self.assertEqual(result, [])
+
+    def test_find_state_symlink_collisions_flags_broken_symlink(self):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "manifest.json").symlink_to(self.destination / "gone.json")
+        result = raven.find_state_symlink_collisions(self.destination, [".raven/manifest.json"])
+        self.assertEqual(result, [".raven/manifest.json"])
+
+    def test_upgrade_through_manifest_symlink_leaves_external_unchanged(self):
+        self._install_python()
+        external = self._external_dir()
+        manifest_path = self.destination / ".raven" / "manifest.json"
+        external_manifest = external / "manifest.json"
+        external_manifest.write_bytes(manifest_path.read_bytes())
+        manifest_path.unlink()
+        manifest_path.symlink_to(external_manifest)
+        before = external_manifest.read_bytes()
+
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_upgrade(_upgrade_ns(self.destination))
+        self.assertEqual(rc, 2)
+        self.assertIn("manifest.json", err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+        # The external target the symlink points at is byte-for-byte unchanged,
+        # and the link itself is preserved (nothing was rewritten through it).
+        self.assertEqual(external_manifest.read_bytes(), before)
+        self.assertTrue(manifest_path.is_symlink())
+
+    def test_upgrade_dry_run_reports_manifest_symlink_and_writes_nothing(self):
+        self._install_python()
+        external = self._external_dir()
+        manifest_path = self.destination / ".raven" / "manifest.json"
+        external_manifest = external / "manifest.json"
+        external_manifest.write_bytes(manifest_path.read_bytes())
+        manifest_path.unlink()
+        manifest_path.symlink_to(external_manifest)
+        before = external_manifest.read_bytes()
+
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_upgrade(_upgrade_ns(self.destination, dry_run=True))
+        # Dry-run reports the same collision as live execution (parity) and
+        # never touches the external file.
+        self.assertEqual(rc, 2)
+        self.assertIn("manifest.json", err.getvalue())
+        self.assertEqual(external_manifest.read_bytes(), before)
+
+    def test_upgrade_through_broken_manifest_symlink_is_rejected(self):
+        self._install_python()
+        external = self._external_dir()
+        manifest_path = self.destination / ".raven" / "manifest.json"
+        manifest_path.unlink()
+        manifest_path.symlink_to(external / "does-not-exist.json")
+
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_upgrade(_upgrade_ns(self.destination))
+        self.assertEqual(rc, 2)
+        self.assertIn("manifest.json", err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+
+    def test_install_through_config_symlink_leaves_external_unchanged(self):
+        self._install_python()
+        external = self._external_dir()
+        config_path = self.destination / ".raven" / "config.toml"
+        external_config = external / "config.toml"
+        external_config.write_bytes(config_path.read_bytes())
+        config_path.unlink()
+        config_path.symlink_to(external_config)
+        before = external_config.read_bytes()
+
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_install(_install_ns(self.destination, platform="github"))
+        self.assertEqual(rc, 2)
+        self.assertIn("config.toml", err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+        # The external config's platform is not changed by the rejected install.
+        self.assertEqual(external_config.read_bytes(), before)
+        self.assertTrue(config_path.is_symlink())
+
+    def test_save_manifest_replaces_symlink_in_place(self):
+        # Durable containment for the cmd_accept path, which does not go through
+        # the _run preflight: save_manifest must land on a real file inside the
+        # destination rather than following a symlink out of it.
+        external = self._external_dir()
+        (self.destination / ".raven").mkdir()
+        external_manifest = external / "manifest.json"
+        external_manifest.write_text('{"schema": 1, "files": {}}\n', encoding="utf-8")
+        before = external_manifest.read_bytes()
+        manifest_path = self.destination / ".raven" / "manifest.json"
+        manifest_path.symlink_to(external_manifest)
+
+        raven.save_manifest(self.destination, {"schema": 1, "files": {"a": {}}})
+
+        self.assertFalse(manifest_path.is_symlink())
+        self.assertIn('"a"', manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(external_manifest.read_bytes(), before)
+
+
+# ---------------------------------------------------------------------------
 # #47 — Report unreadable Raven config as invalid
 # ---------------------------------------------------------------------------
 class UnreadableConfigTests(RavenTestCase):
