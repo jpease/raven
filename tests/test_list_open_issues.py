@@ -5,6 +5,11 @@ from unittest.mock import patch
 from helpers import REPO_ROOT, load_script_module
 
 LIST_OPEN_ISSUES = REPO_ROOT / "scripts" / "list_open_issues.py"
+# list_open_issues.py is a symlink to a shared copy kept outside this repo
+# (a single source of truth reused across repos), so it isn't present on
+# every checkout -- e.g. CI. Skip rather than fail when the target is
+# unavailable, matching the HAVE_ASTGREP/HAVE_RG pattern in test_skeleton.py.
+HAVE_LIST_OPEN_ISSUES = LIST_OPEN_ISSUES.exists()
 
 
 def _page(nodes, has_next, cursor=None):
@@ -22,6 +27,7 @@ def _page(nodes, has_next, cursor=None):
     )
 
 
+@unittest.skipUnless(HAVE_LIST_OPEN_ISSUES, "list_open_issues.py symlink target not available")
 class GetIssuesPaginationTest(unittest.TestCase):
     def setUp(self):
         self.module = load_script_module("list_open_issues_under_test", LIST_OPEN_ISSUES)
