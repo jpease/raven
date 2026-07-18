@@ -20,6 +20,11 @@
       "kind": "file",
       "sourceSha256": "af09a9bda9c0ba76cb0dc11d58e5590f06210e3a6e34bf87ceaac46e00069a3d"
     },
+    ".agents/skills/raven-delegate-or-inline/SKILL.md": {
+      "installedSha256": "e38b16aa9c8991399f0512e7c2c1e362e8f392e44c92b20a6e0b3b50c53eb4ba",
+      "kind": "file",
+      "sourceSha256": "e38b16aa9c8991399f0512e7c2c1e362e8f392e44c92b20a6e0b3b50c53eb4ba"
+    },
     ".agents/skills/raven-dependency-update/SKILL.md": {
       "installedSha256": "a2b092f2dc5404f1714335c73e849b1244fa120d4089c485490bf31d66a37af7",
       "kind": "file",
@@ -54,6 +59,11 @@
       "installedSha256": "0eefe560ee3a419be9220c3ed1f7457c80d0eaa00112bbc75a97e6f724caec7f",
       "kind": "file",
       "sourceSha256": "0eefe560ee3a419be9220c3ed1f7457c80d0eaa00112bbc75a97e6f724caec7f"
+    },
+    ".agents/skills/raven-present-options/SKILL.md": {
+      "installedSha256": "b00e52fc08a61c42ab8171a3644fccab96e237d4f28b740729df870385fdeeef",
+      "kind": "file",
+      "sourceSha256": "b00e52fc08a61c42ab8171a3644fccab96e237d4f28b740729df870385fdeeef"
     },
     ".agents/skills/raven-project-lifecycle/SKILL.md": {
       "installedSha256": "c4194c0616adcad54eac34b74cad07f904b00f154ef5a7445eee72b9fe56f21d",
@@ -322,9 +332,9 @@
       "sourceSha256": "2439730cbe456d6cca004cb466d2be02791327ac977a6a4bcef9fbab1db45ade"
     },
     "AGENTS.md": {
-      "installedSha256": "edd621bf309116af31840b43fb66732179f75c25743cf6a830c675162590222f",
+      "installedSha256": "22e644b7a4cc2f56db7f1b4468347a348ce41b85628bb23004c15bae5c138955",
       "kind": "file",
-      "sourceSha256": "9a63d0f5568f19024e222c620a8fec04f552ab266b24e6db3a2b737735d9d41f"
+      "sourceSha256": "74a1eca494dc4260ed8595d825f2208272a25a4e65cbb08e46a3d830425977a1"
     },
     "CLAUDE.md": {
       "installedSha256": "343aa72d3e62ce112e77d36c5f47ef60a01e8f81754e53ff63bf7f996d04799b",
@@ -343,8 +353,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "1f31412e4abd",
+  "ravenVersion": "ac4e37353d0a",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-07-14T03:15:29.542409+00:00"
+  "updatedAt": "2026-07-18T20:49:41.688919+00:00"
 }

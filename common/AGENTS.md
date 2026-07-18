@@ -39,25 +39,7 @@ Use the cheapest adequate source before reading full files.
 
 ## Delegation
 
-Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context.
-
-When to delegate:
-
-- An architecture or "how does X work" question would take many retrieval steps to answer directly.
-- The expected output is noisy relative to what the main context needs — large diffs, long logs, or many candidates where only a summary matters.
-- The work is a specialized audit with its own checklist, such as a security review, test coverage analysis, or type design review.
-
-How to delegate:
-
-- Frame the task as a self-contained question: state the goal, what is already ruled out, and the expected output shape (file list, yes/no with evidence, root-cause summary).
-- Do not pass the full conversation history — delegation should reduce context, not duplicate it.
-- Before delegating a symbol-editing task, run impact analysis yourself and put the blast radius (callers, affected flows, risk) in the brief; the subagent lacks your context and cannot infer scope. Have the subagent run change-detection before committing.
-- If no delegation mechanism is available, pause and ask the user instead of expanding retrieval indefinitely.
-
-Platform notes:
-
-- Claude Code: use the Agent tool with an appropriate subagent type, or a project-defined subagent if one matches the audit (Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-test-debugger`, `raven-codebase-cartographer`).
-- Other harnesses: fall back to asking the user to scope the task further, or use any equivalent delegation mechanism the harness provides.
+Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context. Use the `raven-delegate-or-inline` skill for the decision criteria, delegation mechanics, and anti-habit checks. Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-test-debugger`, and `raven-codebase-cartographer` as Claude Code subagents for common audits.
 
 ## Shell Command Policy
 
