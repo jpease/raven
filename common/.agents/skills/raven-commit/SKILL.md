@@ -98,6 +98,23 @@ Regressed in f86a374abc12 (pagination: switch to cursor-based offset, 2024-11-03
 
 Obtain this format with `git show -s --date=short --pretty='format:%.12h (%s, %ad)' <commit>`.
 
+## Closing issues
+
+To auto-close an issue when this commit lands on the default branch, add a footer using a closing keyword the host platform recognizes (GitHub and GitLab both support `Closes`, `Fixes`, `Resolves`):
+
+```
+fix: prevent request race condition
+
+Introduce a request ID tied to the latest request.
+
+Closes: #123
+```
+
+- The keyword must appear in the commit that actually reaches the default branch. If the PR/MR will be squash-merged, the squash rewrites the commit — put the keyword in the PR/MR description too, since that's what survives.
+- Use `Refs: #123` instead when the commit relates to an issue without resolving it.
+- Multiple issues: repeat the keyword per issue (`Closes: #123`, `Closes: #456`) — platforms don't reliably parse comma-separated lists.
+- Don't close an issue manually ahead of the merge (e.g. `gh issue close`) when a closing keyword will do it — a manual close can land before the change is actually on the default branch, or reference a pre-squash sha that no longer exists in history.
+
 ## Workflow guidance
 
 - **One concern per commit.** If a change fits multiple types, split into multiple commits. If the body is growing long, that is a signal the patch does more than one thing.
