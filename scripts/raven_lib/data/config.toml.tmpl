@@ -132,3 +132,10 @@ platform = "${platform}"
 # that name known AI tools or AI provider domains so they never reach the repo.
 # Set to false only if your team intentionally records AI attribution in commits.
 strip_ai_attribution = true
+
+# Block (rather than silently rewrite) staged and outbound commit content that
+# credits an AI tool as the author, e.g. a comment naming an AI tool as the
+# generator, left in a source file or README. Runs in pre-commit (staged) and
+# pre-push (outbound), alongside strip_ai_attribution above, which only cleans
+# commit message trailers.
+block_ai_attribution_content = true
