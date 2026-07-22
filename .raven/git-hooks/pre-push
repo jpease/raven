@@ -36,6 +36,16 @@ while read -r _local_ref local_sha _remote_ref _remote_sha; do
 done
 [ "$has_work" -eq 0 ] && exit 0
 
+# Block AI-authorship credits in outbound commit content (an AI tool named as
+# the generator, left in a source file). Independent of the check-passed
+# stamp below, since that stamp only vouches for `just check` having passed,
+# not content. Skip if the lib script is missing (a stale/partial install)
+# rather than hard-failing.
+attribution_check="$repo_root/.raven/git-hooks/lib/check-ai-attribution-content.py"
+if [ -f "$attribution_check" ]; then
+    python3 "$attribution_check" outbound || exit 1
+fi
+
 # The gate runs against the working tree, so a commit is only safely "already
 # verified" if the tree is also clean and every pushed ref is this worktree's
 # HEAD (see refs_match_head above). The stamp records the HEAD SHA that last

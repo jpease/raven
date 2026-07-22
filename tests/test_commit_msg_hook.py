@@ -86,6 +86,21 @@ class CommitMsgHookTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertNotIn("openai.com", out)
 
+    def test_strips_unlisted_bot_with_noreply_address(self):
+        msg = "feat: add thing\n\nCo-Authored-By: SomeNewAI <noreply@newai.dev>\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Co-Authored-By", out)
+
+    def test_preserves_github_human_co_author_suggestion(self):
+        # GitHub's own "co-author" suggestion for human collaborators uses
+        # <id+username@users.noreply.github.com>, which does not start with
+        # the literal "noreply@" the bot heuristic matches.
+        msg = "feat: pair program\n\nCo-Authored-By: Bob <12345+bob@users.noreply.github.com>\n"
+        out, rc = self._run_hook(msg)
+        self.assertEqual(rc, 0)
+        self.assertIn("Co-Authored-By: Bob", out)
+
     def test_hook_is_executable(self):
         self.assertTrue(self.HOOK_PATH.stat().st_mode & 0o111)
 
@@ -123,6 +138,7 @@ class CommitMsgHookTests(unittest.TestCase):
         config_text = raven.default_config_text("python", False)
         self.assertIn("[git_hooks]", config_text)
         self.assertIn("strip_ai_attribution = true", config_text)
+        self.assertIn("block_ai_attribution_content = true", config_text)
 
     def test_non_utf8_message_does_not_crash(self):
         raw = b"fix: bug \xff\xfe invalid utf8\n"

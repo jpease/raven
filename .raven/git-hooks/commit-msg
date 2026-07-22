@@ -9,11 +9,15 @@ import sys
 from pathlib import Path
 
 # Match AI attribution trailers: Co-Authored-By/Generated-by naming a known AI tool or provider
-# domain, or the Claude-session link trailer injected by the Claude Code system prompt.
+# domain, or a bot's literal "noreply@" address (catches unlisted/future tools without
+# naming them -- GitHub's own human co-author suggestion uses "<id+user@users.noreply...>",
+# which does not start with "noreply@" and so is not matched), or the Claude-session link
+# trailer injected by the Claude Code system prompt.
 _AI_TRAILER = re.compile(
     r"^(?:co-authored-by|generated-by):\s+.*"
-    r"(?:claude|copilot|codex|chatgpt|gpt-[0-9]+|gemini|llama|mistral"
+    r"(?:(?:claude|copilot|codex|chatgpt|gpt-[0-9]+|gemini|llama|mistral"
     r"|@anthropic\.com|@openai\.com)"
+    r"|<noreply@[^>]+>)"
     r"|^claude-session:\s+\S+",
     re.IGNORECASE,
 )
