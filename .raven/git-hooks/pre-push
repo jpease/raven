@@ -39,7 +39,10 @@ done
 # The gate runs against the working tree, so a commit is only safely "already
 # verified" if the tree is also clean and every pushed ref is this worktree's
 # HEAD (see refs_match_head above). The stamp records the HEAD SHA that last
-# passed `just check` with a clean tree; if HEAD still matches, every pushed
+# passed `just check` with a clean tree -- written either by this hook below,
+# or by the `check` recipe itself when it is run manually (see
+# lib/stamp-verified.sh); the skip invariant is the same either way, so a
+# manual run earns the same credit. If HEAD still matches, every pushed
 # ref is that HEAD, and the tree is still clean, re-running is pure waste. A
 # new commit, amend, or any uncommitted change alters HEAD or dirties the
 # tree and invalidates the stamp; pushing a ref other than HEAD falls back to
@@ -72,8 +75,8 @@ if command -v just >/dev/null 2>&1; then
     # Record the verified commit only when the tree is still clean, so a cached
     # pass can never vouch for uncommitted work. If the gate dirtied the tree
     # (e.g. build artifacts), skip stamping this run rather than caching a lie.
-    # The stamp is an optimization, so a failed write is swallowed.
-    if [ -n "$head_sha" ] && [ -z "$(git status --porcelain 2>/dev/null)" ]; then
-        printf '%s\n' "$head_sha" > "$stamp" 2>/dev/null || true
-    fi
+    # Shared with the `check` recipe so a manual `just check` run gets credited
+    # identically; the script re-derives head_sha/stamp itself and swallows
+    # its own failures, since the stamp is an optimization, not a gate.
+    sh "$repo_root/.raven/git-hooks/lib/stamp-verified.sh" 2>/dev/null || true
 fi

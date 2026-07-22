@@ -57,6 +57,22 @@ class GitHookInstallerTests(unittest.TestCase):
         # in a bin dir OUTSIDE the repo so they do not show up as untracked files
         # that would dirty the tree (the skip path requires a clean tree). Returns
         # (env, head_sha, stamp_path).
+        #
+        # The hook resolves the shared stamp script relative to the repo root,
+        # exactly as an installed project's `.raven/git-hooks/lib/` sibling
+        # would -- materialize and commit it here (before HEAD is captured) so
+        # a real (just_exit=0) hook run can find and execute it without an
+        # untracked file dirtying the tree it is about to check as clean.
+        lib_dir = self.git_hooks_src / "lib"
+        lib_dir.mkdir(parents=True, exist_ok=True)
+        stamp_script = lib_dir / "stamp-verified.sh"
+        stamp_script.write_text(self._stamp_script().read_text(encoding="utf-8"), encoding="utf-8")
+        stamp_script.chmod(0o755)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "add", "-A"],
+            capture_output=True,
+            check=True,
+        )
         subprocess.run(
             [
                 "git",
@@ -870,6 +886,163 @@ class GitHookInstallerTests(unittest.TestCase):
         msg = stderr.getvalue()
         self.assertIn("already exists as a regular file", msg)  # preserved substring
         self.assertIn("add `just check`", msg)  # no longer just "remove it"
+
+    # -- shared stamp-verified.sh script (crediting manual `just check` runs) --
+
+    _STAMP_SCRIPT = "common/.raven/git-hooks/lib/stamp-verified.sh"
+
+    def _stamp_script(self) -> Path:
+        return raven.REPO_ROOT / self._STAMP_SCRIPT
+
+    def test_stamp_script_writes_stamp_when_head_resolves_and_tree_clean(self):
+        # This is what a manual `just check` now runs on success -- it must
+        # record HEAD exactly like the pre-push hook's own stamping does.
+        script = self._stamp_script()
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.destination),
+                "-c",
+                "user.email=raven@example.com",
+                "-c",
+                "user.name=Raven Test",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+            capture_output=True,
+            check=True,
+        )
+        head = subprocess.run(
+            ["git", "-C", str(self.destination), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        stamp = self.destination / ".git" / "raven-pre-push-verified"
+        self.assertFalse(stamp.exists())
+
+        result = subprocess.run(
+            ["/bin/sh", str(script)],
+            cwd=self.destination,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(stamp.exists())
+        self.assertEqual(stamp.read_text(encoding="utf-8").strip(), head)
+
+    def test_stamp_script_does_not_write_when_tree_dirty(self):
+        # A cached pass must never vouch for uncommitted work -- same invariant
+        # the pre-push hook itself enforces before writing.
+        script = self._stamp_script()
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.destination),
+                "-c",
+                "user.email=raven@example.com",
+                "-c",
+                "user.name=Raven Test",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+            capture_output=True,
+            check=True,
+        )
+        (self.destination / "scratch.txt").write_text("dirty\n", encoding="utf-8")
+        stamp = self.destination / ".git" / "raven-pre-push-verified"
+
+        result = subprocess.run(
+            ["/bin/sh", str(script)],
+            cwd=self.destination,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(stamp.exists())
+
+    def test_stamp_script_does_not_write_without_a_resolvable_head(self):
+        # An unborn HEAD (no commits yet) must not produce a stamp file.
+        script = self._stamp_script()
+        stamp = self.destination / ".git" / "raven-pre-push-verified"
+
+        result = subprocess.run(
+            ["/bin/sh", str(script)],
+            cwd=self.destination,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(stamp.exists())
+
+    def test_pre_push_skips_after_manual_check_stamps_same_head(self):
+        # The core new behavior: a manual `just check` run (simulated here by
+        # invoking the shared stamp script directly, exactly as the `check`
+        # recipe now does on success) must earn the same push-time skip as a
+        # run triggered by the hook itself.
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+        env, head, stamp = self._prepare_verified_repo(just_exit=1)
+        self.assertFalse(stamp.exists())
+
+        manual_check = subprocess.run(
+            ["/bin/sh", str(self._stamp_script())],
+            cwd=self.destination,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(manual_check.returncode, 0, manual_check.stderr)
+        self.assertTrue(stamp.exists())
+
+        # `just` is rigged to exit 1 here -- if the hook actually invoked it,
+        # this push would fail. A 0 means the hook trusted the manual stamp.
+        push_result = subprocess.run(
+            ["/bin/sh", str(hook)],
+            cwd=self.destination,
+            env=env,
+            input=self._push_stdin(head),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(push_result.returncode, 0, push_result.stderr)
+
+    def test_check_recipes_call_shared_stamp_script_not_check_fast(self):
+        # Only the full-gate `check` target may credit the stamp; narrower
+        # targets like `check-fast` must not, since they are not a full
+        # verification pass.
+        root = raven.REPO_ROOT
+        candidates = [root / "justfile", *sorted(root.glob("*/justfile"))]
+        justfiles = [
+            p for p in candidates if p.is_file() and "check:" in p.read_text(encoding="utf-8")
+        ]
+        self.assertGreaterEqual(len(justfiles), 8, [str(p) for p in justfiles])
+        for jf in justfiles:
+            text = jf.read_text(encoding="utf-8")
+            check_recipe = self._extract_recipe(text, "check")
+            check_fast_recipe = self._extract_recipe(text, "check-fast")
+            self.assertIn("stamp-verified.sh", check_recipe, str(jf))
+            self.assertNotIn("stamp-verified.sh", check_fast_recipe, str(jf))
+
+    def test_pre_push_comment_notes_stamp_may_originate_from_manual_run(self):
+        pre_push = (raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("manual", pre_push.lower())
 
 
 if __name__ == "__main__":
