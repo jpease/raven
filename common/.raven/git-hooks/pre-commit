@@ -20,6 +20,14 @@ if [ -f "$attribution_check" ]; then
     python3 "$attribution_check" staged || exit 1
 fi
 
+# Block direct edits inside a RAVEN:BEGIN/RAVEN:END managed block (AGENTS.md
+# says to update the source template instead). Skip if the lib script is
+# missing (a stale/partial install) rather than hard-failing.
+block_check="$repo_root/.raven/git-hooks/lib/check-managed-block-integrity.py"
+if [ -f "$block_check" ]; then
+    python3 "$block_check" || exit 1
+fi
+
 # Optional secret scan for staged changes; a detected leak blocks the commit.
 if command -v gitleaks >/dev/null 2>&1; then
     gitleaks_output=$(gitleaks git --staged --redact 2>&1)
