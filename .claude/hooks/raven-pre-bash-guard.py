@@ -94,7 +94,9 @@ def _command_segments(command: str) -> list[list[str]]:
 
 
 def _program_and_args(segment: list[str]) -> tuple[str, list[str]] | None:
-    """Return (program, remaining tokens), skipping leading env-assignments and sudo."""
+    """Return (program, remaining tokens), skipping leading env-assignments, sudo,
+    and an ``rtk proxy`` wrapper prefix so the checks below reason about the
+    real command being run."""
     index = 0
     while index < len(segment):
         token = segment[index]
@@ -103,6 +105,9 @@ def _program_and_args(segment: list[str]) -> tuple[str, list[str]] | None:
             continue
         if re.match(r"[A-Za-z_][A-Za-z0-9_]*=", token):
             index += 1
+            continue
+        if token == "rtk" and segment[index + 1 : index + 2] == ["proxy"]:
+            index += 2
             continue
         break
     if index >= len(segment):
@@ -158,6 +163,39 @@ def _is_destructive_git_clean(program: str, flags: set[str], positionals: list[s
     return "f" in flags and "d" in flags and "x" in flags
 
 
+def _is_ripgrep_replace_cluster(program: str, args: list[str]) -> bool:
+    """True if an ``rg`` invocation bundles ``-r`` with another short flag.
+
+    ripgrep's ``-r`` is ``--replace`` (takes an argument), not grep's
+    ``--recursive`` -- ripgrep already searches recursively by default. A
+    bundled cluster like ``-rn`` or an attached value like ``-rQQQ`` is
+    indistinguishable from a typo'd ``--recursive``, so treat any short-option
+    token longer than ``-r`` alone as suspect. A standalone ``-r`` token
+    (``--replace`` with its value as a separate argument) is left alone.
+    """
+    if program.lower() != "rg":
+        return False
+    for token in args:
+        if token == "--":
+            break
+        if token.startswith("--"):
+            continue
+        if token.startswith("-") and len(token) > 2 and "r" in token[1:]:
+            return True
+    return False
+
+
+def _ripgrep_deny_message(command: str) -> str:
+    return (
+        "Blocked: '-r' in this rg command is ripgrep's --replace, not grep's --recursive."
+        " ripgrep searches recursively by DEFAULT."
+        "\n  rg -n PAT DIR        # line numbers, recursive by default"
+        "\n  rg PAT DIR           # recursive by default"
+        "\n  rg -r REPL PAT FILE  # only if you genuinely want --replace"
+        f"\nCommand: {command}"
+    )
+
+
 def main() -> int:
     payload = _load_payload()
     if payload is None:
@@ -192,6 +230,8 @@ def main() -> int:
             program, flags, positionals
         ):
             return _deny(_deny_message(command), payload)
+        if _is_ripgrep_replace_cluster(program, args):
+            return _deny(_ripgrep_deny_message(command), payload)
 
     return 0
 
