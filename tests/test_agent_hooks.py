@@ -38,6 +38,30 @@ ALLOWED_BASH_COMMANDS = [
     "rm -rf /tmp/rf-cache",
 ]
 
+# rg commands using a bundled short-flag cluster containing `r` -- ripgrep's
+# `-r` is `--replace` (takes an argument), not grep's `--recursive`, and
+# ripgrep is recursive by default. These MUST be denied.
+RIPGREP_DENIED_COMMANDS = [
+    "rg -rn PATTERN dir/",
+    "rg -rln PATTERN dir/",
+    "rg -nr PATTERN dir/",
+    "rg -F -rn PATTERN dir/",
+    "rtk proxy rg -rn PATTERN dir/",
+]
+
+# rg (and lookalike) commands that MUST stay allowed.
+RIPGREP_ALLOWED_COMMANDS = [
+    "rg -n PATTERN dir/",
+    "rg PATTERN dir/",
+    "rg -r QQQ PATTERN file.txt",
+    "rg --replace=QQQ PATTERN file.txt",
+    "rg -l PATTERN dir/",
+    "grep -rn PATTERN dir/",
+    "rg PATTERN dir/ | grep -rn bar",
+    "rg --no-heading -n PATTERN dir/",
+    "ls -lr",
+]
+
 
 def _run_bash_guard(guard_path, payload):
     return subprocess.run(
@@ -85,6 +109,56 @@ class BashGuardDestructiveOptionTests(RavenTestCase):
 
     def test_codex_copy_allows_safe_commands(self):
         for command in ALLOWED_BASH_COMMANDS:
+            with self.subTest(command=command):
+                payload = {
+                    "hook_event_name": "PreToolUse",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": command},
+                }
+                result = _run_bash_guard(CODEX_BASH_GUARD, payload)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), "")
+
+
+class BashGuardRipgrepReplaceFlagTests(RavenTestCase):
+    def test_claude_copy_denies_bundled_replace_cluster(self):
+        for command in RIPGREP_DENIED_COMMANDS:
+            with self.subTest(command=command):
+                payload = {"tool_input": {"command": command}}
+                result = _run_bash_guard(CLAUDE_BASH_GUARD, payload)
+                self.assertEqual(
+                    result.returncode, 2, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+                )
+                self.assertIn("--replace", result.stderr)
+
+    def test_codex_copy_denies_bundled_replace_cluster(self):
+        for command in RIPGREP_DENIED_COMMANDS:
+            with self.subTest(command=command):
+                payload = {
+                    "hook_event_name": "PreToolUse",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": command},
+                }
+                result = _run_bash_guard(CODEX_BASH_GUARD, payload)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                response = json.loads(result.stdout)
+                self.assertEqual(response["hookSpecificOutput"]["permissionDecision"], "deny")
+                self.assertIn(
+                    "--replace", response["hookSpecificOutput"]["permissionDecisionReason"]
+                )
+
+    def test_claude_copy_allows_safe_ripgrep_commands(self):
+        for command in RIPGREP_ALLOWED_COMMANDS:
+            with self.subTest(command=command):
+                payload = {"tool_input": {"command": command}}
+                result = _run_bash_guard(CLAUDE_BASH_GUARD, payload)
+                self.assertEqual(
+                    result.returncode, 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+                )
+                self.assertEqual(result.stderr, "")
+
+    def test_codex_copy_allows_safe_ripgrep_commands(self):
+        for command in RIPGREP_ALLOWED_COMMANDS:
             with self.subTest(command=command):
                 payload = {
                     "hook_event_name": "PreToolUse",
