@@ -326,10 +326,10 @@
       "kind": "file",
       "sourceSha256": "ca82ed5154440e4227a9aefddbc64e094dc82e73fdfb1082b16f5b63b868d509"
     },
-    ".raven/git-hooks/lib/stamp-verified.sh": {
-      "installedSha256": "bceca1f3d4ea6a6b06181e727f8621f9a540557ad5aa6dfaaddac2717b802010",
+    ".raven/git-hooks/lib/with-verified-cache.sh": {
+      "installedSha256": "0958fee682fb6bea3b56e0ee2c503a799e44f2d481c73f881d088d188cb4ae56",
       "kind": "file",
-      "sourceSha256": "bceca1f3d4ea6a6b06181e727f8621f9a540557ad5aa6dfaaddac2717b802010"
+      "sourceSha256": "0958fee682fb6bea3b56e0ee2c503a799e44f2d481c73f881d088d188cb4ae56"
     },
     ".raven/git-hooks/pre-commit": {
       "installedSha256": "3657975d45dc81a18481f2fefaf9c0b8f91754c37e3b34fae32d6c27772c5b1f",
@@ -337,9 +337,9 @@
       "sourceSha256": "3657975d45dc81a18481f2fefaf9c0b8f91754c37e3b34fae32d6c27772c5b1f"
     },
     ".raven/git-hooks/pre-push": {
-      "installedSha256": "608b5e8babb222424dd56de558a54823cc8d5a6b5f9ca389153d69c5f691ac30",
+      "installedSha256": "9e27c78e113022067d2e5c0e62901da5cc0a0ab1fe298a255ea6931424b3ab4e",
       "kind": "file",
-      "sourceSha256": "608b5e8babb222424dd56de558a54823cc8d5a6b5f9ca389153d69c5f691ac30"
+      "sourceSha256": "9e27c78e113022067d2e5c0e62901da5cc0a0ab1fe298a255ea6931424b3ab4e"
     },
     "AGENTS.md": {
       "installedSha256": "22e644b7a4cc2f56db7f1b4468347a348ce41b85628bb23004c15bae5c138955",
@@ -363,8 +363,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "90e687463c37",
+  "ravenVersion": "3177e6a96a21",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-07-22T23:58:14.267904+00:00"
+  "updatedAt": "2026-07-23T00:11:06.399965+00:00"
 }
