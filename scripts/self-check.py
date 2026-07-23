@@ -72,6 +72,93 @@ def validate_shared_docs_sync() -> None:
     print("shared docs sync ok")
 
 
+# Shared paths every language tree symlinks back to common/ rather than
+# copying (see .claude/docs/raven-namespace.md). Update this list by hand when
+# a new shared path is added to the trees -- mirrors the THRESHOLDS/PROFILES
+# dicts below, which take the same "add it here" maintenance.
+_TREE_SYMLINKS_TO_COMMON = [
+    ".agents/skills",
+    ".claude/agents/raven-codebase-cartographer.md",
+    ".claude/agents/raven-refactor-reviewer.md",
+    ".claude/agents/raven-security-reviewer.md",
+    ".claude/agents/raven-test-debugger.md",
+    ".claude/docs/raven-agent-compatibility.md",
+    ".claude/docs/raven-authority-map.md",
+    ".claude/docs/raven-coding-principles.md",
+    ".claude/docs/raven-guardrails.md",
+    ".claude/docs/raven-lsp-mcp.md",
+    ".claude/docs/raven-namespace.md",
+    ".claude/docs/raven-semgrep.md",
+    ".claude/docs/raven-tool-assessment.md",
+    ".claude/hooks",
+    ".claude/rules/raven-security.md",
+    ".claude/scripts",
+    ".claude/settings.json",
+    ".codex/agents",
+    ".codex/hooks",
+    ".codex/hooks.json",
+    ".codex/rules",
+    ".codex/scripts",
+    ".raven/git-hooks",
+    "AGENTS.md",
+]
+# Shared paths that symlink within their own tree rather than into common/.
+_TREE_SYMLINKS_WITHIN_TREE = {
+    "CLAUDE.md": "AGENTS.md",
+    ".claude/skills": "../.agents/skills",
+}
+
+
+def _language_dirs() -> list[Path]:
+    non_template_dirs = load_raven_module().NON_TEMPLATE_DIRS
+    return sorted(
+        d
+        for d in REPO_ROOT.iterdir()
+        if d.is_dir() and not d.name.startswith(".") and d.name not in non_template_dirs
+    )
+
+
+def validate_symlink_canonicality() -> None:
+    """Each language tree symlinks its shared paths to common/ (or, for
+    CLAUDE.md/.claude/skills, to the in-tree canonical file) instead of
+    carrying its own copy. A stray `cp` during a manual edit or guided merge
+    can silently replace a symlink with a real file, which then drifts from
+    common/ unnoticed -- catch that here instead of relying on `ls -l`.
+    """
+    print("==> validate language-tree symlink canonicality")
+    problems: list[str] = []
+    for lang_dir in _language_dirs():
+        for rel in _TREE_SYMLINKS_TO_COMMON:
+            expected = REPO_ROOT / "common" / rel
+            problems.extend(_check_tree_symlink(lang_dir / rel, expected))
+        for rel, relative_target in _TREE_SYMLINKS_WITHIN_TREE.items():
+            target = lang_dir / rel
+            expected = (target.parent / relative_target).resolve()
+            problems.extend(_check_tree_symlink(target, expected))
+
+    if problems:
+        for p in problems:
+            print(f"  {p}")
+        raise SystemExit(
+            "Language-tree symlink canonicality broken. Restore the symlink "
+            "instead of copying content -- see .claude/docs/raven-namespace.md."
+        )
+    print("symlink canonicality ok")
+
+
+def _check_tree_symlink(target: Path, expected: Path) -> list[str]:
+    label = str(target.relative_to(REPO_ROOT))
+    if not target.exists() and not target.is_symlink():
+        return [f"MISSING: {label}"]
+    if not target.is_symlink():
+        return [f"NOT A SYMLINK: {label} (real file/dir where a symlink is expected)"]
+    if target.resolve() != expected.resolve():
+        return [
+            f"MISDIRECTED: {label} -> {os.readlink(target)} (expected to resolve to {expected})"
+        ]
+    return []
+
+
 def _template_rules_files() -> dict[str, Path]:
     """Map template dir name -> its always-loaded raven-<name>.md rules file, if any."""
     non_template_dirs = load_raven_module().NON_TEMPLATE_DIRS
@@ -341,6 +428,7 @@ def warn_stale_docs() -> None:
 
 def main() -> int:
     validate_shared_docs_sync()
+    validate_symlink_canonicality()
     validate_context_budget()
     validate_aggregate_budget()
     validate_skill_description_budget()
