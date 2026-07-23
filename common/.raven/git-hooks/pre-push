@@ -46,47 +46,41 @@ if [ -f "$attribution_check" ]; then
     python3 "$attribution_check" outbound || exit 1
 fi
 
-# The gate runs against the working tree, so a commit is only safely "already
-# verified" if the tree is also clean and every pushed ref is this worktree's
-# HEAD (see refs_match_head above). The stamp records the HEAD SHA that last
-# passed `just check` with a clean tree -- written either by this hook below,
-# or by the `check` recipe itself when it is run manually (see
-# lib/stamp-verified.sh); the skip invariant is the same either way, so a
-# manual run earns the same credit. If HEAD still matches, every pushed
-# ref is that HEAD, and the tree is still clean, re-running is pure waste. A
-# new commit, amend, or any uncommitted change alters HEAD or dirties the
-# tree and invalidates the stamp; pushing a ref other than HEAD falls back to
-# running the gate too, same as before the stamp existed for that case. That
-# fallback still only checks the working tree, not the pushed ref's actual
-# content, so it does not fully verify e.g. a cross-worktree push of a
-# different branch -- closing that would require checking out the pushed
-# ref, which this hook intentionally does not do. A second, unrelated gap the
-# working-tree design cannot close either: committing broken code and then
-# fixing it locally without committing lets `just check` pass against the
-# fixed tree while HEAD (the broken commit) is what actually gets pushed. The
-# stamp lives in the (per-worktree) git dir, so it is never committed and is
-# wiped on re-clone. A missing or unreadable stamp simply falls through to
-# the gate.
-stamp="$(git rev-parse --git-dir)/raven-pre-push-verified"
-if [ -n "$head_sha" ] && [ "$refs_match_head" -eq 1 ] \
-    && [ -z "$(git status --porcelain 2>/dev/null)" ] \
-    && [ "$head_sha" = "$(cat "$stamp" 2>/dev/null)" ]; then
-    exit 0
-fi
-
 # Run the full verification set (lint, format, type-check, tests) before code
 # leaves the machine; a failure blocks the push. pre-commit already ran the fast
 # subset, so the only heavy work added here is the type-check and test suite --
 # tests run exactly once across both hooks. Re-running the fast checks is the
 # cheap last line of defense against commits made with `--no-verify`. If `just`
 # is not installed, skip rather than hard-failing.
+#
+# with-verified-cache.sh skips the run entirely when HEAD already passed
+# `just check` against a clean tree -- recorded either by this hook, or by
+# the `check` recipe itself when it is run manually, so a manual run earns
+# the same credit. A new commit, amend, or any uncommitted change alters HEAD
+# or dirties the tree and invalidates that cache, same as before. When a
+# pushed ref is not HEAD (refs_match_head=0, see above), the cache cannot
+# vouch for what is actually being pushed, so --force skips the cached read
+# and the gate always runs; the write on success still happens, crediting
+# HEAD for a later push of HEAD itself. That still only checks the working
+# tree, not the pushed ref's actual content, so it does not fully verify e.g.
+# a cross-worktree push of a different branch -- closing that would require
+# checking out the pushed ref, which this hook intentionally does not do. A
+# second, unrelated gap the working-tree design cannot close either:
+# committing broken code and then fixing it locally without committing lets
+# `just check` pass against the fixed tree while HEAD (the broken commit) is
+# what actually gets pushed. The cache lives in the (per-worktree) git dir,
+# so it is never committed and is wiped on re-clone. Skip the wrapper
+# entirely (falling back to a plain, uncached run) if the lib script is
+# missing (a stale/partial install) rather than hard-failing.
 if command -v just >/dev/null 2>&1; then
-    just check || exit 1
-    # Record the verified commit only when the tree is still clean, so a cached
-    # pass can never vouch for uncommitted work. If the gate dirtied the tree
-    # (e.g. build artifacts), skip stamping this run rather than caching a lie.
-    # Shared with the `check` recipe so a manual `just check` run gets credited
-    # identically; the script re-derives head_sha/stamp itself and swallows
-    # its own failures, since the stamp is an optimization, not a gate.
-    sh "$repo_root/.raven/git-hooks/lib/stamp-verified.sh" 2>/dev/null || true
+    cache_script="$repo_root/.raven/git-hooks/lib/with-verified-cache.sh"
+    if [ -f "$cache_script" ]; then
+        if [ "$refs_match_head" -eq 1 ]; then
+            sh "$cache_script" check just check || exit 1
+        else
+            sh "$cache_script" --force check just check || exit 1
+        fi
+    else
+        just check || exit 1
+    fi
 fi

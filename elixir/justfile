@@ -25,7 +25,7 @@ check-fast: lint fmt-check
 # A successful run credits the pre-push stamp too, so a manual `just check`
 # right before pushing skips a redundant rerun in the hook.
 check: check-fast typecheck test
-    [ -f .raven/git-hooks/lib/stamp-verified.sh ] && sh .raven/git-hooks/lib/stamp-verified.sh || true
+    [ -f .raven/git-hooks/lib/with-verified-cache.sh ] && sh .raven/git-hooks/lib/with-verified-cache.sh check true || true
 
 # Install pre-commit (fast checks) and pre-push (full check) git hooks
 install-hooks:
