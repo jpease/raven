@@ -92,63 +92,65 @@ Add this method to `GitHookInstallerTests` in `tests/test_git_hooks.py` (place i
 Add these three tests to `GitHookInstallerTests` (after `test_pre_push_hook_skips_heavy_checks_when_nothing_to_push`). `_HOOK` is defined inline in each to keep tasks readable:
 
 ```python
-    def test_pre_push_skips_when_head_verified_and_tree_clean(self):
-        # Stamp records the current HEAD and the tree is clean, so the hook must
-        # skip the gate entirely -- even a `just` rigged to fail is never run.
-        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
-        env, head, stamp = self._prepare_verified_repo(just_exit=1)
-        stamp.write_text(head + "\n", encoding="utf-8")
+def test_pre_push_skips_when_head_verified_and_tree_clean(self):
+    # Stamp records the current HEAD and the tree is clean, so the hook must
+    # skip the gate entirely -- even a `just` rigged to fail is never run.
+    hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+    env, head, stamp = self._prepare_verified_repo(just_exit=1)
+    stamp.write_text(head + "\n", encoding="utf-8")
 
-        result = subprocess.run(
-            ["/bin/sh", str(hook)],
-            cwd=self.destination,
-            env=env,
-            input=self._PUSH_STDIN,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+    result = subprocess.run(
+        ["/bin/sh", str(hook)],
+        cwd=self.destination,
+        env=env,
+        input=self._PUSH_STDIN,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+    self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_pre_push_reruns_when_tree_dirty_despite_matching_stamp(self):
-        # Stamp matches HEAD, but an uncommitted (untracked) change dirties the
-        # tree, so the cached pass is invalid and the failing gate must run.
-        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
-        env, head, stamp = self._prepare_verified_repo(just_exit=1)
-        stamp.write_text(head + "\n", encoding="utf-8")
-        (self.destination / "scratch.txt").write_text("dirty\n", encoding="utf-8")
 
-        result = subprocess.run(
-            ["/bin/sh", str(hook)],
-            cwd=self.destination,
-            env=env,
-            input=self._PUSH_STDIN,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+def test_pre_push_reruns_when_tree_dirty_despite_matching_stamp(self):
+    # Stamp matches HEAD, but an uncommitted (untracked) change dirties the
+    # tree, so the cached pass is invalid and the failing gate must run.
+    hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+    env, head, stamp = self._prepare_verified_repo(just_exit=1)
+    stamp.write_text(head + "\n", encoding="utf-8")
+    (self.destination / "scratch.txt").write_text("dirty\n", encoding="utf-8")
 
-        self.assertNotEqual(result.returncode, 0)
+    result = subprocess.run(
+        ["/bin/sh", str(hook)],
+        cwd=self.destination,
+        env=env,
+        input=self._PUSH_STDIN,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
-    def test_pre_push_reruns_when_head_differs_from_stamp(self):
-        # Stamp holds a different SHA (e.g. a new commit since verification), so
-        # the failing gate must run rather than skip.
-        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
-        env, _head, stamp = self._prepare_verified_repo(just_exit=1)
-        stamp.write_text("0" * 40 + "\n", encoding="utf-8")
+    self.assertNotEqual(result.returncode, 0)
 
-        result = subprocess.run(
-            ["/bin/sh", str(hook)],
-            cwd=self.destination,
-            env=env,
-            input=self._PUSH_STDIN,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
 
-        self.assertNotEqual(result.returncode, 0)
+def test_pre_push_reruns_when_head_differs_from_stamp(self):
+    # Stamp holds a different SHA (e.g. a new commit since verification), so
+    # the failing gate must run rather than skip.
+    hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+    env, _head, stamp = self._prepare_verified_repo(just_exit=1)
+    stamp.write_text("0" * 40 + "\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["/bin/sh", str(hook)],
+        cwd=self.destination,
+        env=env,
+        input=self._PUSH_STDIN,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    self.assertNotEqual(result.returncode, 0)
 ```
 
 - [ ] **Step 3: Run the new tests to verify they fail**
@@ -211,45 +213,46 @@ git commit -m "feat(hooks): skip pre-push gate when HEAD verified against clean 
 Add these tests to `GitHookInstallerTests` (after the Task 1 tests):
 
 ```python
-    def test_pre_push_writes_stamp_after_clean_pass(self):
-        # A clean tree and a passing gate must record HEAD in the stamp so the
-        # next push of the same commit can skip.
-        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
-        env, head, stamp = self._prepare_verified_repo(just_exit=0)
-        self.assertFalse(stamp.exists())
+def test_pre_push_writes_stamp_after_clean_pass(self):
+    # A clean tree and a passing gate must record HEAD in the stamp so the
+    # next push of the same commit can skip.
+    hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+    env, head, stamp = self._prepare_verified_repo(just_exit=0)
+    self.assertFalse(stamp.exists())
 
-        result = subprocess.run(
-            ["/bin/sh", str(hook)],
-            cwd=self.destination,
-            env=env,
-            input=self._PUSH_STDIN,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+    result = subprocess.run(
+        ["/bin/sh", str(hook)],
+        cwd=self.destination,
+        env=env,
+        input=self._PUSH_STDIN,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(stamp.exists())
-        self.assertEqual(stamp.read_text(encoding="utf-8").strip(), head)
+    self.assertEqual(result.returncode, 0, result.stderr)
+    self.assertTrue(stamp.exists())
+    self.assertEqual(stamp.read_text(encoding="utf-8").strip(), head)
 
-    def test_pre_push_does_not_write_stamp_when_gate_fails(self):
-        # A failing gate must not stamp -- a cached "pass" would let unverified
-        # code push on the next attempt.
-        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
-        env, _head, stamp = self._prepare_verified_repo(just_exit=1)
 
-        result = subprocess.run(
-            ["/bin/sh", str(hook)],
-            cwd=self.destination,
-            env=env,
-            input=self._PUSH_STDIN,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+def test_pre_push_does_not_write_stamp_when_gate_fails(self):
+    # A failing gate must not stamp -- a cached "pass" would let unverified
+    # code push on the next attempt.
+    hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+    env, _head, stamp = self._prepare_verified_repo(just_exit=1)
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(stamp.exists())
+    result = subprocess.run(
+        ["/bin/sh", str(hook)],
+        cwd=self.destination,
+        env=env,
+        input=self._PUSH_STDIN,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    self.assertNotEqual(result.returncode, 0)
+    self.assertFalse(stamp.exists())
 ```
 
 - [ ] **Step 2: Run the new tests to verify they fail**

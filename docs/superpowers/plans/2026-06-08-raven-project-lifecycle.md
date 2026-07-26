@@ -50,6 +50,7 @@ def test_default_config_includes_lifecycle_section(self):
     self.assertIn("[lifecycle]", config)
     self.assertIn("checkpoint_enforcement = true", config)
 
+
 def test_default_config_includes_issue_tracker_section(self):
     config = raven.default_config_text("python", False)
     self.assertIn("[issue_tracker]", config)
@@ -69,21 +70,21 @@ Expected: FAIL — sections not yet in `default_config_text()`.
 In `scripts/raven.py`, locate `default_config_text()`. After the last existing config block, append before the closing `"""`:
 
 ```python
-        [lifecycle]
-        # Enable checkpoint enforcement hook for raven-project-lifecycle.
-        # When true, the PreToolUse hook validates each unit checkpoint before
-        # allowing raven-session.py --complete to proceed.
-        # Set to false to fall back to instructional-only enforcement.
-        checkpoint_enforcement = true
+[lifecycle]
+# Enable checkpoint enforcement hook for raven-project-lifecycle.
+# When true, the PreToolUse hook validates each unit checkpoint before
+# allowing raven-session.py --complete to proceed.
+# Set to false to fall back to instructional-only enforcement.
+checkpoint_enforcement = true
 
-        [issue_tracker]
-        # External issue tracker for this project. Controls which issue-tracker
-        # workflow skill is active and which CLI raven-tool-bootstrap checks for.
-        # This is independent of local session tracking (governed by [lifecycle]).
-        #
-        # platform = "github"   # use raven-github-issues + gh CLI
-        # platform = "gitlab"   # use raven-gitlab-issues + glab CLI
-        platform = "none"        # no external issue tracker
+[issue_tracker]
+# External issue tracker for this project. Controls which issue-tracker
+# workflow skill is active and which CLI raven-tool-bootstrap checks for.
+# This is independent of local session tracking (governed by [lifecycle]).
+#
+# platform = "github"   # use raven-github-issues + gh CLI
+# platform = "gitlab"   # use raven-gitlab-issues + glab CLI
+platform = "none"  # no external issue tracker
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -156,6 +157,7 @@ class SessionInitTests(unittest.TestCase):
         mod = load_session()
         with patch("pathlib.Path.cwd", return_value=self.root):
             import os
+
             orig = os.getcwd()
             os.chdir(self.root)
             try:
@@ -189,6 +191,7 @@ class SessionInitTests(unittest.TestCase):
         self._run(["--init", "greenfield", "unit-a", "unit-b"])
         import io
         from contextlib import redirect_stdout
+
         f = io.StringIO()
         with redirect_stdout(f):
             self._run(["--status"])
@@ -210,6 +213,7 @@ Expected: ERROR — script does not exist yet.
 ```python
 #!/usr/bin/env python3
 """Raven session state manager for raven-project-lifecycle."""
+
 from __future__ import annotations
 
 import os
@@ -275,10 +279,14 @@ def _parse_session(text: str) -> dict:
                 issue = im.group(1)
             if cm := re.search(r"\(completed ([^)]+)\)", rest):
                 completed_at = cm.group(1)
-            data["units"].append({
-                "name": name, "done": done,
-                "issue": issue, "completed_at": completed_at,
-            })
+            data["units"].append(
+                {
+                    "name": name,
+                    "done": done,
+                    "issue": issue,
+                    "completed_at": completed_at,
+                }
+            )
         elif in_context:
             data["context_lines"].append(line)
 
@@ -323,6 +331,7 @@ def _render_session(data: dict) -> str:
 
 def cmd_init(args: list[str]) -> int:
     import argparse
+
     p = argparse.ArgumentParser()
     p.add_argument("project_type")
     p.add_argument("units", nargs="+")
@@ -330,7 +339,10 @@ def cmd_init(args: list[str]) -> int:
     ns = p.parse_args(args)
 
     if SESSION_FILE.exists():
-        print(f"error: session already exists at {SESSION_FILE}. Use --status to resume.", file=sys.stderr)
+        print(
+            f"error: session already exists at {SESSION_FILE}. Use --status to resume.",
+            file=sys.stderr,
+        )
         return 1
 
     RAVEN_DIR.mkdir(exist_ok=True)
@@ -339,13 +351,17 @@ def cmd_init(args: list[str]) -> int:
         "started": _now(),
         "last_updated": _now(),
         "parent_issue": ns.parent,
-        "units": [{"name": u, "done": False, "issue": None, "completed_at": None} for u in ns.units],
+        "units": [
+            {"name": u, "done": False, "issue": None, "completed_at": None} for u in ns.units
+        ],
         "context_lines": [""],
     }
     _atomic_write(SESSION_FILE, _render_session(data))
     print(f"Session initialized: {len(ns.units)} unit(s), project type '{ns.project_type}'.")
     if ns.parent:
-        print(f"Parent issue: {ns.parent}. Create child issues manually with gh/glab and record them in session.md.")
+        print(
+            f"Parent issue: {ns.parent}. Create child issues manually with gh/glab and record them in session.md."
+        )
     _update_gitignore()
     return 0
 
@@ -381,14 +397,19 @@ def cmd_status(args: list[str]) -> int:
     if len(pending) > 1:
         print(f"Remaining    : {', '.join(u['name'] for u in pending[1:])}")
     if len(data["context_lines"]) > CONTEXT_SOFT_CAP:
-        print(f"warning: context block is {len(data['context_lines'])} lines (>{CONTEXT_SOFT_CAP}). Consider running --archive.")
+        print(
+            f"warning: context block is {len(data['context_lines'])} lines (>{CONTEXT_SOFT_CAP}). Consider running --archive."
+        )
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     args = argv if argv is not None else sys.argv[1:]
     if not args:
-        print("usage: raven-session.py --init|--status|--validate|--complete|--archive [args]", file=sys.stderr)
+        print(
+            "usage: raven-session.py --init|--status|--validate|--complete|--archive [args]",
+            file=sys.stderr,
+        )
         return 1
     cmd = args[0]
     rest = args[1:]
@@ -446,6 +467,7 @@ class SessionValidateCompleteTests(unittest.TestCase):
     def _run(self, args: list[str]) -> int:
         mod = load_session()
         import os
+
         orig = os.getcwd()
         os.chdir(self.root)
         try:
@@ -520,6 +542,7 @@ Add after `cmd_status`:
 def _acquire_lock() -> None:
     """Create lockfile with PID. Retry 3x on live PID; remove stale."""
     import time
+
     for attempt in range(4):
         if not LOCK_FILE.exists():
             LOCK_FILE.write_text(f"{os.getpid()}\n{_now()}", encoding="utf-8")
@@ -677,7 +700,10 @@ class SessionArchiveTests(unittest.TestCase):
 
     def _run(self, args):
         mod = load_session()
-        import os; orig = os.getcwd(); os.chdir(self.root)
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
         try:
             return mod.main(args)
         finally:
@@ -840,6 +866,7 @@ import json
 
 HOOK_PATH = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-session-checkpoint.py"
 
+
 def load_hook():
     spec = _ilu.spec_from_file_location("raven_session_checkpoint", HOOK_PATH)
     mod = _ilu.module_from_spec(spec)
@@ -865,7 +892,10 @@ class CheckpointHookTests(unittest.TestCase):
 
     def _run_hook(self, payload_str: str) -> int:
         mod = load_hook()
-        import os; orig = os.getcwd(); os.chdir(self.root)
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
         try:
             with patch("sys.stdin", io.StringIO(payload_str)):
                 return mod.main()
@@ -876,14 +906,18 @@ class CheckpointHookTests(unittest.TestCase):
         self.config_file.write_text(
             "[lifecycle]\ncheckpoint_enforcement = false\n", encoding="utf-8"
         )
-        rc = self._run_hook(_claude_payload("python .claude/scripts/raven-session.py --complete unit-a"))
+        rc = self._run_hook(
+            _claude_payload("python .claude/scripts/raven-session.py --complete unit-a")
+        )
         self.assertEqual(rc, 0)
 
     def test_hook_denies_when_no_session(self):
         self.config_file.write_text(
             "[lifecycle]\ncheckpoint_enforcement = true\n", encoding="utf-8"
         )
-        rc = self._run_hook(_claude_payload("python .claude/scripts/raven-session.py --complete unit-a"))
+        rc = self._run_hook(
+            _claude_payload("python .claude/scripts/raven-session.py --complete unit-a")
+        )
         self.assertNotEqual(rc, 0)
 
     def test_hook_allows_valid_checkpoint(self):
@@ -892,26 +926,36 @@ class CheckpointHookTests(unittest.TestCase):
         )
         # Write a valid session with unit-a as current
         from unittest.mock import patch as _patch
-        import os; orig = os.getcwd(); os.chdir(self.root)
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
         try:
             mod = load_session()
             mod.main(["--init", "greenfield", "unit-a", "unit-b"])
         finally:
             os.chdir(orig)
-        rc = self._run_hook(_claude_payload("python .claude/scripts/raven-session.py --complete unit-a"))
+        rc = self._run_hook(
+            _claude_payload("python .claude/scripts/raven-session.py --complete unit-a")
+        )
         self.assertEqual(rc, 0)
 
     def test_hook_denies_wrong_unit(self):
         self.config_file.write_text(
             "[lifecycle]\ncheckpoint_enforcement = true\n", encoding="utf-8"
         )
-        import os; orig = os.getcwd(); os.chdir(self.root)
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
         try:
             mod = load_session()
             mod.main(["--init", "greenfield", "unit-a", "unit-b"])
         finally:
             os.chdir(orig)
-        rc = self._run_hook(_claude_payload("python .claude/scripts/raven-session.py --complete unit-b"))
+        rc = self._run_hook(
+            _claude_payload("python .claude/scripts/raven-session.py --complete unit-b")
+        )
         self.assertNotEqual(rc, 0)
 ```
 
@@ -928,6 +972,7 @@ Expected: ERROR — hook file does not exist.
 ```python
 #!/usr/bin/env python3
 """PreToolUse hook: validate raven-session.py --complete before allowing."""
+
 from __future__ import annotations
 
 import json
@@ -957,13 +1002,17 @@ def _is_codex_hook(payload: dict) -> bool:
 
 def _deny(message: str, payload: dict) -> int:
     if _is_codex_hook(payload):
-        print(json.dumps({
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "deny",
-                "permissionDecisionReason": message,
-            }
-        }))
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": message,
+                    }
+                }
+            )
+        )
         return 0
     print(message, file=sys.stderr)
     return 2
@@ -1049,12 +1098,12 @@ Edit `common/.codex/hooks/raven-session-checkpoint.py` — change the subprocess
 
 Find:
 ```python
-        [sys.executable, ".claude/scripts/raven-session.py", "--validate", unit],
+([sys.executable, ".claude/scripts/raven-session.py", "--validate", unit],)
 ```
 
 Replace with:
 ```python
-        [sys.executable, ".codex/scripts/raven-session.py", "--validate", unit],
+([sys.executable, ".codex/scripts/raven-session.py", "--validate", unit],)
 ```
 
 - [ ] **Step 2: Register hook in `common/.claude/settings.json`**
