@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -230,7 +231,7 @@ paths = [".claude/skills/raven-plan/**"]
             ),
             (
                 REPO_ROOT / "common" / ".codex" / "hooks.json",
-                "$(git rev-parse --show-toplevel)/",
+                "json.loads(payload)['cwd']",
                 "python .codex/",
             ),
         ]
@@ -244,6 +245,78 @@ paths = [".claude/skills/raven-plan/**"]
                 for command in raven_commands:
                     self.assertIn(required_anchor, command)
                     self.assertNotIn(forbidden_prefix, command)
+
+    def test_codex_bash_guard_runs_outside_project_worktree(self):
+        config = json.loads(
+            (REPO_ROOT / "common" / ".codex" / "hooks.json").read_text(encoding="utf-8")
+        )
+        command = config["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        payload = {
+            "cwd": str(REPO_ROOT),
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "git status --short"},
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run(
+                command,
+                cwd=tmp,
+                input=json.dumps(payload),
+                capture_output=True,
+                text=True,
+                shell=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+
+    def test_codex_hook_launcher_preserves_payload_and_arguments(self):
+        config = json.loads(
+            (REPO_ROOT / "common" / ".codex" / "hooks.json").read_text(encoding="utf-8")
+        )
+        command = config["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+
+        with tempfile.TemporaryDirectory() as project_tmp, tempfile.TemporaryDirectory() as cwd_tmp:
+            project = Path(project_tmp)
+            subprocess.run(
+                ["git", "init", "-q", str(project)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(project), "config", "core.bare", "true"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            script = project / ".codex" / "scripts" / "raven-tool-check.py"
+            script.parent.mkdir(parents=True)
+            script.write_text(
+                "import json, sys\n"
+                "print(json.dumps({'argv': sys.argv[1:], 'payload': json.load(sys.stdin)}))\n",
+                encoding="utf-8",
+            )
+            session_cwd = project / "nested" / "worktree"
+            session_cwd.mkdir(parents=True)
+            payload = {"cwd": str(session_cwd), "hook_event_name": "SessionStart"}
+
+            result = subprocess.run(
+                command,
+                cwd=cwd_tmp,
+                input=json.dumps(payload),
+                capture_output=True,
+                text=True,
+                shell=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["argv"], ["--session-start"])
+        self.assertEqual(output["payload"], payload)
 
     def test_templates_have_no_broken_symlinks(self):
         for language in raven.list_language_templates():
