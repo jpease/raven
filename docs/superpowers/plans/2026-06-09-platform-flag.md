@@ -33,9 +33,11 @@ def test_default_config_embeds_github_platform(self):
     config = raven.default_config_text("python", False, "github")
     self.assertIn('platform = "github"', config)
 
+
 def test_default_config_embeds_gitlab_platform(self):
     config = raven.default_config_text("python", False, "gitlab")
     self.assertIn('platform = "gitlab"', config)
+
 
 def test_default_config_platform_defaults_to_none(self):
     config = raven.default_config_text("python", False)
@@ -111,9 +113,7 @@ Add to `RavenTests`:
 def test_update_config_platform_replaces_platform_value(self):
     config_path = self.destination / ".raven" / "config.toml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        raven.default_config_text("python", False, "none"), encoding="utf-8"
-    )
+    config_path.write_text(raven.default_config_text("python", False, "none"), encoding="utf-8")
 
     raven._update_config_platform(config_path, "github")
 
@@ -147,7 +147,12 @@ def _update_config_platform(config_path: Path, platform: str) -> None:
         m = _ISSUE_TRACKER_SECTION_RE.match(line)
         if m:
             in_section = m.group(1).strip() == "issue_tracker"
-        if in_section and not updated and _PLATFORM_LINE_RE.match(line) and not line.lstrip().startswith("#"):
+        if (
+            in_section
+            and not updated
+            and _PLATFORM_LINE_RE.match(line)
+            and not line.lstrip().startswith("#")
+        ):
             new_lines.append(f'platform = "{platform}"\n')
             updated = True
             continue
@@ -178,11 +183,14 @@ def test_init_with_platform_github_writes_github_to_config(self):
     output = io.StringIO()
     with contextlib.redirect_stdout(output):
         rc = raven.cmd_init(
-            argparse.Namespace(destination=str(self.destination), language="python", platform="github")
+            argparse.Namespace(
+                destination=str(self.destination), language="python", platform="github"
+            )
         )
     self.assertEqual(rc, 0)
     text = (self.destination / ".raven" / "config.toml").read_text(encoding="utf-8")
     self.assertIn('platform = "github"', text)
+
 
 def test_install_platform_updates_existing_config(self):
     # Create a config with platform = "none"

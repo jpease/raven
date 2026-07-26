@@ -210,9 +210,7 @@ class ClassifyOrphansTests(unittest.TestCase):
         sha = file_sha256(target)
         manifest = {
             "schema": 1,
-            "files": {
-                "docs/dropped.md": {"kind": "file", "installedSha256": sha}
-            },
+            "files": {"docs/dropped.md": {"kind": "file", "installedSha256": sha}},
         }
         result = classify_orphans(template, dest, manifest)
         self.assertEqual(result.orphan_modified, ["docs/dropped.md"])
@@ -282,9 +280,7 @@ def _unmodified_baseline(record: ManifestRecord, fingerprint: Fingerprint) -> bo
     return fingerprint.sha256 == record.installed_sha256
 
 
-def classify_orphans(
-    template: Path, destination: Path, manifest: dict
-) -> OrphanClassification:
+def classify_orphans(template: Path, destination: Path, manifest: dict) -> OrphanClassification:
     """Bucket manifest files the current template no longer ships.
 
     Non-orphans (still shipped) are ignored. Each orphan is classified strictly:
@@ -495,9 +491,7 @@ class UpdateManifestRemoveTests(unittest.TestCase):
             config = RavenConfig(None, False, {}, {}, {}, [])
             template = dest / "template"
             template.mkdir()
-            update_manifest(
-                dest, "python", template, set(), config, [], remove=["docs/gone.md"]
-            )
+            update_manifest(dest, "python", template, set(), config, [], remove=["docs/gone.md"])
             files = load_manifest(dest)["files"]
             self.assertNotIn("docs/gone.md", files)
             self.assertIn("docs/kept.md", files)
@@ -795,6 +789,7 @@ def test_doctor_reports_removable_orphan(self) -> None:
     # ships, with the on-disk file matching its recorded baseline.
     # Assert a finding with id "doctor.orphan.removable" is present.
     ...
+
 
 def test_doctor_reports_modified_orphan(self) -> None:
     # Same, but the on-disk file diverges from the baseline.

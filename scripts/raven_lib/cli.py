@@ -64,11 +64,15 @@ def swift_install_note() -> list[str]:
     app exists, where the gate skips cleanly rather than failing at push time.
     """
     return [
-        "The scheme is auto-detected -- nothing to edit: $SCHEME override, else an "
-        "XcodeGen project.yml name:, else the first scheme from `xcodebuild -list`.",
+        (
+            "The scheme is auto-detected -- nothing to edit: $SCHEME override, else an "
+            "XcodeGen project.yml name:, else the first scheme from `xcodebuild -list`."
+        ),
         "Override for one run with SCHEME=<name>, e.g. `SCHEME=MyApp just build`.",
-        "No Package.swift or .xcodeproj yet? `just build`/`test` skip cleanly, so "
-        "your first commit and push still pass before the app is generated.",
+        (
+            "No Package.swift or .xcodeproj yet? `just build`/`test` skip cleanly, so "
+            "your first commit and push still pass before the app is generated."
+        ),
     ]
 
 

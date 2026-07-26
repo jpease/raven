@@ -502,6 +502,7 @@ def top_function(x: int) -> int:
     y = x + 1
     return y
 
+
 class Greeter:
     def greet(self) -> str:
         return "Hello"

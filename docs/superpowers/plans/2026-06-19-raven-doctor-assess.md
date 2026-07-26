@@ -61,7 +61,12 @@ class FindingsTests(unittest.TestCase):
         self.assertEqual(exit_code(findings), 1)
 
     def test_summarize_counts_by_severity(self):
-        findings = [self._f(Severity.OK), self._f(Severity.WARN), self._f(Severity.ERROR), self._f(Severity.OK)]
+        findings = [
+            self._f(Severity.OK),
+            self._f(Severity.WARN),
+            self._f(Severity.ERROR),
+            self._f(Severity.OK),
+        ]
         self.assertEqual(summarize(findings), {"errors": 1, "warnings": 1, "ok": 2})
 
     def test_severity_value_is_lowercase_string(self):
@@ -158,9 +163,29 @@ from raven_lib.report import render_human, render_json
 
 def _findings() -> list[Finding]:
     return [
-        Finding(id="a.ok", severity=Severity.OK, category="Toolchain", title="ripgrep present", detail="found"),
-        Finding(id="a.warn", severity=Severity.WARN, category="Toolchain", title="fd missing", detail="not found", fix="install fd"),
-        Finding(id="b.err", severity=Severity.ERROR, category="Install integrity", title="config missing", detail="no config.toml", fix="run raven install"),
+        Finding(
+            id="a.ok",
+            severity=Severity.OK,
+            category="Toolchain",
+            title="ripgrep present",
+            detail="found",
+        ),
+        Finding(
+            id="a.warn",
+            severity=Severity.WARN,
+            category="Toolchain",
+            title="fd missing",
+            detail="not found",
+            fix="install fd",
+        ),
+        Finding(
+            id="b.err",
+            severity=Severity.ERROR,
+            category="Install integrity",
+            title="config missing",
+            detail="no config.toml",
+            fix="run raven install",
+        ),
     ]
 
 
@@ -920,7 +945,9 @@ def _fake_toolcheck_runner(results):
 
     def runner(command, cwd):
         if any("raven-tool-check.py" in part for part in command):
-            return RunResult(ok=True, code=0, stdout=payload, stderr="", found=True, timed_out=False)
+            return RunResult(
+                ok=True, code=0, stdout=payload, stderr="", found=True, timed_out=False
+            )
         # gate-tool --version probes: pretend present
         return RunResult(ok=True, code=0, stdout="1.0\n", stderr="", found=True, timed_out=False)
 
@@ -939,7 +966,15 @@ class DoctorToolchainTests(RavenTestCase):
         from raven_lib.findings import Severity
 
         self._config()
-        results = [{"id": "rg", "name": "ripgrep", "available": True, "purpose": "search", "optionalWhen": None}]
+        results = [
+            {
+                "id": "rg",
+                "name": "ripgrep",
+                "available": True,
+                "purpose": "search",
+                "optionalWhen": None,
+            }
+        ]
         findings = toolchain_findings(self.destination, _fake_toolcheck_runner(results))
         match = next(f for f in findings if f.id == "doctor.tool.rg")
         self.assertEqual(match.severity, Severity.OK)
@@ -949,7 +984,9 @@ class DoctorToolchainTests(RavenTestCase):
         from raven_lib.findings import Severity
 
         self._config()
-        results = [{"id": "fd", "name": "fd", "available": False, "purpose": "find", "optionalWhen": None}]
+        results = [
+            {"id": "fd", "name": "fd", "available": False, "purpose": "find", "optionalWhen": None}
+        ]
         findings = toolchain_findings(self.destination, _fake_toolcheck_runner(results))
         match = next(f for f in findings if f.id == "doctor.tool.fd")
         self.assertEqual(match.severity, Severity.WARN)
@@ -1060,7 +1097,9 @@ def toolchain_findings(destination: Path, runner: Runner = _default_runner) -> l
                     category=_TOOLCHAIN,
                     title=f"{tool} {'present' if severity is Severity.OK else 'missing'}",
                     detail=f"gate tool for the {config.template} template",
-                    fix=None if severity is Severity.OK else f"install {tool} to run the template's gates",
+                    fix=None
+                    if severity is Severity.OK
+                    else f"install {tool} to run the template's gates",
                 )
             )
     return findings
@@ -1147,7 +1186,9 @@ class AssessWiringTests(RavenTestCase):
 
     def test_ruff_config_signal_detected(self):
         self._python_config()
-        (self.destination / "pyproject.toml").write_text("[tool.ruff]\nline-length = 100\n", encoding="utf-8")
+        (self.destination / "pyproject.toml").write_text(
+            "[tool.ruff]\nline-length = 100\n", encoding="utf-8"
+        )
         findings = wiring_findings(self.destination)
         match = next(f for f in findings if f.id == "assess.wiring.config.pyproject.toml")
         self.assertEqual(match.severity, Severity.OK)
@@ -1263,7 +1304,9 @@ def wiring_findings(destination: Path) -> list[Finding]:
 
     for file, substring in spec.config_signals:
         target = destination / file
-        ok = target.is_file() and (substring is None or substring in target.read_text(encoding="utf-8"))
+        ok = target.is_file() and (
+            substring is None or substring in target.read_text(encoding="utf-8")
+        )
         findings.append(
             Finding(
                 id=f"assess.wiring.config.{file}",
@@ -1336,7 +1379,9 @@ def template_fit_findings(destination: Path) -> list[Finding]:
     return findings
 
 
-def build_assess_findings(destination: Path, run: bool, runner: Runner = _default_runner) -> list[Finding]:
+def build_assess_findings(
+    destination: Path, run: bool, runner: Runner = _default_runner
+) -> list[Finding]:
     findings = wiring_findings(destination)
     if run:
         from .gate_run import gate_compliance_findings
@@ -1433,10 +1478,12 @@ class GateRunTests(RavenTestCase):
 
     def test_failing_gate_is_error(self):
         self._python_config_with_justfile()
-        runner = _runner({
-            "just --version": RunResult(True, 0, "", "", True, False),
-            "just lint": RunResult(False, 1, "", "E501", True, False),
-        })
+        runner = _runner(
+            {
+                "just --version": RunResult(True, 0, "", "", True, False),
+                "just lint": RunResult(False, 1, "", "E501", True, False),
+            }
+        )
         findings = gate_compliance_findings(self.destination, runner)
         lint = next(f for f in findings if f.id == "assess.gates.lint")
         self.assertEqual(lint.severity, Severity.ERROR)
