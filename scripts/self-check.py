@@ -305,7 +305,13 @@ def validate_skill_description_budget() -> None:
     # unnoticed, and cap each single description so one skill cannot eat the pool.
     # Skills are canonical in common/.agents/skills (language trees symlink to
     # it), so counting common/ once matches what a session actually loads.
-    AGGREGATE_LIMIT = 362  # ~329 words in-tree + ~10% margin
+    # 372 words in-tree + 4 words of slack. The slack is deliberately tight: it
+    # is the same 4 words the previous limit left, so unplanned description
+    # growth still trips this. Raised from 362 for issue #124's raven-debloat,
+    # a deliberate skill addition, not drift -- a new skill needs a description,
+    # and the old ceiling had no room for one. Raise this only alongside a new
+    # skill, and only to the new in-tree total plus that same slack.
+    AGGREGATE_LIMIT = 376
     PER_SKILL_LIMIT = 30
     print("==> validate context budget for skill-index descriptions")
 

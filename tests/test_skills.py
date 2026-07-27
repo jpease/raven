@@ -1,3 +1,4 @@
+import re
 import unittest
 
 from helpers import REPO_ROOT, RavenTestCase, raven
@@ -362,6 +363,269 @@ class TaskCompleteSkillTests(unittest.TestCase):
             "silence is indistinguishable",
             region,
             "expected the rebuttal to note that silence looks the same as having no reason",
+        )
+
+
+class DebloatSkillTests(unittest.TestCase):
+    """Guards the subtractive-maintenance skill added for issue #124.
+
+    Reads the canonical skill source directly (not the installed root
+    copy) since `common/.agents/skills/` is where edits must land.
+    """
+
+    def setUp(self):
+        path = REPO_ROOT / "common" / ".agents" / "skills" / "raven-debloat" / "SKILL.md"
+        self.content = path.read_text(encoding="utf-8")
+        self.lowered = self.content.lower()
+
+    def _section_region(self, heading):
+        start = self.lowered.find(heading)
+        self.assertNotEqual(start, -1, f"expected a {heading!r} section")
+        next_heading = self.lowered.find("\n## ", start + len(heading))
+        end = next_heading if next_heading != -1 else len(self.lowered)
+        return self.lowered[start:end]
+
+    def test_stays_under_line_ceiling(self):
+        self.assertLess(
+            len(self.content.splitlines()),
+            90,
+            "raven-debloat/SKILL.md legitimately needs more structure than most "
+            "skills, but past ~90 lines it is duplicating AGENTS.md or over-explaining",
+        )
+
+    def test_description_stays_well_under_the_per_skill_cap(self):
+        # This skill's addition is what forced the aggregate skill-index budget in
+        # scripts/self-check.py upward. Hold its own description tight so the
+        # raise stays the one-off it was justified as.
+        match = re.search(r"^description:\s*(.*)$", self.content, re.M)
+        self.assertIsNotNone(match, "expected a description: line in the frontmatter")
+        assert match is not None
+        self.assertLessEqual(
+            len(match.group(1).split()),
+            15,
+            "raven-debloat's description must stay at 15 words or fewer",
+        )
+
+    def test_declares_the_required_sections(self):
+        for heading in (
+            "## skip when",
+            "## required constraints",
+            "## process",
+            "## preflight",
+            "## reduction hierarchy",
+            "## anti-gaming self-audit",
+            "## stop conditions",
+            "## output",
+        ):
+            with self.subTest(heading=heading):
+                self.assertIn(heading, self.lowered)
+
+    def test_reads_as_area_maintenance_not_a_per_diff_cleanup_pass(self):
+        # The confusable neighbour is a /simplify-style pass over a working diff.
+        # Assert the boundary is drawn in Skip When, where an agent actually
+        # checks applicability, not buried in prose.
+        region = self._section_region("## skip when")
+
+        self.assertIn(
+            "diff",
+            region,
+            "expected Skip When to send per-diff cleanup elsewhere so this skill "
+            "is not confused with a review-time simplify pass",
+        )
+
+    def test_preflight_requires_a_verified_green_baseline_before_the_first_deletion(self):
+        region = self._section_region("## preflight")
+
+        self.assertIn(
+            "before the first deletion",
+            region,
+            "expected preflight to be explicitly ordered before any deletion",
+        )
+        self.assertIn("static analysis", region)
+        self.assertIn("runtime check", region)
+        self.assertIn("baseline", region)
+
+    def test_preflight_excludes_the_irreducible_floor_from_candidates(self):
+        region = self._section_region("## preflight")
+
+        self.assertIn("irreducible floor", region)
+        self.assertIn("generated", region)
+        self.assertIn(
+            "not candidates",
+            region,
+            "expected generated/vendored/scaffolding code ruled out as candidates",
+        )
+
+    def test_preflight_pins_formatting_so_reformatting_cannot_read_as_reduction(self):
+        region = self._section_region("## preflight")
+
+        self.assertIn("formatt", region)
+        self.assertIn("comparable", region)
+
+    def test_dead_code_claims_require_semantic_evidence_rather_than_grep(self):
+        region = self._section_region("## required constraints")
+
+        self.assertIn("lsp references", region)
+        self.assertIn(
+            "does not prove",
+            region,
+            "expected text search to be explicitly insufficient as dead-code evidence",
+        )
+
+    def test_no_automatic_deletion(self):
+        region = self._section_region("## required constraints")
+
+        self.assertIn("proposed and confirmed", region)
+        self.assertIn("no automatic deletion", region)
+
+    def test_subsystem_deletion_and_library_adoption_route_to_pause_and_ask(self):
+        region = self._section_region("## required constraints")
+
+        self.assertIn("deleting a subsystem", region)
+        self.assertIn(
+            "dependency addition",
+            region,
+            "expected library adoption named as a dependency addition, "
+            "which is what makes it a Pause And Ask item",
+        )
+        self.assertGreaterEqual(
+            region.count("pause and ask"),
+            2,
+            "expected both gated cases routed to AGENTS.md Pause And Ask by name",
+        )
+
+    def test_gated_hierarchy_tiers_are_marked_inline_at_the_point_of_use(self):
+        # The failure guarded against is an agent reading tier 6 in isolation,
+        # concluding a mature library is obviously better, and adding a
+        # dependency. A constraint 40 lines earlier does not stop that; an
+        # inline marker on the tier itself does.
+        region = self._section_region("## reduction hierarchy")
+
+        self.assertGreaterEqual(
+            region.count("gated"),
+            3,
+            "expected each gated tier marked inline, not only in a distant constraint",
+        )
+        self.assertGreaterEqual(region.count("pause and ask"), 3)
+
+    def test_hierarchy_is_ordered_and_forbids_skipping_to_riskier_tiers(self):
+        region = self._section_region("## reduction hierarchy")
+
+        self.assertIn("in this order", region)
+        self.assertIn("do not skip ahead", region)
+
+    def test_comment_hygiene_never_counts_as_reduction(self):
+        region = self._section_region("## reduction hierarchy")
+
+        self.assertIn("hygiene only", region)
+        self.assertIn("never counted as a reduction", region)
+
+    def test_self_audit_classifies_structural_versus_cheap(self):
+        region = self._section_region("## anti-gaming self-audit")
+
+        self.assertIn("structural", region)
+        self.assertIn("cheap", region)
+
+    def test_self_audit_can_terminate_the_run(self):
+        region = self._section_region("## anti-gaming self-audit")
+
+        self.assertIn(
+            "stop and report",
+            region,
+            "expected the audit to be able to end the run, not merely advise",
+        )
+        self.assertIn(
+            "gaming the metric",
+            region,
+            "expected the audit to force an explicit choice between admitting "
+            "metric gaming and declaring the structural well dry",
+        )
+        self.assertIn("well is dry", region)
+
+    def test_self_audit_is_wired_into_the_process_rather_than_optional(self):
+        region = self._section_region("## process")
+
+        self.assertIn(
+            "self-audit",
+            region,
+            "expected the audit to be a numbered process step, so it is part of "
+            "the loop rather than a section an agent may never reach",
+        )
+
+    def test_stop_conditions_cover_the_revert_retry_loop(self):
+        region = self._section_region("## stop conditions")
+
+        self.assertIn("revert", region)
+
+    def test_under_reach_is_named_as_a_failure_mode(self):
+        region = self._section_region("## rationalization check")
+
+        self.assertIn(
+            "under-reach is a failure",
+            region,
+            "expected a Rationalization Check row rebutting 'too risky, "
+            "I'll leave it and report success'",
+        )
+
+    def test_finding_nothing_structural_is_a_reportable_conclusion(self):
+        # The counterweight to naming under-reach a failure: "nothing to remove"
+        # must be a legitimate, evidence-backed outcome, or the skill becomes
+        # pressure to delete. Mirrors raven-task-complete's `Intent: none` hatch.
+        constraints = self._section_region("## required constraints")
+        output = self._section_region("## output")
+
+        self.assertIn("as a conclusion with evidence", constraints)
+        self.assertIn(
+            "never delete to have something to report",
+            constraints,
+            "expected the no-findings hatch paired with an explicit ban on "
+            "deleting for the sake of having a result",
+        )
+        self.assertIn("no structural reduction available", output)
+
+    def test_green_tests_are_not_treated_as_design_health(self):
+        self.assertIn("green tests prove behavior", self.lowered)
+
+    def test_composition_with_sibling_skills_is_stated_by_name(self):
+        self.assertIn("raven-write-tests", self.content)
+        self.assertIn("raven-safe-refactor", self.content)
+
+    def test_sets_no_sloc_target(self):
+        """Acceptance criterion 5, as one positive and two mechanical checks.
+
+        "Assert no number appears" would be theatre -- the file has a numbered
+        hierarchy, so digits are expected, and a naive digit ban would either
+        never fail or fail constantly. What is actually worth catching is the
+        concrete regression: someone lifts the source run's ``-31.7%`` (or
+        similar) out of the issue and into the shipped text, or writes an
+        explicit size goal. Both forms carry a number attached to a unit, so:
+
+        1. Positive -- the prohibition is stated in Required Constraints, so
+           removing it is a deliberate, reviewable edit rather than drift.
+        2. No percentage figure anywhere. This skill has no legitimate use for
+           one; any percentage here is a reduction figure.
+        3. No numeric line/SLOC figure anywhere, which is the other way a
+           target gets written down.
+
+        Honest limitation: this cannot catch a digit-free prose target ("aim to
+        halve this module"). No robust regex distinguishes that from legitimate
+        prose, so check 1 carries that case -- the stated prohibition is what a
+        reviewer and the agent both read.
+        """
+        constraints = self._section_region("## required constraints")
+        self.assertIn("no sloc target", constraints)
+        self.assertIn("never a goal", constraints)
+
+        self.assertEqual(
+            re.findall(r"\d+(?:\.\d+)?\s*%", self.content),
+            [],
+            "no percentage figure belongs in this skill -- a reduction "
+            "percentage in shipped text is a target by implication",
+        )
+        self.assertEqual(
+            re.findall(r"\b\d[\d,.]*\s*k?\s*(?:sloc|loc|lines?)\b", self.lowered),
+            [],
+            "no numeric line/SLOC figure belongs in this skill",
         )
 
 
