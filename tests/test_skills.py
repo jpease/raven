@@ -1,6 +1,6 @@
 import unittest
 
-from helpers import RavenTestCase, raven
+from helpers import REPO_ROOT, RavenTestCase, raven
 
 
 class SkillsTests(RavenTestCase):
@@ -48,6 +48,40 @@ class SkillsTests(RavenTestCase):
 
         self.assertEqual((existing / "SKILL.md").read_text(encoding="utf-8"), "existing\n")
         self.assertTrue((self.destination / path).is_file())
+
+
+class ImplementFeatureSkillTests(unittest.TestCase):
+    """Guards the scope-ceiling guardrail added for issue #120.
+
+    Reads the canonical skill source directly (not the installed root
+    copy) since `common/.agents/skills/` is where edits must land.
+    """
+
+    def setUp(self):
+        path = REPO_ROOT / "common" / ".agents" / "skills" / "raven-implement-feature" / "SKILL.md"
+        self.content = path.read_text(encoding="utf-8")
+
+    def test_stays_under_line_ceiling(self):
+        self.assertLess(
+            len(self.content.splitlines()),
+            50,
+            "raven-implement-feature/SKILL.md should stay skimmable, under ~50 lines",
+        )
+
+    def test_scope_ceiling_is_declared_before_the_implementation_step(self):
+        lowered = self.content.lower()
+        ceiling_index = lowered.find("scope ceiling")
+        implement_index = lowered.find("implement using existing conventions")
+
+        self.assertNotEqual(ceiling_index, -1, "expected a 'scope ceiling' anchor in the skill")
+        self.assertNotEqual(
+            implement_index, -1, "expected the 'implement using existing conventions' step"
+        )
+        self.assertLess(
+            ceiling_index,
+            implement_index,
+            "scope ceiling must be stated before the implementation step, not after",
+        )
 
 
 if __name__ == "__main__":

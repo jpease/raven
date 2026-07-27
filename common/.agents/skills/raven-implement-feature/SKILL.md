@@ -18,6 +18,7 @@ AGENTS.md Retrieval Discipline and Verification State already govern batching, S
 - Prefer existing abstractions and conventions.
 - Do not introduce dependencies or new architecture patterns by default.
 - Run at least one relevant verification command when the project has an applicable test or check.
+- Work that exceeds the stated scope ceiling requires stopping and asking per AGENTS.md Pause And Ask, not silent expansion.
 
 ## Process
 
@@ -25,10 +26,14 @@ AGENTS.md Retrieval Discipline and Verification State already govern batching, S
 2. Use LSP to inspect relevant definitions and types.
 3. Identify the smallest integration point.
 4. Check GitNexus if the feature crosses module boundaries.
-5. Implement using existing conventions.
-6. Add or update tests.
-7. Run narrow tests first, then broader relevant tests.
-8. Summarize user-visible behavior and touched files.
+5. Before editing, state:
+   - the observable behavior change, in one or two sentences
+   - the acceptance criteria you will verify against
+   - the scope ceiling: what you will not touch, build, or generalize
+6. Implement using existing conventions.
+7. Add or update tests.
+8. Run narrow tests first, then broader relevant tests.
+9. Summarize user-visible behavior, touched files, and whether the scope ceiling held or where it moved.
 
 ## When To Stop
 
