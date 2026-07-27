@@ -83,6 +83,7 @@ _TREE_SYMLINKS_TO_COMMON = [
     ".claude/agents/raven-security-reviewer.md",
     ".claude/agents/raven-test-debugger.md",
     ".claude/docs/raven-agent-compatibility.md",
+    ".claude/docs/raven-antipatterns.md",
     ".claude/docs/raven-authority-map.md",
     ".claude/docs/raven-coding-principles.md",
     ".claude/docs/raven-guardrails.md",

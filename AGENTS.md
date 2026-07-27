@@ -21,7 +21,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=ed5a903ece332f7423993812db0a230ec36acde174ec75a3cabe99a9f61e1192 -->
+<!-- RAVEN:BEGIN sha256=ff9ef52a5d01aed0819531c74723464c2de6ba82b554b5a6d1d4deb75e20e4f9 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -34,7 +34,7 @@ Be effective while preserving context. Prefer targeted retrieval, summaries, and
 - `.agents/skills/` is the canonical location for reusable skills.
 - Agent-specific skill paths (e.g. `.claude/skills`) should point to `.agents/skills`, not duplicate content.
 - When a `raven-*` skill and a generic skill cover the same intent, prefer the `raven-*` one — it encodes this project's guardrails.
-- Deeper guidance lives in `.claude/docs/`: `raven-authority-map` (canonical vs non-canonical context), `raven-guardrails` (guardrail types), `raven-coding-principles` (cross-language quality), `raven-namespace` (Raven-owned files), `raven-agent-compatibility` (canonical vs Claude/Codex adapters), `raven-lsp-mcp` (LSP-over-MCP and language-server defaults).
+- Deeper guidance lives in `.claude/docs/`: `raven-authority-map` (canonical vs non-canonical context), `raven-guardrails` (guardrail types), `raven-coding-principles` (cross-language quality), `raven-namespace` (Raven-owned files), `raven-agent-compatibility` (canonical vs Claude/Codex adapters), `raven-lsp-mcp` (LSP-over-MCP and language-server defaults), `raven-antipatterns` (repo-specific recurring-issue registry).
 - If another tool inserts a managed block in `AGENTS.md`, treat it as authoritative for that tool's commands, syntax, and resource names — not as an override of these workflow guardrails.
 
 ## Retrieval Discipline

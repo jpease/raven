@@ -71,9 +71,9 @@
       "sourceSha256": "c4194c0616adcad54eac34b74cad07f904b00f154ef5a7445eee72b9fe56f21d"
     },
     ".agents/skills/raven-review-pr/SKILL.md": {
-      "installedSha256": "9e03729e1a35abc8911ccbdd0285c026ff86fa523e6a8438c36312f031a4422e",
+      "installedSha256": "4ea1a4d63bfa382583d785da212711954e82aae5edd0b95e3990402b77704ce9",
       "kind": "file",
-      "sourceSha256": "9e03729e1a35abc8911ccbdd0285c026ff86fa523e6a8438c36312f031a4422e"
+      "sourceSha256": "4ea1a4d63bfa382583d785da212711954e82aae5edd0b95e3990402b77704ce9"
     },
     ".agents/skills/raven-safe-refactor/SKILL.md": {
       "installedSha256": "56c279466d4ccc6d40984f6760de206b240d9bc87fd6e0e2fa1e9612d5f2c837",
@@ -129,6 +129,11 @@
       "installedSha256": "e68020a54f60e6c4fe9d6a5115367ef6fc0d73d7ef7d208e0404d8205959d7ae",
       "kind": "file",
       "sourceSha256": "e68020a54f60e6c4fe9d6a5115367ef6fc0d73d7ef7d208e0404d8205959d7ae"
+    },
+    ".claude/docs/raven-antipatterns.md": {
+      "installedSha256": "f0f4311eb490c6acca2de2f5d6275afdf675c29084d9a8a01ae1f9b5e3110770",
+      "kind": "file",
+      "sourceSha256": "f0f4311eb490c6acca2de2f5d6275afdf675c29084d9a8a01ae1f9b5e3110770"
     },
     ".claude/docs/raven-authority-map.md": {
       "installedSha256": "3e8c38bb749ecccff68396ae018db0934495869077347f0b99a30f0ad46ab855",
@@ -347,9 +352,9 @@
       "sourceSha256": "9e27c78e113022067d2e5c0e62901da5cc0a0ab1fe298a255ea6931424b3ab4e"
     },
     "AGENTS.md": {
-      "installedSha256": "4e783395fe74decee8a2ca73d77dae969606d9e98d4f32476d194c675775a52b",
+      "installedSha256": "e98e62b6006572873d2de079e8d2c9b7793365b83e6775e9af3306531b31c33a",
       "kind": "file",
-      "sourceSha256": "edcd8b2ace6c4187d9cc085770a9a0072bb260fdfb091ebba25b97bffe667dcf"
+      "sourceSha256": "fb0661d9f55c5d489cb7ae3dbfe18fa49880f67e6afcda6f01382e714ca4dcdc"
     },
     "CLAUDE.md": {
       "installedSha256": "343aa72d3e62ce112e77d36c5f47ef60a01e8f81754e53ff63bf7f996d04799b",
@@ -368,8 +373,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "369606240e47",
+  "ravenVersion": "571929bcec2c",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-07-27T23:17:42.528778+00:00"
+  "updatedAt": "2026-07-27T23:29:49.058709+00:00"
 }
