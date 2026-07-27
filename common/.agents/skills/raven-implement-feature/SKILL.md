@@ -10,16 +10,14 @@ description: Use when adding a new feature or behavior to an existing codebase.
 - The task is a one-line edit, docs-only edit, config-only change, or direct bug fix.
 - The user already identified the exact file and no new behavior or integration point is needed.
 
+AGENTS.md Retrieval Discipline and Verification State already govern batching, Semble verification, and reporting what went unverified. This skill adds only what is specific to feature work.
+
 ## Required Constraints
 
-- Batch independent reads, searches, and inspections when possible.
 - Identify the existing pattern or integration point before editing.
-- Verify any Semble-discovered context with `rg`, LSP, targeted reads, or tests.
-- Stop and delegate or ask when targeted retrieval cannot identify the integration point.
 - Prefer existing abstractions and conventions.
 - Do not introduce dependencies or new architecture patterns by default.
 - Run at least one relevant verification command when the project has an applicable test or check.
-- State any verification that could not be run.
 
 ## Process
 
@@ -34,6 +32,6 @@ description: Use when adding a new feature or behavior to an existing codebase.
 
 ## When To Stop
 
-Stop before implementation when two or more targeted retrieval steps still have not identified the owning module, comparable pattern, or smallest integration point. Also stop if candidates are contradictory, unrelated, or too broad to inspect without reading many full files.
+Apply the AGENTS.md stop rule against the owning module, comparable pattern, or smallest integration point. Also stop if candidates are contradictory, unrelated, or too broad to inspect without reading many full files.
 
-Summarize what was tried and the unresolved decision, then delegate per AGENTS.md Delegation guidance or pause and ask the user. Do not invent a new integration point just because discovery is inconclusive.
+Do not invent a new integration point just because discovery is inconclusive.
