@@ -139,5 +139,70 @@ class PlanSkillTests(unittest.TestCase):
         )
 
 
+class TaskCompleteSkillTests(unittest.TestCase):
+    """Guards the design-intent capture added for issue #122.
+
+    Reads the canonical skill source directly (not the installed root
+    copy) since `common/.agents/skills/` is where edits must land.
+    """
+
+    def setUp(self):
+        path = REPO_ROOT / "common" / ".agents" / "skills" / "raven-task-complete" / "SKILL.md"
+        self.content = path.read_text(encoding="utf-8")
+        self.lowered = self.content.lower()
+
+    def test_stays_under_line_ceiling(self):
+        self.assertLess(
+            len(self.content.splitlines()),
+            65,
+            "raven-task-complete/SKILL.md should stay under ~65 lines",
+        )
+
+    def _section_region(self, heading):
+        start = self.lowered.find(heading)
+        self.assertNotEqual(start, -1, f"expected a {heading!r} section")
+        next_heading = self.lowered.find("\n## ", start + len(heading))
+        end = next_heading if next_heading != -1 else len(self.lowered)
+        return self.lowered[start:end]
+
+    def test_required_constraints_demand_intent_not_derivable_from_the_diff(self):
+        region = self._section_region("## required constraints")
+
+        self.assertIn(
+            "not derivable from the diff",
+            region,
+            "expected a Required Constraint that intent must add information "
+            "the diff does not already carry",
+        )
+
+    def test_output_shape_includes_an_intent_line(self):
+        region = self._section_region("## output")
+
+        self.assertIn("intent:", region, "expected an Intent line in the Output shape")
+
+    def test_intent_has_an_explicit_no_design_decision_escape_hatch(self):
+        region = self._section_region("## output")
+
+        self.assertIn(
+            "no design decision",
+            region,
+            "expected an explicit escape hatch for changes with no design decision to report",
+        )
+
+    def test_rationalization_check_covers_code_explains_itself(self):
+        region = self._section_region("## rationalization check")
+
+        self.assertIn(
+            "the code explains itself",
+            region,
+            "expected a Rationalization Check row rebutting 'the code explains itself'",
+        )
+        self.assertIn(
+            "silence is indistinguishable",
+            region,
+            "expected the rebuttal to note that silence looks the same as having no reason",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
