@@ -84,5 +84,60 @@ class ImplementFeatureSkillTests(unittest.TestCase):
         )
 
 
+class PlanSkillTests(unittest.TestCase):
+    """Guards the machine-checkable completion-criteria requirement added for issue #121.
+
+    Reads the canonical skill source directly (not the installed root
+    copy) since `common/.agents/skills/` is where edits must land.
+    """
+
+    def setUp(self):
+        path = REPO_ROOT / "common" / ".agents" / "skills" / "raven-plan" / "SKILL.md"
+        self.content = path.read_text(encoding="utf-8")
+        self.lowered = self.content.lower()
+
+    def test_stays_proportionate(self):
+        self.assertLess(
+            len(self.content.splitlines()),
+            65,
+            "raven-plan/SKILL.md should stay skimmable even after the completion-criteria addition",
+        )
+
+    def _completion_criteria_region(self):
+        start = self.lowered.find("## completion criteria")
+        self.assertNotEqual(start, -1, "expected a '## Completion Criteria' section")
+        next_heading = self.lowered.find("\n## ", start + len("## completion criteria"))
+        end = next_heading if next_heading != -1 else len(self.lowered)
+        return self.lowered[start:end]
+
+    def test_completion_criteria_require_end_state_verification_and_invariants(self):
+        region = self._completion_criteria_region()
+
+        # Tighter than issue #120's ordering-only anchor: this asserts all three
+        # required elements live inside the Completion Criteria section itself,
+        # not merely somewhere in the file. Presence-anywhere would pass even if
+        # "invariants" only showed up in an unrelated section, which would not
+        # demonstrate the triple is actually required together as one unit.
+        self.assertIn("end state", region, "expected a measurable end state requirement")
+        self.assertIn(
+            "verification command", region, "expected an explicit verification command requirement"
+        )
+        self.assertIn("invariant", region, "expected an invariant-constraints requirement")
+
+    def test_prose_only_criteria_are_called_out_as_insufficient(self):
+        region = self._completion_criteria_region()
+
+        self.assertIn(
+            "prose-only",
+            region,
+            "expected prose-only completion criteria to be explicitly named",
+        )
+        self.assertIn(
+            "insufficient",
+            region,
+            "expected prose-only criteria to be called out as insufficient",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
