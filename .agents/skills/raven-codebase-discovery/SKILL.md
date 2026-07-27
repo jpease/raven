@@ -12,14 +12,12 @@ Goal: find the smallest sufficient context.
 - The relevant file, symbol, or exact edit location was already provided.
 - The task is a small local edit that does not require architecture or ownership discovery.
 
+AGENTS.md Retrieval Discipline already governs tool order, batching, skeleton-first reading, and Semble verification. This skill adds only what is specific to discovery.
+
 ## Required Constraints
 
-- Batch independent reads, searches, and inspections when possible.
-- Do not read many full files before targeted retrieval.
 - Do not use Semble for exhaustive proof that something does not exist.
-- Verify Semble candidates with `rg`, LSP, targeted file reads, or tests before treating them as facts.
 - Return only relevant files, symbols, relationships, confidence, and unresolved questions.
-- Stop when targeted retrieval fails; delegate or pause rather than continuing to expand context.
 
 ## Process
 
@@ -32,16 +30,9 @@ Goal: find the smallest sufficient context.
 
 ## When To Stop
 
-Targeted retrieval has failed when two or more appropriate tools or queries have not found a credible file, symbol, owner, or integration point; when promising candidates lead to unrelated code; or when the next step would require broad full-file reading without a clear target.
+Apply the AGENTS.md stop rule. Discovery also counts as failed when promising candidates lead to unrelated code, or when the next step would require broad full-file reading without a clear target.
 
-When that happens, stop and report:
-
-- what behavior or question you were trying to locate
-- which tools or queries were already tried
-- the best candidate paths or symbols, if any
-- the unresolved question blocking progress
-
-Then delegate per AGENTS.md Delegation guidance, or pause and ask the user if no delegation mechanism is available. For a broad mapping question, hand off to the `raven-codebase-cartographer` subagent with a scoped brief: the behavior or question to locate, the tools or queries already tried, and the best candidate paths so far.
+Report what you were trying to locate, what was tried, the best candidate paths, and the unresolved question. Then delegate per AGENTS.md Delegation guidance, or pause and ask if no delegation mechanism is available. For a broad mapping question, hand off to the `raven-codebase-cartographer` subagent with that same brief.
 
 ## Broad Exploration
 
@@ -49,5 +40,3 @@ For architecture or "how does X work" questions that would need multiple queries
 
 - If a code-intelligence index is configured (e.g. GitNexus), use `gitnexus_query` first — it returns execution flows and process-grouped results in a single call. Results are richer if the index was built with `--embeddings`.
 - Otherwise delegate to the `semble-search` subagent (Claude Code) or fall back to direct Semble queries.
-
-Verify all candidates the same way: `rg`, LSP, targeted reads, or tests before treating them as facts.
