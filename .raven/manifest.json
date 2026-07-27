@@ -15,6 +15,11 @@
       "kind": "file",
       "sourceSha256": "de5a6317339345a8beee84a8dc20eafcedfffb2774d79d418040f5d49fa252d6"
     },
+    ".agents/skills/raven-debloat/SKILL.md": {
+      "installedSha256": "ea7d6e36f7116dcdde338d76066b3375d8ae1b23ba642dd49f2fb78f3d6d1318",
+      "kind": "file",
+      "sourceSha256": "ea7d6e36f7116dcdde338d76066b3375d8ae1b23ba642dd49f2fb78f3d6d1318"
+    },
     ".agents/skills/raven-debug-failure/SKILL.md": {
       "installedSha256": "af09a9bda9c0ba76cb0dc11d58e5590f06210e3a6e34bf87ceaac46e00069a3d",
       "kind": "file",
@@ -373,8 +378,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "571929bcec2c",
+  "ravenVersion": "97225c083d21",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-07-27T23:29:49.058709+00:00"
+  "updatedAt": "2026-07-27T23:43:48.560923+00:00"
 }
