@@ -19,6 +19,18 @@ This complements interactive planning modes. The important output is a project-l
 6. Update the plan at meaningful checkpoints instead of relying on chat history.
 7. When complete, record what shipped, what was verified, and any follow-up issues.
 
+## Completion Criteria
+
+Each work item's completion criteria must give three things, not prose:
+
+- **End state**: what is observably true when the item is done.
+- **Verification command**: the literal command and its expected result — not "tests pass" (e.g. `pytest tests/test_upgrade.py` exits 0).
+- **Invariants**: what must remain unchanged (e.g. no file outside `scripts/raven_lib/` is modified; no new dependency is added).
+
+Example: end state — `raven upgrade` skips unmanaged files; verification — `python scripts/self-check.py` exits 0; invariants — no new dependency is added.
+
+Prose-only criteria such as "the migration is complete" or "tests are passing" are insufficient: they cannot terminate a check or survive a session boundary. Reject them and ask for the triple instead.
+
 ## Durable Plan Shape
 
 ```markdown
@@ -32,7 +44,7 @@ This complements interactive planning modes. The important output is a project-l
 
 ## Assumptions
 
-## Work Items
+## Work Items (end state / verification command / invariants per item)
 
 ## Verification
 
