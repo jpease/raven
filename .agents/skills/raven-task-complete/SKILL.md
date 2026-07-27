@@ -19,6 +19,7 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 - State what was verified and what was not — never silently skip a step.
 - Do not generalize a narrow check into a broad claim. If you ran one test file, say that — not "all tests pass." Name the exact scope you verified.
 - If a verification step fails, address it before proceeding.
+- State design intent that is not derivable from the diff: the constraint that forced this design, the alternative rejected, or a non-obvious behavior. If nothing forced a decision, say so explicitly rather than padding.
 
 ## Rationalization Check
 
@@ -28,6 +29,7 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 | "It looks right, I'll say it's verified" | Looking right isn't verifying. Run the check or state the gap. |
 | "Nothing I touched affects the tests" | That's an assumption, not evidence. Run the narrowest relevant test to confirm. |
 | "I verified this earlier in the session" | State what changed since, or re-run against the current diff. |
+| "The code explains itself" | Then say that explicitly. Silence is indistinguishable from having no reason. |
 
 ## Process
 
@@ -50,3 +52,7 @@ On success:
 When gaps exist:
 
 > Gap: [what was not verified and why]. Residual risk: [what remains unchecked].
+
+Always:
+
+> Intent: [what forced this design — the constraint, the rejected alternative, or the non-obvious behavior a future reader would trip on]. If none: `Intent: none — mechanical rename, no design decision.`
