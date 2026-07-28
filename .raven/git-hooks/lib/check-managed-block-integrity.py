@@ -35,7 +35,67 @@ def _normalized_block_content(text: str) -> str:
     return "\n".join(line.rstrip() for line in lines).strip("\n")
 
 
+def _is_markdown_table_separator_cell(cell: str) -> bool:
+    stripped = cell.strip()
+    if len(stripped) < 3:
+        return False
+    inner = stripped.strip(":")
+    return bool(inner) and set(inner) == {"-"}
+
+
+def _normalize_markdown_table_separator(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return None
+    cells = stripped.strip("|").split("|")
+    if not cells or not all(_is_markdown_table_separator_cell(cell) for cell in cells):
+        return None
+    normalized_cells = []
+    for cell in cells:
+        value = cell.strip()
+        left = ":" if value.startswith(":") else ""
+        right = ":" if value.endswith(":") else ""
+        normalized_cells.append(f"{left}---{right}")
+    return "|" + "|".join(normalized_cells) + "|"
+
+
+def _normalize_markdown_table_row(line: str) -> str | None:
+    """Fold a markdown table row to one-space cell padding, or None if not a row.
+
+    A line counts as a table row only if its stripped form both begins and ends
+    with ``|`` -- the same judgment _normalize_markdown_table_separator makes,
+    so prose containing a pipe (a shell pipeline in a code span, a regex
+    alternation) is left alone. Cell text is stripped, never collapsed.
+    """
+    stripped = line.strip()
+    if len(stripped) < 2 or not stripped.startswith("|") or not stripped.endswith("|"):
+        return None
+    cells = stripped.strip("|").split("|")
+    return "| " + " | ".join(cell.strip() for cell in cells) + " |"
+
+
+def _identity_block_content(text: str) -> str:
+    """Whitespace- and table-style-invariant, newline-preserving (issue #118).
+
+    Must stay byte-identical in behavior to ``identity_block_content`` in
+    scripts/raven_lib/blocks.py; tests/test_managed_block_integrity_hook.py's
+    HookLibraryNormalizationParityTests pins the two together.
+    """
+    normalized_lines = []
+    for line in _normalized_block_content(text).split("\n"):
+        folded = _normalize_markdown_table_separator(line)
+        if folded is None:
+            folded = _normalize_markdown_table_row(line)
+        normalized_lines.append(folded if folded is not None else line)
+    return "\n".join(normalized_lines)
+
+
 def _block_sha256(content: str) -> str:
+    return hashlib.sha256(_identity_block_content(content).encode("utf-8")).hexdigest()
+
+
+def _legacy_block_sha256(content: str) -> str:
+    """The pre-#118 hash, still accepted so blocks written before it stay valid."""
     return hashlib.sha256(_normalized_block_content(content).encode("utf-8")).hexdigest()
 
 
@@ -134,7 +194,14 @@ def main() -> int:
         if block is None:
             continue
         declared_sha256, content = block
-        if declared_sha256 is None or declared_sha256 != _block_sha256(content):
+        # Accept the legacy hash too: blocks written before the #118 identity
+        # change declare it, and the hook has no template at commit time to
+        # tell "stale marker" from "hand-edited". `raven upgrade` migrates the
+        # marker to the current hash.
+        if declared_sha256 is None or declared_sha256 not in (
+            _block_sha256(content),
+            _legacy_block_sha256(content),
+        ):
             tampered.append(name)
 
     if not tampered:

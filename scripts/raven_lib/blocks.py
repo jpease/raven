@@ -48,12 +48,65 @@ def _normalize_markdown_table_separator(line: str) -> str | None:
     return "|" + "|".join(normalized_cells) + "|"
 
 
-def comparison_block_content(text: str) -> str:
+def _normalize_markdown_table_row(line: str) -> str | None:
+    """Fold a markdown table row to one-space cell padding, or None if not a row.
+
+    "Is a table row" uses exactly the pipe-delimiter judgment
+    ``_normalize_markdown_table_separator`` already makes: the stripped line
+    must both begin and end with ``|``. Prose that merely *contains* a pipe --
+    a shell pipeline in a code span, a regex alternation -- is not delimited
+    that way and is left alone. A bare ``|`` is not a row either.
+
+    Only whitespace adjacent to a delimiter is touched. Cell text is
+    ``strip()``ed, never collapsed, so ``| a b |`` and ``| a  b |`` stay
+    distinct while ``|  a  |`` and ``| a |`` converge.
+    """
+    stripped = line.strip()
+    if len(stripped) < 2 or not stripped.startswith("|") or not stripped.endswith("|"):
+        return None
+    cells = stripped.strip("|").split("|")
+    return "| " + " | ".join(cell.strip() for cell in cells) + " |"
+
+
+def identity_block_content(text: str) -> str:
+    """Normalize a block for *identity* hashing (issue #118).
+
+    ``normalized_block_content`` plus per-line markdown-table folding -- both
+    separator style and cell padding -- with newlines preserved. That middle
+    strength is the point:
+
+    - Table restyling (``| --- |`` vs ``|---|``, ``| Need     |`` vs
+      ``| Need |``) is a downstream formatter's doing, not an edit, so it must
+      not change a block's identity. Hashing ``normalized_block_content`` alone
+      made every prettier-formatted block read as hand-edited, blocking commits
+      and producing permanent "will upgrade" noise.
+    - It is deliberately *not* ``comparison_block_content``, which additionally
+      joins every line into one space-separated string. That form cannot tell
+      ``"- alpha\\n- beta"`` from ``"- alpha - beta"``; hashing it would quietly
+      retire issue #26's token-boundary guarantee, which today survives only
+      because the declared sha in the BEGIN marker differs.
+    """
     normalized_lines: list[str] = []
     for line in normalized_block_content(text).split("\n"):
-        table_separator = _normalize_markdown_table_separator(line)
-        normalized_lines.append(table_separator if table_separator is not None else line)
-    return " ".join(" ".join(normalized_lines).split())
+        # Separator first: its canonical form is `|---|`, not the `| --- |` the
+        # generic row folder would produce.
+        folded = _normalize_markdown_table_separator(line)
+        if folded is None:
+            folded = _normalize_markdown_table_row(line)
+        normalized_lines.append(folded if folded is not None else line)
+    return "\n".join(normalized_lines)
+
+
+def comparison_block_content(text: str) -> str:
+    """Normalize a block for the more permissive "is this upgradeable?" check.
+
+    Collapses all whitespace, newlines included -- strictly more permissive
+    than ``identity_block_content``, which it is derived from so that invariant
+    cannot drift. Unlike the identity hash this is always evaluated against a
+    known template, so a false match cannot silently launder an edit into
+    "unmodified"; the worst case is an in-place block rewrite.
+    """
+    return " ".join(identity_block_content(text).split())
 
 
 def block_content_matches(left: str, right: str) -> bool:
@@ -61,6 +114,16 @@ def block_content_matches(left: str, right: str) -> bool:
 
 
 def raven_block_sha256(text: str) -> str:
+    return sha256_bytes(identity_block_content(text).encode("utf-8"))
+
+
+def legacy_raven_block_sha256(text: str) -> str:
+    """The pre-#118 block hash, over ``normalized_block_content``.
+
+    Every managed block already written into a destination repo declares one of
+    these. Read paths accept it so those blocks keep reading as untouched;
+    nothing writes it any more.
+    """
     return sha256_bytes(normalized_block_content(text).encode("utf-8"))
 
 
@@ -91,8 +154,34 @@ def find_raven_block(text: str) -> RavenBlock | None:
     return None
 
 
-def raven_block_is_unchanged(block: RavenBlock) -> bool:
+def raven_block_sha_is_current(block: RavenBlock) -> bool:
+    """True when the declared sha was produced by the current algorithm.
+
+    Distinct from ``raven_block_is_unchanged``, which also accepts the legacy
+    hash. A block that is unchanged but not current still needs one marker
+    rewrite to migrate; see ``block_managed_state``.
+    """
     return block.declared_sha256 == raven_block_sha256(block.content)
+
+
+def raven_block_is_unchanged(block: RavenBlock) -> bool:
+    """True when the declared sha still vouches for the block's own content.
+
+    Accepts the legacy hash as well as the current one (issue #118). Without
+    that, changing the identity algorithm would make every managed block
+    already written downstream read as hand-edited at once.
+
+    Known residual gap: a block that still declares a legacy sha *and* has
+    since been table-restyled by a formatter matches neither hash and reads as
+    tampered. It self-heals on the next ``raven upgrade``, which rewrites the
+    marker with the current, restyle-invariant hash.
+    """
+    if block.declared_sha256 is None:
+        return False
+    return block.declared_sha256 in (
+        raven_block_sha256(block.content),
+        legacy_raven_block_sha256(block.content),
+    )
 
 
 def block_managed_state(entry: TemplateEntry, target: Path) -> BlockState | None:
@@ -114,8 +203,13 @@ def block_managed_state(entry: TemplateEntry, target: Path) -> BlockState | None
         return None
     source_text = normalized_block_content(entry.source.read_text(encoding="utf-8"))
     block_text = normalized_block_content(block.content)
-    if block_text == source_text:
-        return "identical" if raven_block_is_unchanged(block) else "upgradeable"
+    if identity_block_content(block_text) == identity_block_content(source_text):
+        # Byte-for-byte the template, or the template as a markdown formatter
+        # restyled it -- the same block either way (#118). "identical" needs the
+        # *current* hash, not merely a valid one, so a marker still declaring the
+        # legacy hash classifies "upgradeable" exactly once; the rewrite makes it
+        # current and every later run reports "identical".
+        return "identical" if raven_block_sha_is_current(block) else "upgradeable"
     if block_content_matches(block_text, source_text):
         return "upgradeable"
     if not raven_block_is_unchanged(block):
