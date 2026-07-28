@@ -12,6 +12,7 @@ from raven_lib.models import Fingerprint, ManifestRecord
 from raven_lib.orphans import (
     _unmodified_baseline,
     classify_orphans,
+    is_canonical_manifest_key,
     remove_orphans,
     shipped_relatives,
 )
@@ -367,6 +368,46 @@ class UpdateManifestRemoveTests(unittest.TestCase):
             files = load_manifest(dest)["files"]
             self.assertNotIn("docs/gone.md", files)
             self.assertIn("docs/kept.md", files)
+
+
+class CanonicalManifestKeyTest(unittest.TestCase):
+    """The syntactic half of the orphan path guard.
+
+    This decides which manifest keys `remove_orphans` is allowed to name and
+    delete, so the rules are worth enumerating rather than sampling. Splitting
+    it out of `_safe_relative` is what makes that possible without building a
+    destination tree per case.
+    """
+
+    def test_accepts_plain_relative_posix_paths(self):
+        for key in ("AGENTS.md", "docs/a.md", ".claude/scripts/raven-session.py", "a/b/c/d.txt"):
+            with self.subTest(key=key):
+                self.assertTrue(is_canonical_manifest_key(key))
+
+    def test_rejects_traversal_and_absolute_paths(self):
+        for key in ("../escape.md", "docs/../../escape.md", "/etc/passwd", "/a.md"):
+            with self.subTest(key=key):
+                self.assertFalse(is_canonical_manifest_key(key))
+
+    def test_rejects_non_canonical_spellings_of_an_in_tree_path(self):
+        # Each of these can name a file inside the destination, but accepting
+        # more than one spelling per file is what lets a crafted manifest key
+        # slip past a comparison against the shipped-path set.
+        for key in ("./a.md", ".", "", "docs/", "docs//a.md", "/", "a/./b.md"):
+            with self.subTest(key=key):
+                self.assertFalse(is_canonical_manifest_key(key))
+
+    def test_rejects_windows_separators(self):
+        # A backslash path would not split into segments here, so the traversal
+        # check above would never see its components.
+        for key in ("docs\\a.md", "..\\escape.md", "C:\\a.md"):
+            with self.subTest(key=key):
+                self.assertFalse(is_canonical_manifest_key(key))
+
+    def test_rejects_non_string_keys(self):
+        for key in (None, 42, 3.5, True, ["a.md"], {"path": "a.md"}, Path("a.md")):
+            with self.subTest(key=key):
+                self.assertFalse(is_canonical_manifest_key(key))
 
 
 if __name__ == "__main__":
