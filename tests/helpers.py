@@ -36,6 +36,29 @@ def load_script_module(name: str, path: Path) -> Any:
     return module
 
 
+def attribution_line(tool: str = "Claude", verb: str = "Generated", prep: str = "by") -> str:
+    """Build an AI-attribution line that the scanners under test must reject.
+
+    Assembled at runtime rather than written as one literal, so no test file's
+    own source contains the exact phrase -- the AI-attribution content scan runs
+    on this repository too (see pre-commit/pre-push), and a literal here would
+    fail Raven's own gate. That constraint is the reason this lives in one
+    place: it was previously duplicated, where a well-meaning "simplify it to a
+    string" edit in either copy would break the repo's own commit path.
+    """
+    return f"# {verb} {prep} {tool}\n"
+
+
+def push_plan_line(ref: str, local_sha: str, remote_sha: str) -> str:
+    """Build one line of the ref plan Git feeds a pre-push hook on stdin.
+
+    The format is ``<local-ref> <local-sha> <remote-ref> <remote-sha>``. Issue
+    #126 was a scan that read the checked-out branch instead of this plan, so
+    tests that drive a pre-push hook must supply the real thing.
+    """
+    return f"{ref} {local_sha} {ref} {remote_sha}\n"
+
+
 class RavenTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
