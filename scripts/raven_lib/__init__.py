@@ -20,21 +20,17 @@ from .blocks import (
     guided_merge_instructions,
     normalized_block_content,
     pending_merge_paths,
-    raven_block_begin_for,
     raven_block_is_unchanged,
     raven_block_sha256,
     raven_managed_block,
     remove_merge_artifacts,
-    template_entry_text,
     unified_diff_text,
     update_raven_block,
     write_guided_merge_artifacts,
 )
 from .cli import (
-    _parse_install_language,
     _run,
     cmd_accept,
-    cmd_assess,
     cmd_doctor,
     cmd_init,
     cmd_install,
@@ -47,17 +43,13 @@ from .config import (
     ConfigError,
     _update_config_platform,
     build_config,
-    component_disabled,
     config_excluded,
     default_config_text,
     load_config,
     parse_simple_toml,
-    parse_value,
-    path_matches,
     path_within,
     platform_excluded,
     replace_platform_line,
-    strip_comment,
     template_excluded,
 )
 from .constants import (
@@ -77,7 +69,6 @@ from .constants import (
     MANIFEST_PATH,
     MERGE_DIR,
     NON_TEMPLATE_DIRS,
-    RAVEN_BLOCK_BEGIN,
     RAVEN_BLOCK_BEGIN_RE,
     RAVEN_BLOCK_END,
     REPO_ROOT,
@@ -118,15 +109,12 @@ from .plan import (
     normalize_override,
     print_apply_summary,
     print_dry_run_plan,
-    print_dry_run_summary,
     print_section,
 )
 from .report import render_human, render_json
 from .template import (
     entries_for_destination,
-    is_excluded,
     iter_template_entries,
-    should_preserve_symlink,
 )
 
 __all__ = [
@@ -140,7 +128,6 @@ __all__ = [
     "ROOT_INSTRUCTION_FILES",
     "CLAUDE_PATH",
     "CLAUDE_BACKUP_PATH",
-    "RAVEN_BLOCK_BEGIN",
     "RAVEN_BLOCK_BEGIN_RE",
     "RAVEN_BLOCK_END",
     "DEFAULT_COMPONENTS",
@@ -164,23 +151,17 @@ __all__ = [
     "ManifestRecord",
     # config
     "ConfigError",
-    "strip_comment",
-    "parse_value",
     "parse_simple_toml",
     "build_config",
     "load_config",
     "default_config_text",
-    "path_matches",
     "path_within",
-    "component_disabled",
     "config_excluded",
     "platform_excluded",
     "template_excluded",
     "replace_platform_line",
     "_update_config_platform",
     # template
-    "is_excluded",
-    "should_preserve_symlink",
     "iter_template_entries",
     "entries_for_destination",
     # hashing
@@ -194,13 +175,11 @@ __all__ = [
     "comparison_block_content",
     "block_content_matches",
     "raven_block_sha256",
-    "raven_block_begin_for",
     "raven_managed_block",
     "find_raven_block",
     "raven_block_is_unchanged",
     "block_managed_state",
     "update_raven_block",
-    "template_entry_text",
     "append_patch_text",
     "unified_diff_text",
     "guided_merge_instructions",
@@ -225,7 +204,6 @@ __all__ = [
     # plan
     "print_section",
     "print_apply_summary",
-    "print_dry_run_summary",
     "build_apply_plan",
     "claude_symlink_conflict",
     "print_dry_run_plan",
@@ -237,7 +215,6 @@ __all__ = [
     "hook_manager_guidance",
     "install_git_hooks",
     # cli
-    "_parse_install_language",
     "_run",
     "list_language_templates",
     "select_language_interactively",
@@ -246,7 +223,6 @@ __all__ = [
     "cmd_upgrade",
     "cmd_accept",
     "cmd_doctor",
-    "cmd_assess",
     "main",
     # findings
     "Finding",
