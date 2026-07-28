@@ -6,7 +6,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import REPO_ROOT, attribution_line, push_plan_line
+from helpers import (
+    REPO_ROOT,
+    attribution_line,
+    load_script_module,
+    push_plan_line,
+    trailer_line,
+)
 
 
 class AiAttributionContentHookTests(unittest.TestCase):
@@ -298,6 +304,127 @@ class AiAttributionContentHookTests(unittest.TestCase):
 
         self.assertEqual(rc, 1, err)
         self.assertIn("Claude", err)
+
+    def test_push_plan_blocks_attribution_trailer_in_commit_message(self):
+        # The commit-msg hook strips these, but stripping only happens when that
+        # hook ran. `--no-verify`, `git cherry-pick`, `git rebase` reapplying
+        # pre-hook commits, and clones made before install all put a trailer into
+        # history that never passed strip-time; pre-push is where that surfaces.
+        self._commit("README.md", "# repo\n")
+        base = self._rev_parse()
+        self._git("update-ref", "refs/remotes/origin/main", base)
+        self._commit("notes.py", "print('hi')\n", message="feat: thing\n\n" + trailer_line())
+
+        rc, err = self._run_plan(push_plan_line("refs/heads/main", self._rev_parse(), base))
+
+        self.assertEqual(rc, 1, err)
+        self.assertIn("Claude", err)
+        self.assertIn("commit message", err)
+
+    def test_push_plan_blocks_bare_noreply_trailer_in_commit_message(self):
+        # The `<noreply@...>` arm catches bots this pattern does not name.
+        self._commit("README.md", "# repo\n")
+        base = self._rev_parse()
+        self._git("update-ref", "refs/remotes/origin/main", base)
+        self._commit(
+            "notes.py",
+            "print('hi')\n",
+            message="feat: thing\n\n" + trailer_line(tool="Some Bot", email="noreply@example.test"),
+        )
+
+        rc, err = self._run_plan(push_plan_line("refs/heads/main", self._rev_parse(), base))
+
+        self.assertEqual(rc, 1, err)
+
+    def test_push_plan_allows_clean_commit_message(self):
+        # Negative control for the message gate: an ordinary human co-author
+        # trailer and an ordinary subject must not trip it.
+        self._commit("README.md", "# repo\n")
+        base = self._rev_parse()
+        self._git("update-ref", "refs/remotes/origin/main", base)
+        self._commit(
+            "notes.py",
+            "print('hi')\n",
+            message="feat: thing\n\n" + trailer_line(tool="A Human", email="human@example.com"),
+        )
+
+        rc, err = self._run_plan(push_plan_line("refs/heads/main", self._rev_parse(), base))
+
+        self.assertEqual(rc, 0, err)
+
+    def test_push_plan_message_scan_is_bounded_by_remote_tracking_refs(self):
+        # The message scan reuses the patch scan's revision bounds, so a trailer
+        # in an already-published ancestor is not re-reported on every later push.
+        self._commit("README.md", "# repo\n", message="old\n\n" + trailer_line())
+        published = self._rev_parse()
+        self._git("update-ref", "refs/remotes/origin/main", published)
+        self._commit("notes.py", "print('hi')\n", message="feat: clean")
+
+        rc, err = self._run_plan(push_plan_line("refs/heads/main", self._rev_parse(), published))
+
+        self.assertEqual(rc, 0, err)
+
+    def test_push_plan_scans_merge_commit_messages(self):
+        # A merge contributes no patch of its own, so the content scan cannot see
+        # it; the message scan is the only gate on a trailer in a merge message.
+        self._commit("README.md", "# repo\n")
+        base = self._rev_parse()
+        self._git("update-ref", "refs/remotes/origin/main", base)
+        self._git("checkout", "-q", "-b", "side")
+        self._commit("side.py", "print('side')\n")
+        self._git("checkout", "-q", "-")
+        self._commit("main.py", "print('main')\n")
+        self._git(
+            "merge",
+            "--no-ff",
+            "-q",
+            "-m",
+            "merge: side\n\n" + trailer_line(),
+            "side",
+        )
+
+        rc, err = self._run_plan(push_plan_line("refs/heads/merged", self._rev_parse(), base))
+
+        self.assertEqual(rc, 1, err)
+
+    def test_push_plan_unbounded_scan_explains_the_missing_remote_baseline(self):
+        # Behaviour stays as pinned by the full-history test above: scanning
+        # everything is correct when nothing is known to be published. What was
+        # missing is *why*, on the one push where a block is least actionable.
+        self._commit("README.md", "# repo\n")
+        self._commit("legacy.py", attribution_line("Gemini") + "print('legacy')\n")
+
+        rc, err = self._run_plan(
+            push_plan_line("refs/heads/brand-new", self._rev_parse(), self._ZERO_SHA)
+        )
+
+        self.assertEqual(rc, 1, err)
+        self.assertIn("no remote baseline", err)
+        self.assertIn("block_ai_attribution_content", err)
+
+    def test_bounded_scan_does_not_print_the_unbounded_notice(self):
+        # Negative control: the notice must not appear on an ordinary push.
+        self._commit("README.md", "# repo\n")
+        base = self._rev_parse()
+        self._git("update-ref", "refs/remotes/origin/main", base)
+        self._commit("notes.py", attribution_line("Claude") + "print('hi')\n")
+
+        rc, err = self._run_plan(push_plan_line("refs/heads/main", self._rev_parse(), base))
+
+        self.assertEqual(rc, 1, err)
+        self.assertNotIn("no remote baseline", err)
+
+    def test_message_pattern_matches_the_commit_msg_hook_pattern(self):
+        # The two gates must agree on what a forbidden trailer is. They are
+        # deliberately not shared by import: commit-msg has no dependency on
+        # lib/, so a partial install cannot break it. This pins them instead.
+        lib = load_script_module("ai_attribution_content_lib_for_pattern_check", self.SCRIPT_PATH)
+        hook = load_script_module(
+            "commit_msg_hook_for_pattern_check",
+            REPO_ROOT / "common" / ".raven" / "git-hooks" / "commit-msg",
+        )
+        self.assertEqual(lib._MESSAGE_PATTERN.pattern, hook._AI_TRAILER.pattern)
+        self.assertEqual(lib._MESSAGE_PATTERN.flags, hook._AI_TRAILER.flags)
 
     def test_script_is_executable(self):
         self.assertTrue(self.SCRIPT_PATH.stat().st_mode & 0o111)
