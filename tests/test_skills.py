@@ -157,6 +157,112 @@ class ImplementFeatureSkillTests(unittest.TestCase):
             "-- the two shipped skills must not disagree",
         )
 
+    def process_steps(self):
+        """Return the skill's Process section as a list of numbered-step strings.
+
+        Ordering assertions above compare character offsets, which cannot
+        express "a step sits between these two steps" -- an anchor phrase can
+        land mid-step and still satisfy an offset comparison. Splitting into
+        steps first makes the between-ness structural instead.
+        """
+        region = section_region(self.content.lower(), "## process")
+        return [step.strip() for step in re.split(r"\n\d+\. ", region)[1:]]
+
+    def test_a_red_run_step_falls_between_the_tests_and_implementation_steps(self):
+        """Issue #132 moved the tests step above the implementation step but left
+        the "expect the new test to fail" clause attached to the run-tests step
+        that stayed below it -- asking for an observation whose window had
+        already closed. Test-first without an observed red run cannot distinguish
+        a correct new test from one that would have passed anyway.
+        """
+        steps = self.process_steps()
+        tests_step = next(i for i, s in enumerate(steps) if "add or update tests" in s)
+        implement_step = next(
+            i for i, s in enumerate(steps) if "implement using existing conventions" in s
+        )
+
+        between = steps[tests_step + 1 : implement_step]
+        self.assertTrue(
+            any("run" in step and "fail" in step for step in between),
+            "expected a step between the tests step and the implementation step "
+            "that runs the new tests and confirms they fail -- test-first is only "
+            "meaningful if the red state is actually observed",
+        )
+
+    def test_the_post_implementation_step_does_not_ask_to_observe_a_failure(self):
+        """The regression guard for the #132 drift itself: once implementation has
+        landed, an instruction to expect failure is unfollowable, so it must not
+        survive on any step below the implementation step.
+        """
+        steps = self.process_steps()
+        implement_step = next(
+            i for i, s in enumerate(steps) if "implement using existing conventions" in s
+        )
+
+        for step in steps[implement_step + 1 :]:
+            self.assertNotIn(
+                "fail",
+                step,
+                "a step after the implementation step must not ask to expect or "
+                "observe a test failure -- by then the red state is unobservable",
+            )
+
+
+class WriteTestsSkillTests(unittest.TestCase):
+    """Guards the red-observation requirement.
+
+    raven-write-tests owns test policy, so the requirement lives here rather
+    than inline in raven-implement-feature: bugfix work reaches this skill via
+    raven-debug-failure without passing through the feature skill at all, and
+    duplicating the policy in two `raven-*` skills is what issue #132 had to
+    untangle.
+    """
+
+    def setUp(self):
+        path = REPO_ROOT / "common" / ".agents" / "skills" / "raven-write-tests" / "SKILL.md"
+        self.content = path.read_text(encoding="utf-8")
+        self.lowered = self.content.lower()
+
+    def test_constraints_require_observing_the_new_test_fail_before_implementing(self):
+        region = section_region(self.lowered, "## required constraints")
+
+        self.assertTrue(
+            any(
+                "run" in line and "fail" in line
+                for line in region.splitlines()
+                if line.startswith("- ")
+            ),
+            "expected a Required Constraint that the new test is run and seen to "
+            "fail before the implementation lands -- stating the ordering alone "
+            "leaves an unrun test indistinguishable from one that always passed",
+        )
+
+    def test_the_red_run_names_the_wrong_reason_failure_modes(self):
+        """A red run only proves anything if the failure is the asserted behavior.
+        Raven ships Swift, Go, and TypeScript trees where a brand-new test's first
+        failure is routinely a compile or collection error, which proves nothing.
+        """
+        region = section_region(self.lowered, "## required constraints")
+
+        self.assertTrue(
+            any(term in region for term in ("compile", "import", "collection", "fixture")),
+            "expected the red-run constraint to name a wrong-reason failure mode "
+            "(compile/import/collection/fixture error), not just 'must fail'",
+        )
+
+    def test_rationalization_check_table_has_full_row_coverage(self):
+        # Structural row count, consistent with the same check on
+        # raven-task-complete and raven-debloat: what matters is that the table
+        # keeps its full set of rows, not any one rebuttal's phrasing.
+        region = section_region(self.lowered, "## rationalization check")
+
+        self.assertGreaterEqual(
+            region.count("\n|"),
+            7,
+            "expected a header/divider row plus at least 5 rationalization rows, "
+            "including one for skipping the red run",
+        )
+
 
 class PlanSkillTests(unittest.TestCase):
     """Guards the machine-checkable completion-criteria requirement added for issue #121.
