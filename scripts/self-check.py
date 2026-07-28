@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import re
 import subprocess
@@ -297,22 +298,30 @@ def _parse_frontmatter_description(text: str) -> str | None:
     return None
 
 
+# Each skill's `description:` frontmatter is injected into every session's skill
+# index whether or not the skill is invoked, so it is an always-loaded surface
+# like AGENTS.md and the rules files — but the per-file and aggregate rules
+# budgets never see it. Cap the SUM so the index cannot bloat unnoticed, and cap
+# each single description so one skill cannot eat the pool. Skills are canonical
+# in common/.agents/skills (language trees symlink to it), so counting common/
+# once matches what a session actually loads.
+#
+# 372 words in-tree + 4 words of slack. The slack is deliberately tight: it is
+# the same 4 words the previous limit left, so unplanned description growth still
+# trips this. Raised from 362 for issue #124's raven-debloat, a deliberate skill
+# addition, not drift -- a new skill needs a description, and the old ceiling had
+# no room for one. Raise this only alongside a new skill, and only to the new
+# in-tree total plus that same slack.
+#
+# Module-level so tests can read the real numbers. They previously restated them
+# and drifted to a stale 362, which left the aggregate test's fixture clearing
+# the true limit by 4 words -- still passing, but one raise away from silently
+# testing nothing.
+SKILL_DESCRIPTION_AGGREGATE_LIMIT = 376
+SKILL_DESCRIPTION_PER_SKILL_LIMIT = 30
+
+
 def validate_skill_description_budget() -> None:
-    # Each skill's `description:` frontmatter is injected into every session's
-    # skill index whether or not the skill is invoked, so it is an always-loaded
-    # surface like AGENTS.md and the rules files — but the per-file and aggregate
-    # rules budgets above never see it. Cap the SUM so the index cannot bloat
-    # unnoticed, and cap each single description so one skill cannot eat the pool.
-    # Skills are canonical in common/.agents/skills (language trees symlink to
-    # it), so counting common/ once matches what a session actually loads.
-    # 372 words in-tree + 4 words of slack. The slack is deliberately tight: it
-    # is the same 4 words the previous limit left, so unplanned description
-    # growth still trips this. Raised from 362 for issue #124's raven-debloat,
-    # a deliberate skill addition, not drift -- a new skill needs a description,
-    # and the old ceiling had no room for one. Raise this only alongside a new
-    # skill, and only to the new in-tree total plus that same slack.
-    AGGREGATE_LIMIT = 376
-    PER_SKILL_LIMIT = 30
     print("==> validate context budget for skill-index descriptions")
 
     skills_dir = REPO_ROOT / "common" / ".agents" / "skills"
@@ -333,9 +342,9 @@ def validate_skill_description_budget() -> None:
             continue
         count = len(description.split())
         total += count
-        if count > PER_SKILL_LIMIT:
+        if count > SKILL_DESCRIPTION_PER_SKILL_LIMIT:
             over_cap.append(
-                f"  {path.parent.name}: {count} words (per-skill limit {PER_SKILL_LIMIT})"
+                f"  {path.parent.name}: {count} words (per-skill limit {SKILL_DESCRIPTION_PER_SKILL_LIMIT})"
             )
 
     if unparseable:
@@ -347,13 +356,13 @@ def validate_skill_description_budget() -> None:
         for line in over_cap:
             print(line)
         raise SystemExit(
-            f"Skill description exceeds the per-skill cap. Trim it to {PER_SKILL_LIMIT} "
+            f"Skill description exceeds the per-skill cap. Trim it to {SKILL_DESCRIPTION_PER_SKILL_LIMIT} "
             "words or fewer so one skill cannot dominate the skill-index budget."
         )
-    if total > AGGREGATE_LIMIT:
+    if total > SKILL_DESCRIPTION_AGGREGATE_LIMIT:
         raise SystemExit(
             f"Skill-index description budget exceeded: {total} words "
-            f"(limit {AGGREGATE_LIMIT}). Trim skill descriptions or raise the "
+            f"(limit {SKILL_DESCRIPTION_AGGREGATE_LIMIT}). Trim skill descriptions or raise the "
             "threshold with justification."
         )
     print(f"skill description budget ok ({total} words)")
@@ -433,6 +442,92 @@ def warn_stale_docs() -> None:
         )
 
 
+# Drift this repository is expected to carry. Raven is both the template source
+# and an installed consumer of itself, so a handful of managed files legitimately
+# differ from what the template ships. Each entry is an explicit, reviewed
+# decision -- the gate fails on anything not listed, which is the point.
+#
+# `justfile`: carries repo-only recipes (`list-open`) the template does not ship.
+#
+# The next two are known reconciliation debt, not endorsement. They are listed so
+# the gate can start enforcing today instead of waiting on a content decision:
+#   `.claude/docs/raven-tool-assessment.md`: installed copy is Prettier-formatted
+#     (padded table cells); the template ships unpadded. Cosmetic, but it
+#     re-conflicts on every upgrade until the template ships formatted tables.
+#   `.claude/rules/raven-python.md`: installed copy and python/ template have
+#     diverged in both directions; merging them is a content judgment call.
+#   `pyproject.toml`: this repo's own project config, necessarily richer than the
+#     starter config the template ships.
+_APPROVED_LOCAL_DIVERGENCE = {
+    ".claude/docs/raven-tool-assessment.md",
+    ".claude/rules/raven-python.md",
+    "justfile",
+    "pyproject.toml",
+}
+
+_DRIFT_CATEGORY = "Drift & freshness"
+# The manifest records the commit a destination was installed from, so any commit
+# landed after the last self-upgrade leaves this warning set. In a repo that
+# installs itself, it self-chases forever and says nothing about convergence.
+_SELF_CHASING_FINDING_IDS = {"doctor.drift.version"}
+
+
+def unconverged_paths(findings: list[dict], approved: set[str]) -> list[str]:
+    """Paths a post-upgrade `raven doctor` still flags as drift, minus approved ones.
+
+    Keys on category and severity rather than a fixed set of finding ids: a drift
+    finding added to doctor later should fail this gate loudly, not slip past an
+    allowlist written before it existed.
+    """
+    unconverged: set[str] = set()
+    for finding in findings:
+        if finding.get("category") != _DRIFT_CATEGORY:
+            continue
+        if finding.get("severity") not in ("warn", "error"):
+            continue
+        if finding.get("id") in _SELF_CHASING_FINDING_IDS:
+            continue
+        detail = finding.get("detail") or ""
+        unconverged.update(part.strip() for part in detail.split(",") if part.strip())
+    return sorted(unconverged - approved)
+
+
+def validate_upgrade_convergence() -> None:
+    """Assert the applied self-upgrade actually converged.
+
+    `raven upgrade` exits 0 even when it leaves files needing a manual merge, so
+    the exit-code check in run() cannot see an unresolved conflict. Ask doctor
+    for the post-upgrade state instead of trusting the upgrade's own silence.
+    """
+    print("==> validate self-upgrade converged")
+    result = subprocess.run(
+        [sys.executable, str(RAVEN_SCRIPT), "--destination", ".", "doctor", "--json"],
+        cwd=REPO_ROOT,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    try:
+        report = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        print(result.stdout, end="")
+        print(result.stderr, end="")
+        raise SystemExit(f"`raven doctor --json` did not emit parseable JSON: {exc}") from exc
+
+    outstanding = unconverged_paths(report.get("findings", []), _APPROVED_LOCAL_DIVERGENCE)
+    if outstanding:
+        for path in outstanding:
+            print(f"  UNCONVERGED: {path}")
+        raise SystemExit(
+            "Self-upgrade left Raven-managed drift that is not in the approved "
+            "divergence list in scripts/self-check.py. Resolve the merge (see "
+            ".raven/merge/), or add the path with a written reason if the "
+            "divergence is intended."
+        )
+    print("upgrade convergence ok")
+
+
 def main() -> int:
     validate_shared_docs_sync()
     validate_symlink_canonicality()
@@ -450,6 +545,7 @@ def main() -> int:
         [sys.executable, str(RAVEN_SCRIPT), "--destination", ".", "upgrade"],
     )
     validate_installed_shape()
+    validate_upgrade_convergence()
     run("ruff format check", [sys.executable, "-m", "ruff", "format", "--check", "."])
     run("ruff lint", [sys.executable, "-m", "ruff", "check", "."])
     run("unit tests", [sys.executable, "-m", "pytest", "tests"])

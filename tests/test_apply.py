@@ -92,6 +92,68 @@ paths = [".claude/agents/raven-security-reviewer.md"]
         self.assertNotIn(".claude/agents/raven-security-reviewer.md", entries)
         self.assertIn(".claude/agents/raven-test-debugger.md", entries)
 
+    def test_disabling_adapter_hooks_keeps_adapter_scripts(self):
+        # Adapter helper scripts (raven-session.py, raven-skeleton.py,
+        # raven-tool-check.py) are called by skills, not only by hooks, so
+        # turning hook enforcement off must not silently remove them. They have
+        # their own `scripts` switch; see config.toml.tmpl.
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir()
+        config_path.write_text(
+            """
+schema = 1
+template = "python"
+
+[components.claude]
+hooks = false
+
+[components.codex]
+hooks = false
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        config = raven.load_config(self.destination)
+        entries = [
+            entry.relative
+            for entry in raven.iter_template_entries(self.template, self.excludes, config)
+        ]
+
+        self.assertFalse(any(path.startswith(".claude/hooks/") for path in entries))
+        self.assertFalse(any(path.startswith(".codex/hooks/") for path in entries))
+        self.assertTrue(any(path.startswith(".claude/scripts/") for path in entries))
+        self.assertTrue(any(path.startswith(".codex/scripts/") for path in entries))
+
+    def test_config_can_disable_adapter_scripts_independently(self):
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir()
+        config_path.write_text(
+            """
+schema = 1
+template = "python"
+
+[components.claude]
+scripts = false
+
+[components.codex]
+scripts = false
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        config = raven.load_config(self.destination)
+        entries = [
+            entry.relative
+            for entry in raven.iter_template_entries(self.template, self.excludes, config)
+        ]
+
+        self.assertFalse(any(path.startswith(".claude/scripts/") for path in entries))
+        self.assertFalse(any(path.startswith(".codex/scripts/") for path in entries))
+        self.assertTrue(any(path.startswith(".claude/hooks/") for path in entries))
+        self.assertTrue(any(path.startswith(".codex/hooks/") for path in entries))
+
     def test_config_can_disable_agent_specific_components(self):
         config_path = self.destination / ".raven" / "config.toml"
         config_path.parent.mkdir()
@@ -103,12 +165,14 @@ template = "python"
 [components.claude]
 settings = false
 hooks = false
+scripts = false
 subagents = false
 rules = false
 
 [components.codex]
 config = false
 hooks = false
+scripts = false
 subagents = false
 rules = false
 """.strip()
