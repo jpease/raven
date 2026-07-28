@@ -190,15 +190,34 @@ class AntipatternRegistrySkillTests(unittest.TestCase):
         self.assertIn("instead", self.registry_lower)
 
     def test_registry_requires_two_observations_before_recording(self):
+        """Recurrence must be demonstrable within a single review -- the
+        doc must not rely on a reviewer remembering a first sighting from a
+        prior, now-gone session (issue #128; was
+        test_registry_requires_two_observations_before_recording asserting
+        'more than once' / 'first sighting', a rule that silently required
+        cross-session memory the registry does not have)."""
         self.assertIn(
-            "more than once",
+            "two instances",
             self.registry_lower,
-            "expected the two-strikes rule: record on the second observation, not the first",
+            "expected the rule to require two cited instances before recording an entry",
         )
         self.assertIn(
-            "first sighting",
+            "same review",
             self.registry_lower,
-            "expected an explicit contrast with recording on first sighting",
+            "expected recurrence to be demonstrable within one review, not "
+            "remembered across sessions",
+        )
+        self.assertIn(
+            "no memory across sessions",
+            self.registry_lower,
+            "expected the doc to admit its recurrence detection has no "
+            "cross-session memory, so it stops implying a capability it lacks",
+        )
+        self.assertIn(
+            "months apart",
+            self.registry_lower,
+            "expected the doc to state the cost plainly: recurrences whose "
+            "two instances land months apart, across sessions, are never recorded",
         )
 
     def test_registry_documents_status_lifecycle(self):

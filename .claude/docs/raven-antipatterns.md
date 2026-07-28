@@ -11,28 +11,39 @@ references it by path when relevant instead of it being always-loaded.
 
 ## When To Add An Entry
 
-Add an entry only when a pattern has been observed **more than once** (two
-strikes). Do not record on first sighting — a single occurrence is a normal
-review comment. Recording every first sighting turns this into an
-ever-growing complaint list instead of a signal of genuine recurrence.
+Add an entry only when two instances of the same pattern are demonstrable in
+the same review, cited by file and line at recording time. A single
+instance stays an ordinary review comment and is never recorded on its own.
+
+This registry has no memory across sessions: a first sighting that is never
+paired with a second instance in the same review is simply lost, not
+tracked. Recurrences whose two instances land months apart, in
+different sessions, will never be recorded — that is a deliberate cost, not
+an oversight; the alternative is an ever-growing list of unconfirmed single
+sightings.
 
 ## Entry Format
 
 Each entry is a level-3 heading (the pattern's short name) with four fields:
 
 - **Status**: `observed` | `promoted to <check-name>` | `retired`
-- **Pattern**: what it looks like — concrete, code-shape description
+- **Pattern**: what it looks like — concrete, code-shape description, plus
+  the two cited instances (file:line) that justified recording it
 - **Why**: why it is wrong *here* — repo-specific, not a general style opinion
 - **Instead**: what to do instead
 
 ## Status Lifecycle
 
-1. `observed` — recorded after the second occurrence. Reviewers may cite this
-   entry in future findings instead of re-explaining the issue each time.
-2. `promoted to <check>` — once the pattern is mechanically detectable, write a
-   Semgrep rule (or the project's existing static-analysis equivalent) and wire
-   it into the project's gate. Update the status to name the check. A promoted
-   entry should stop consuming reviewer attention — the gate catches it now.
+1. `observed` — recorded once two cited instances exist in the same review.
+   Reviewers may cite this entry in future findings instead of
+   re-explaining the issue each time.
+2. `promoted to <check>` — once the pattern is mechanically detectable,
+   recommend a Semgrep rule (or the project's existing static-analysis
+   equivalent) wired into the gate, naming the check. Writing the rule and
+   wiring the gate is separate, authorized implementation work per Pause
+   And Ask, not something the reviewer does directly. Update the status to
+   name the check once that work lands — a promoted entry should stop
+   consuming reviewer attention, since the gate catches it now.
 3. `retired` — the motivating conditions are gone (code refactored away, check
    removed, pattern stopped recurring). Delete retired entries the next time
    this file is edited; this is a working registry, not a changelog, and a

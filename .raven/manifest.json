@@ -136,9 +136,9 @@
       "sourceSha256": "e68020a54f60e6c4fe9d6a5115367ef6fc0d73d7ef7d208e0404d8205959d7ae"
     },
     ".claude/docs/raven-antipatterns.md": {
-      "installedSha256": "f0f4311eb490c6acca2de2f5d6275afdf675c29084d9a8a01ae1f9b5e3110770",
+      "installedSha256": "f90c77447fb32cc2756e81c91d27d3d8b9ae5535fa55084f0000ffa75c72f1bd",
       "kind": "file",
-      "sourceSha256": "f0f4311eb490c6acca2de2f5d6275afdf675c29084d9a8a01ae1f9b5e3110770"
+      "sourceSha256": "f90c77447fb32cc2756e81c91d27d3d8b9ae5535fa55084f0000ffa75c72f1bd"
     },
     ".claude/docs/raven-authority-map.md": {
       "installedSha256": "3e8c38bb749ecccff68396ae018db0934495869077347f0b99a30f0ad46ab855",
@@ -378,8 +378,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "6313fa23f6bd",
+  "ravenVersion": "811ab078bc71",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-07-28T01:12:05.159189+00:00"
+  "updatedAt": "2026-07-28T01:18:54.741971+00:00"
 }
