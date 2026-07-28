@@ -1,3 +1,4 @@
+import argparse
 import importlib.util
 import sys
 import tempfile
@@ -115,6 +116,31 @@ def lsp_doc_command(language: str) -> str:
     """How a doc table spells the server, e.g. `pyright-langserver --stdio`."""
     server, forwards_stdio = LSP_DEFAULTS[language]
     return f"{server} --stdio" if forwards_stdio else server
+
+
+def install_ns(destination: Path, language: str = "python", *, dry_run: bool = False):
+    """The argparse namespace `cmd_install` expects, with test-friendly defaults."""
+    return argparse.Namespace(
+        destination=str(destination),
+        language=language,
+        args=None,
+        overrides=[],
+        dry_run=dry_run,
+        include_readme=False,
+        adopt_claude_symlink=False,
+        platform=None,
+    )
+
+
+def upgrade_ns(destination: Path, *, dry_run: bool = False):
+    """The argparse namespace `cmd_upgrade` expects, with test-friendly defaults."""
+    return argparse.Namespace(
+        destination=str(destination),
+        overrides=[],
+        dry_run=dry_run,
+        include_readme=False,
+        adopt_claude_symlink=False,
+    )
 
 
 class RavenTestCase(unittest.TestCase):

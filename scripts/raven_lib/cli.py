@@ -153,6 +153,24 @@ def _planned_write_paths(plan: ApplyPlan) -> list[str]:
     return sorted(paths)
 
 
+def _print_hook_manager_notice(destination: Path) -> None:
+    """Report that `.raven/git-hooks/` is inert, when a hook manager owns the hooks dir.
+
+    Printed on dry runs as well as live ones. A dry run lists the vendored hook
+    scripts among the files it would write, so without this the preview reads
+    as though those files would take effect -- which is exactly the question a
+    reader weighing a hook fix is trying to answer.
+    """
+    manager = detect_hook_manager(destination)
+    if manager is None:
+        return
+    print()
+    print_section(
+        f"Hook manager detected ({manager}) -- Raven's git hooks are not active:",
+        [hook_manager_guidance(manager)],
+    )
+
+
 def _run(
     destination: Path,
     template_name: str,
@@ -261,7 +279,9 @@ def _run(
     print()
 
     if dry_run:
-        return print_dry_run_plan(destination, classification, entries, plan, orphans)
+        rc = print_dry_run_plan(destination, classification, entries, plan, orphans)
+        _print_hook_manager_notice(destination)
+        return rc
 
     # Validation has passed. Reject a doomed symlink adoption before any durable
     # write, then write configuration only once the request is known good, so a
@@ -325,13 +345,7 @@ def _run(
             hooks_label = hooks_dir
         print_section("Installed git hooks:", [f"{hooks_label}/{h}" for h in git_hooks_installed])
     else:
-        manager = detect_hook_manager(destination)
-        if manager:
-            print()
-            print_section(
-                f"Hook manager detected ({manager}) -- Raven's hooks were not installed:",
-                [hook_manager_guidance(manager)],
-            )
+        _print_hook_manager_notice(destination)
 
     if template_name == "swift":
         print()

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import attribution_line, push_plan_line, raven
+from helpers import attribution_line, install_ns, push_plan_line, raven, upgrade_ns
 from raven_lib.git_hooks import HookLinkAction, hook_link_action
 
 
@@ -1452,6 +1452,86 @@ class GitHookInstallerTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("manual", pre_push.lower())
+
+
+class HookManagerNoticeTests(unittest.TestCase):
+    """What `install` and `upgrade` tell the user when a hook manager owns the hooks dir.
+
+    Under husky or an out-of-repo `core.hooksPath`, Raven still writes
+    `.raven/git-hooks/` but installs no symlinks, so nothing ever executes
+    those scripts. The notice has to say that, on every run that reports what
+    a template does -- including `--dry-run`, which is the run someone makes
+    while deciding whether a hook fix is worth taking.
+    """
+
+    def setUp(self):
+        # Git hooks export GIT_DIR/GIT_INDEX_FILE/etc. If this suite runs inside
+        # a hook (the pre-commit `just check`), those would point git at the
+        # outer repo instead of the temp repo below. Same guard as
+        # GitHookInstallerTests.
+        for var in [k for k in os.environ if k.startswith("GIT_")]:
+            self.addCleanup(os.environ.__setitem__, var, os.environ[var])
+            del os.environ[var]
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.destination = Path(self.tmp.name)
+        subprocess.run(["git", "init", str(self.destination)], capture_output=True, check=True)
+        (self.destination / ".husky" / "_").mkdir(parents=True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".husky/_"],
+            capture_output=True,
+            check=True,
+        )
+
+    def _run_cmd(self, command, namespace) -> str:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            rc = command(namespace)
+        self.assertEqual(rc, 0, out.getvalue())
+        return out.getvalue()
+
+    def _install(self) -> str:
+        return self._run_cmd(raven.cmd_install, install_ns(self.destination))
+
+    def _assert_notice(self, output: str) -> None:
+        self.assertIn("husky", output)
+        self.assertIn(".raven/git-hooks", output)
+
+    def test_guidance_husky_names_the_inert_vendored_hooks(self):
+        text = raven.hook_manager_guidance("husky")
+        self.assertIn(".raven/git-hooks", text)
+
+    def test_guidance_external_hooks_path_names_the_inert_vendored_hooks(self):
+        text = raven.hook_manager_guidance("external-hooks-path")
+        self.assertIn(".raven/git-hooks", text)
+
+    def test_install_reports_hook_manager(self):
+        self._assert_notice(self._install())
+
+    def test_install_dry_run_reports_hook_manager(self):
+        self._assert_notice(
+            self._run_cmd(raven.cmd_install, install_ns(self.destination, dry_run=True))
+        )
+
+    def test_upgrade_reports_hook_manager(self):
+        self._install()
+        self._assert_notice(self._run_cmd(raven.cmd_upgrade, upgrade_ns(self.destination)))
+
+    def test_upgrade_dry_run_reports_hook_manager(self):
+        self._install()
+        self._assert_notice(
+            self._run_cmd(raven.cmd_upgrade, upgrade_ns(self.destination, dry_run=True))
+        )
+
+    def test_no_notice_without_a_hook_manager(self):
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "--unset", "core.hooksPath"],
+            capture_output=True,
+            check=True,
+        )
+        output = self._run_cmd(raven.cmd_install, install_ns(self.destination, dry_run=True))
+        self.assertNotIn("Hook manager detected", output)
 
 
 class HookLinkActionTests(unittest.TestCase):
