@@ -9,6 +9,13 @@ import on Python 3.9+, so it cannot use ``tomllib`` (3.11+) to read a TOML file.
 A literal dict needs no parser, keeps these explanatory comments, and works on
 every supported interpreter.
 
+``recipes`` lists gate recipes only -- what ``check`` runs and what ``assess``
+grades. The ``audit`` recipe every template justfile also ships is deliberately
+absent: its result depends on what the advisory databases published overnight,
+not on the working tree, so grading it would make an unchanged commit fail for
+reasons the commit cannot fix. Its absence here is the decision, not an
+oversight (see ``tests/test_gates.py``).
+
 Field shapes (consumed by ``raven_lib.gates._build_spec``):
   recipes:         list[str]
   tools:           list[str]
