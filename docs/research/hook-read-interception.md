@@ -399,8 +399,9 @@ received the **original file contents**, not the sentinel.
 result.** A plain-string replacement is silently ignored. The public docs never
 document a `Read` output schema, so a "schema-matching" replacement cannot be
 constructed reliably either. Therefore the rung-3 transparent transform is **not
-viable** for `Read`; rung 2 (the gate) is the correct mechanism. Probe preserved
-under `docs/research/gap2-probe/` for re-verification against future versions.
+viable** for `Read`; rung 2 (the gate) is the correct mechanism. The probe used to
+obtain this result is recoverable from git history for re-verification against
+future versions: `git show 080ba37c4b6c:docs/research/gap2-probe/probe-read-hook.py`.
 
 ### 3. Codex read *behavior*, not just tool surface
 
