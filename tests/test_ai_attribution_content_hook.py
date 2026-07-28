@@ -6,14 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import REPO_ROOT
-
-
-def _attribution_line(tool: str, verb: str = "Generated", prep: str = "by") -> str:
-    # Built at runtime, not written as one literal string, so this test file's
-    # own source never contains the exact phrase the hook under test blocks --
-    # the AI-attribution content scan runs on this repo too (see pre-commit).
-    return f"# {verb} {prep} {tool}\n"
+from helpers import REPO_ROOT, attribution_line, push_plan_line
 
 
 class AiAttributionContentHookTests(unittest.TestCase):
@@ -56,7 +49,7 @@ class AiAttributionContentHookTests(unittest.TestCase):
 
     def test_blocks_staged_content_mentioning_claude(self):
         self._commit("README.md", "# repo\n")
-        self._stage("notes.py", _attribution_line("Claude") + "print('hi')\n")
+        self._stage("notes.py", attribution_line("Claude") + "print('hi')\n")
         rc, err = self._run("staged")
         self.assertEqual(rc, 1)
         self.assertIn("staged diff", err)
@@ -81,7 +74,7 @@ class AiAttributionContentHookTests(unittest.TestCase):
         )
         self._commit(
             "notes.py",
-            _attribution_line("Copilot", verb="Implemented", prep="with") + "print('hi')\n",
+            attribution_line("Copilot", verb="Implemented", prep="with") + "print('hi')\n",
         )
         rc, err = self._run("outbound")
         self.assertEqual(rc, 1)
@@ -104,13 +97,13 @@ class AiAttributionContentHookTests(unittest.TestCase):
         self.assertEqual(rc, 0)
 
     def test_outbound_skips_when_no_base_ref(self):
-        self._commit("notes.py", _attribution_line("Claude") + "print('hi')\n")
+        self._commit("notes.py", attribution_line("Claude") + "print('hi')\n")
         rc, _ = self._run("outbound")
         self.assertEqual(rc, 0)
 
     def test_respects_block_ai_attribution_content_false_in_config(self):
         self._commit("README.md", "# repo\n")
-        self._stage("notes.py", _attribution_line("Claude") + "print('hi')\n")
+        self._stage("notes.py", attribution_line("Claude") + "print('hi')\n")
         rc, _ = self._run(
             "staged", config_text="[git_hooks]\nblock_ai_attribution_content = false\n"
         )
@@ -118,7 +111,7 @@ class AiAttributionContentHookTests(unittest.TestCase):
 
     def test_default_blocks_when_no_config(self):
         self._commit("README.md", "# repo\n")
-        self._stage("notes.py", _attribution_line("Claude") + "print('hi')\n")
+        self._stage("notes.py", attribution_line("Claude") + "print('hi')\n")
         rc, _ = self._run("staged")
         self.assertEqual(rc, 1)
 
@@ -147,10 +140,6 @@ class AiAttributionContentHookTests(unittest.TestCase):
     def _git(self, *args: str) -> None:
         subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
 
-    @staticmethod
-    def _plan_line(ref: str, local_sha: str, remote_sha: str) -> str:
-        return f"{ref} {local_sha} {ref} {remote_sha}\n"
-
     def test_push_plan_scans_the_pushed_ref_not_head(self):
         # Issue #126: with `main` checked out, pushing `feature` must scan
         # `feature`. The old HEAD-relative range saw nothing here.
@@ -158,11 +147,11 @@ class AiAttributionContentHookTests(unittest.TestCase):
         base = self._rev_parse()
         self._git("update-ref", "refs/remotes/origin/main", base)
         self._git("checkout", "-q", "-b", "feature")
-        self._commit("notes.py", _attribution_line("Claude") + "print('hi')\n")
+        self._commit("notes.py", attribution_line("Claude") + "print('hi')\n")
         feature = self._rev_parse()
         self._git("checkout", "-q", "-")
 
-        rc, err = self._run_plan(self._plan_line("refs/heads/feature", feature, self._ZERO_SHA))
+        rc, err = self._run_plan(push_plan_line("refs/heads/feature", feature, self._ZERO_SHA))
 
         self.assertEqual(rc, 1, err)
         self.assertIn("refs/heads/feature", err)
@@ -171,9 +160,9 @@ class AiAttributionContentHookTests(unittest.TestCase):
         self._commit("README.md", "# repo\n")
         base = self._rev_parse()
         self._git("update-ref", "refs/remotes/origin/main", base)
-        self._commit("notes.py", _attribution_line("Claude") + "print('hi')\n")
+        self._commit("notes.py", attribution_line("Claude") + "print('hi')\n")
 
-        rc, err = self._run_plan(self._plan_line("(delete)", self._ZERO_SHA, self._rev_parse()))
+        rc, err = self._run_plan(push_plan_line("(delete)", self._ZERO_SHA, self._rev_parse()))
 
         self.assertEqual(rc, 0, err)
 
@@ -182,16 +171,16 @@ class AiAttributionContentHookTests(unittest.TestCase):
         # must not fall back to a HEAD-relative range (HEAD would be flagged).
         self._commit("README.md", "# repo\n")
         self._git("update-ref", "refs/remotes/origin/main", self._rev_parse())
-        self._commit("notes.py", _attribution_line("Claude") + "print('hi')\n")
+        self._commit("notes.py", attribution_line("Claude") + "print('hi')\n")
 
-        rc, err = self._run_plan(self._plan_line("refs/heads/main", "1" * 40, self._ZERO_SHA))
+        rc, err = self._run_plan(push_plan_line("refs/heads/main", "1" * 40, self._ZERO_SHA))
 
         self.assertEqual(rc, 0, err)
 
     def test_push_plan_with_no_usable_refs_does_not_fall_back_to_head(self):
         self._commit("README.md", "# repo\n")
         self._git("update-ref", "refs/remotes/origin/main", self._rev_parse())
-        self._commit("notes.py", _attribution_line("Claude") + "print('hi')\n")
+        self._commit("notes.py", attribution_line("Claude") + "print('hi')\n")
 
         rc, err = self._run_plan("")
 
@@ -199,13 +188,13 @@ class AiAttributionContentHookTests(unittest.TestCase):
 
     def test_push_plan_new_branch_is_bounded_by_remote_tracking_refs(self):
         self._commit("README.md", "# repo\n")
-        self._commit("legacy.py", _attribution_line("Gemini") + "print('legacy')\n")
+        self._commit("legacy.py", attribution_line("Gemini") + "print('legacy')\n")
         self._git("update-ref", "refs/remotes/origin/main", self._rev_parse())
         self._git("checkout", "-q", "-b", "brand-new")
         self._commit("clean.py", "print('ok')\n")
 
         rc, err = self._run_plan(
-            self._plan_line("refs/heads/brand-new", self._rev_parse(), self._ZERO_SHA)
+            push_plan_line("refs/heads/brand-new", self._rev_parse(), self._ZERO_SHA)
         )
 
         self.assertEqual(rc, 0, err)
@@ -213,13 +202,13 @@ class AiAttributionContentHookTests(unittest.TestCase):
 
     def test_push_plan_uses_the_named_remote_for_bounding(self):
         self._commit("README.md", "# repo\n")
-        self._commit("legacy.py", _attribution_line("Gemini") + "print('legacy')\n")
+        self._commit("legacy.py", attribution_line("Gemini") + "print('legacy')\n")
         self._git("update-ref", "refs/remotes/fork/main", self._rev_parse())
         self._git("checkout", "-q", "-b", "brand-new")
         self._commit("clean.py", "print('ok')\n")
 
         rc, err = self._run_plan(
-            self._plan_line("refs/heads/brand-new", self._rev_parse(), self._ZERO_SHA),
+            push_plan_line("refs/heads/brand-new", self._rev_parse(), self._ZERO_SHA),
             remote="fork",
         )
 
@@ -235,12 +224,12 @@ class AiAttributionContentHookTests(unittest.TestCase):
         one = self._rev_parse()
         self._git("checkout", "-q", base)
         self._git("checkout", "-q", "-b", "two")
-        self._commit("two.py", _attribution_line("Codex") + "print('hi')\n")
+        self._commit("two.py", attribution_line("Codex") + "print('hi')\n")
         two = self._rev_parse()
 
         rc, err = self._run_plan(
-            self._plan_line("refs/heads/one", one, self._ZERO_SHA)
-            + self._plan_line("refs/heads/two", two, self._ZERO_SHA)
+            push_plan_line("refs/heads/one", one, self._ZERO_SHA)
+            + push_plan_line("refs/heads/two", two, self._ZERO_SHA)
         )
 
         self.assertEqual(rc, 1, err)
@@ -256,9 +245,9 @@ class AiAttributionContentHookTests(unittest.TestCase):
         (raven_dir / "config.toml").write_text(
             "[git_hooks]\nblock_ai_attribution_content = false\n", encoding="utf-8"
         )
-        self._commit("notes.py", _attribution_line("Claude") + "print('hi')\n")
+        self._commit("notes.py", attribution_line("Claude") + "print('hi')\n")
 
-        rc, err = self._run_plan(self._plan_line("refs/heads/main", self._rev_parse(), "0" * 40))
+        rc, err = self._run_plan(push_plan_line("refs/heads/main", self._rev_parse(), "0" * 40))
 
         self.assertEqual(rc, 0, err)
 
@@ -267,11 +256,11 @@ class AiAttributionContentHookTests(unittest.TestCase):
         # never fetched. That tip cannot bound the scan, so the remote's tracking
         # refs must -- the new commit is still caught, the published one is not.
         self._commit("README.md", "# repo\n")
-        self._commit("legacy.py", _attribution_line("Gemini") + "print('legacy')\n")
+        self._commit("legacy.py", attribution_line("Gemini") + "print('legacy')\n")
         self._git("update-ref", "refs/remotes/origin/main", self._rev_parse())
-        self._commit("notes.py", _attribution_line("Claude") + "print('hi')\n")
+        self._commit("notes.py", attribution_line("Claude") + "print('hi')\n")
 
-        rc, err = self._run_plan(self._plan_line("refs/heads/main", self._rev_parse(), "1" * 40))
+        rc, err = self._run_plan(push_plan_line("refs/heads/main", self._rev_parse(), "1" * 40))
 
         self.assertEqual(rc, 1, err)
         self.assertIn("Claude", err)
@@ -283,12 +272,12 @@ class AiAttributionContentHookTests(unittest.TestCase):
         # the machine for the first time and scanning all of it is correct rather
         # than a false positive. Pinned so it cannot change by accident.
         self._commit("README.md", "# repo\n")
-        self._commit("legacy.py", _attribution_line("Gemini") + "print('legacy')\n")
+        self._commit("legacy.py", attribution_line("Gemini") + "print('legacy')\n")
         self._git("checkout", "-q", "-b", "brand-new")
         self._commit("clean.py", "print('ok')\n")
 
         rc, err = self._run_plan(
-            self._plan_line("refs/heads/brand-new", self._rev_parse(), self._ZERO_SHA)
+            push_plan_line("refs/heads/brand-new", self._rev_parse(), self._ZERO_SHA)
         )
 
         self.assertEqual(rc, 1, err)
@@ -301,11 +290,11 @@ class AiAttributionContentHookTests(unittest.TestCase):
         published = self._rev_parse()
         self._git("update-ref", "refs/remotes/origin/main", published)
         self._git("reset", "-q", "--hard", base)
-        self._commit("notes.py", _attribution_line("Claude") + "print('hi')\n")
+        self._commit("notes.py", attribution_line("Claude") + "print('hi')\n")
         rewritten = self._rev_parse()
         self.assertNotEqual(rewritten, published)
 
-        rc, err = self._run_plan(self._plan_line("refs/heads/main", rewritten, published))
+        rc, err = self._run_plan(push_plan_line("refs/heads/main", rewritten, published))
 
         self.assertEqual(rc, 1, err)
         self.assertIn("Claude", err)

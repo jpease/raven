@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import raven
+from helpers import attribution_line, push_plan_line, raven
 
 
 class GitHookInstallerTests(unittest.TestCase):
@@ -667,13 +667,6 @@ class GitHookInstallerTests(unittest.TestCase):
 
     _ZERO_SHA = "0" * 40
 
-    @staticmethod
-    def _attribution_line(tool: str = "Claude", verb: str = "Generated", prep: str = "by") -> str:
-        # Built at runtime, not written as one literal string, so this test
-        # file's own source never contains the exact phrase the scanner blocks
-        # -- that scan runs on this repo too (see pre-commit/pre-push).
-        return f"# {verb} {prep} {tool}\n"
-
     def _prepare_attribution_repo(self, scanner_body: str | None = None) -> dict[str, str]:
         # Materialize the scanner where pre-push resolves it (repo-root
         # relative), and put `git` in a bin dir OUTSIDE the repo with no `just`
@@ -740,10 +733,6 @@ class GitHookInstallerTests(unittest.TestCase):
             check=False,
         )
 
-    @staticmethod
-    def _plan_line(ref: str, local_sha: str, remote_sha: str) -> str:
-        return f"{ref} {local_sha} {ref} {remote_sha}\n"
-
     def test_pre_push_blocks_attribution_content_on_non_checked_out_branch(self):
         # Regression for issue #126: the scan must follow the refs Git is
         # actually pushing, not the checked-out branch's upstream range. With
@@ -756,13 +745,13 @@ class GitHookInstallerTests(unittest.TestCase):
         self._repo_git("checkout", "-q", "-b", "feature")
         feature = self._repo_commit(
             "notes.py",
-            self._attribution_line("Copilot", verb="Implemented", prep="with") + "print('hi')\n",
+            attribution_line("Copilot", verb="Implemented", prep="with") + "print('hi')\n",
             "feature work",
         )
         self._repo_git("checkout", "-q", default_branch)
 
         result = self._run_pre_push(
-            env, self._plan_line("refs/heads/feature", feature, self._ZERO_SHA)
+            env, push_plan_line("refs/heads/feature", feature, self._ZERO_SHA)
         )
 
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -779,7 +768,7 @@ class GitHookInstallerTests(unittest.TestCase):
         self._repo_git("checkout", "-q", default_branch)
 
         result = self._run_pre_push(
-            env, self._plan_line("refs/heads/feature", feature, self._ZERO_SHA)
+            env, push_plan_line("refs/heads/feature", feature, self._ZERO_SHA)
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -796,11 +785,11 @@ class GitHookInstallerTests(unittest.TestCase):
         self._repo_git("checkout", "-q", default_branch)
         self._repo_git("checkout", "-q", "-b", "dirty-branch")
         dirty = self._repo_commit(
-            "dirty.py", self._attribution_line("Gemini") + "print('hi')\n", "dirty work"
+            "dirty.py", attribution_line("Gemini") + "print('hi')\n", "dirty work"
         )
         self._repo_git("checkout", "-q", default_branch)
 
-        plan = self._plan_line("refs/heads/clean-branch", clean, self._ZERO_SHA) + self._plan_line(
+        plan = push_plan_line("refs/heads/clean-branch", clean, self._ZERO_SHA) + push_plan_line(
             "refs/heads/dirty-branch", dirty, self._ZERO_SHA
         )
         result = self._run_pre_push(env, plan)
@@ -816,11 +805,11 @@ class GitHookInstallerTests(unittest.TestCase):
         self._repo_git("update-ref", f"refs/remotes/origin/{default_branch}", base)
         self._repo_git("checkout", "-q", "-b", "brand-new")
         new_sha = self._repo_commit(
-            "notes.py", self._attribution_line("Claude") + "print('hi')\n", "new work"
+            "notes.py", attribution_line("Claude") + "print('hi')\n", "new work"
         )
 
         result = self._run_pre_push(
-            env, self._plan_line("refs/heads/brand-new", new_sha, self._ZERO_SHA)
+            env, push_plan_line("refs/heads/brand-new", new_sha, self._ZERO_SHA)
         )
 
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -834,7 +823,7 @@ class GitHookInstallerTests(unittest.TestCase):
         self._repo_commit("README.md", "# repo\n", "init")
         published = self._repo_commit(
             "legacy.py",
-            self._attribution_line("Gemini") + "print('legacy')\n",
+            attribution_line("Gemini") + "print('legacy')\n",
             "historical mention",
         )
         default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
@@ -843,7 +832,7 @@ class GitHookInstallerTests(unittest.TestCase):
         new_sha = self._repo_commit("clean.py", "print('ok')\n", "clean work")
 
         result = self._run_pre_push(
-            env, self._plan_line("refs/heads/brand-new", new_sha, self._ZERO_SHA)
+            env, push_plan_line("refs/heads/brand-new", new_sha, self._ZERO_SHA)
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -858,7 +847,7 @@ class GitHookInstallerTests(unittest.TestCase):
         self._repo_commit("README.md", "# repo\n", "init")
         published = self._repo_commit(
             "legacy.py",
-            self._attribution_line("Gemini") + "print('legacy')\n",
+            attribution_line("Gemini") + "print('legacy')\n",
             "historical mention",
         )
         default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
@@ -867,16 +856,16 @@ class GitHookInstallerTests(unittest.TestCase):
         clean = self._repo_commit("clean.py", "print('ok')\n", "clean work")
 
         clean_result = self._run_pre_push(
-            env, self._plan_line("refs/heads/brand-new", clean, self._ZERO_SHA), remote="fork"
+            env, push_plan_line("refs/heads/brand-new", clean, self._ZERO_SHA), remote="fork"
         )
         self.assertEqual(clean_result.returncode, 0, clean_result.stdout + clean_result.stderr)
         self.assertNotIn("Gemini", clean_result.stderr)
 
         flagged = self._repo_commit(
-            "notes.py", self._attribution_line("Claude") + "print('hi')\n", "new work"
+            "notes.py", attribution_line("Claude") + "print('hi')\n", "new work"
         )
         blocked = self._run_pre_push(
-            env, self._plan_line("refs/heads/brand-new", flagged, self._ZERO_SHA), remote="fork"
+            env, push_plan_line("refs/heads/brand-new", flagged, self._ZERO_SHA), remote="fork"
         )
         self.assertNotEqual(blocked.returncode, 0, blocked.stdout + blocked.stderr)
         self.assertIn("Claude", blocked.stderr)
@@ -893,13 +882,13 @@ class GitHookInstallerTests(unittest.TestCase):
         self._repo_git("reset", "-q", "--hard", base)
         rewritten = self._repo_commit(
             "notes.py",
-            self._attribution_line("Claude") + "print('hi')\n",
+            attribution_line("Claude") + "print('hi')\n",
             "rewritten work",
         )
         self.assertNotEqual(rewritten, published)
 
         result = self._run_pre_push(
-            env, self._plan_line(f"refs/heads/{default_branch}", rewritten, published)
+            env, push_plan_line(f"refs/heads/{default_branch}", rewritten, published)
         )
 
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -912,7 +901,7 @@ class GitHookInstallerTests(unittest.TestCase):
         self._repo_commit("README.md", "# repo\n", "init")
         published = self._repo_commit(
             "legacy.py",
-            self._attribution_line("Gemini") + "print('legacy')\n",
+            attribution_line("Gemini") + "print('legacy')\n",
             "historical mention",
         )
         default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
@@ -920,7 +909,7 @@ class GitHookInstallerTests(unittest.TestCase):
         added = self._repo_commit("notes.py", "print('hi')\n", "new work")
 
         result = self._run_pre_push(
-            env, self._plan_line(f"refs/heads/{default_branch}", added, published)
+            env, push_plan_line(f"refs/heads/{default_branch}", added, published)
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -935,7 +924,7 @@ class GitHookInstallerTests(unittest.TestCase):
         base = self._repo_commit("README.md", "# repo\n", "init")
         default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
         self._repo_git("update-ref", f"refs/remotes/origin/{default_branch}", base)
-        self._repo_commit("notes.py", self._attribution_line("Claude") + "print('hi')\n", "work")
+        self._repo_commit("notes.py", attribution_line("Claude") + "print('hi')\n", "work")
 
         result = self._run_pre_push(env, self._PUSH_STDIN)
 
@@ -974,7 +963,7 @@ class GitHookInstallerTests(unittest.TestCase):
             )
         )
         head = self._repo_commit("README.md", "# repo\n", "init")
-        plan = self._plan_line("refs/heads/one", head, self._ZERO_SHA) + self._plan_line(
+        plan = push_plan_line("refs/heads/one", head, self._ZERO_SHA) + push_plan_line(
             "refs/heads/two", head, "2" * 40
         )
 
