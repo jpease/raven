@@ -27,6 +27,37 @@ check-fast: lint fmt-check
 check: check-fast typecheck test
     [ -f .raven/git-hooks/lib/with-verified-cache.sh ] && sh .raven/git-hooks/lib/with-verified-cache.sh check true || true
 
+# Report known advisories in this project's dependency manifests.
+#
+# Deliberately NOT a dependency of `check`. Every other recipe here is a
+# function of the working tree; an audit is a function of the tree AND of what
+# the world published overnight, so as a gate it would turn an unchanged commit
+# red for reasons no one can fix in that commit. A gate is also binary, while an
+# advisory has to be classified first -- see the Advisory Triage section of the
+# `raven-dependency-update` skill. Report-only: never fails the shell.
+audit:
+    #!/usr/bin/env sh
+    if ! command -v osv-scanner >/dev/null 2>&1; then
+        echo "osv-scanner is not installed; skipping the dependency audit."
+        echo "Install: https://google.github.io/osv-scanner/installation/"
+        exit 0
+    fi
+    osv-scanner scan source -r .
+    status=$?
+    # Documented exit codes: 0 clean, 1-126 result-related (findings),
+    # 127 general error, 128 nothing scannable, 129-255 other errors.
+    if [ "$status" -eq 0 ]; then
+        echo "No known advisories in the scanned manifests."
+    elif [ "$status" -ge 1 ] && [ "$status" -le 126 ]; then
+        echo "Advisories reported above. Classify each one before remediating"
+        echo "(see the raven-dependency-update skill); this is not a gate."
+    elif [ "$status" -eq 128 ]; then
+        echo "No supported dependency manifest found; nothing to audit."
+    else
+        echo "osv-scanner exited $status without completing the scan." >&2
+    fi
+    exit 0
+
 # Install pre-commit (fast checks) and pre-push (full check) git hooks
 install-hooks:
     #!/usr/bin/env sh
