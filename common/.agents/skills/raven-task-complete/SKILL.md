@@ -41,7 +41,7 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 
 ## Integration with raven-project-lifecycle
 
-When using `raven-project-lifecycle`, run this skill immediately before calling `python .claude/scripts/raven-session.py --complete <unit>`. The checkpoint hook enforces completion criteria; this skill ensures you meet them before invoking it.
+When using `raven-project-lifecycle`, run this skill immediately before calling `raven-session.py --complete <unit>` (`.claude/scripts/` for Claude Code, `.codex/scripts/` for Codex). The checkpoint hook enforces completion criteria; this skill ensures you meet them before invoking it.
 
 ## Output
 

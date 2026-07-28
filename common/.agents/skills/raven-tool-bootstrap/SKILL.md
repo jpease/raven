@@ -22,16 +22,18 @@ Goal: respond to Raven tool availability checks without repeated tool discovery.
 
 ## Commands
 
+The tool-check helper ships per adapter: `.claude/scripts/raven-tool-check.py` (Claude Code) or `.codex/scripts/raven-tool-check.py` (Codex). Use the one your agent installed.
+
 After tools are installed or verified, update Raven's local tool-check cache so SessionStart does not repeat the same prompt:
 
 ```sh
-python .claude/scripts/raven-tool-check.py --write
+python <scripts-dir>/raven-tool-check.py --write
 ```
 
 If the user chooses not to be reminded:
 
 ```sh
-python .claude/scripts/raven-tool-check.py --no-reminder
+python <scripts-dir>/raven-tool-check.py --no-reminder
 ```
 
 Use `python3`, `py -3`, or the active virtual environment if `python` is not the correct launcher.
