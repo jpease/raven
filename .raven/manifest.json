@@ -337,9 +337,9 @@
       "sourceSha256": "ca82ed5154440e4227a9aefddbc64e094dc82e73fdfb1082b16f5b63b868d509"
     },
     ".raven/git-hooks/lib/check-managed-block-integrity.py": {
-      "installedSha256": "2279c57e99e14136e91576733809ae2241d8964ebe644f8435f7cfff030687dc",
+      "installedSha256": "8c2d0a49f3187bcd3d14b09227cd3f503d9a6fbd07f757b44a44a8beaf3c087a",
       "kind": "file",
-      "sourceSha256": "2279c57e99e14136e91576733809ae2241d8964ebe644f8435f7cfff030687dc"
+      "sourceSha256": "8c2d0a49f3187bcd3d14b09227cd3f503d9a6fbd07f757b44a44a8beaf3c087a"
     },
     ".raven/git-hooks/lib/with-verified-cache.sh": {
       "installedSha256": "0958fee682fb6bea3b56e0ee2c503a799e44f2d481c73f881d088d188cb4ae56",
@@ -357,7 +357,7 @@
       "sourceSha256": "9e27c78e113022067d2e5c0e62901da5cc0a0ab1fe298a255ea6931424b3ab4e"
     },
     "AGENTS.md": {
-      "installedSha256": "e98e62b6006572873d2de079e8d2c9b7793365b83e6775e9af3306531b31c33a",
+      "installedSha256": "2eb39da9bf0545dc6d3c2f8edc68ead86cf4a8833eda89d9488c12925510f7a8",
       "kind": "file",
       "sourceSha256": "fb0661d9f55c5d489cb7ae3dbfe18fa49880f67e6afcda6f01382e714ca4dcdc"
     },
@@ -378,8 +378,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "97225c083d21",
+  "ravenVersion": "162b642b5ee3",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-07-27T23:43:48.560923+00:00"
+  "updatedAt": "2026-07-28T00:33:26.930646+00:00"
 }
