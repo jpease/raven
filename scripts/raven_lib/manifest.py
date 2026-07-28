@@ -10,7 +10,7 @@ from typing import Literal
 
 from .constants import KIND_SYMLINK, MANIFEST_PATH, REPO_ROOT
 from .hashing import destination_fingerprint, entry_fingerprint
-from .models import Fingerprint, ManifestRecord, RavenConfig, TemplateEntry
+from .models import ManifestRecord, RavenConfig, TemplateEntry
 from .template import entries_for_destination
 
 SUPPORTED_MANIFEST_SCHEMAS = frozenset({1})
@@ -182,14 +182,3 @@ def parse_record(raw: object) -> ManifestRecord | None:
         target=target if isinstance(target, str) else None,
         source_sha256=source_sha256 if isinstance(source_sha256, str) else None,
     )
-
-
-def manifest_allows_upgrade(manifest: dict, relative: str, fingerprint: Fingerprint | None) -> bool:
-    record = parse_record(manifest.get("files", {}).get(relative))
-    if record is None or fingerprint is None:
-        return False
-    if fingerprint.kind != record.kind:
-        return False
-    if fingerprint.kind == KIND_SYMLINK and fingerprint.target != record.target:
-        return False
-    return fingerprint.sha256 == record.installed_sha256
