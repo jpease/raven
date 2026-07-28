@@ -2,6 +2,7 @@ import json
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 from helpers import REPO_ROOT, RavenTestCase
 
@@ -245,6 +246,192 @@ class AgentHooksTests(RavenTestCase):
                 decision = response["hookSpecificOutput"]
                 self.assertEqual(decision["hookEventName"], "PreToolUse")
                 self.assertEqual(decision["permissionDecision"], "deny")
+
+
+# --- Codex hook launcher drift guard (issue #129) ------------------------
+#
+# common/.codex/hooks.json hand-maintains six byte-identical copies of the
+# same Python launcher one-liner, differing only in the trailing script
+# path. Per commit f425909 (closes #115) and
+# test_codex_bash_guard_runs_outside_project_worktree in test_template.py,
+# Codex Desktop can invoke a hook with a process cwd outside the project,
+# so the launcher must parse the JSON payload on stdin before it can locate
+# the project root -- neither a shim script nor a `git rev-parse` shell
+# wrapper can be resolved any earlier than that. That constraint is what
+# forces the inline expression instead of a single shared script; this
+# guard exists so a missed copy fails loudly instead of silently.
+CANONICAL_CODEX_LAUNCHER = (
+    'python -c "import io,json,runpy,sys; from pathlib import Path; '
+    "payload=sys.stdin.read(); relative=sys.argv[1]; "
+    "cwd=Path(json.loads(payload)['cwd']).resolve(); "
+    "root=next((path for path in (cwd,*cwd.parents) if (path/'.git').exists()), cwd); "
+    "sys.stdin=io.StringIO(payload); sys.argv=sys.argv[1:]; "
+    'runpy.run_path(str(root / relative), run_name=\'__main__\')" '
+)
+
+# The count assertion in find_codex_launcher_drift exists specifically so a
+# newly added (or removed) hook event cannot skip this check by being
+# invisible to it. Update this value -- and CANONICAL_CODEX_LAUNCHER, if the
+# expression itself legitimately changed -- when that happens.
+EXPECTED_CODEX_LAUNCHER_COUNT = 6
+
+
+def _iter_command_strings(node):
+    """Yield every string value found under a "command" key, recursively."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "command" and isinstance(value, str):
+                yield value
+            else:
+                yield from _iter_command_strings(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _iter_command_strings(value)
+
+
+def find_codex_launcher_drift(hooks_config: dict, scripts_root: Path) -> list[str]:
+    """Pure, fixture-testable core of the drift guard.
+
+    ``hooks_config`` is a parsed .codex/hooks.json document. ``scripts_root``
+    is the directory the launcher's script-path argument is resolved
+    against (``common/`` for the canonical file, since the launcher's
+    relative path -- e.g. ``.codex/hooks/raven-pre-bash-guard.py`` -- lives
+    directly under ``common/`` there). Returns a list of human-readable
+    problem strings; an empty list means the file is drift-free.
+    """
+    problems: list[str] = []
+    commands = [c for c in _iter_command_strings(hooks_config) if "raven-" in c]
+
+    if len(commands) != EXPECTED_CODEX_LAUNCHER_COUNT:
+        problems.append(
+            f"expected exactly {EXPECTED_CODEX_LAUNCHER_COUNT} raven-* hook launcher "
+            f"commands, found {len(commands)}. If a hook event was legitimately added "
+            "or removed, update EXPECTED_CODEX_LAUNCHER_COUNT in tests/test_agent_hooks.py "
+            "(and CANONICAL_CODEX_LAUNCHER too, if the launcher expression itself changed)."
+        )
+
+    suffixes: list[str] = []
+    for command in commands:
+        if not command.startswith(CANONICAL_CODEX_LAUNCHER):
+            problems.append(
+                "command does not match the canonical launcher prefix "
+                f"(CANONICAL_CODEX_LAUNCHER in tests/test_agent_hooks.py): {command!r}"
+            )
+            continue
+        suffixes.append(command[len(CANONICAL_CODEX_LAUNCHER) :])
+
+    if len(suffixes) != len(set(suffixes)):
+        problems.append(f"duplicate script-path suffix among launcher commands: {suffixes}")
+
+    for suffix in suffixes:
+        script = suffix.split(" ", 1)[0]
+        if not (scripts_root / script).is_file():
+            problems.append(f"launcher references a script that does not exist: {script}")
+
+    return problems
+
+
+class CodexHookLauncherDriftFixtureTests(unittest.TestCase):
+    """Prove find_codex_launcher_drift has teeth against synthetic fixtures
+    before trusting it to validate the real hooks.json (issue #129)."""
+
+    @staticmethod
+    def _good_suffixes():
+        return [
+            ".codex/scripts/raven-tool-check.py --session-start",
+            ".codex/hooks/raven-pre-bash-guard.py",
+            ".codex/hooks/raven-pre-edit-guard.py",
+            ".codex/hooks/raven-session-checkpoint.py",
+            ".codex/hooks/raven-post-bash-summarize.py",
+            ".codex/hooks/raven-post-edit-format.py",
+        ]
+
+    @classmethod
+    def _good_commands(cls):
+        return [CANONICAL_CODEX_LAUNCHER + suffix for suffix in cls._good_suffixes()]
+
+    @staticmethod
+    def _config(commands):
+        # Distribute across events the way the real file does; the exact
+        # event grouping doesn't matter to find_codex_launcher_drift, which
+        # walks the whole document for "command" keys.
+        return {
+            "hooks": {
+                "SessionStart": [{"hooks": [{"type": "command", "command": commands[0]}]}],
+                "PreToolUse": [
+                    {"hooks": [{"type": "command", "command": c}]} for c in commands[1:4]
+                ],
+                "PostToolUse": [
+                    {"hooks": [{"type": "command", "command": c}]} for c in commands[4:6]
+                ],
+            }
+        }
+
+    def test_clean_fixture_has_no_drift(self):
+        problems = find_codex_launcher_drift(
+            self._config(self._good_commands()), REPO_ROOT / "common"
+        )
+        self.assertEqual(problems, [])
+
+    def test_detects_drifted_command(self):
+        # Simulates fixing 5-of-6 copies and missing one -- exactly the
+        # silent-failure scenario this guard exists to prevent.
+        commands = self._good_commands()
+        commands[2] = commands[2].replace("(cwd,*cwd.parents)", "(cwd, *cwd.parents)")
+        problems = find_codex_launcher_drift(self._config(commands), REPO_ROOT / "common")
+        self.assertTrue(
+            any("does not match the canonical launcher prefix" in p for p in problems), problems
+        )
+
+    def test_detects_seventh_command(self):
+        commands = self._good_commands()
+        config = self._config(commands)
+        seventh = CANONICAL_CODEX_LAUNCHER + ".codex/scripts/raven-skeleton.py"
+        config["hooks"]["PostToolUse"].append({"hooks": [{"type": "command", "command": seventh}]})
+        problems = find_codex_launcher_drift(config, REPO_ROOT / "common")
+        self.assertTrue(any("found 7" in p for p in problems), problems)
+        # Isolate the count failure: the 7th copy is otherwise well-formed,
+        # distinct, and points at a real script, so nothing else should fire.
+        self.assertEqual(len(problems), 1, problems)
+
+    def test_detects_missing_referenced_script(self):
+        commands = self._good_commands()
+        commands[1] = CANONICAL_CODEX_LAUNCHER + ".codex/hooks/raven-does-not-exist.py"
+        problems = find_codex_launcher_drift(self._config(commands), REPO_ROOT / "common")
+        self.assertTrue(
+            any("does not exist: .codex/hooks/raven-does-not-exist.py" in p for p in problems),
+            problems,
+        )
+
+    def test_detects_duplicate_script_paths(self):
+        commands = self._good_commands()
+        commands[1] = commands[0]
+        problems = find_codex_launcher_drift(self._config(commands), REPO_ROOT / "common")
+        self.assertTrue(any("duplicate script-path suffix" in p for p in problems), problems)
+
+
+class CodexHookLauncherRealFileTests(unittest.TestCase):
+    def test_common_codex_hooks_json_has_no_launcher_drift(self):
+        config = json.loads(
+            (REPO_ROOT / "common" / ".codex" / "hooks.json").read_text(encoding="utf-8")
+        )
+        problems = find_codex_launcher_drift(config, REPO_ROOT / "common")
+        self.assertEqual(problems, [])
+
+    def test_installed_codex_hooks_json_matches_canonical(self):
+        """Root .codex/hooks.json is the *installed* copy; scripts/self-check.py's
+        upgrade step regenerates it from common/.codex/hooks.json (tracked via
+        sourceSha256 in .raven/manifest.json) on every self-check run, so in the
+        steady state the two files are always byte-identical. This direct
+        comparison is not fully redundant with that machinery, though: raven
+        upgrade's manual-merge safety net (issue #97) deliberately leaves a
+        *locally modified* installed file untouched instead of overwriting it,
+        so a hand-edit to the installed copy alone could drift permanently
+        without a check like this one ever failing loudly.
+        """
+        canonical = (REPO_ROOT / "common" / ".codex" / "hooks.json").read_text(encoding="utf-8")
+        installed = (REPO_ROOT / ".codex" / "hooks.json").read_text(encoding="utf-8")
+        self.assertEqual(installed, canonical)
 
 
 if __name__ == "__main__":
