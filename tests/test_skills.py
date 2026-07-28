@@ -69,7 +69,8 @@ class SkillsTests(RavenTestCase):
 
 
 class ImplementFeatureSkillTests(unittest.TestCase):
-    """Guards the scope-ceiling guardrail added for issue #120.
+    """Guards the scope-ceiling guardrail added for issue #120, and the
+    test-before-implementation ordering fixed for issue #132.
 
     Reads the canonical skill source directly (not the installed root
     copy) since `common/.agents/skills/` is where edits must land.
@@ -78,6 +79,11 @@ class ImplementFeatureSkillTests(unittest.TestCase):
     def setUp(self):
         path = REPO_ROOT / "common" / ".agents" / "skills" / "raven-implement-feature" / "SKILL.md"
         self.content = path.read_text(encoding="utf-8")
+
+        write_tests_path = (
+            REPO_ROOT / "common" / ".agents" / "skills" / "raven-write-tests" / "SKILL.md"
+        )
+        self.write_tests_content = write_tests_path.read_text(encoding="utf-8")
 
     def test_stays_under_line_ceiling(self):
         self.assertLess(
@@ -99,6 +105,56 @@ class ImplementFeatureSkillTests(unittest.TestCase):
             ceiling_index,
             implement_index,
             "scope ceiling must be stated before the implementation step, not after",
+        )
+
+    def test_agrees_with_raven_write_tests_on_test_implementation_ordering(self):
+        """Issue #132: raven-write-tests and raven-implement-feature previously
+        gave opposite orderings of the tests-vs-implementation step -- both are
+        `raven-*` skills, so AGENTS.md's "prefer the raven-* skill" precedence
+        rule cannot arbitrate between them.
+
+        Steps are located by string search rather than step number, since the
+        numbering has already shifted once (issue #120) and will again. The
+        expected direction is derived from raven-write-tests' own Required
+        Constraints sentence -- the skill that owns this policy -- rather than
+        hardcoded here, so the test also catches raven-write-tests drifting to
+        the opposite ordering, not only raven-implement-feature doing so.
+        """
+        write_tests_lower = self.write_tests_content.lower()
+        implement_lower = self.content.lower()
+
+        # raven-write-tests owns the policy, so assert it still states it. Read
+        # the ordering-bearing clause directly rather than inferring direction
+        # from where two phrases happen to fall in the file: "do not change the
+        # implementation before you add or update tests" states the same policy
+        # with the phrases reversed, and an index comparison would read that as
+        # test-after and then demand raven-implement-feature match the misread
+        # -- enforcing the contradiction instead of catching it.
+        self.assertIn(
+            "before changing the implementation",
+            write_tests_lower,
+            "expected raven-write-tests to state that tests come before the "
+            "implementation; if that policy genuinely changed, this test is the "
+            "deliberate place to change it",
+        )
+
+        if_tests_index = implement_lower.find("add or update tests")
+        if_implementation_index = implement_lower.find("implement using existing conventions")
+        self.assertNotEqual(
+            if_tests_index, -1, "expected raven-implement-feature to have a tests step"
+        )
+        self.assertNotEqual(
+            if_implementation_index,
+            -1,
+            "expected raven-implement-feature to have an implementation step",
+        )
+
+        self.assertLess(
+            if_tests_index,
+            if_implementation_index,
+            "raven-implement-feature must order its tests step before its "
+            "implementation step, matching the policy raven-write-tests states "
+            "-- the two shipped skills must not disagree",
         )
 
 
