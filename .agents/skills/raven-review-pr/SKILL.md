@@ -26,13 +26,14 @@ description: Use when reviewing a diff, branch, or proposed patch for correctnes
 4. Use GitNexus for changed public APIs or shared modules.
 5. Use tests and build output through RTK.
 6. Report issues by severity: correctness, safety/security, maintainability, test coverage, and performance.
-7. Check findings against `.claude/docs/raven-antipatterns.md`. Cite a matching entry instead of re-explaining it, and record a pattern on its second occurrence per that doc's format.
-8. Promote a recorded pattern that is mechanically detectable to a Semgrep rule wired into the project's gate, then mark the entry `promoted to <check>`. If no such tool is configured, skip promotion and leave the entry at `observed` — never skip the recording.
+7. Check findings against `.claude/docs/raven-antipatterns.md`. Cite a matching entry instead of re-explaining it; on a genuine second occurrence, propose a new entry per that doc's format and write it only once the user authorizes.
+8. Recommend promoting a mechanically detectable recorded pattern to a Semgrep rule wired into the gate, naming the check — do not write the rule or gate change yourself; that is separate, authorized implementation work per Pause And Ask. If no such tool is configured, skip promotion and leave the entry at `observed`.
 
 ## Output
 
 Use this shape:
 
 - `Severity`: file:line, confidence, issue, impact, suggested fix.
+- `Registry`: matched entries cited, proposed entries and promotion recommendations awaiting authorization.
 - `Open questions`: only when needed.
 - `Residual risk`: checks not run or areas not reviewed.

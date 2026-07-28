@@ -245,11 +245,27 @@ class AntipatternRegistrySkillTests(unittest.TestCase):
         self.assertIn(".claude/docs/raven-antipatterns.md", self.review_pr)
         self.assertIn("antipatterns.md", region)
 
-    def test_review_pr_promotes_recurring_findings_to_semgrep(self):
+    def test_review_pr_recommends_but_never_applies_semgrep_promotion(self):
+        """Promotion is a recommendation the reviewer names for the user to
+        authorize -- the skill must never write the Semgrep rule or gate
+        wiring itself, per Pause And Ask (issue #127; was
+        test_review_pr_promotes_recurring_findings_to_semgrep, which asserted
+        the skill applying the promotion directly)."""
         region = self._section_region(self.review_pr_lower, "## process")
 
         self.assertIn("semgrep", region)
-        self.assertIn("promot", region)
+        self.assertIn("recommend", region)
+        self.assertIn(
+            "do not write",
+            region,
+            "expected an explicit disclaimer that the skill does not write "
+            "the rule or gate change itself",
+        )
+        self.assertIn(
+            "pause and ask",
+            region,
+            "expected an explicit reference to the Pause And Ask guardrail for the gate/CI change",
+        )
 
     def test_review_pr_promotion_does_not_require_semgrep(self):
         region = self._section_region(self.review_pr_lower, "## process")
@@ -258,6 +274,19 @@ class AntipatternRegistrySkillTests(unittest.TestCase):
             "not configured" in region or "skip promotion" in region,
             "expected the promotion step to degrade gracefully when Semgrep "
             "is unavailable, per the non-goal of not requiring Semgrep",
+        )
+
+    def test_review_pr_registry_entry_requires_authorization(self):
+        """Writing the registry entry itself is gated on explicit user
+        authorization, so the review step cannot silently drift into
+        unrequested doc edits (issue #127)."""
+        region = self._section_region(self.review_pr_lower, "## process")
+
+        self.assertIn(
+            "authoriz",
+            region,
+            "expected the process section to require authorization before "
+            "writing a registry entry or promoting a pattern",
         )
 
 
