@@ -25,6 +25,27 @@ def shipped_relatives(template: Path, destination: Path) -> set[str]:
     return resolved
 
 
+def is_canonical_manifest_key(relative: object) -> bool:
+    """Whether a manifest file key is a canonical destination-relative POSIX path.
+
+    Pure: the syntactic half of ``_safe_relative``'s check, split out so the
+    rules can be enumerated in tests without a filesystem. Rejects anything that
+    is not a plain relative path -- a non-string, a backslash (a Windows
+    separator would not split into segments here), an absolute path, and any
+    empty, ``.`` or ``..`` segment, which covers a leading ``./``, a bare ``.``,
+    the empty string, a trailing slash, and a doubled slash.
+
+    A true result means the *spelling* is safe, not that the path stays inside
+    the destination: a symlinked ancestor can still escape, which only a
+    filesystem check can see. ``_safe_relative`` does that second half.
+    """
+    if not isinstance(relative, str) or "\\" in relative:
+        return False
+    if any(segment in ("", ".", "..") for segment in relative.split("/")):
+        return False
+    return not Path(relative).is_absolute()
+
+
 def _safe_relative(destination: Path, relative: object) -> Path | None:
     """Resolve a manifest file key to its in-destination target, or None if unsafe.
 
@@ -42,13 +63,9 @@ def _safe_relative(destination: Path, relative: object) -> Path | None:
       resolved. A not-yet-created parent is not an escape: the nearest existing
       ancestor is resolved instead.
     """
-    if not isinstance(relative, str) or "\\" in relative:
+    if not is_canonical_manifest_key(relative):
         return _reject(relative)
-    segments = relative.split("/")
-    if any(segment in ("", ".", "..") for segment in segments):
-        return _reject(relative)
-    if Path(relative).is_absolute():
-        return _reject(relative)
+    assert isinstance(relative, str)  # narrowed by is_canonical_manifest_key
     target = destination / relative
     probe = target.parent
     while not probe.exists() and probe != probe.parent:
