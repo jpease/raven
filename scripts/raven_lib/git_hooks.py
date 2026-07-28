@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from enum import Enum
 from pathlib import Path
 
 
@@ -135,6 +136,40 @@ def hook_manager_guidance(manager: str) -> str:
     return ""
 
 
+class HookLinkAction(str, Enum):
+    """What to do about one hook path in the git hooks directory."""
+
+    ALREADY_LINKED = "already-linked"
+    LEAVE_REGULAR_FILE = "leave-regular-file"
+    REPLACE_SYMLINK = "replace-symlink"
+    CREATE = "create"
+
+
+def hook_link_action(
+    *,
+    exists: bool,
+    is_symlink: bool,
+    link_target: str | None,
+    expected_target: str,
+) -> HookLinkAction:
+    """Decide what to do about one hook path, given what is already there.
+
+    Pure: the caller performs the filesystem queries and passes the answers in.
+    The four cases are easy to get subtly wrong -- in particular ``exists``
+    follows symlinks, so a *broken* symlink reports ``exists=False`` and must
+    still be replaced rather than treated as an empty slot -- and this is code
+    that unlinks files in the user's ``.git`` directory. Separating the decision
+    from the mutation lets every case be asserted without creating one.
+    """
+    if is_symlink and link_target == expected_target:
+        return HookLinkAction.ALREADY_LINKED
+    if exists and not is_symlink:
+        return HookLinkAction.LEAVE_REGULAR_FILE
+    if is_symlink:
+        return HookLinkAction.REPLACE_SYMLINK
+    return HookLinkAction.CREATE
+
+
 def install_git_hooks(destination: Path) -> list[str]:
     """Symlink .raven/git-hooks/* into the effective git hooks dir. Returns installed hook names."""
     git_hooks_src = destination / ".raven" / "git-hooks"
@@ -163,10 +198,17 @@ def install_git_hooks(destination: Path) -> list[str]:
         hook_src.chmod(hook_src.stat().st_mode | 0o111)
         hook_link = hooks_dir / hook_src.name
         rel = os.path.relpath(hook_src, hooks_dir)
-        if hook_link.is_symlink() and os.readlink(hook_link) == rel:
+        is_symlink = hook_link.is_symlink()
+        action = hook_link_action(
+            exists=hook_link.exists(),
+            is_symlink=is_symlink,
+            link_target=os.readlink(hook_link) if is_symlink else None,
+            expected_target=rel,
+        )
+        if action is HookLinkAction.ALREADY_LINKED:
             installed.append(hook_src.name)
             continue
-        if hook_link.exists() and not hook_link.is_symlink():
+        if action is HookLinkAction.LEAVE_REGULAR_FILE:
             print(
                 f"warning: {hook_link} already exists as a regular file and was left "
                 "untouched. To run Raven's gate, add `just check` / `just check-fast` "
@@ -174,7 +216,7 @@ def install_git_hooks(destination: Path) -> list[str]:
                 file=sys.stderr,
             )
             continue
-        if hook_link.is_symlink():
+        if action is HookLinkAction.REPLACE_SYMLINK:
             hook_link.unlink()
         hook_link.symlink_to(rel)
         installed.append(hook_src.name)

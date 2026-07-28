@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 from helpers import attribution_line, push_plan_line, raven
+from raven_lib.git_hooks import HookLinkAction, hook_link_action
 
 
 class GitHookInstallerTests(unittest.TestCase):
@@ -1451,6 +1452,70 @@ class GitHookInstallerTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("manual", pre_push.lower())
+
+
+class HookLinkActionTests(unittest.TestCase):
+    """The decision `install_git_hooks` makes for each hook path.
+
+    This chooses when to unlink a file inside the user's `.git` directory, so
+    every case is asserted directly rather than inferred from the handful of
+    end-to-end installs above.
+    """
+
+    def test_nothing_present_is_created(self):
+        self.assertIs(
+            hook_link_action(
+                exists=False, is_symlink=False, link_target=None, expected_target="../../x"
+            ),
+            HookLinkAction.CREATE,
+        )
+
+    def test_correct_symlink_is_left_alone(self):
+        self.assertIs(
+            hook_link_action(
+                exists=True, is_symlink=True, link_target="../../x", expected_target="../../x"
+            ),
+            HookLinkAction.ALREADY_LINKED,
+        )
+
+    def test_symlink_to_the_wrong_target_is_replaced(self):
+        self.assertIs(
+            hook_link_action(
+                exists=True, is_symlink=True, link_target="../../other", expected_target="../../x"
+            ),
+            HookLinkAction.REPLACE_SYMLINK,
+        )
+
+    def test_regular_file_is_never_touched(self):
+        # Someone else's hook. Raven warns and leaves it; overwriting it would
+        # silently discard hook logic the user wrote.
+        self.assertIs(
+            hook_link_action(
+                exists=True, is_symlink=False, link_target=None, expected_target="../../x"
+            ),
+            HookLinkAction.LEAVE_REGULAR_FILE,
+        )
+
+    def test_broken_symlink_is_replaced_not_treated_as_empty(self):
+        # `exists` follows symlinks, so a dangling link reports exists=False.
+        # It must still be unlinked before the new one is created -- treating it
+        # as an empty slot would make symlink_to fail with FileExistsError.
+        self.assertIs(
+            hook_link_action(
+                exists=False, is_symlink=True, link_target="../../gone", expected_target="../../x"
+            ),
+            HookLinkAction.REPLACE_SYMLINK,
+        )
+
+    def test_broken_symlink_already_pointing_at_the_target_is_left_alone(self):
+        # The source file may not exist yet at decision time; the link is still
+        # spelled correctly, so there is nothing to do.
+        self.assertIs(
+            hook_link_action(
+                exists=False, is_symlink=True, link_target="../../x", expected_target="../../x"
+            ),
+            HookLinkAction.ALREADY_LINKED,
+        )
 
 
 if __name__ == "__main__":
