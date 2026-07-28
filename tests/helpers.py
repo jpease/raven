@@ -59,6 +59,45 @@ def push_plan_line(ref: str, local_sha: str, remote_sha: str) -> str:
     return f"{ref} {local_sha} {ref} {remote_sha}\n"
 
 
+# The single source of truth for each language template's default LSP server.
+# Everything else that names one -- both `.mcp.json` files, `.codex/config.toml`,
+# the README table, and `.claude/docs/raven-lsp-mcp.md` -- is checked against
+# this rather than restating it. Previously the same server names were spelled
+# out in eight shipped files, two doc tables, and two near-identical dicts in
+# test_template.py, so a server change had ten places to miss.
+#
+# Deliberately pinned by hand, not derived from the shipped files: changing a
+# template's language server should be an explicit edit here that fails every
+# consistency check until the templates and docs are updated to match. Validate
+# a new default against upstream maintainer docs first (see CLAUDE.md).
+#
+# language -> (server command, whether mcp-language-server forwards `-- --stdio`)
+LSP_DEFAULTS = {
+    "python": ("pyright-langserver", True),
+    "typescript": ("typescript-language-server", True),
+    "go": ("gopls", False),
+    "rust": ("rust-analyzer", False),
+    "swift": ("sourcekit-lsp", False),
+    "elixir": ("expert", True),
+    "lua": ("lua-language-server", False),
+}
+
+
+def lsp_mcp_args(language: str) -> list[str]:
+    """The `mcp-language-server` argv a template's MCP config must declare."""
+    server, forwards_stdio = LSP_DEFAULTS[language]
+    args = ["--workspace", ".", "--lsp", server]
+    if forwards_stdio:
+        args += ["--", "--stdio"]
+    return args
+
+
+def lsp_doc_command(language: str) -> str:
+    """How a doc table spells the server, e.g. `pyright-langserver --stdio`."""
+    server, forwards_stdio = LSP_DEFAULTS[language]
+    return f"{server} --stdio" if forwards_stdio else server
+
+
 class RavenTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

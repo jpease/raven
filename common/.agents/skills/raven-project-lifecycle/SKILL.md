@@ -22,14 +22,15 @@ For projects with an external issue tracker, check `[issue_tracker].platform` in
 ## Required Constraints
 
 - Never implement code directly; always delegate to the appropriate Raven execution skill
-- Always call `python .claude/scripts/raven-session.py --status` before beginning Phase 3 to confirm the current unit
-- Always call `python .claude/scripts/raven-session.py --complete <unit>` at the end of each unit — the checkpoint hook will validate before allowing it
+- The session helper ships per adapter: `.claude/scripts/raven-session.py` (Claude Code) or `.codex/scripts/raven-session.py` (Codex). Steps below write it as `raven-session.py`; run it with `python <that path>`
+- Always call `raven-session.py --status` before beginning Phase 3 to confirm the current unit
+- Always call `raven-session.py --complete <unit>` at the end of each unit — the checkpoint hook will validate before allowing it
 - Never skip the checkpoint call to move faster
 
 ## Phase 1 — Workspace Detection
 
 1. Check for existing `.raven/session.md`:
-   - If found: run `python .claude/scripts/raven-session.py --status` and jump to Phase 3
+   - If found: run `raven-session.py --status` and jump to Phase 3
 2. Scan for brownfield signals: source files, dependency manifests, git history, existing configs
 3. Classify: **greenfield** (no existing code) or **brownfield** (existing codebase)
 4. If brownfield: invoke `raven-codebase-discovery` to build architecture context before scoping
@@ -38,21 +39,21 @@ For projects with an external issue tracker, check `[issue_tracker].platform` in
 
 1. Decompose the work into ordered, named units — each completable in a single session
 2. Name units with kebab-case (e.g., `add-auth-middleware`, `write-auth-tests`)
-3. Run: `python .claude/scripts/raven-session.py --init <greenfield|brownfield> <unit-1> <unit-2> ...`
+3. Run: `raven-session.py --init <greenfield|brownfield> <unit-1> <unit-2> ...`
    - If the parent task is a tracked issue and `[issue_tracker].platform` is set, add `--parent <issue-number>`
    - After `--init`, create child issues manually using `gh issue create` or `glab issue create` and record their numbers in `session.md`
 4. Present the unit plan to the user and wait for confirmation before proceeding
 
 ## Phase 3 — Execution Loop _(repeats per unit)_
 
-1. Run `python .claude/scripts/raven-session.py --status` — confirm the current unit
+1. Run `raven-session.py --status` — confirm the current unit
 2. Select the appropriate Raven execution skill:
    - New feature or behavior → `raven-implement-feature`
    - Rename, move, or API change → `raven-safe-refactor`
    - Test coverage gap → `raven-write-tests`
    - Failing behavior → `raven-debug-failure`
 3. Execute that skill for the current unit
-4. Run `python .claude/scripts/raven-session.py --complete <unit-name>`
+4. Run `raven-session.py --complete <unit-name>`
    - The checkpoint hook validates this before allowing it to succeed
 5. Invoke `raven-context-hygiene`.
 6. If the context block in `session.md` grows large, the script will warn — run `--archive` after user confirmation
@@ -60,6 +61,6 @@ For projects with an external issue tracker, check `[issue_tracker].platform` in
 
 ## Phase 4 — Wrap-up
 
-1. Run `python .claude/scripts/raven-session.py --status` to confirm all units complete
+1. Run `raven-session.py --status` to confirm all units complete
 2. Summarize changes across all units and files touched
 3. Suggest next steps: PR, review, deploy

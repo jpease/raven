@@ -898,5 +898,49 @@ class DebloatSkillTests(unittest.TestCase):
         )
 
 
+class AdapterNeutralScriptReferenceTests(unittest.TestCase):
+    """`.agents/skills/` is the agent-neutral canonical tree (see
+    `.claude/docs/raven-agent-compatibility.md`), but the helper scripts it
+    invokes are installed per adapter: `.claude/scripts/` for Claude Code and
+    `.codex/scripts/` for Codex. A canonical skill that names only the Claude
+    path sends a Codex-only install at a file that was never installed.
+
+    `raven-skeleton` established the fix: name both adapter paths wherever a
+    helper script is invoked. This test holds every canonical skill to it.
+    """
+
+    SKILLS_DIR = REPO_ROOT / "common" / ".agents" / "skills"
+
+    def test_every_skill_naming_a_claude_script_also_names_the_codex_one(self):
+        offenders = []
+        for skill in sorted(self.SKILLS_DIR.glob("*/SKILL.md")):
+            text = skill.read_text(encoding="utf-8")
+            claude_scripts = set(re.findall(r"\.claude/scripts/([\w.-]+)", text))
+            codex_scripts = set(re.findall(r"\.codex/scripts/([\w.-]+)", text))
+            missing = claude_scripts - codex_scripts
+            if missing:
+                offenders.append(f"{skill.parent.name}: {', '.join(sorted(missing))}")
+        self.assertEqual(
+            offenders,
+            [],
+            "canonical skills naming a .claude/scripts/ helper without its "
+            ".codex/scripts/ counterpart (Codex-only installs would follow a "
+            f"path that does not exist): {offenders}",
+        )
+
+    def test_the_adapter_script_directories_ship_the_same_helpers(self):
+        # The branch the skills document is only honest if both adapters
+        # actually ship the helper. Compare the shipped trees, not the prose.
+        claude = {p.name for p in (REPO_ROOT / "common" / ".claude" / "scripts").glob("raven-*")}
+        codex = {p.name for p in (REPO_ROOT / "common" / ".codex" / "scripts").glob("raven-*")}
+        self.assertTrue(claude, "expected common/.claude/scripts to ship raven-* helpers")
+        self.assertEqual(
+            claude,
+            codex,
+            "adapter script trees have diverged; a skill branching on adapter "
+            "would point Codex at a helper it never receives",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

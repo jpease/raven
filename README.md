@@ -245,7 +245,7 @@ Language templates include `.mcp.json` defaults for Semble, GitNexus, and LSP. F
 | Go         | `gopls`                              |
 | Rust       | `rust-analyzer`                      |
 | Swift      | `sourcekit-lsp`                      |
-| Elixir     | `expert`                             |
+| Elixir     | `expert --stdio`                     |
 | Lua        | `lua-language-server`                |
 
 Install `mcp-language-server` and the language server for the template you chose from their official documentation. Raven includes the `.mcp.json` command shape; see `.claude/docs/raven-lsp-mcp.md` after installation for official documentation links and template-specific command shapes.

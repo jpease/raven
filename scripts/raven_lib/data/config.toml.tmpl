@@ -62,6 +62,10 @@ settings = true
 # Claude Code hook scripts under .claude/hooks/raven-*.
 hooks = true
 
+# Claude Code helper scripts under .claude/scripts/raven-*.
+# Skills invoke these directly, so they stay installed even with hooks off.
+scripts = true
+
 # Claude Code subagent definitions under .claude/agents/raven-*.
 subagents = true
 
@@ -75,6 +79,10 @@ config = true
 
 # Codex hook wiring and hook scripts under .codex/hooks.json and .codex/hooks/raven-*.
 hooks = true
+
+# Codex helper scripts under .codex/scripts/raven-*.
+# Skills invoke these directly, so they stay installed even with hooks off.
+scripts = true
 
 # Codex custom agent definitions under .codex/agents/raven-*.toml.
 subagents = true
