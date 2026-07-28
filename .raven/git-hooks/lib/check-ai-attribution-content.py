@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""Block AI attribution mentions from leaking into staged/outbound file content.
+"""Block AI attribution mentions from leaking into staged/outbound content.
 
-The commit-msg hook only cleans commit *message* trailers -- an AI-authorship
-credit left in a source file or README (an AI tool named as the generator)
-would still reach history untouched. Unlike commit-msg, this fails the
-commit/push rather than silently editing tracked file content: there is no
+The commit-msg hook strips attribution *trailers* at commit time -- but an
+AI-authorship credit left in a source file or README (an AI tool named as the
+generator) would still reach history untouched. Unlike commit-msg, this fails
+the commit/push rather than silently editing tracked file content: there is no
 safe way to auto-rewrite an arbitrary line inside a source file.
+
+The `outbound --push-plan` path additionally scans commit *messages*, which
+commit-msg cannot vouch for. Stripping only happens when that hook ran, and it
+routinely does not: `git commit --no-verify`, `git cherry-pick` and `git
+rebase` reapplying pre-hook commits (neither runs commit-msg), and any clone
+made before the hooks were installed all land a trailer in history that
+strip-time never saw. Pre-push is where that is discoverable.
 
 Modes:
 
@@ -41,6 +48,20 @@ _CONTENT_PATTERN = re.compile(
     r"(?:generated|written|authored|implemented|drafted)\s+(?:by|with)\s+.*"
     r"(?:claude|copilot|codex|chatgpt|gpt-[0-9]+|gemini|llama|mistral"
     r"|@anthropic\.com|@openai\.com)",
+    re.IGNORECASE,
+)
+
+# Commit-message trailers, matched per line. Deliberately a copy of the
+# commit-msg hook's `_AI_TRAILER` rather than an import: that hook is a
+# standalone script with no dependency on this lib/ directory, and a partial
+# install must not be able to break it. `test_message_pattern_matches_the_
+# commit_msg_hook_pattern` pins the two together so they cannot drift.
+_MESSAGE_PATTERN = re.compile(
+    r"^(?:co-authored-by|generated-by):\s+.*"
+    r"(?:(?:claude|copilot|codex|chatgpt|gpt-[0-9]+|gemini|llama|mistral"
+    r"|@anthropic\.com|@openai\.com)"
+    r"|<noreply@[^>]+>)"
+    r"|^claude-session:\s+\S+",
     re.IGNORECASE,
 )
 
@@ -100,6 +121,21 @@ def _scan(added_lines: list[str], label: str) -> int:
         print(hit, file=sys.stderr)
     print(
         "remove generated-attribution mentions from newly added repository text",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def _scan_messages(message_text: str, label: str) -> int:
+    hits = [line for line in message_text.splitlines() if _MESSAGE_PATTERN.match(line)]
+    if not hits:
+        return 0
+    print(f"Forbidden AI attribution trailer found in a commit message ({label}):", file=sys.stderr)
+    for hit in hits:
+        print(hit, file=sys.stderr)
+    print(
+        "amend or rebase the commit to drop the attribution trailer "
+        "(commit-msg strips these, but only when it runs)",
         file=sys.stderr,
     )
     return 1
@@ -174,6 +210,16 @@ def _remote_tracking_shas(remote: str) -> list[str]:
     return every.stdout.split()
 
 
+_UNBOUNDED_NOTICE = (
+    "note: no remote baseline -- this remote has no tracking refs in this clone, "
+    "so nothing is known to be already published and the scan covered the full "
+    "history rather than only new commits. The findings above may predate this "
+    "branch and may not be fixable without rewriting history. To publish anyway, "
+    "set block_ai_attribution_content = false under [git_hooks] in "
+    ".raven/config.toml."
+)
+
+
 def _scan_push_plan(plan_text: str, remote: str) -> int:
     """Scan the commits Git is actually pushing, per its own push plan.
 
@@ -196,6 +242,20 @@ def _scan_push_plan(plan_text: str, remote: str) -> int:
     that branch's content as newly added. The trade-off is that a merge commit
     contributes no patch of its own, leaving content introduced solely by a
     conflict resolution to the staged (pre-commit) scan.
+
+    The same revision set is scanned twice: once for file content and once for
+    commit messages, which the commit-msg hook can only vouch for on commits it
+    actually ran on.
+
+    When the remote has no tracking refs at all, the negative side is empty and
+    the walk does reach the root commit. That is intentional and pinned by test:
+    nothing is known to be published, so every reachable commit genuinely is
+    leaving the machine for the first time and scanning all of it is the correct
+    answer rather than a false positive. It is not the fail-open case -- the
+    scan is fully evaluable, just wide -- so findings are reported, with
+    `_UNBOUNDED_NOTICE` explaining why they may reach further back than the
+    push. Only unevaluable states (unresolvable object, failing git invocation)
+    skip.
     """
     positives: list[str] = []
     negatives: list[str] = []
@@ -221,16 +281,34 @@ def _scan_push_plan(plan_text: str, remote: str) -> int:
     # An exclusion tip that equals a pushed tip is kept, not dropped: it means the
     # remote already has that commit (e.g. pushing an existing tip under a new
     # branch name), and the correct outcome is an empty scan, not a full rescan.
-    args = ["log", "--no-color", "--format=%H", "--unified=0", "-p", *dict.fromkeys(positives)]
-    if negatives:
-        args += ["--not", *dict.fromkeys(negatives)]
-    args += ["--", "."]
-    log = _git(args)
-    if log.returncode != 0:
+    revs = list(dict.fromkeys(positives))
+    bounds = ["--not", *dict.fromkeys(negatives)] if negatives else []
+    label = f"outbound commits for {', '.join(pushed_refs)}"
+
+    content = _git(
+        ["log", "--no-color", "--format=%H", "--unified=0", "-p", *revs, *bounds, "--", "."]
+    )
+    if content.returncode != 0:
         # git could not walk the range (e.g. a corrupt or grafted object); skip
         # rather than block a push this hook cannot evaluate.
         return 0
-    return _scan(_added_lines(log.stdout), f"outbound commits for {', '.join(pushed_refs)}")
+    content_status = _scan(_added_lines(content.stdout), label)
+
+    # Messages get their own invocation rather than a widened --format on the one
+    # above: keeping the two streams apart means no delimiter has to survive
+    # adversarial patch text, and no patch line can be read as a message (or the
+    # reverse). No pathspec here -- every pushed commit's message counts,
+    # including a merge's, which contributes no patch of its own.
+    messages = _git(["log", "--no-color", "--no-patch", "--format=%B", *revs, *bounds])
+    message_status = 0
+    if messages.returncode == 0:
+        message_status = _scan_messages(messages.stdout, label)
+
+    if not (content_status or message_status):
+        return 0
+    if not bounds:
+        print(_UNBOUNDED_NOTICE, file=sys.stderr)
+    return 1
 
 
 _USAGE = "usage: check-ai-attribution-content.py {staged|outbound} [--push-plan] [--remote NAME]"

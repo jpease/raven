@@ -21,7 +21,12 @@ def load_script_module(name: str, path: Path) -> Any:
     read and monkeypatch its attributes. Centralizing the import keeps the
     ``spec``/``loader`` None-checks in one Pyright-friendly place.
     """
-    spec = importlib.util.spec_from_file_location(name, path)
+    # The loader is passed explicitly so extensionless scripts load too: Raven's
+    # git hooks are named `commit-msg`/`pre-push`, and spec_from_file_location
+    # infers no loader for a path whose suffix it does not recognize.
+    spec = importlib.util.spec_from_file_location(
+        name, path, loader=SourceFileLoader(name, str(path))
+    )
     if spec is None or spec.loader is None:
         raise ImportError(f"could not load module {name!r} from {path}")
     module = importlib.util.module_from_spec(spec)
@@ -47,6 +52,20 @@ def attribution_line(tool: str = "Claude", verb: str = "Generated", prep: str = 
     string" edit in either copy would break the repo's own commit path.
     """
     return f"# {verb} {prep} {tool}\n"
+
+
+def trailer_line(
+    tool: str = "Claude",
+    key: str = "Co-Authored-By",
+    email: str = "dev@example.com",
+) -> str:
+    """Build an AI-attribution commit *message* trailer the scanners must reject.
+
+    Assembled at runtime for the same reason as ``attribution_line``: Raven's
+    own hooks run on this repository, and the commit-msg hook would strip a
+    literal trailer out of any commit that touched a file containing one.
+    """
+    return f"{key}: {tool} <{email}>\n"
 
 
 def push_plan_line(ref: str, local_sha: str, remote_sha: str) -> str:
