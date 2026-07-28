@@ -150,11 +150,92 @@ class StrictFreshnessTest(unittest.TestCase):
         self.assertIn("freshness check ok", buf.getvalue())
 
 
-# Mirrors the caps in validate_skill_description_budget(). Kept here so the
-# test's word totals straddle the real thresholds; update both together if the
-# budget changes.
-SKILL_DESC_AGGREGATE = 362
-SKILL_DESC_PER_SKILL = 30
+class UpgradeConvergenceTest(unittest.TestCase):
+    """The self-check runs `raven upgrade` against this repo and, before this,
+    judged it purely on exit code. `upgrade` exits 0 when it leaves files
+    needing a manual merge, so unresolved conflicts printed "ok" in CI and the
+    AGENTS.md rule to treat unexpected self-upgrade output as a product issue
+    had no enforcement behind it.
+
+    Convergence is judged against an explicit allowlist rather than "zero
+    drift": this repository is both the template source and an installed
+    consumer, so some divergence is the dogfooding working as intended. The
+    gate's job is to fail on drift nobody has approved.
+    """
+
+    def setUp(self) -> None:
+        self.module = load_script_module("self_check_convergence", SELF_CHECK)
+
+    @staticmethod
+    def _finding(finding_id, severity, detail, category="Drift & freshness"):
+        return {
+            "id": finding_id,
+            "severity": severity,
+            "category": category,
+            "title": "t",
+            "detail": detail,
+            "fix": None,
+        }
+
+    def test_approved_divergence_is_not_reported(self) -> None:
+        findings = [self._finding("doctor.drift.modified", "warn", "justfile")]
+        self.assertEqual(self.module.unconverged_paths(findings, {"justfile"}), [])
+
+    def test_unapproved_drift_path_is_reported(self) -> None:
+        findings = [
+            self._finding("doctor.drift.pending", "warn", "justfile, .claude/rules/raven-python.md")
+        ]
+        self.assertEqual(
+            self.module.unconverged_paths(findings, {"justfile"}),
+            [".claude/rules/raven-python.md"],
+        )
+
+    def test_a_new_kind_of_drift_warning_is_reported_not_ignored(self) -> None:
+        # The gate keys on category + severity, not on a hardcoded id list, so
+        # a drift finding added to doctor later fails loudly instead of
+        # slipping through an allowlist that never heard of it.
+        findings = [self._finding("doctor.drift.something-new", "error", "a/b.md")]
+        self.assertEqual(self.module.unconverged_paths(findings, set()), ["a/b.md"])
+
+    def test_informational_and_ok_drift_are_not_convergence_failures(self) -> None:
+        # `local` is template-unchanged local customization: nothing to merge.
+        findings = [
+            self._finding("doctor.drift.local", "info", ".codex/config.toml"),
+            self._finding("doctor.drift.modified", "ok", "installed files match"),
+        ]
+        self.assertEqual(self.module.unconverged_paths(findings, set()), [])
+
+    def test_non_drift_warnings_are_out_of_scope(self) -> None:
+        # A missing optional tool is a real doctor warning but says nothing
+        # about whether the upgrade converged.
+        findings = [self._finding("doctor.tool.fd", "warn", "fd", category="Toolchain")]
+        self.assertEqual(self.module.unconverged_paths(findings, set()), [])
+
+    def test_version_drift_is_ignored_because_it_self_chases(self) -> None:
+        # The manifest records the commit installed from, so every commit made
+        # after a self-upgrade leaves this warning set in this repo. It is a
+        # property of dogfooding, not unconverged state.
+        findings = [self._finding("doctor.drift.version", "warn", "installed abc, current def")]
+        self.assertEqual(self.module.unconverged_paths(findings, set()), [])
+
+    def test_real_repo_has_converged_after_upgrade(self) -> None:
+        # End-to-end: the allowlist shipped in self-check.py must actually
+        # cover this repository's current state, or the gate is already red.
+        module = load_script_module("self_check_convergence_real", SELF_CHECK)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            module.validate_upgrade_convergence()
+        self.assertIn("upgrade convergence ok", buf.getvalue())
+
+
+# Read from self-check.py rather than restated here. The mirrored copies drifted
+# (362 vs a real 376) and left the aggregate fixture clearing the true limit by
+# only 4 words -- it still failed for the right reason, but the next raise would
+# have quietly pushed the fixture under the limit and turned that test green
+# against a budget it was no longer exercising.
+_budget_module = load_script_module("self_check_budget_caps", SELF_CHECK)
+SKILL_DESC_AGGREGATE = _budget_module.SKILL_DESCRIPTION_AGGREGATE_LIMIT
+SKILL_DESC_PER_SKILL = _budget_module.SKILL_DESCRIPTION_PER_SKILL_LIMIT
 
 
 class SkillDescriptionBudgetTest(unittest.TestCase):
