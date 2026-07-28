@@ -14,14 +14,96 @@ from .manifest import update_manifest
 from .models import ApplyPlan, Classification, OrphanClassification, RavenConfig, TemplateEntry
 from .orphans import remove_orphans
 
+# Rendering is kept separate from printing throughout this module: each
+# `render_*` returns the exact text its `print_*` counterpart emits, so the
+# report content can be asserted directly instead of through captured stdout.
+# This mirrors report.py, where `render_human`/`render_json` build a string and
+# the caller prints it. The `print_*` functions remain the module's public
+# surface; nothing about the CLI's output or call sites changes.
+
+
+def render_section(title: str, paths: list[str]) -> str:
+    if not paths:
+        return f"{title}\n  (none)"
+    return "\n".join([title, *(f"  {path}" for path in paths)])
+
 
 def print_section(title: str, paths: list[str]) -> None:
-    print(title)
-    if not paths:
-        print("  (none)")
-        return
-    for path in paths:
-        print(f"  {path}")
+    print(render_section(title, paths))
+
+
+def render_apply_summary(
+    copied: list[str],
+    upgraded: list[str],
+    overwritten: list[str],
+    adopted_claude: list[str],
+    identical: list[str],
+    needs_merge: list[str],
+    unknown_existing: list[str],
+    removed_orphans: list[str],
+    orphan_modified: list[str],
+) -> str:
+    sections = [render_section(f"Copied {len(copied)} file(s):", copied)]
+
+    if upgraded:
+        sections.append(
+            render_section(f"Upgraded {len(upgraded)} unchanged Raven-managed file(s):", upgraded)
+        )
+
+    if overwritten:
+        sections.append(
+            render_section(
+                f"Overwrote {len(overwritten)} explicitly requested file(s):", overwritten
+            )
+        )
+
+    if adopted_claude:
+        sections.append(
+            render_section(
+                "Adopted CLAUDE.md compatibility symlink; original file was backed up:",
+                adopted_claude,
+            )
+        )
+
+    if identical:
+        sections.append(render_section("Already up to date; not copied:", identical))
+
+    if needs_merge:
+        sections.append(
+            render_section(
+                "!!! Manual merge still required: you locally modified these Raven-managed files, "
+                "so the upgrade left them untouched. See .raven/merge/<file>.diff for what changed. !!!",
+                needs_merge,
+            )
+        )
+
+    if unknown_existing:
+        sections.append(
+            render_section(
+                "!!! Manual merge still required: these files exist but Raven does not manage them; "
+                "the template ships its own version. Compare .raven/merge/<file>.diff before merging. !!!",
+                unknown_existing,
+            )
+        )
+
+    if removed_orphans:
+        sections.append(
+            render_section(
+                f"Removed {len(removed_orphans)} orphaned file(s) the template no longer ships:",
+                removed_orphans,
+            )
+        )
+
+    if orphan_modified:
+        sections.append(
+            render_section(
+                "Orphaned but left in place because you modified them "
+                "(template no longer ships these; remove manually if unwanted):",
+                orphan_modified,
+            )
+        )
+
+    return "\n\n".join(sections)
 
 
 def print_apply_summary(
@@ -35,82 +117,50 @@ def print_apply_summary(
     removed_orphans: list[str],
     orphan_modified: list[str],
 ) -> None:
-    print_section(f"Copied {len(copied)} file(s):", copied)
-
-    if upgraded:
-        print()
-        print_section(f"Upgraded {len(upgraded)} unchanged Raven-managed file(s):", upgraded)
-
-    if overwritten:
-        print()
-        print_section(f"Overwrote {len(overwritten)} explicitly requested file(s):", overwritten)
-
-    if adopted_claude:
-        print()
-        print_section(
-            "Adopted CLAUDE.md compatibility symlink; original file was backed up:", adopted_claude
-        )
-
-    if identical:
-        print()
-        print_section("Already up to date; not copied:", identical)
-
-    if needs_merge:
-        print()
-        print_section(
-            "!!! Manual merge still required: you locally modified these Raven-managed files, "
-            "so the upgrade left them untouched. See .raven/merge/<file>.diff for what changed. !!!",
+    print(
+        render_apply_summary(
+            copied,
+            upgraded,
+            overwritten,
+            adopted_claude,
+            identical,
             needs_merge,
-        )
-
-    if unknown_existing:
-        print()
-        print_section(
-            "!!! Manual merge still required: these files exist but Raven does not manage them; "
-            "the template ships its own version. Compare .raven/merge/<file>.diff before merging. !!!",
             unknown_existing,
-        )
-
-    if removed_orphans:
-        print()
-        print_section(
-            f"Removed {len(removed_orphans)} orphaned file(s) the template no longer ships:",
             removed_orphans,
-        )
-
-    if orphan_modified:
-        print()
-        print_section(
-            "Orphaned but left in place because you modified them "
-            "(template no longer ships these; remove manually if unwanted):",
             orphan_modified,
         )
+    )
+
+
+def render_dry_run_summary(classification: Classification) -> str:
+    sections = [
+        render_section("Will copy new Raven files:", classification.will_copy),
+        render_section("Will upgrade unchanged Raven-managed files:", classification.will_upgrade),
+        render_section("Already up to date; will not copy:", classification.identical),
+        render_section(
+            "Manual merge required (locally modified Raven-managed files; will be left untouched):",
+            classification.needs_merge,
+        ),
+        render_section(
+            "Manual merge required (existing files Raven does not manage; template ships its own version):",
+            classification.unknown_existing,
+        ),
+    ]
+    if classification.local_only:
+        sections.append(
+            render_section(
+                "Locally customized; template unchanged, so left untouched (no merge needed):",
+                classification.local_only,
+            )
+        )
+    sections.append(
+        "Preview only. Re-run without --dry-run to copy and upgrade files listed above."
+    )
+    return "\n\n".join(sections)
 
 
 def print_dry_run_summary(classification: Classification) -> None:
-    print_section("Will copy new Raven files:", classification.will_copy)
-    print()
-    print_section("Will upgrade unchanged Raven-managed files:", classification.will_upgrade)
-    print()
-    print_section("Already up to date; will not copy:", classification.identical)
-    print()
-    print_section(
-        "Manual merge required (locally modified Raven-managed files; will be left untouched):",
-        classification.needs_merge,
-    )
-    print()
-    print_section(
-        "Manual merge required (existing files Raven does not manage; template ships its own version):",
-        classification.unknown_existing,
-    )
-    if classification.local_only:
-        print()
-        print_section(
-            "Locally customized; template unchanged, so left untouched (no merge needed):",
-            classification.local_only,
-        )
-    print()
-    print("Preview only. Re-run without --dry-run to copy and upgrade files listed above.")
+    print(render_dry_run_summary(classification))
 
 
 def _without(paths: list[str], excluded: set[str]) -> list[str]:
@@ -174,6 +224,70 @@ def build_apply_plan(
     )
 
 
+def render_dry_run_plan(
+    plan: ApplyPlan,
+    orphans: OrphanClassification,
+    *,
+    show_claude_symlink_note: bool,
+) -> str:
+    """The dry-run report text.
+
+    Pure: every filesystem question this report depends on is answered by the
+    caller and arrives as ``show_claude_symlink_note``. That keeps the whole
+    section-assembly -- which sections appear, in which order, with which
+    wording -- testable without building a destination tree on disk.
+    """
+    sections = []
+    if plan.requested_overrides:
+        sections.append(
+            render_section("Would overwrite explicitly requested file(s):", plan.overwritten)
+        )
+        sections.append(
+            render_section(
+                "Would copy explicitly requested missing file(s):",
+                plan.newly_copied_overrides,
+            )
+        )
+    if plan.adopt_claude_symlink:
+        sections.append(
+            render_section(
+                "Would adopt CLAUDE.md compatibility symlink:", [CLAUDE_BACKUP_PATH, CLAUDE_PATH]
+            )
+        )
+    sections.append(render_dry_run_summary(plan.effective_classification))
+    if show_claude_symlink_note:
+        sections.append(
+            "CLAUDE.md exists as a regular destination file. Raven can leave it untouched, "
+            "or you can rerun with --adopt-claude-symlink to move it to CLAUDE.md.bak and "
+            "create the AGENTS.md symlink."
+        )
+    if plan.guided_merge_paths:
+        sections.append(
+            render_section(
+                "Would write guided merge artifacts to .raven/merge/ for these conflicting files "
+                "(.patch for instruction files, .diff for others):",
+                plan.guided_merge_paths,
+            )
+        )
+    if orphans.will_remove:
+        sections.append(
+            render_section(
+                "Will remove orphaned Raven files (template no longer ships them; "
+                "destination still matches the recorded baseline):",
+                orphans.will_remove,
+            )
+        )
+    if orphans.orphan_modified:
+        sections.append(
+            render_section(
+                "Orphaned but locally modified; left in place (template no longer "
+                "ships them, but you changed them — delete manually if unwanted):",
+                orphans.orphan_modified,
+            )
+        )
+    return "\n\n".join(sections)
+
+
 def print_dry_run_plan(
     destination: Path,
     classification: Classification,
@@ -181,59 +295,23 @@ def print_dry_run_plan(
     plan: ApplyPlan,
     orphans: OrphanClassification,
 ) -> int:
-    if plan.requested_overrides:
-        print_section("Would overwrite explicitly requested file(s):", plan.overwritten)
-        print()
-        print_section(
-            "Would copy explicitly requested missing file(s):",
-            plan.newly_copied_overrides,
+    """Imperative shell: the filesystem probes and the failure exit code.
+
+    The report itself is built by ``render_dry_run_plan``.
+    """
+    if plan.adopt_claude_symlink and _any_exists(destination / CLAUDE_BACKUP_PATH):
+        print(
+            f"error: {CLAUDE_BACKUP_PATH} already exists; "
+            "remove it before adopting the CLAUDE.md symlink.",
+            file=sys.stderr,
         )
-        print()
-    if plan.adopt_claude_symlink:
-        if _any_exists(destination / CLAUDE_BACKUP_PATH):
-            print(
-                f"error: {CLAUDE_BACKUP_PATH} already exists; "
-                "remove it before adopting the CLAUDE.md symlink.",
-                file=sys.stderr,
-            )
-            return 2
-        print_section(
-            "Would adopt CLAUDE.md compatibility symlink:", [CLAUDE_BACKUP_PATH, CLAUDE_PATH]
-        )
-        print()
-    print_dry_run_summary(plan.effective_classification)
-    if (
+        return 2
+    show_claude_symlink_note = (
         not plan.adopt_claude_symlink
         and CLAUDE_PATH in set(classification.needs_merge) | set(classification.unknown_existing)
         and claude_symlink_adoption_needed(destination, entries)
-    ):
-        print()
-        print(
-            "CLAUDE.md exists as a regular destination file. Raven can leave it untouched, "
-            "or you can rerun with --adopt-claude-symlink to move it to CLAUDE.md.bak and "
-            "create the AGENTS.md symlink."
-        )
-    if plan.guided_merge_paths:
-        print()
-        print_section(
-            "Would write guided merge artifacts to .raven/merge/ for these conflicting files "
-            "(.patch for instruction files, .diff for others):",
-            plan.guided_merge_paths,
-        )
-    if orphans.will_remove:
-        print()
-        print_section(
-            "Will remove orphaned Raven files (template no longer ships them; "
-            "destination still matches the recorded baseline):",
-            orphans.will_remove,
-        )
-    if orphans.orphan_modified:
-        print()
-        print_section(
-            "Orphaned but locally modified; left in place (template no longer "
-            "ships them, but you changed them — delete manually if unwanted):",
-            orphans.orphan_modified,
-        )
+    )
+    print(render_dry_run_plan(plan, orphans, show_claude_symlink_note=show_claude_symlink_note))
     return 0
 
 
