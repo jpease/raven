@@ -30,9 +30,9 @@ AGENTS.md Retrieval Discipline and Verification State already govern batching, S
    - the observable behavior change, in one or two sentences
    - the acceptance criteria you will verify against
    - the scope ceiling: what you will not touch, build, or generalize
-6. Implement using existing conventions.
-7. Add or update tests.
-8. Run narrow tests first, then broader relevant tests.
+6. Add or update tests for the behavior change before implementing, per `raven-write-tests`.
+7. Implement using existing conventions.
+8. Run narrow tests first — expect the new test to fail before the implementation lands — then broaden to relevant tests.
 9. Summarize user-visible behavior, touched files, and whether the scope ceiling held or where it moved.
 
 ## When To Stop
