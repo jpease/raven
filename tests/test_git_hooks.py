@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import io
 import os
@@ -654,6 +656,335 @@ class GitHookInstallerTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(stamp.exists())
+
+    # ---- pre-push attribution scan over the actual push plan (issue #126) ----
+    #
+    # These use their own fixture rather than _prepare_verified_repo, which
+    # deliberately installs only with-verified-cache.sh (leaving pre-push's
+    # `[ -f "$attribution_check" ]` guard false, so the scanner is skipped in
+    # every stamp test). Here the real scanner IS installed and `just` is kept
+    # off PATH, so the scanner alone decides the hook's exit status.
+
+    _ZERO_SHA = "0" * 40
+
+    @staticmethod
+    def _attribution_line(tool: str = "Claude", verb: str = "Generated", prep: str = "by") -> str:
+        # Built at runtime, not written as one literal string, so this test
+        # file's own source never contains the exact phrase the scanner blocks
+        # -- that scan runs on this repo too (see pre-commit/pre-push).
+        return f"# {verb} {prep} {tool}\n"
+
+    def _prepare_attribution_repo(self, scanner_body: str | None = None) -> dict[str, str]:
+        # Materialize the scanner where pre-push resolves it (repo-root
+        # relative), and put `git` in a bin dir OUTSIDE the repo with no `just`
+        # so the heavy gate is skipped. `scanner_body` swaps in a stand-in
+        # script for tests that need to observe whether it ran at all.
+        lib_dir = self.git_hooks_src / "lib"
+        lib_dir.mkdir(parents=True, exist_ok=True)
+        scanner = lib_dir / "check-ai-attribution-content.py"
+        if scanner_body is None:
+            source = (
+                raven.REPO_ROOT
+                / "common"
+                / ".raven"
+                / "git-hooks"
+                / "lib"
+                / "check-ai-attribution-content.py"
+            )
+            scanner_body = source.read_text(encoding="utf-8")
+        scanner.write_text(scanner_body, encoding="utf-8")
+        scanner.chmod(0o755)
+
+        bin_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(bin_tmp.cleanup)
+        bin_dir = Path(bin_tmp.name)
+        git_path = subprocess.run(
+            ["which", "git"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        (bin_dir / "git").symlink_to(git_path)
+        return self._hook_env(bin_dir)
+
+    def _repo_git(self, *args: str) -> str:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.destination),
+                "-c",
+                "user.email=raven@example.com",
+                "-c",
+                "user.name=Raven Test",
+                *args,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+
+    def _repo_commit(self, path: str, content: str, message: str) -> str:
+        (self.destination / path).write_text(content, encoding="utf-8")
+        self._repo_git("add", "--", path)
+        self._repo_git("commit", "-q", "-m", message)
+        return self._repo_git("rev-parse", "HEAD")
+
+    def _run_pre_push(self, env: dict[str, str], plan: str, remote: str = "origin"):
+        hook = raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-push"
+        return subprocess.run(
+            ["/bin/sh", str(hook), remote, f"https://example.invalid/{remote}.git"],
+            cwd=self.destination,
+            env=env,
+            input=plan,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @staticmethod
+    def _plan_line(ref: str, local_sha: str, remote_sha: str) -> str:
+        return f"{ref} {local_sha} {ref} {remote_sha}\n"
+
+    def test_pre_push_blocks_attribution_content_on_non_checked_out_branch(self):
+        # Regression for issue #126: the scan must follow the refs Git is
+        # actually pushing, not the checked-out branch's upstream range. With
+        # `main` checked out, `git push origin feature` used to scan
+        # origin/main..HEAD (i.e. main), find nothing, and let the content ship.
+        env = self._prepare_attribution_repo()
+        base = self._repo_commit("README.md", "# repo\n", "init")
+        default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
+        self._repo_git("update-ref", f"refs/remotes/origin/{default_branch}", base)
+        self._repo_git("checkout", "-q", "-b", "feature")
+        feature = self._repo_commit(
+            "notes.py",
+            self._attribution_line("Copilot", verb="Implemented", prep="with") + "print('hi')\n",
+            "feature work",
+        )
+        self._repo_git("checkout", "-q", default_branch)
+
+        result = self._run_pre_push(
+            env, self._plan_line("refs/heads/feature", feature, self._ZERO_SHA)
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Forbidden AI attribution content", result.stderr)
+
+    def test_pre_push_allows_clean_content_on_non_checked_out_branch(self):
+        # The mirror of the regression: a clean pushed ref must not be blocked.
+        env = self._prepare_attribution_repo()
+        base = self._repo_commit("README.md", "# repo\n", "init")
+        default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
+        self._repo_git("update-ref", f"refs/remotes/origin/{default_branch}", base)
+        self._repo_git("checkout", "-q", "-b", "feature")
+        feature = self._repo_commit("notes.py", "print('hi')\n", "feature work")
+        self._repo_git("checkout", "-q", default_branch)
+
+        result = self._run_pre_push(
+            env, self._plan_line("refs/heads/feature", feature, self._ZERO_SHA)
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_pre_push_scans_every_ref_of_a_multi_ref_push(self):
+        # `git push --all` sends several updates; a hit on any of them must
+        # fail the push, including one that is not the first line.
+        env = self._prepare_attribution_repo()
+        base = self._repo_commit("README.md", "# repo\n", "init")
+        default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
+        self._repo_git("update-ref", f"refs/remotes/origin/{default_branch}", base)
+        self._repo_git("checkout", "-q", "-b", "clean-branch")
+        clean = self._repo_commit("clean.py", "print('ok')\n", "clean work")
+        self._repo_git("checkout", "-q", default_branch)
+        self._repo_git("checkout", "-q", "-b", "dirty-branch")
+        dirty = self._repo_commit(
+            "dirty.py", self._attribution_line("Gemini") + "print('hi')\n", "dirty work"
+        )
+        self._repo_git("checkout", "-q", default_branch)
+
+        plan = self._plan_line("refs/heads/clean-branch", clean, self._ZERO_SHA) + self._plan_line(
+            "refs/heads/dirty-branch", dirty, self._ZERO_SHA
+        )
+        result = self._run_pre_push(env, plan)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Gemini", result.stderr)
+
+    def test_pre_push_new_branch_push_blocks_new_attribution_content(self):
+        # All-zero remote SHA (new branch) must still be scanned, not skipped.
+        env = self._prepare_attribution_repo()
+        base = self._repo_commit("README.md", "# repo\n", "init")
+        default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
+        self._repo_git("update-ref", f"refs/remotes/origin/{default_branch}", base)
+        self._repo_git("checkout", "-q", "-b", "brand-new")
+        new_sha = self._repo_commit(
+            "notes.py", self._attribution_line("Claude") + "print('hi')\n", "new work"
+        )
+
+        result = self._run_pre_push(
+            env, self._plan_line("refs/heads/brand-new", new_sha, self._ZERO_SHA)
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Claude", result.stderr)
+
+    def test_pre_push_new_branch_push_does_not_rescan_already_pushed_history(self):
+        # Boundedness: a new branch has no remote SHA to diff from, so a naive
+        # implementation walks back to the root commit and flags every historical
+        # mention. The scan must stop at commits the remote already has.
+        env = self._prepare_attribution_repo()
+        self._repo_commit("README.md", "# repo\n", "init")
+        published = self._repo_commit(
+            "legacy.py",
+            self._attribution_line("Gemini") + "print('legacy')\n",
+            "historical mention",
+        )
+        default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
+        self._repo_git("update-ref", f"refs/remotes/origin/{default_branch}", published)
+        self._repo_git("checkout", "-q", "-b", "brand-new")
+        new_sha = self._repo_commit("clean.py", "print('ok')\n", "clean work")
+
+        result = self._run_pre_push(
+            env, self._plan_line("refs/heads/brand-new", new_sha, self._ZERO_SHA)
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("Gemini", result.stderr)
+
+    def test_pre_push_bounds_new_branch_push_by_the_named_remote(self):
+        # The remote name comes from Git's first hook argument; bounding must use
+        # it rather than a hard-coded `origin`. Here only `fork` has tracking
+        # refs, so a hard-coded origin lookup would leave the scan unbounded and
+        # flag the already-pushed historical mention.
+        env = self._prepare_attribution_repo()
+        self._repo_commit("README.md", "# repo\n", "init")
+        published = self._repo_commit(
+            "legacy.py",
+            self._attribution_line("Gemini") + "print('legacy')\n",
+            "historical mention",
+        )
+        default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
+        self._repo_git("update-ref", f"refs/remotes/fork/{default_branch}", published)
+        self._repo_git("checkout", "-q", "-b", "brand-new")
+        clean = self._repo_commit("clean.py", "print('ok')\n", "clean work")
+
+        clean_result = self._run_pre_push(
+            env, self._plan_line("refs/heads/brand-new", clean, self._ZERO_SHA), remote="fork"
+        )
+        self.assertEqual(clean_result.returncode, 0, clean_result.stdout + clean_result.stderr)
+        self.assertNotIn("Gemini", clean_result.stderr)
+
+        flagged = self._repo_commit(
+            "notes.py", self._attribution_line("Claude") + "print('hi')\n", "new work"
+        )
+        blocked = self._run_pre_push(
+            env, self._plan_line("refs/heads/brand-new", flagged, self._ZERO_SHA), remote="fork"
+        )
+        self.assertNotEqual(blocked.returncode, 0, blocked.stdout + blocked.stderr)
+        self.assertIn("Claude", blocked.stderr)
+
+    def test_pre_push_force_push_scans_rewritten_commits(self):
+        # A force-push's remote SHA is not an ancestor of the local SHA. The
+        # rewritten commits are new objects entering the remote's history, so
+        # they must be scanned.
+        env = self._prepare_attribution_repo()
+        base = self._repo_commit("README.md", "# repo\n", "init")
+        default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
+        published = self._repo_commit("notes.py", "print('hi')\n", "original work")
+        self._repo_git("update-ref", f"refs/remotes/origin/{default_branch}", published)
+        self._repo_git("reset", "-q", "--hard", base)
+        rewritten = self._repo_commit(
+            "notes.py",
+            self._attribution_line("Claude") + "print('hi')\n",
+            "rewritten work",
+        )
+        self.assertNotEqual(rewritten, published)
+
+        result = self._run_pre_push(
+            env, self._plan_line(f"refs/heads/{default_branch}", rewritten, published)
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Claude", result.stderr)
+
+    def test_pre_push_fast_forward_push_scans_only_the_new_commits(self):
+        # The ordinary case: remote SHA is an ancestor, so the scan covers the
+        # commits being added and nothing already on the remote.
+        env = self._prepare_attribution_repo()
+        self._repo_commit("README.md", "# repo\n", "init")
+        published = self._repo_commit(
+            "legacy.py",
+            self._attribution_line("Gemini") + "print('legacy')\n",
+            "historical mention",
+        )
+        default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
+        self._repo_git("update-ref", f"refs/remotes/origin/{default_branch}", published)
+        added = self._repo_commit("notes.py", "print('hi')\n", "new work")
+
+        result = self._run_pre_push(
+            env, self._plan_line(f"refs/heads/{default_branch}", added, published)
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("Gemini", result.stderr)
+
+    def test_pre_push_unresolvable_pushed_sha_lets_the_push_proceed(self):
+        # Fail-open: a local SHA this repo cannot resolve (e.g. an alternate-object
+        # or partial-clone oddity) cannot be evaluated, so the scan must skip it
+        # rather than block. It must also NOT silently fall back to a
+        # HEAD-relative range -- HEAD here carries content that would be flagged.
+        env = self._prepare_attribution_repo()
+        base = self._repo_commit("README.md", "# repo\n", "init")
+        default_branch = self._repo_git("rev-parse", "--abbrev-ref", "HEAD")
+        self._repo_git("update-ref", f"refs/remotes/origin/{default_branch}", base)
+        self._repo_commit("notes.py", self._attribution_line("Claude") + "print('hi')\n", "work")
+
+        result = self._run_pre_push(env, self._PUSH_STDIN)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_pre_push_delete_only_push_never_invokes_the_attribution_scan(self):
+        # The delete-only short-circuit must still fire ahead of the scan: a
+        # stand-in scanner rigged to fail must never run.
+        marker = self.destination / "scanner-ran"
+        env = self._prepare_attribution_repo(
+            scanner_body=(
+                "#!/usr/bin/env python3\n"
+                "from pathlib import Path\n"
+                f"Path({str(marker)!r}).write_text('ran')\n"
+                "raise SystemExit(1)\n"
+            )
+        )
+        self._repo_commit("README.md", "# repo\n", "init")
+
+        result = self._run_pre_push(env, self._DELETE_STDIN)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(marker.exists())
+
+    def test_pre_push_feeds_the_push_plan_to_the_attribution_scan(self):
+        # The plan Git writes on stdin must reach the scanner intact -- both ref
+        # updates and the remote name -- and stdin must survive being consumed by
+        # the hook's own delete-only/refs_match_head loop.
+        record = self.destination / "scanner-args"
+        env = self._prepare_attribution_repo(
+            scanner_body=(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "from pathlib import Path\n"
+                f"Path({str(record)!r}).write_text(repr(sys.argv[1:]) + '\\n' + sys.stdin.read())\n"
+            )
+        )
+        head = self._repo_commit("README.md", "# repo\n", "init")
+        plan = self._plan_line("refs/heads/one", head, self._ZERO_SHA) + self._plan_line(
+            "refs/heads/two", head, "2" * 40
+        )
+
+        result = self._run_pre_push(env, plan, remote="upstream")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        recorded = record.read_text(encoding="utf-8")
+        self.assertIn("upstream", recorded)
+        self.assertIn(f"refs/heads/one {head} refs/heads/one {self._ZERO_SHA}", recorded)
+        self.assertIn(f"refs/heads/two {head} refs/heads/two {'2' * 40}", recorded)
 
     def _justfiles_with_install_hooks(self):
         root = raven.REPO_ROOT

@@ -6,6 +6,28 @@ credit left in a source file or README (an AI tool named as the generator)
 would still reach history untouched. Unlike commit-msg, this fails the
 commit/push rather than silently editing tracked file content: there is no
 safe way to auto-rewrite an arbitrary line inside a source file.
+
+Modes:
+
+    staged                    scan the staged diff (pre-commit)
+    outbound                  scan HEAD against its upstream (direct/manual use)
+    outbound --push-plan      scan the refs Git is actually pushing, read from
+                              stdin in Git's own pre-push format:
+                              "<local-ref> <local-sha> <remote-ref> <remote-sha>"
+                              per line. Add --remote <name> (Git's first
+                              pre-push argument) to bound the scan by that
+                              remote's tracking refs.
+
+Ref updates arrive on stdin rather than argv so an arbitrarily large push
+(`git push --all` on a many-branch repo) cannot overflow the argument list, and
+so the hook can forward Git's plan byte-for-byte without re-quoting it in POSIX
+sh. Reading stdin is opt-in via --push-plan, which keeps the bare `outbound`
+invocation (used by hand and by this repo's tests) from blocking on a terminal.
+
+Fail-open by design: this gate gates pushes, so anything it cannot evaluate
+(unresolvable object, absent plan, failing git invocation) is skipped rather
+than treated as a finding. A hook that blocks every push on an internal error
+is worse than the leak it is meant to catch.
 """
 
 from __future__ import annotations
@@ -107,11 +129,139 @@ def _scan_outbound() -> int:
     return _scan(_added_lines(diff.stdout), f"git diff ({range_spec})")
 
 
+def _is_zero_sha(sha: str) -> bool:
+    return sha != "" and set(sha) == {"0"}
+
+
+def _parse_push_plan(text: str) -> list[tuple[str, str, str, str]]:
+    """Parse Git's pre-push stdin plan; ignore anything not shaped like a ref update."""
+    updates = []
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) < 4:
+            continue
+        updates.append((fields[0], fields[1], fields[2], fields[3]))
+    return updates
+
+
+def _resolve_commit(rev: str) -> str | None:
+    result = _git(["rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"])
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def _remote_tracking_shas(remote: str) -> list[str]:
+    """Commits the remote is known to already have, as exclusion tips.
+
+    Prefer the named remote's tracking refs: content already published to
+    `origin` is not necessarily published on the `fork` being pushed to, so
+    scoping matters. Fall back to every remote only when the named one has no
+    tracking refs at all (an unfetched or URL-only remote), which at worst
+    widens the exclusion set to commits that have provably left the machine.
+    Resolved to SHAs rather than passed as a `--remotes=<glob>` so a remote
+    "name" that is really a URL (Git passes the URL for both arguments on
+    `git push <url> <ref>`) cannot produce an invalid refname pattern.
+    """
+    if remote:
+        scoped = _git(["rev-parse", f"--remotes={remote}"])
+        scoped_shas = scoped.stdout.split() if scoped.returncode == 0 else []
+        if scoped_shas:
+            return scoped_shas
+    every = _git(["rev-parse", "--remotes"])
+    if every.returncode != 0:
+        return []
+    return every.stdout.split()
+
+
+def _scan_push_plan(plan_text: str, remote: str) -> int:
+    """Scan the commits Git is actually pushing, per its own push plan.
+
+    One scan covers the whole push: every pushed tip is a positive revision and
+    everything the remote already has is negative, so commits reachable from two
+    pushed refs are scanned once and a hit on any ref fails the push.
+
+    The negative side is what keeps this bounded. A new branch has an all-zero
+    remote SHA and no valid `<remote>..<local>` range; walking back to the root
+    commit instead would rescan the entire repository and flag every historical
+    mention. Excluding the remote's tracking refs narrows it to the commits that
+    are genuinely new to that remote. The same exclusion also handles a
+    force-push, where the old remote SHA is not an ancestor of the new tip: the
+    rewritten commits are new objects entering the remote's history, so they are
+    exactly what gets scanned, while the commits behind the old tip stay
+    excluded. For an ordinary fast-forward this reduces to `<remote>..<local>`.
+
+    Commits are scanned via per-commit patches rather than a two-tree diff of
+    the endpoints, so merging an already-published branch in does not re-report
+    that branch's content as newly added. The trade-off is that a merge commit
+    contributes no patch of its own, leaving content introduced solely by a
+    conflict resolution to the staged (pre-commit) scan.
+    """
+    positives: list[str] = []
+    negatives: list[str] = []
+    pushed_refs: list[str] = []
+    for local_ref, local_sha, _remote_ref, remote_sha in _parse_push_plan(plan_text):
+        if _is_zero_sha(local_sha):
+            continue  # deletion: no content is leaving the machine
+        local = _resolve_commit(local_sha)
+        if local is None:
+            continue  # fail-open: an object this repo cannot resolve is unevaluable
+        positives.append(local)
+        pushed_refs.append(local_ref)
+        if not _is_zero_sha(remote_sha):
+            # Whatever the remote already has for this ref is published, whether
+            # or not it is an ancestor of the new tip (i.e. also on a force-push).
+            remote_tip = _resolve_commit(remote_sha)
+            if remote_tip is not None:
+                negatives.append(remote_tip)
+    if not positives:
+        return 0
+
+    negatives.extend(_remote_tracking_shas(remote))
+    # An exclusion tip that equals a pushed tip is kept, not dropped: it means the
+    # remote already has that commit (e.g. pushing an existing tip under a new
+    # branch name), and the correct outcome is an empty scan, not a full rescan.
+    args = ["log", "--no-color", "--format=%H", "--unified=0", "-p", *dict.fromkeys(positives)]
+    if negatives:
+        args += ["--not", *dict.fromkeys(negatives)]
+    args += ["--", "."]
+    log = _git(args)
+    if log.returncode != 0:
+        # git could not walk the range (e.g. a corrupt or grafted object); skip
+        # rather than block a push this hook cannot evaluate.
+        return 0
+    return _scan(_added_lines(log.stdout), f"outbound commits for {', '.join(pushed_refs)}")
+
+
+_USAGE = "usage: check-ai-attribution-content.py {staged|outbound} [--push-plan] [--remote NAME]"
+
+
 def main() -> int:
-    mode = sys.argv[1] if len(sys.argv) > 1 else ""
+    argv = sys.argv[1:]
+    mode = argv[0] if argv else ""
     if mode not in ("staged", "outbound"):
-        print("usage: check-ai-attribution-content.py {staged|outbound}", file=sys.stderr)
+        print(_USAGE, file=sys.stderr)
         return 1
+
+    use_push_plan = False
+    remote = ""
+    rest = argv[1:]
+    index = 0
+    while index < len(rest):
+        arg = rest[index]
+        if arg == "--push-plan":
+            use_push_plan = True
+        elif arg == "--remote":
+            index += 1
+            remote = rest[index] if index < len(rest) else ""
+        elif arg.startswith("--remote="):
+            remote = arg.split("=", 1)[1]
+        else:
+            # Warn but keep going: an unrecognized flag means hook and lib are
+            # out of step (a partial install), and refusing to run would block
+            # every push in the repo.
+            print(f"warning: ignoring unrecognized argument {arg!r}", file=sys.stderr)
+        index += 1
 
     root = _repo_root()
     if root is not None:
@@ -119,7 +269,18 @@ def main() -> int:
         if not _read_config_bool(config, "git_hooks", "block_ai_attribution_content", default=True):
             return 0
 
-    return _scan_staged() if mode == "staged" else _scan_outbound()
+    if mode == "staged":
+        return _scan_staged()
+    if use_push_plan:
+        try:
+            plan_text = sys.stdin.read()
+        except OSError:
+            return 0
+        # Deliberately no fallback to the HEAD-relative range here: when a plan
+        # was supplied, HEAD may be an unrelated branch, and scanning it is the
+        # bug this path exists to fix (issue #126).
+        return _scan_push_plan(plan_text, remote)
+    return _scan_outbound()
 
 
 if __name__ == "__main__":

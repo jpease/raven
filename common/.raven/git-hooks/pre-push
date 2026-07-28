@@ -1,5 +1,12 @@
 #!/usr/bin/env sh
 
+# Git invokes this hook as `pre-push <remote-name> <remote-url>`. The name is
+# forwarded to the attribution scan so it can scope "already on the remote" to
+# the remote actually being pushed to instead of assuming `origin`. Git passes
+# the URL for both arguments when pushing to a raw URL; the scanner tolerates
+# that (a URL simply matches no tracking refs).
+remote_name="$1"
+
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 cd "$repo_root" || exit 0
 
@@ -23,14 +30,24 @@ head_sha=$(git rev-parse HEAD 2>/dev/null)
 # sharing this git dir). Without this check, a stamped worktree on `main`
 # could rubber-stamp `git push origin feature` with zero checks run
 # (issue #80).
+#
+# stdin can only be drained once, so the loop also reaccumulates the plan into
+# push_plan to hand to the attribution scan below -- otherwise that scan has no
+# idea which refs are being pushed and falls back to guessing from HEAD (issue
+# #126). Building the string by concatenation (rather than re-reading stdin, a
+# here-doc, or a temp file) keeps the loop in the current shell so has_work and
+# refs_match_head survive, needs no cleanup path, and never re-parses ref names.
 has_work=0
 refs_match_head=1
-while read -r _local_ref local_sha _remote_ref _remote_sha; do
+push_plan=""
+while read -r local_ref local_sha remote_ref remote_sha; do
     case "$local_sha" in
         "") ;;             # blank line, ignore
         *[!0]*)            # contains a non-zero digit -> a real ref update
             has_work=1
             [ "$local_sha" = "$head_sha" ] || refs_match_head=0
+            push_plan="${push_plan}${local_ref} ${local_sha} ${remote_ref} ${remote_sha}
+"
             ;;
     esac
 done
@@ -41,9 +58,17 @@ done
 # stamp below, since that stamp only vouches for `just check` having passed,
 # not content. Skip if the lib script is missing (a stale/partial install)
 # rather than hard-failing.
+#
+# The captured plan goes in on stdin (--push-plan), so the scan covers the
+# commits actually being pushed rather than whatever this worktree has checked
+# out -- `git push origin feature` from a worktree sitting on `main` used to
+# scan `main` and wave the feature branch through (issue #126). An older lib
+# without --push-plan ignores the extra arguments and falls back to its previous
+# behavior instead of erroring.
 attribution_check="$repo_root/.raven/git-hooks/lib/check-ai-attribution-content.py"
 if [ -f "$attribution_check" ]; then
-    python3 "$attribution_check" outbound || exit 1
+    printf '%s' "$push_plan" |
+        python3 "$attribution_check" outbound --push-plan --remote "$remote_name" || exit 1
 fi
 
 # Run the full verification set (lint, format, type-check, tests) before code
