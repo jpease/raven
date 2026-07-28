@@ -121,17 +121,20 @@ def hook_manager_guidance(manager: str) -> str:
     if manager == "husky":
         return (
             "Detected husky (core.hooksPath). Raven does not install its own git "
-            "hooks under a hook manager. To run Raven's gate, add `just check-fast` "
-            "to .husky/pre-commit and `just check` to .husky/pre-push. Your hooks "
-            "were left untouched."
+            "hooks under a hook manager, so the scripts in .raven/git-hooks/ are "
+            "written and upgraded but never executed -- fixes landing there take "
+            "effect only once something invokes them. To run Raven's gate, add "
+            "`just check-fast` to .husky/pre-commit and `just check` to "
+            ".husky/pre-push. Your hooks were left untouched."
         )
     if manager == "external-hooks-path":
         return (
             "core.hooksPath points outside this repository (a shared/global hooks "
             "directory). Raven does not install its own git hooks there, since "
-            "that would affect every repository using that hooksPath. To run "
-            "Raven's gate, add `just check-fast` and `just check` to your hooks "
-            "in that directory."
+            "that would affect every repository using that hooksPath. The scripts "
+            "in .raven/git-hooks/ are still written and upgraded, but nothing "
+            "executes them. To run Raven's gate, add `just check-fast` and `just "
+            "check` to your hooks in that directory."
         )
     return ""
 
