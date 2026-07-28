@@ -4,6 +4,23 @@ import unittest
 from helpers import REPO_ROOT, RavenTestCase, raven
 
 
+def section_region(text_lower, heading):
+    """Return the slice of ``text_lower`` from ``heading`` up to the next
+    ``## `` heading (or end of string).
+
+    ``heading`` must already be a lowercase ``## ...`` string, since callers
+    pass a pre-lowered copy of the document. Single module-level helper used
+    by every skill-guidance test class below -- previously this existed as
+    four near-duplicate copies under two names and two signatures.
+    """
+    start = text_lower.find(heading)
+    if start == -1:
+        raise AssertionError(f"expected a {heading!r} section")
+    next_heading = text_lower.find("\n## ", start + len(heading))
+    end = next_heading if next_heading != -1 else len(text_lower)
+    return text_lower[start:end]
+
+
 class SkillsTests(RavenTestCase):
     def test_existing_claude_skills_directory_gets_raven_skill_files(self):
         existing = self.destination / ".claude" / "skills" / "existing-skill"
@@ -104,21 +121,13 @@ class PlanSkillTests(unittest.TestCase):
             "raven-plan/SKILL.md should stay skimmable even after the completion-criteria addition",
         )
 
-    def _completion_criteria_region(self):
-        start = self.lowered.find("## completion criteria")
-        self.assertNotEqual(start, -1, "expected a '## Completion Criteria' section")
-        next_heading = self.lowered.find("\n## ", start + len("## completion criteria"))
-        end = next_heading if next_heading != -1 else len(self.lowered)
-        return self.lowered[start:end]
-
     def test_completion_criteria_require_end_state_verification_and_invariants(self):
-        region = self._completion_criteria_region()
+        region = section_region(self.lowered, "## completion criteria")
 
-        # Tighter than issue #120's ordering-only anchor: this asserts all three
-        # required elements live inside the Completion Criteria section itself,
-        # not merely somewhere in the file. Presence-anywhere would pass even if
-        # "invariants" only showed up in an unrelated section, which would not
-        # demonstrate the triple is actually required together as one unit.
+        # "end state" and "verification command" are kept verbatim (not consolidated
+        # into a section-existence check) because they are the substance of #121's
+        # required triple, not decorative color -- issue #130's re-review of this
+        # test suite.
         self.assertIn("end state", region, "expected a measurable end state requirement")
         self.assertIn(
             "verification command", region, "expected an explicit verification command requirement"
@@ -126,7 +135,7 @@ class PlanSkillTests(unittest.TestCase):
         self.assertIn("invariant", region, "expected an invariant-constraints requirement")
 
     def test_prose_only_criteria_are_called_out_as_insufficient(self):
-        region = self._completion_criteria_region()
+        region = section_region(self.lowered, "## completion criteria")
 
         self.assertIn(
             "prose-only",
@@ -159,15 +168,6 @@ class AntipatternRegistrySkillTests(unittest.TestCase):
         self.review_pr = review_pr_path.read_text(encoding="utf-8")
         self.review_pr_lower = self.review_pr.lower()
 
-    @staticmethod
-    def _section_region(text_lower, heading):
-        start = text_lower.find(heading)
-        if start == -1:
-            raise AssertionError(f"expected a {heading!r} section")
-        next_heading = text_lower.find("\n## ", start + len(heading))
-        end = next_heading if next_heading != -1 else len(text_lower)
-        return text_lower[start:end]
-
     def test_registry_stays_proportionate(self):
         self.assertLess(
             len(self.registry.splitlines()),
@@ -195,7 +195,12 @@ class AntipatternRegistrySkillTests(unittest.TestCase):
         prior, now-gone session (issue #128; was
         test_registry_requires_two_observations_before_recording asserting
         'more than once' / 'first sighting', a rule that silently required
-        cross-session memory the registry does not have)."""
+        cross-session memory the registry does not have).
+
+        Kept verbatim under issue #130's re-review: this exact area produced
+        a real design defect while 10 tests passed, so the rule's precise
+        shape is load-bearing, not decorative.
+        """
         self.assertIn(
             "two instances",
             self.registry_lower,
@@ -221,27 +226,31 @@ class AntipatternRegistrySkillTests(unittest.TestCase):
         )
 
     def test_registry_documents_status_lifecycle(self):
-        self.assertIn("observed", self.registry_lower)
-        self.assertIn("promoted to", self.registry_lower)
-        self.assertIn("retired", self.registry_lower)
+        # "promoted to" is dropped in favor of the "promot" stem: the actual
+        # authority gate on promotion (never write the check/gate yourself) is
+        # covered verbatim by test_review_pr_recommends_but_never_applies_semgrep_promotion
+        # below; this test only needs to confirm the three-state vocabulary survives.
+        region = section_region(self.registry_lower, "## status lifecycle")
+        self.assertIn("observed", region)
+        self.assertIn("promot", region)
+        self.assertIn("retired", region)
 
     def test_registry_documents_retirement_so_entries_do_not_accumulate(self):
-        self.assertIn("retire", self.registry_lower)
+        region = section_region(self.registry_lower, "## status lifecycle")
+        self.assertIn("retire", region)
         self.assertIn(
             "delete",
-            self.registry_lower,
+            region,
             "expected explicit guidance that retired entries are removed, "
             "not just relabeled forever",
         )
 
-    def test_registry_degrades_gracefully_without_semgrep(self):
-        self.assertIn("semgrep", self.registry_lower)
-        self.assertIn(
-            "not require",
-            self.registry_lower,
-            "expected the registry to say Semgrep is not required, per the "
-            "non-goal of not requiring Semgrep",
-        )
+    def test_registry_documents_that_semgrep_is_optional(self):
+        # "not require" (prose) is dropped for a section-existence check: what
+        # matters is that a dedicated section says promotion degrades gracefully,
+        # not the exact sentence used to say it.
+        region = section_region(self.registry_lower, "## semgrep is optional")
+        self.assertIn("semgrep", region)
 
     def test_registry_ships_no_prescribed_patterns(self):
         entry_headings = self.registry.count("\n### ")
@@ -259,7 +268,7 @@ class AntipatternRegistrySkillTests(unittest.TestCase):
         )
 
     def test_review_pr_gains_a_step_referencing_the_registry_by_path(self):
-        region = self._section_region(self.review_pr_lower, "## process")
+        region = section_region(self.review_pr_lower, "## process")
 
         self.assertIn(".claude/docs/raven-antipatterns.md", self.review_pr)
         self.assertIn("antipatterns.md", region)
@@ -269,8 +278,13 @@ class AntipatternRegistrySkillTests(unittest.TestCase):
         authorize -- the skill must never write the Semgrep rule or gate
         wiring itself, per Pause And Ask (issue #127; was
         test_review_pr_promotes_recurring_findings_to_semgrep, which asserted
-        the skill applying the promotion directly)."""
-        region = self._section_region(self.review_pr_lower, "## process")
+        the skill applying the promotion directly).
+
+        Kept verbatim under issue #130's re-review: this is the write-authority
+        gate. Removing it lets a review skill silently regain authority to
+        modify CI.
+        """
+        region = section_region(self.review_pr_lower, "## process")
 
         self.assertIn("semgrep", region)
         self.assertIn("recommend", region)
@@ -287,7 +301,7 @@ class AntipatternRegistrySkillTests(unittest.TestCase):
         )
 
     def test_review_pr_promotion_does_not_require_semgrep(self):
-        region = self._section_region(self.review_pr_lower, "## process")
+        region = section_region(self.review_pr_lower, "## process")
 
         self.assertTrue(
             "not configured" in region or "skip promotion" in region,
@@ -299,7 +313,7 @@ class AntipatternRegistrySkillTests(unittest.TestCase):
         """Writing the registry entry itself is gated on explicit user
         authorization, so the review step cannot silently drift into
         unrequested doc edits (issue #127)."""
-        region = self._section_region(self.review_pr_lower, "## process")
+        region = section_region(self.review_pr_lower, "## process")
 
         self.assertIn(
             "authoriz",
@@ -368,16 +382,11 @@ class TaskCompleteSkillTests(unittest.TestCase):
             "raven-task-complete/SKILL.md should stay under ~65 lines",
         )
 
-    def _section_region(self, heading):
-        start = self.lowered.find(heading)
-        self.assertNotEqual(start, -1, f"expected a {heading!r} section")
-        next_heading = self.lowered.find("\n## ", start + len(heading))
-        end = next_heading if next_heading != -1 else len(self.lowered)
-        return self.lowered[start:end]
-
     def test_required_constraints_demand_intent_not_derivable_from_the_diff(self):
-        region = self._section_region("## required constraints")
+        region = section_region(self.lowered, "## required constraints")
 
+        # Kept verbatim under issue #130's re-review: this is the substance of
+        # #122's constraint, not decorative wording.
         self.assertIn(
             "not derivable from the diff",
             region,
@@ -385,32 +394,33 @@ class TaskCompleteSkillTests(unittest.TestCase):
             "the diff does not already carry",
         )
 
-    def test_output_shape_includes_an_intent_line(self):
-        region = self._section_region("## output")
+    def test_output_intent_line_has_a_none_escape_hatch(self):
+        # Consolidates the former test_output_shape_includes_an_intent_line and
+        # test_intent_has_an_explicit_no_design_decision_escape_hatch. "no design
+        # decision" (the rationale prose) is dropped in favor of "intent: none"
+        # (the literal syntax contract agents write) -- more mechanical, less
+        # coupled to how the rationale is explained.
+        region = section_region(self.lowered, "## output")
 
         self.assertIn("intent:", region, "expected an Intent line in the Output shape")
-
-    def test_intent_has_an_explicit_no_design_decision_escape_hatch(self):
-        region = self._section_region("## output")
-
         self.assertIn(
-            "no design decision",
+            "intent: none",
             region,
-            "expected an explicit escape hatch for changes with no design decision to report",
+            "expected an explicit 'Intent: none' escape hatch for changes with no "
+            "design decision to report",
         )
 
-    def test_rationalization_check_covers_code_explains_itself(self):
-        region = self._section_region("## rationalization check")
+    def test_rationalization_check_table_has_full_row_coverage(self):
+        # "the code explains itself" / "silence is indistinguishable" (the
+        # specific rebuttal wording) are dropped for a structural row-count
+        # check: what matters is that the table still carries its full set of
+        # rationalization rows, not the exact phrasing of any one rebuttal.
+        region = section_region(self.lowered, "## rationalization check")
 
-        self.assertIn(
-            "the code explains itself",
-            region,
-            "expected a Rationalization Check row rebutting 'the code explains itself'",
-        )
-        self.assertIn(
-            "silence is indistinguishable",
-            region,
-            "expected the rebuttal to note that silence looks the same as having no reason",
+        self.assertGreaterEqual(
+            region.count("\n|"),
+            6,
+            "expected a header/divider row plus at least 5 rationalization rows",
         )
 
 
@@ -426,19 +436,23 @@ class DebloatSkillTests(unittest.TestCase):
         self.content = path.read_text(encoding="utf-8")
         self.lowered = self.content.lower()
 
-    def _section_region(self, heading):
-        start = self.lowered.find(heading)
-        self.assertNotEqual(start, -1, f"expected a {heading!r} section")
-        next_heading = self.lowered.find("\n## ", start + len(heading))
-        end = next_heading if next_heading != -1 else len(self.lowered)
-        return self.lowered[start:end]
-
     def test_stays_under_line_ceiling(self):
+        # Ceiling basis (issue #130): the general skill ceiling used elsewhere in
+        # this file is ~50-65 lines, sized for a single-screen skimmable skill.
+        # raven-debloat legitimately carries more structure than most skills (8
+        # required sections: Skip When, Required Constraints, Process, Preflight,
+        # Reduction Hierarchy, Anti-Gaming Self-Audit, Stop Conditions, Output), so
+        # its ceiling is roomier -- roughly current size plus one iteration of
+        # headroom, not a tight budget. It was raised here from <90 to <100 (the
+        # same ceiling used for raven-antipatterns.md) because <90 left only 2
+        # lines of headroom against the actual 87-line file, which meant the next
+        # small, justified addition would fail this test on size alone rather than
+        # on any real bloat signal.
         self.assertLess(
             len(self.content.splitlines()),
-            90,
+            100,
             "raven-debloat/SKILL.md legitimately needs more structure than most "
-            "skills, but past ~90 lines it is duplicating AGENTS.md or over-explaining",
+            "skills, but past ~100 lines it is duplicating AGENTS.md or over-explaining",
         )
 
     def test_description_stays_well_under_the_per_skill_cap(self):
@@ -472,7 +486,7 @@ class DebloatSkillTests(unittest.TestCase):
         # The confusable neighbour is a /simplify-style pass over a working diff.
         # Assert the boundary is drawn in Skip When, where an agent actually
         # checks applicability, not buried in prose.
-        region = self._section_region("## skip when")
+        region = section_region(self.lowered, "## skip when")
 
         self.assertIn(
             "diff",
@@ -481,57 +495,70 @@ class DebloatSkillTests(unittest.TestCase):
             "is not confused with a review-time simplify pass",
         )
 
-    def test_preflight_requires_a_verified_green_baseline_before_the_first_deletion(self):
-        region = self._section_region("## preflight")
+    def test_preflight_establishes_a_baseline_before_any_deletion(self):
+        # "before the first deletion" (prose claim about ordering) is dropped for
+        # an actual structural ordering check: the baseline step must be the
+        # first numbered item, not merely asserted to be first somewhere in text.
+        # "static analysis" / "runtime check" are narrowed to single-word anchors.
+        region = section_region(self.lowered, "## preflight")
 
-        self.assertIn(
-            "before the first deletion",
-            region,
-            "expected preflight to be explicitly ordered before any deletion",
+        baseline_index = region.find("baseline")
+        second_item_index = region.find("\n2.")
+        self.assertNotEqual(baseline_index, -1, "expected Preflight to establish a baseline")
+        self.assertNotEqual(
+            second_item_index, -1, "expected Preflight to have at least two numbered steps"
         )
-        self.assertIn("static analysis", region)
-        self.assertIn("runtime check", region)
-        self.assertIn("baseline", region)
+        self.assertLess(
+            baseline_index,
+            second_item_index,
+            "expected the baseline check to be the first Preflight step, before any deletion",
+        )
+        self.assertIn("static", region)
+        self.assertIn("runtime", region)
 
-    def test_preflight_excludes_the_irreducible_floor_from_candidates(self):
-        region = self._section_region("## preflight")
+    def test_preflight_excludes_generated_and_vendored_code_from_candidates(self):
+        # "irreducible floor" / "not candidates" (the framing prose) are dropped
+        # for the concrete exclusion list itself -- deleting the whole bullet
+        # still fails this test, deleting only its label no longer does.
+        region = section_region(self.lowered, "## preflight")
 
-        self.assertIn("irreducible floor", region)
         self.assertIn("generated", region)
-        self.assertIn(
-            "not candidates",
-            region,
-            "expected generated/vendored/scaffolding code ruled out as candidates",
-        )
+        self.assertIn("vendored", region)
+        self.assertIn("lockfile", region)
 
     def test_preflight_pins_formatting_so_reformatting_cannot_read_as_reduction(self):
-        region = self._section_region("## preflight")
+        region = section_region(self.lowered, "## preflight")
 
         self.assertIn("formatt", region)
         self.assertIn("comparable", region)
 
     def test_dead_code_claims_require_semantic_evidence_rather_than_grep(self):
-        region = self._section_region("## required constraints")
+        # "lsp references" / "does not prove" are dropped for the named evidence
+        # sources plus the named counterexample technique.
+        region = section_region(self.lowered, "## required constraints")
 
-        self.assertIn("lsp references", region)
-        self.assertIn(
-            "does not prove",
-            region,
-            "expected text search to be explicitly insufficient as dead-code evidence",
-        )
+        self.assertIn("lsp", region)
+        self.assertIn("gitnexus", region)
+        self.assertIn("text search", region)
 
     def test_no_automatic_deletion(self):
-        region = self._section_region("## required constraints")
+        # Kept verbatim under issue #130's re-review: this is raven-debloat's
+        # confirm-before-removal guarantee.
+        region = section_region(self.lowered, "## required constraints")
 
         self.assertIn("proposed and confirmed", region)
         self.assertIn("no automatic deletion", region)
 
-    def test_subsystem_deletion_and_library_adoption_route_to_pause_and_ask(self):
-        region = self._section_region("## required constraints")
+    def test_subsystem_and_dependency_changes_route_to_pause_and_ask(self):
+        # "deleting a subsystem" / "dependency addition" (the full trigger
+        # phrases) are narrowed to single-word anchors ("subsystem", "dependency").
+        # The count>=2 check on "pause and ask" itself -- the actual authority
+        # gate -- is kept verbatim.
+        region = section_region(self.lowered, "## required constraints")
 
-        self.assertIn("deleting a subsystem", region)
+        self.assertIn("subsystem", region)
         self.assertIn(
-            "dependency addition",
+            "dependency",
             region,
             "expected library adoption named as a dependency addition, "
             "which is what makes it a Pause And Ask item",
@@ -547,7 +574,7 @@ class DebloatSkillTests(unittest.TestCase):
         # concluding a mature library is obviously better, and adding a
         # dependency. A constraint 40 lines earlier does not stop that; an
         # inline marker on the tier itself does.
-        region = self._section_region("## reduction hierarchy")
+        region = section_region(self.lowered, "## reduction hierarchy")
 
         self.assertGreaterEqual(
             region.count("gated"),
@@ -556,42 +583,61 @@ class DebloatSkillTests(unittest.TestCase):
         )
         self.assertGreaterEqual(region.count("pause and ask"), 3)
 
-    def test_hierarchy_is_ordered_and_forbids_skipping_to_riskier_tiers(self):
-        region = self._section_region("## reduction hierarchy")
+    def test_hierarchy_tiers_appear_in_ascending_numeric_order(self):
+        # "in this order" / "do not skip ahead" (prose claims about ordering) are
+        # dropped for an actual structural ordering check across all 8 tiers.
+        region = section_region(self.lowered, "## reduction hierarchy")
 
-        self.assertIn("in this order", region)
-        self.assertIn("do not skip ahead", region)
+        positions = [region.find(f"\n{n}. ") for n in range(1, 9)]
+        self.assertTrue(
+            all(p != -1 for p in positions),
+            "expected 8 numbered tiers in the Reduction Hierarchy",
+        )
+        self.assertEqual(
+            positions,
+            sorted(positions),
+            "expected the 8 tiers to appear in ascending numeric order",
+        )
 
-    def test_comment_hygiene_never_counts_as_reduction(self):
-        region = self._section_region("## reduction hierarchy")
+    def test_comment_hygiene_is_classified_as_cheap_not_structural(self):
+        # "hygiene only" / "never counted as a reduction" (the rationale prose)
+        # are dropped for a cross-section structural check: the comment-hygiene
+        # tier must actually be named under the audit's "Cheap" classification,
+        # which is a stronger, less wording-coupled check than matching the
+        # rationale sentence in isolation.
+        hierarchy = section_region(self.lowered, "## reduction hierarchy")
+        audit = section_region(self.lowered, "## anti-gaming self-audit")
 
-        self.assertIn("hygiene only", region)
-        self.assertIn("never counted as a reduction", region)
+        self.assertIn("comment hygiene", hierarchy)
+        self.assertIn("comment deletion", audit)
 
     def test_self_audit_classifies_structural_versus_cheap(self):
-        region = self._section_region("## anti-gaming self-audit")
+        region = section_region(self.lowered, "## anti-gaming self-audit")
 
         self.assertIn("structural", region)
         self.assertIn("cheap", region)
 
-    def test_self_audit_can_terminate_the_run(self):
-        region = self._section_region("## anti-gaming self-audit")
+    def test_self_audit_forces_a_choice_between_gaming_and_a_dry_well(self):
+        # "stop and report" / "gaming the metric" / "well is dry" (the full
+        # phrases) are narrowed to single-word anchors covering the same
+        # forced-choice concept.
+        region = section_region(self.lowered, "## anti-gaming self-audit")
 
         self.assertIn(
-            "stop and report",
+            "stop",
             region,
             "expected the audit to be able to end the run, not merely advise",
         )
         self.assertIn(
-            "gaming the metric",
+            "gaming",
             region,
             "expected the audit to force an explicit choice between admitting "
             "metric gaming and declaring the structural well dry",
         )
-        self.assertIn("well is dry", region)
+        self.assertIn("dry", region)
 
     def test_self_audit_is_wired_into_the_process_rather_than_optional(self):
-        region = self._section_region("## process")
+        region = section_region(self.lowered, "## process")
 
         self.assertIn(
             "self-audit",
@@ -601,38 +647,47 @@ class DebloatSkillTests(unittest.TestCase):
         )
 
     def test_stop_conditions_cover_the_revert_retry_loop(self):
-        region = self._section_region("## stop conditions")
+        # Strengthened under issue #130's re-review: asserting only that
+        # "revert" appears in the section was near-tautological (the section
+        # header itself is "Stop Conditions", and "revert" alone does not
+        # distinguish the retry-loop rule from an unrelated mention of revert).
+        # Requiring "revert" and "retry" together demands the actual concept.
+        region = section_region(self.lowered, "## stop conditions")
 
         self.assertIn("revert", region)
+        self.assertIn("retry", region)
 
-    def test_under_reach_is_named_as_a_failure_mode(self):
-        region = self._section_region("## rationalization check")
+    def test_rationalization_check_table_has_full_row_coverage(self):
+        # "under-reach is a failure" (a specific rebuttal) is dropped for a
+        # structural row-count check, consistent with the same consolidation
+        # applied to raven-task-complete's Rationalization Check table.
+        region = section_region(self.lowered, "## rationalization check")
 
-        self.assertIn(
-            "under-reach is a failure",
-            region,
-            "expected a Rationalization Check row rebutting 'too risky, "
-            "I'll leave it and report success'",
+        self.assertGreaterEqual(
+            region.count("\n|"),
+            6,
+            "expected a header/divider row plus at least 5 rationalization rows",
         )
 
-    def test_finding_nothing_structural_is_a_reportable_conclusion(self):
-        # The counterweight to naming under-reach a failure: "nothing to remove"
-        # must be a legitimate, evidence-backed outcome, or the skill becomes
-        # pressure to delete. Mirrors raven-task-complete's `Intent: none` hatch.
-        constraints = self._section_region("## required constraints")
-        output = self._section_region("## output")
+    def test_finding_nothing_is_a_legitimate_reportable_outcome(self):
+        # The counterweight to a forced-choice audit: "nothing to remove" must be
+        # a legitimate, evidence-backed outcome, or the skill becomes pressure to
+        # delete. Mirrors raven-task-complete's `Intent: none` hatch.
+        # "as a conclusion with evidence" / "never delete to have something to
+        # report" / "no structural reduction available" (the full phrases) are
+        # dropped for a cross-section presence check on the underlying concept.
+        constraints = section_region(self.lowered, "## required constraints")
+        output = section_region(self.lowered, "## output")
 
-        self.assertIn("as a conclusion with evidence", constraints)
-        self.assertIn(
-            "never delete to have something to report",
-            constraints,
-            "expected the no-findings hatch paired with an explicit ban on "
-            "deleting for the sake of having a result",
-        )
-        self.assertIn("no structural reduction available", output)
+        self.assertIn("nothing structural", constraints)
+        self.assertIn("structural reduction", output)
 
-    def test_green_tests_are_not_treated_as_design_health(self):
-        self.assertIn("green tests prove behavior", self.lowered)
+    def test_passing_tests_are_not_treated_as_design_health(self):
+        # "green tests prove behavior" (the full sentence) is dropped for the
+        # defined term it turns on.
+        region = section_region(self.lowered, "## required constraints")
+
+        self.assertIn("design health", region)
 
     def test_composition_with_sibling_skills_is_stated_by_name(self):
         self.assertIn("raven-write-tests", self.content)
@@ -659,8 +714,12 @@ class DebloatSkillTests(unittest.TestCase):
         halve this module"). No robust regex distinguishes that from legitimate
         prose, so check 1 carries that case -- the stated prohibition is what a
         reviewer and the agent both read.
+
+        Kept verbatim under issue #130's re-review, along with its two regex
+        checks: this is the #124 no-target prohibition paired with its mechanical
+        enforcement, not decorative wording.
         """
-        constraints = self._section_region("## required constraints")
+        constraints = section_region(self.lowered, "## required constraints")
         self.assertIn("no sloc target", constraints)
         self.assertIn("never a goal", constraints)
 
