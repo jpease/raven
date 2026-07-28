@@ -232,7 +232,7 @@ The SessionStart hook can also run this check automatically for Claude Code or C
 
 Raven treats checked tools as recommended capabilities, not mandatory dependencies. If a tool is not installed or configured, agents should use the retrieval ladder and fall back to cheaper deterministic tools.
 
-Recommended tools include `rg`, `fd`, `just`, `uvx`, Semble, GitNexus, `mcp-language-server`, ast-grep, Semgrep, Gitleaks, `jq`, `yq`, and RTK.
+Recommended tools include `rg`, `fd`, `just`, `uvx`, Semble, GitNexus, `mcp-language-server`, ast-grep, Semgrep, Gitleaks, OSV-Scanner, `jq`, `yq`, and RTK.
 
 On Windows, prefer WSL when the target repository is POSIX-heavy or already uses Linux/macOS shell tooling. Native Windows is reasonable for Windows-native projects, but PATH handling and language-server installation should be verified per machine.
 

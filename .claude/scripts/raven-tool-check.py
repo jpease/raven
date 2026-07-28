@@ -141,6 +141,28 @@ TOOLS = [
         ),
     },
     {
+        "id": "osv-scanner",
+        "name": "OSV-Scanner",
+        "commands": [["osv-scanner", "--version"]],
+        "purpose": "surfacing known advisories in dependency lockfiles via `just audit`",
+        "install": {
+            "darwin": "official install docs: https://google.github.io/osv-scanner/installation/",
+            "linux": "official install docs: https://google.github.io/osv-scanner/installation/",
+            "windows": (
+                "official install docs: https://google.github.io/osv-scanner/installation/; "
+                "Scoop, WinGet, and a signed release binary are all documented"
+            ),
+        },
+        # Unlike every other gate tool, nothing breaks without this one: `audit`
+        # is deliberately not part of `check` (its findings vary with time, not
+        # with the working tree), so a repo whose advisories arrive by another
+        # route is fully covered without it.
+        "optionalWhen": (
+            "dependency advisories are surfaced by another approved control"
+            " (e.g. Dependabot, Renovate, or a platform scanner)"
+        ),
+    },
+    {
         "id": "jq",
         "name": "jq",
         "commands": [["jq", "--version"]],

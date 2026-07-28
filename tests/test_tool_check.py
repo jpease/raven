@@ -28,6 +28,16 @@ class ToolCheckTests(RavenTestCase):
         self.assertIn("jq", tool_ids)
         self.assertIn("yq", tool_ids)
 
+    def test_osv_scanner_is_registered_as_optional(self):
+        # #135 -- osv-scanner backs `just audit`, which is deliberately not a
+        # gate. It must be reported like the other gap tools, and it must carry
+        # an `optionalWhen` note so a repo covered by Dependabot or a platform
+        # scanner is not nagged to install a second one.
+        module = load_script_module("raven_tool_check_osv", TOOL_CHECK_SCRIPT)
+        tool = next(tool for tool in module.TOOLS if tool["id"] == "osv-scanner")
+        self.assertTrue(tool["optionalWhen"])
+        self.assertEqual({command[0] for command in tool["commands"]}, {"osv-scanner"})
+
     def test_astgrep_probe_never_invokes_sg(self):
         # On some Linux systems /usr/bin/sg is the unrelated setgroups utility, so
         # probing `sg --version` risks a false positive (or an interactive hang).
@@ -289,6 +299,17 @@ class AdapterHelpPathTests(unittest.TestCase):
         tool = next(tool for tool in module.TOOLS if tool["id"] == "mcp-language-server")
         self.assertIn(".claude/docs/raven-lsp-mcp.md", tool["install"]["darwin"])
         self.assertIn(".claude/docs/raven-lsp-mcp.md", tool["install"]["linux"])
+
+    def test_both_adapters_register_the_same_tools(self):
+        # The Codex copy is a path-string adapter, not a fork: the two TOOLS
+        # registries must not drift, or a tool added to one adapter goes
+        # unreported for every repo installed with the other.
+        claude = load_script_module("raven_tool_check_ids_claude", TOOL_CHECK_SCRIPT)
+        codex = load_script_module("raven_tool_check_ids_codex", CODEX_TOOL_CHECK_SCRIPT)
+        self.assertEqual(
+            [tool["id"] for tool in claude.TOOLS],
+            [tool["id"] for tool in codex.TOOLS],
+        )
 
     def test_codex_claude_app_detection_paths_are_unchanged(self):
         # _claude_mcp_config_paths() detects the globally-installed Claude

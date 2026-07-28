@@ -156,6 +156,75 @@ class GatesTests(unittest.TestCase):
         self.assertIsNone(gate_spec_for("cobol"))
 
 
+# osv-scanner supports no manifest for these ecosystems (no Package.resolved,
+# no LuaRocks rockspec), so their `audit` recipe reports the gap instead.
+_NO_SCANNER_INPUT = frozenset({"swift", "lua"})
+
+
+class AuditRecipeTests(unittest.TestCase):
+    """#135 -- `audit` is a uniform reporting recipe, never a gate.
+
+    It exists in every shipped justfile so `just audit` means the same thing
+    everywhere, and it is excluded from `check` (and from GATE_DATA) because
+    its findings vary with time rather than with the working tree.
+    """
+
+    repo_root = Path(__file__).resolve().parents[1]
+
+    def _justfiles(self) -> dict[str, str]:
+        return {
+            name: (self.repo_root / name / "justfile").read_text(encoding="utf-8")
+            for name in load_gate_specs()
+        }
+
+    def test_every_shipped_justfile_declares_audit(self):
+        for template, text in self._justfiles().items():
+            with self.subTest(template=template):
+                self.assertTrue(
+                    recipe_present(text, "audit"),
+                    f"{template}/justfile is missing the `audit` recipe",
+                )
+
+    def test_audit_is_not_a_graded_gate_recipe(self):
+        # An audit is not reproducible from the tree, so `assess` must not grade
+        # it. Keeping it out of GATE_DATA is what makes that explicit.
+        for template, spec in load_gate_specs().items():
+            with self.subTest(template=template):
+                self.assertNotIn("audit", spec.recipes)
+                self.assertNotIn("audit", spec.fallback_commands)
+
+    def test_audit_is_not_reachable_from_check(self):
+        # `check` and `check-fast` are the gate chains (pre-push and pre-commit).
+        # Neither may depend on `audit`, directly or through the other.
+        for template, text in self._justfiles().items():
+            with self.subTest(template=template):
+                for gate in ("check", "check-fast"):
+                    line = next(line for line in text.splitlines() if line.startswith(f"{gate}:"))
+                    self.assertNotIn("audit", line.split(":", 1)[1].split())
+
+    def test_scanning_templates_invoke_osv_scanner_without_failing_the_shell(self):
+        # osv-scanner exits non-zero when it finds advisories; the recipe must
+        # absorb that, or chaining it anywhere would make it a blocking gate.
+        for template, text in self._justfiles().items():
+            if template in _NO_SCANNER_INPUT:
+                continue
+            with self.subTest(template=template):
+                self.assertIn("osv-scanner scan source -r .", text)
+                self.assertIn("command -v osv-scanner", text)
+                audit_body = text.split("\naudit:", 1)[1]
+                self.assertIn("exit 0", audit_body)
+
+    def test_templates_without_scanner_input_say_so(self):
+        # Shipping a recipe that silently finds nothing is worse than shipping
+        # none: it reads as "audited, clean". These must name the gap instead.
+        for template in _NO_SCANNER_INPUT:
+            with self.subTest(template=template):
+                text = (self.repo_root / template / "justfile").read_text(encoding="utf-8")
+                audit_body = text.split("\naudit:", 1)[1]
+                self.assertNotIn("osv-scanner scan", audit_body)
+                self.assertIn("NOT covered by 'just audit'", audit_body)
+
+
 class RecipePresentTests(unittest.TestCase):
     def test_matches_plain_recipe(self):
         self.assertTrue(recipe_present("test:\n    pytest\n", "test"))
