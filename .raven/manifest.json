@@ -56,9 +56,9 @@
       "sourceSha256": "23d2faf620cf1c5d515c5ea5bb4eaea91d66cfe014d43acda6ab78a9deeab492"
     },
     ".agents/skills/raven-implement-feature/SKILL.md": {
-      "installedSha256": "30c608cf0957f14e014eaaadd7e15875fdd7d214c0968969151e647c5ee060fb",
+      "installedSha256": "d57698bc1abc6f15bed4110fd970ece6619bedadf1225d2ee6244b61a36252dd",
       "kind": "file",
-      "sourceSha256": "30c608cf0957f14e014eaaadd7e15875fdd7d214c0968969151e647c5ee060fb"
+      "sourceSha256": "d57698bc1abc6f15bed4110fd970ece6619bedadf1225d2ee6244b61a36252dd"
     },
     ".agents/skills/raven-plan/SKILL.md": {
       "installedSha256": "f742ceb89ca80e9463da8f7d2ba9ee153eaf58c06d35fe5088527b871299920a",
@@ -106,9 +106,9 @@
       "sourceSha256": "e790fc85ce05c256de58788954f9c93265b4b7d19daade47afaefdcc3c5226f0"
     },
     ".agents/skills/raven-write-tests/SKILL.md": {
-      "installedSha256": "af7ecb649d41347a3d6c4df3c5cb3458183deb1aabb5a816dd7215e84b729573",
+      "installedSha256": "8ef6f48528bb9565c6df936924495f038a573a5ba365e5496bf37378a576951f",
       "kind": "file",
-      "sourceSha256": "af7ecb649d41347a3d6c4df3c5cb3458183deb1aabb5a816dd7215e84b729573"
+      "sourceSha256": "8ef6f48528bb9565c6df936924495f038a573a5ba365e5496bf37378a576951f"
     },
     ".claude/agents/raven-codebase-cartographer.md": {
       "installedSha256": "fd3ff737dec650040d0a9cf01e2ab0357f758f9620943f7b47e618e118d10a48",
@@ -357,7 +357,7 @@
       "sourceSha256": "71eb99a14d1067bea6b45e113393bbe2f37548632206abb214b89abe543b1cff"
     },
     "AGENTS.md": {
-      "installedSha256": "2eb39da9bf0545dc6d3c2f8edc68ead86cf4a8833eda89d9488c12925510f7a8",
+      "installedSha256": "fd8dbbae215d189e3680b2042edd9f051bf30ab37b6036bf8a9f8bb632848053",
       "kind": "file",
       "sourceSha256": "fb0661d9f55c5d489cb7ae3dbfe18fa49880f67e6afcda6f01382e714ca4dcdc"
     },
@@ -378,8 +378,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "b2356efd469a",
+  "ravenVersion": "7495fb51d4ea",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-07-28T03:36:36.872287+00:00"
+  "updatedAt": "2026-07-28T03:58:21.074134+00:00"
 }
