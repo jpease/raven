@@ -30,12 +30,14 @@ DEFAULT_COMPONENTS = {
 DEFAULT_CLAUDE_COMPONENTS = {
     "settings": True,
     "hooks": True,
+    "scripts": True,
     "subagents": True,
     "rules": True,
 }
 DEFAULT_CODEX_COMPONENTS = {
     "config": True,
     "hooks": True,
+    "scripts": True,
     "subagents": True,
     "rules": True,
 }
@@ -64,15 +66,21 @@ COMPONENT_PATHS = {
     ],
 }
 STARTER_TOOL_CONFIG_PATHS = set(COMPONENT_PATHS["tool_configs"])
+# Adapter helper scripts get their own switch rather than riding along with
+# `hooks`: skills call them directly (see raven-skeleton, raven-project-
+# lifecycle, raven-tool-bootstrap), so a repo that declines hook enforcement
+# still needs the scripts those skills invoke.
 CLAUDE_COMPONENT_PATHS = {
     "settings": [".claude/settings.json"],
-    "hooks": [".claude/hooks", ".claude/scripts"],
+    "hooks": [".claude/hooks"],
+    "scripts": [".claude/scripts"],
     "subagents": [".claude/agents"],
     "rules": [".claude/rules"],
 }
 CODEX_COMPONENT_PATHS = {
     "config": [".codex/config.toml"],
-    "hooks": [".codex/hooks", ".codex/hooks.json", ".codex/scripts"],
+    "hooks": [".codex/hooks", ".codex/hooks.json"],
+    "scripts": [".codex/scripts"],
     "subagents": [".codex/agents"],
     "rules": [".codex/rules"],
 }
