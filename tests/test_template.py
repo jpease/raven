@@ -3,12 +3,20 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import REPO_ROOT, RavenTestCase, raven
+from helpers import (
+    LSP_DEFAULTS,
+    REPO_ROOT,
+    RavenTestCase,
+    lsp_doc_command,
+    lsp_mcp_args,
+    raven,
+)
 from raven_lib.constants import STARTER_TOOL_CONFIG_PATHS
 
 
@@ -331,22 +339,7 @@ paths = [".claude/skills/raven-plan/**"]
                 self.assertEqual(broken, [])
 
     def test_language_templates_define_specific_lsp_mcp_defaults(self):
-        expected = {
-            "python": ["--workspace", ".", "--lsp", "pyright-langserver", "--", "--stdio"],
-            "typescript": [
-                "--workspace",
-                ".",
-                "--lsp",
-                "typescript-language-server",
-                "--",
-                "--stdio",
-            ],
-            "rust": ["--workspace", ".", "--lsp", "rust-analyzer"],
-            "go": ["--workspace", ".", "--lsp", "gopls"],
-            "swift": ["--workspace", ".", "--lsp", "sourcekit-lsp"],
-            "elixir": ["--workspace", ".", "--lsp", "expert", "--", "--stdio"],
-            "lua": ["--workspace", ".", "--lsp", "lua-language-server"],
-        }
+        expected = {language: lsp_mcp_args(language) for language in LSP_DEFAULTS}
 
         for language, args in expected.items():
             with self.subTest(language=language):
@@ -359,22 +352,7 @@ paths = [".claude/skills/raven-plan/**"]
                 self.assertEqual(lsp["args"], args)
 
     def test_language_templates_define_specific_codex_lsp_mcp_defaults(self):
-        expected = {
-            "python": ["--workspace", ".", "--lsp", "pyright-langserver", "--", "--stdio"],
-            "typescript": [
-                "--workspace",
-                ".",
-                "--lsp",
-                "typescript-language-server",
-                "--",
-                "--stdio",
-            ],
-            "rust": ["--workspace", ".", "--lsp", "rust-analyzer"],
-            "go": ["--workspace", ".", "--lsp", "gopls"],
-            "swift": ["--workspace", ".", "--lsp", "sourcekit-lsp"],
-            "elixir": ["--workspace", ".", "--lsp", "expert", "--", "--stdio"],
-            "lua": ["--workspace", ".", "--lsp", "lua-language-server"],
-        }
+        expected = {language: lsp_mcp_args(language) for language in LSP_DEFAULTS}
 
         for language, args in expected.items():
             with self.subTest(language=language):
@@ -386,6 +364,35 @@ paths = [".claude/skills/raven-plan/**"]
 
                 self.assertEqual(lsp["command"], "mcp-language-server")
                 self.assertEqual(lsp["args"], args)
+
+    def test_readme_lsp_table_matches_the_shipped_defaults(self):
+        # The README table was the one place naming these servers that nothing
+        # checked, so it could describe a server no template installs.
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        for language in LSP_DEFAULTS:
+            with self.subTest(language=language):
+                row = re.search(rf"^\|\s*{language}\s*\|([^|]*)\|", readme, re.M | re.I)
+                self.assertIsNotNone(row, f"README has no LSP table row for {language}")
+                assert row is not None
+                self.assertIn(
+                    lsp_doc_command(language),
+                    row.group(1),
+                    f"README's {language} row disagrees with the shipped .mcp.json",
+                )
+
+    def test_lsp_reference_doc_names_the_shipped_server_for_every_template(self):
+        # raven-lsp-mcp.md is the agent-facing reference; a server named here
+        # that no template ships sends the reader to install the wrong thing.
+        doc = (REPO_ROOT / "common" / ".claude" / "docs" / "raven-lsp-mcp.md").read_text(
+            encoding="utf-8"
+        )
+        for language, (server, _) in LSP_DEFAULTS.items():
+            with self.subTest(language=language):
+                self.assertIn(
+                    server,
+                    doc,
+                    f"raven-lsp-mcp.md never mentions {language}'s shipped server {server!r}",
+                )
 
     def test_common_mcp_json_servers_ship_in_every_language_template(self):
         # common/.mcp.json is never installed directly (each language tree ships
