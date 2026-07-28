@@ -98,7 +98,6 @@ from .hashing import (
 from .manifest import (
     git_ref,
     load_manifest,
-    manifest_allows_upgrade,
     parse_record,
     save_manifest,
     update_manifest,
@@ -213,7 +212,6 @@ __all__ = [
     "git_ref",
     "save_manifest",
     "update_manifest",
-    "manifest_allows_upgrade",
     "parse_record",
     # apply
     "classify",
