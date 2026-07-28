@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import os
+import re
 from contextlib import suppress
 from pathlib import Path
 from typing import Literal
@@ -304,6 +305,95 @@ def unified_diff_text(relative: str, existing_text: str, template_text: str) -> 
     return "".join(diff)
 
 
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+_FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
+_HEADING_TRAILING_PUNCT_RE = re.compile(r"[\s:.]+$")
+
+
+def top_level_headings(text: str, levels: tuple[str, ...] = ("#", "##")) -> list[str]:
+    """Whitespace-collapsed ATX heading text for the given marker depths.
+
+    Skips headings inside fenced code blocks (``` or ~~~): a ``## `` line shown
+    as example markdown syntax is not a real section, so counting it as one
+    would produce false "duplicate heading" positives. Fence detection is a
+    simple open/close toggle on any line whose stripped content starts with 3+
+    backticks or tildes -- it does not require the opening and closing fence
+    characters or lengths to match, which is enough for well-formed markdown
+    and errs toward *not* treating content as a heading when unsure.
+
+    ``levels`` is exposed because the two call sites in this module want
+    different depths for the same document shape: the Raven template's own
+    guardrail sections are always written ``##``, while a hand-written
+    destination file's structural sections are just as often flat ``#``.
+    Depths past ``###`` are never returned regardless of ``levels`` -- deeper
+    headings are far more likely to be incidental subsection titles than a
+    duplicate of a whole guardrail topic, which would make overlap detection
+    noisier without making it more useful.
+    """
+    headings: list[str] = []
+    in_fence = False
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if _FENCE_RE.match(stripped):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = _HEADING_RE.match(stripped)
+        if match and len(match.group(1)) <= 3 and match.group(1) in levels:
+            headings.append(" ".join(match.group(2).split()))
+    return headings
+
+
+def _normalize_heading_text(text: str) -> str:
+    """Fold heading text to a comparison key: casefold, trim trailing punctuation.
+
+    Deliberately not a fuzzy or word-subset match -- see
+    ``duplicated_template_headings`` for why -- so this only absorbs trivial
+    formatting differences (case, a trailing colon or period), never wording
+    differences.
+    """
+    return _HEADING_TRAILING_PUNCT_RE.sub("", text).casefold()
+
+
+def duplicated_template_headings(existing_text: str, raven_text: str) -> list[str]:
+    """Template ``##`` section headings the existing file already has, by name.
+
+    Used only to warn about an append-only instruction-file merge (no managed
+    block yet): if ``existing_text`` already has, in the destination's own
+    words, a section titled the same as one of Raven's, appending the template
+    block verbatim leaves two write-ups of that guardrail.
+
+    Matching is exact modulo case and trailing punctuation -- not a fuzzy or
+    word-subset match. That is a precision-over-recall choice: this result
+    drives a *recommendation to delete* the destination's existing section, so
+    a false positive is actively harmful advice, while a false negative
+    (missing, say, "## Safety" as a partial match for "## Safety Rules") just
+    leaves today's plain append-and-review advice in place -- no worse than
+    before this change. Real heading reuse -- someone adopting a convention
+    that happens to coincide with Raven's own section names -- is normally a
+    near-verbatim copy, so this still catches the common case the issue is
+    about.
+
+    Only the template's ``##`` headings are checked (not its own leading ``#``
+    title): the template's title line is not a guardrail topic, so matching it
+    against a destination file's own, similarly-named title would be a false
+    positive that has nothing to do with duplicated guidance. The destination
+    side stays permissive (``#`` and ``##``) since a hand-written file's
+    structural sections are just as often flat ``#``.
+
+    Returned in the template's own heading order, using the template's
+    original heading text (not the destination's) since that is the name used
+    in the merge instructions and the template docs.
+    """
+    existing_normalized = {_normalize_heading_text(h) for h in top_level_headings(existing_text)}
+    return [
+        heading
+        for heading in top_level_headings(raven_text, levels=("##",))
+        if _normalize_heading_text(heading) in existing_normalized
+    ]
+
+
 def guided_merge_instructions(
     relative: str,
     suggestion: str,
@@ -311,6 +401,7 @@ def guided_merge_instructions(
     diff: str | None = None,
     *,
     replaces_block: bool = False,
+    overlapping_headings: tuple[str, ...] = (),
 ) -> str:
     """Build the guided-merge instructions body for an existing file.
 
@@ -320,6 +411,12 @@ def guided_merge_instructions(
     files); both ``None`` means only a fully manual merge is possible.
     ``replaces_block`` is True when the file already has a managed block the patch
     replaces in place (vs appending a new one).
+    ``overlapping_headings`` names template guardrail sections (see
+    ``duplicated_template_headings``) that the existing file already covers
+    under the same heading, in its own words. Meaningful only when
+    ``replaces_block`` is False: a file that already has a managed block is
+    updated in place, so there is no new duplication risk to warn about, and
+    the value is ignored in that case.
     """
     header = (
         f"# Guided Raven merge for `{relative}`\n\n"
@@ -348,6 +445,40 @@ def guided_merge_instructions(
             if replaces_block
             else "This appends a `RAVEN:BEGIN` / `RAVEN:END` managed block to the existing file."
         )
+        if overlapping_headings and not replaces_block:
+            heading_list = ", ".join(f"`{h}`" for h in overlapping_headings)
+            return (
+                header + f"- Existing file: `{relative}`\n"
+                f"- Raven suggestion for review: `{suggestion}`\n"
+                f"- {patch_label}: `{patch}`\n"
+                f"- Headings `{relative}` already has that the Raven template also covers: "
+                f"{heading_list}\n\n"
+                "## Heads up: likely duplicate guardrails\n\n"
+                f"`{relative}` already has its own section for {heading_list}. A dry run of the "
+                "patch will succeed regardless of that -- for an append-only patch it almost "
+                "always does -- so it only proves the patch *applies*, not that the result is "
+                "*desirable*. If those sections already say what Raven's template says, just in "
+                "different words, applying the patch as-is leaves two write-ups of each "
+                "guardrail.\n\n"
+                "## Recommended: apply the patch, then delete the now-redundant sections\n\n"
+                "Raven only owns the `RAVEN:BEGIN` / `RAVEN:END` region it manages; everything "
+                "outside that region is preserved untouched by future upgrades. So you can have "
+                "auto-upgrading guardrails without duplication:\n\n"
+                f"```sh\npatch -p1 < {patch}\n```\n\n"
+                f"Then open `{relative}`, compare your original {heading_list} sections against "
+                "the new block, and delete whatever the block now covers just as well -- keeping "
+                "any genuinely local guidance that does not overlap.\n\n"
+                "## Other options\n\n"
+                f"- Apply the patch and leave the duplication for later: `patch -p1 < {patch}`. "
+                f"{effect} Future Raven upgrades can update that block automatically as long as "
+                "it is not edited directly, but you will have two write-ups of the same guardrail "
+                "until you deduplicate by hand.\n"
+                f"- Skip the patch and merge manually instead: review `{suggestion}` and copy "
+                "only the guidance that applies. Without the managed block markers, Raven will "
+                "not be able to upgrade that content automatically later.\n\n"
+                f"Whichever you choose, run `raven accept {relative}` (or `raven accept`) "
+                "afterwards to remove these artifacts.\n"
+            )
         return (
             header + f"- Existing file: `{relative}`\n"
             f"- Raven suggestion for review: `{suggestion}`\n"
@@ -441,6 +572,7 @@ def write_guided_merge_artifacts(
         patch_rel: str | None = None
         diff_rel: str | None = None
         replaces_block = False
+        overlapping_headings: tuple[str, ...] = ()
         existing_text: str | None = None
         if not entry.copy_as_symlink and target.is_file():
             try:
@@ -462,6 +594,12 @@ def write_guided_merge_artifacts(
                     patch_path, append_patch_text(relative, existing_text, raven_text)
                 )
                 patch_rel = patch_path.relative_to(destination).as_posix()
+                if not replaces_block:
+                    # Duplication is only a risk for an append: a file that already
+                    # has a block is updated in place, not doubled up (#133).
+                    overlapping_headings = tuple(
+                        duplicated_template_headings(existing_text, raven_text)
+                    )
             else:
                 diff_path = merge_dir / f"{relative}.diff"
                 _write_merge_artifact(
@@ -471,7 +609,12 @@ def write_guided_merge_artifacts(
 
         instructions_path = merge_dir / f"{relative}.instructions.md"
         body = guided_merge_instructions(
-            relative, suggestion, patch_rel, diff_rel, replaces_block=replaces_block
+            relative,
+            suggestion,
+            patch_rel,
+            diff_rel,
+            replaces_block=replaces_block,
+            overlapping_headings=overlapping_headings,
         )
         _write_merge_artifact(instructions_path, body)
         written.append(instructions_path.relative_to(destination).as_posix())

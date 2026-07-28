@@ -305,6 +305,176 @@ class GuidedMergeTests(RavenTestCase):
         self.assertIn("-<!-- RAVEN:END -->", patch)
         self.assertIn("+<!-- RAVEN:BEGIN", patch)
 
+    def test_top_level_headings_skips_fences_and_deep_headings(self):
+        text = (
+            "# Title\n\n"
+            "## Real Section\n\n"
+            "```\n"
+            "## Fake heading inside a fence\n"
+            "```\n\n"
+            "### Too deep to count\n\n"
+            "## Another Real Section\n"
+        )
+
+        headings = raven.blocks.top_level_headings(text)
+
+        self.assertEqual(headings, ["Title", "Real Section", "Another Real Section"])
+
+    def test_top_level_headings_respects_levels_argument(self):
+        text = "# One\n\n## Two\n\n### Three\n"
+
+        self.assertEqual(raven.blocks.top_level_headings(text, levels=("##",)), ["Two"])
+        self.assertEqual(raven.blocks.top_level_headings(text, levels=("#",)), ["One"])
+
+    def test_top_level_headings_returns_empty_for_no_headings(self):
+        self.assertEqual(raven.blocks.top_level_headings("just some prose\nno headings here\n"), [])
+
+    def test_duplicated_template_headings_matches_case_and_punctuation_insensitively(self):
+        existing = "# My AGENTS\n\n## safety rules.\n\nDo not do bad things.\n"
+        raven_text = "## Safety Rules\n\nGuardrail text.\n\n## Editing Rules\n\nOther guardrail.\n"
+
+        overlap = raven.blocks.duplicated_template_headings(existing, raven_text)
+
+        self.assertEqual(overlap, ["Safety Rules"])
+
+    def test_duplicated_template_headings_no_overlap_returns_empty(self):
+        existing = "# My AGENTS\n\n## Project Layout\n\nSomething else entirely.\n"
+        raven_text = "## Safety Rules\n\nGuardrail text.\n"
+
+        overlap = raven.blocks.duplicated_template_headings(existing, raven_text)
+
+        self.assertEqual(overlap, [])
+
+    def test_duplicated_template_headings_ignores_template_title_line(self):
+        # The template file's own leading "# AGENTS.md" title is level 1 and must
+        # not be treated as a guardrail section to check for overlap -- a
+        # destination file titled the same way is not a "duplicate guardrail".
+        existing = "# AGENTS.md\n\nSome local guidance.\n"
+        raven_text = "# AGENTS.md\n\n## Safety Rules\n\nGuardrail text.\n"
+
+        overlap = raven.blocks.duplicated_template_headings(existing, raven_text)
+
+        self.assertEqual(overlap, [])
+
+    def test_instructions_without_overlap_are_byte_identical_to_baseline(self):
+        # Golden text captured from the pre-fix implementation. The no-overlap
+        # path must never change -- this is the literal, unmodified regression
+        # guard for that guarantee.
+        baseline = (
+            "# Guided Raven merge for `AGENTS.md`\n\n"
+            "Raven found an existing `AGENTS.md` and did not modify it.\n\n"
+            "- Existing file: `AGENTS.md`\n"
+            "- Raven suggestion for review: `.raven/merge/AGENTS.md.raven`\n"
+            "- Append-only patch: `.raven/merge/AGENTS.md.patch`\n\n"
+            "## Recommended automatic merge\n\n"
+            "From the destination repository root, inspect the patch first:\n\n"
+            "```sh\npatch --dry-run -p1 < .raven/merge/AGENTS.md.patch\n```\n\n"
+            "If the dry run succeeds and the Raven guidance is appropriate, apply it:\n\n"
+            "```sh\npatch -p1 < .raven/merge/AGENTS.md.patch\n```\n\n"
+            "This appends a `RAVEN:BEGIN` / `RAVEN:END` managed block to the existing file. "
+            "Future Raven upgrades can update that block automatically as long as it is not "
+            "edited directly.\n\n"
+            "## Manual merge option\n\n"
+            "Review `.raven/merge/AGENTS.md.raven` and copy only the guidance that applies. "
+            "If you do this without the managed block markers, Raven will not be able to "
+            "upgrade that content automatically later.\n\n"
+            "Either way, run `raven accept AGENTS.md` (or `raven accept`) afterwards to remove "
+            "these artifacts.\n\n"
+            "Do not apply the suggestion blindly if the repository already has stronger local "
+            "instructions.\n"
+        )
+
+        body = raven.guided_merge_instructions(
+            "AGENTS.md", ".raven/merge/AGENTS.md.raven", ".raven/merge/AGENTS.md.patch"
+        )
+
+        self.assertEqual(body, baseline)
+
+    def test_instructions_with_overlapping_headings_recommend_deleting_duplicates(self):
+        body = raven.guided_merge_instructions(
+            "AGENTS.md",
+            ".raven/merge/AGENTS.md.raven",
+            ".raven/merge/AGENTS.md.patch",
+            overlapping_headings=("Safety Rules", "Editing Rules"),
+        )
+
+        self.assertIn("Safety Rules", body)
+        self.assertIn("Editing Rules", body)
+        self.assertIn(
+            "## Recommended: apply the patch, then delete the now-redundant sections", body
+        )
+        self.assertIn("delete", body.lower())
+        # The recommendation is no longer led by a dry-run check that can't tell
+        # applicability from desirability for an append-only patch.
+        self.assertNotIn("## Recommended automatic merge", body)
+        # The third option -- apply and clean up -- must still be reachable, not
+        # just the old apply-vs-manual binary.
+        self.assertIn("## Other options", body)
+
+    def test_instructions_replaces_block_ignores_overlapping_headings(self):
+        # A file that already has a managed block is updated in place: there is
+        # no new duplication risk to warn about, so overlap must have no effect.
+        body = raven.guided_merge_instructions(
+            "AGENTS.md",
+            ".raven/merge/AGENTS.md.raven",
+            ".raven/merge/AGENTS.md.patch",
+            replaces_block=True,
+            overlapping_headings=("Safety Rules",),
+        )
+
+        self.assertNotIn(
+            "## Recommended: apply the patch, then delete the now-redundant sections", body
+        )
+        self.assertIn("## Recommended automatic merge", body)
+        self.assertIn("replaces the existing `RAVEN:BEGIN`", body)
+
+    def test_guided_merge_artifacts_append_flags_overlapping_headings(self):
+        original = (
+            "# My AGENTS\n\n"
+            "## Safety Rules\n\n"
+            "Never do the bad thing, in our own words.\n\n"
+            "## Editing Rules\n\n"
+            "Keep diffs small, in our own words.\n"
+        )
+        (self.destination / "AGENTS.md").write_text(original, encoding="utf-8")
+        entries = raven.entries_for_destination(
+            self.template,
+            self.excludes,
+            raven.load_config(self.destination),
+            self.destination,
+        )
+
+        raven.write_guided_merge_artifacts(self.destination, entries, ["AGENTS.md"])
+
+        instructions = (
+            self.destination / ".raven" / "merge" / "AGENTS.md.instructions.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Safety Rules", instructions)
+        self.assertIn("Editing Rules", instructions)
+        self.assertIn(
+            "## Recommended: apply the patch, then delete the now-redundant sections",
+            instructions,
+        )
+
+    def test_guided_merge_artifacts_append_no_overlap_matches_baseline_instructions(self):
+        original = "# Existing AGENTS\n\nKeep this local guidance.\n"
+        (self.destination / "AGENTS.md").write_text(original, encoding="utf-8")
+        entries = raven.entries_for_destination(
+            self.template,
+            self.excludes,
+            raven.load_config(self.destination),
+            self.destination,
+        )
+
+        raven.write_guided_merge_artifacts(self.destination, entries, ["AGENTS.md"])
+
+        instructions = (
+            self.destination / ".raven" / "merge" / "AGENTS.md.instructions.md"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("Recommended: apply the patch, then delete", instructions)
+        self.assertNotIn("## Other options", instructions)
+        self.assertIn("## Recommended automatic merge", instructions)
+
     def test_generated_replace_patch_applies_to_exactly_one_block(self):
         # End-to-end: applying the generated patch must leave exactly ONE managed
         # block (the #55 regression: the old code produced two).
