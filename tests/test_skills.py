@@ -989,6 +989,49 @@ class TriageDiscoverySkillTests(unittest.TestCase):
         )
 
 
+class SubagentOutOfScopeContractTests(unittest.TestCase):
+    """Every shipped reviewer agent must return out-of-scope findings.
+
+    Nothing else keeps `common/.claude/agents/*.md` and
+    `common/.codex/agents/*.toml` in sync -- they carry the same prose in
+    two formats, so a change applied to one silently diverges from the
+    other. This class is the only guard on that pair.
+    """
+
+    CLAUDE_DIR = REPO_ROOT / "common" / ".claude" / "agents"
+    CODEX_DIR = REPO_ROOT / "common" / ".codex" / "agents"
+    REQUIRED = "## out of scope findings"
+
+    def test_both_adapter_trees_ship_the_same_agents(self):
+        claude = {p.stem for p in self.CLAUDE_DIR.glob("raven-*.md")}
+        codex = {p.stem for p in self.CODEX_DIR.glob("raven-*.toml")}
+        self.assertTrue(claude, "expected common/.claude/agents to ship raven-* agents")
+        self.assertEqual(
+            claude,
+            codex,
+            "adapter agent trees have diverged; one harness would ship a reviewer the other lacks",
+        )
+
+    def test_every_agent_requires_the_out_of_scope_section(self):
+        paths = sorted(self.CLAUDE_DIR.glob("raven-*.md")) + sorted(
+            self.CODEX_DIR.glob("raven-*.toml")
+        )
+        self.assertEqual(
+            len(paths),
+            8,
+            f"expected 4 Claude + 4 Codex agent contracts, found {len(paths)}",
+        )
+        for path in paths:
+            with self.subTest(agent=f"{path.parent.name}/{path.name}"):
+                self.assertIn(
+                    self.REQUIRED,
+                    path.read_text(encoding="utf-8").lower(),
+                    "agent contract must require an '## Out Of Scope Findings' "
+                    "section; without it the parent silently absorbs whatever "
+                    "the sub-agent noticed but was not asked about",
+                )
+
+
 class AdapterNeutralScriptReferenceTests(unittest.TestCase):
     """`.agents/skills/` is the agent-neutral canonical tree (see
     `.claude/docs/raven-agent-compatibility.md`), but the helper scripts it

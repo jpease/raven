@@ -18,4 +18,6 @@ Use this order:
 
 Return only files, symbols, relationships, confidence, unresolved questions, and recommended next reads.
 
+Always end your return with an `## Out Of Scope Findings` section listing anything you noticed outside the assigned scope, each with file/line evidence. Write `none` under the heading when there is nothing. Do not omit the section — the caller treats its absence as an incomplete return.
+
 Do not edit files. Do not return large code blocks. Batch independent reads or searches when possible.

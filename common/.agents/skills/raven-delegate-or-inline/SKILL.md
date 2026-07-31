@@ -24,6 +24,7 @@ Default to inline. Delegate only when the task matches at least one criterion be
 - Frame the task as a self-contained question: state the goal, what is already ruled out, and the expected output shape (file list, yes/no with evidence, root-cause summary).
 - Do not pass the full conversation history — delegation should reduce context, not duplicate it.
 - Before delegating a symbol-editing task, run impact analysis yourself and put the blast radius (callers, affected flows, risk) in the brief; the subagent lacks your context and cannot infer scope. Have the subagent run change-detection before committing.
+- Require an `## Out Of Scope Findings` section in the return, present-but-empty when there are none. A return without it is incomplete: what the sub-agent noticed but you did not ask about is exactly what gets lost. Disposition whatever comes back per `raven-triage-discovery`.
 - If no delegation mechanism is available, pause and ask the user instead of expanding retrieval indefinitely.
 
 ## Rationalization Check
