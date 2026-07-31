@@ -36,14 +36,26 @@ Confirmed against current upstream docs, not assumed from general knowledge
   invoked bare (`ruby-lsp`, no flags, not via `bundle exec`) for stdio
   clients — this is the actively-maintained community-default LSP,
   superseding Solargraph.
-- **Audit: bundler-audit.** Confirmed via the `rubysec/bundler-audit` README:
-  gem installs a binary named `bundle-audit` (hyphenated differently from the
-  gem name); the check command is `bundle-audit check --update`. Per
-  `gate_data.py`'s existing documented policy — confirmed by reading it, every
-  language's `audit` recipe is justfile-only and deliberately excluded from
-  the graded `recipes` list, because results depend on the advisory database
-  rather than the working tree — Ruby's `audit` recipe follows the same
-  pattern: real scanner, not graded.
+- **Audit: osv-scanner**, not bundler-audit. Originally scoped as
+  bundler-audit (confirmed via the `rubysec/bundler-audit` README: binary
+  `bundle-audit`, command `bundle-audit check --update`), but reading
+  `tests/test_gates.py` surfaced a hard repo convention:
+  `test_scanning_templates_invoke_osv_scanner_without_failing_the_shell`
+  asserts, for every template not in `_NO_SCANNER_INPUT = {"swift", "lua"}`,
+  that its `audit` recipe invokes osv-scanner specifically (checks for the
+  literal `osv-scanner scan source -r .`). osv-scanner supports Ruby
+  (Gemfile.lock / RubyGems is a covered ecosystem), so Ruby has real scanner
+  input and must use osv-scanner like every other scanning template, not a
+  Ruby-specific exception. `ruby/justfile`'s `audit` recipe is therefore a
+  verbatim copy of `python/justfile`'s (lines 38-60): probe for
+  `osv-scanner`, print an install pointer and exit 0 if absent, else run
+  `osv-scanner scan source -r .` and classify the exit code (0 clean,
+  1-126 findings, 128 nothing scannable, other = scan error), always
+  exiting 0 so `audit` never blocks a gate. Per `gate_data.py`'s existing
+  documented policy, every language's `audit` recipe is justfile-only and
+  excluded from the graded `recipes` list because results depend on the
+  advisory database rather than the working tree — Ruby follows the same
+  pattern.
 - **Version floor: 3.3+.** Verified Ruby's support lifecycle: Ruby 3.2 reached
   end-of-life on 2026-03-31 (no further security patches), and 3.3 is now in
   security-only maintenance. The rules doc states 3.2 is EOL outright and asks
@@ -63,7 +75,8 @@ scripts, and settings; real, language-specific files for the rest.
   - `check-fast`: `lint` (no separate fmt-check to fold in, unlike Lua/Python)
   - `check`: `check-fast` + `test`, with the standard verified-cache stamp
     (`with-verified-cache.sh`)
-  - `audit`: `bundle-audit check --update`
+  - `audit`: osv-scanner probe/scan/exit-code-classify, verbatim copy of
+    `python/justfile`'s `audit` recipe
   - `install-hooks`: same pre-commit/pre-push wiring as every other template
 - `.mcp.json`: `semgrep`, `semble`, `gitnexus`, and `lsp` →
   `mcp-language-server --workspace . --lsp ruby-lsp`
