@@ -125,4 +125,14 @@ GATE_DATA: dict[str, dict[str, object]] = {
             "test": ["busted"],
         },
     },
+    "ruby": {
+        "recipes": ["lint", "test"],
+        "tools": ["rubocop", "ruby"],
+        "detect_signals": ["Gemfile", ".rubocop.yml"],
+        "config_signals": [[".rubocop.yml", ""]],
+        "fallback_commands": {
+            "lint": ["rubocop"],
+            "test": ["rake", "test"],
+        },
+    },
 }

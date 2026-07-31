@@ -105,6 +105,23 @@ class GatesTests(unittest.TestCase):
             spec.fallback_commands["fmt-check"], ("mix", "format", "--check-formatted")
         )
 
+    def test_ruby_recipes_are_lint_and_test_only(self):
+        # Ruby has no separate fmt-check (RuboCop covers lint+format in one
+        # pass) and no typecheck (Sorbet/RBS are opt-in, not universal).
+        spec = gate_spec_for("ruby")
+        assert spec is not None
+        self.assertEqual(set(spec.recipes), {"lint", "test"})
+
+    def test_ruby_lint_fallback_is_rubocop(self):
+        spec = gate_spec_for("ruby")
+        assert spec is not None
+        self.assertEqual(spec.fallback_commands["lint"], ("rubocop",))
+
+    def test_ruby_test_fallback_is_rake_test(self):
+        spec = gate_spec_for("ruby")
+        assert spec is not None
+        self.assertEqual(spec.fallback_commands["test"], ("rake", "test"))
+
     def test_swift_lint_format_fallback_runs_swift_format(self):
         spec = gate_spec_for("swift")
         assert spec is not None
