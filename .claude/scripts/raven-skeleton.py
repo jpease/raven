@@ -32,6 +32,7 @@ LANGUAGE_BY_EXTENSION: dict[str, str] = {
     ".lua": "lua",
     ".ex": "elixir",
     ".exs": "elixir",
+    ".rb": "ruby",
 }
 
 # Language -> tree-sitter node kinds that represent top-level declarations.
@@ -63,6 +64,10 @@ NODE_KINDS: dict[str, list[str]] = {
     # tree-sitter-swift models struct/enum/extension under class_declaration.
     "swift": ["function_declaration", "class_declaration", "protocol_declaration"],
     "lua": ["function_declaration"],
+    # Verified against ast-grep 0.45.0 on sample files: each kind matches the
+    # correct span for `def`, `def self.x`, `class`, `module`, and
+    # `class << self` respectively.
+    "ruby": ["method", "singleton_method", "class", "module", "singleton_class"],
 }
 # TSX shares TypeScript's declaration kinds.
 NODE_KINDS["tsx"] = NODE_KINDS["typescript"]
@@ -413,6 +418,7 @@ RG_DECLARATION_PATTERNS: dict[str, str] = {
     ),
     "lua": r"^\s*(local\s+)?function\b",
     "elixir": r"^\s*(defmodule|defmacrop|defmacro|defp|def)\s+\w+",
+    "ruby": r"^\s*(class|module|def)\s",
 }
 RG_DECLARATION_PATTERNS["tsx"] = RG_DECLARATION_PATTERNS["typescript"]
 RG_DECLARATION_PATTERNS["javascript"] = RG_DECLARATION_PATTERNS["typescript"]

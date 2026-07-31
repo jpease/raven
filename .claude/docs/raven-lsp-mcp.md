@@ -1,6 +1,6 @@
 # LSP MCP Defaults
 
-Last verified: 2026-07-02
+Last verified: 2026-07-30
 
 Use client-native LSP or language plugins first when the agent client provides a reliable one for the project language. When no client-native option is available, Raven's recommended general-purpose fallback is `mcp-language-server` from `isaacphi/mcp-language-server`.
 
@@ -18,6 +18,7 @@ Use client-native LSP or language plugins first when the agent client provides a
 | C/C++      | `clangd` with the repo's compile database settings                                            |
 | Lua        | `lua-language-server`                                                                         |
 | Elixir     | `expert` when available (still alpha upstream); ElixirLS remains a viable fallback if the repository already uses it |
+| Ruby       | `ruby-lsp`                                                                                    |
 
 ## Install
 
@@ -33,6 +34,7 @@ Install the bridge and selected language server from their official documentatio
 | SourceKit-LSP              | https://github.com/swiftlang/sourcekit-lsp                               | `sourcekit-lsp`                      |
 | Elixir Expert              | https://expert-lsp.org/docs/installation                                 | `expert` (`-- --stdio` required)     |
 | Lua Language Server        | https://github.com/LuaLS/lua-language-server                             | `lua-language-server`                |
+| Ruby LSP                   | https://shopify.github.io/ruby-lsp/                                      | `ruby-lsp`                            |
 
 Treat Raven's template defaults as convenience defaults, not a replacement for upstream documentation.
 
