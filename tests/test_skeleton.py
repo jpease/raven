@@ -77,6 +77,7 @@ class LanguageDetectionTests(RavenTestCase):
             "a.ex": "elixir",
             "a.exs": "elixir",
             "a.lua": "lua",
+            "a.rb": "ruby",
         }
         for filename, expected in cases.items():
             with self.subTest(filename=filename):
@@ -102,6 +103,15 @@ class NodeKindTests(RavenTestCase):
         self.assertIn("class_declaration", kinds)
         self.assertIn("interface_declaration", kinds)
         self.assertIn("method_definition", kinds)
+
+    def test_ruby_kinds_include_methods_and_classes(self):
+        module = _module()
+        kinds = module.node_kinds("ruby")
+        self.assertIn("method", kinds)
+        self.assertIn("singleton_method", kinds)
+        self.assertIn("class", kinds)
+        self.assertIn("module", kinds)
+        self.assertIn("singleton_class", kinds)
 
     def test_node_kind_languages_are_a_subset_of_detectable_languages(self):
         module = _module()
@@ -231,6 +241,25 @@ class AstgrepSkeletonTests(RavenTestCase):
                 {"start_line": 1, "end_line": 2, "header": "def top_function(x):"},
                 {"start_line": 5, "end_line": 7, "header": "class Greeter:"},
                 {"start_line": 6, "end_line": 7, "header": "def greet(self):"},
+            ],
+        )
+
+    @unittest.skipUnless(HAVE_ASTGREP, "ast-grep not installed")
+    def test_ruby_golden(self):
+        module = _module()
+        path = self._write(
+            "golden.rb",
+            "module Greeter\n  def self.hello\n    \"hi\"\n  end\nend\n\n"
+            'class Greeter::Formal\n  def greet(name)\n    "Hello, #{name}"\n  end\nend\n',
+        )
+
+        self.assertEqual(
+            module.astgrep_skeleton(str(path)),
+            [
+                {"start_line": 1, "end_line": 5, "header": "module Greeter"},
+                {"start_line": 2, "end_line": 4, "header": "def self.hello"},
+                {"start_line": 7, "end_line": 11, "header": "class Greeter::Formal"},
+                {"start_line": 8, "end_line": 10, "header": "def greet(name)"},
             ],
         )
 
@@ -451,7 +480,16 @@ class ParseCtagsJsonTests(RavenTestCase):
 class RgDeclarationPatternTests(RavenTestCase):
     def test_has_pattern_for_shipped_languages(self):
         module = _module()
-        for language in ["python", "typescript", "javascript", "go", "rust", "swift", "lua"]:
+        for language in [
+            "python",
+            "typescript",
+            "javascript",
+            "go",
+            "rust",
+            "swift",
+            "lua",
+            "ruby",
+        ]:
             with self.subTest(language=language):
                 self.assertTrue(module.rg_declaration_pattern(language))
 
