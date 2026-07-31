@@ -1,0 +1,69 @@
+# Run the test suite
+test:
+    bundle exec rake test
+
+# Run lint checks
+lint:
+    bundle exec rubocop
+
+# Format the codebase in place
+format:
+    bundle exec rubocop -A
+
+# Fast static checks for the pre-commit hook (no tests)
+check-fast: lint
+
+# Run the standard local verification set (also runs in the pre-push hook).
+# A successful run credits the pre-push stamp too, so a manual `just check`
+# right before pushing skips a redundant rerun in the hook.
+check: check-fast test
+    [ -f .raven/git-hooks/lib/with-verified-cache.sh ] && sh .raven/git-hooks/lib/with-verified-cache.sh check true || true
+
+# Report known advisories in dependency manifests via osv-scanner.
+audit:
+    #!/usr/bin/env sh
+    if ! command -v osv-scanner >/dev/null 2>&1; then
+        echo "osv-scanner is not installed; skipping the dependency audit."
+        echo "Install: https://google.github.io/osv-scanner/installation/"
+        exit 0
+    fi
+    osv-scanner scan source -r .
+    status=$?
+    # Documented exit codes: 0 clean, 1-126 result-related (findings),
+    # 127 general error, 128 nothing scannable, 129-255 other errors.
+    if [ "$status" -eq 0 ]; then
+        echo "No known advisories in the scanned manifests."
+    elif [ "$status" -ge 1 ] && [ "$status" -le 126 ]; then
+        echo "Advisories reported above. Classify each one before remediating"
+        echo "(see the raven-dependency-update skill); this is not a gate."
+    elif [ "$status" -eq 128 ]; then
+        echo "No supported dependency manifest found; nothing to audit."
+    else
+        echo "osv-scanner exited $status without completing the scan." >&2
+    fi
+    exit 0
+
+# Install pre-commit (fast checks) and pre-push (full check) git hooks
+install-hooks:
+    #!/usr/bin/env sh
+    # Resolve Git's effective hooks dir (honors core.hooksPath and linked
+    # worktrees) so hooks land where Git will run them, not a hard-coded
+    # .git/hooks that a custom hooksPath would ignore.
+    hooks_dir=$(git rev-parse --git-path hooks) || exit 1
+    install_hook() {
+        name="$1"
+        cmd="$2"
+        path="$hooks_dir/$name"
+        if [ -f "$path" ]; then
+            echo "A $name hook already exists at $path."
+            echo "To use RAVEN's gate, add this line to it:"
+            printf "  %s\n" "$cmd"
+        else
+            mkdir -p "$hooks_dir"
+            printf '#!/bin/sh\n%s\n' "$cmd" > "$path"
+            chmod +x "$path"
+            echo "Installed $path to run '$cmd'."
+        fi
+    }
+    install_hook pre-commit "just check-fast"
+    install_hook pre-push "just check"

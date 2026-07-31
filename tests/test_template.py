@@ -30,6 +30,7 @@ class TemplateTests(RavenTestCase):
             "swift": [".swiftlint.yml"],
             "elixir": [".credo.exs", ".formatter.exs"],
             "lua": ["stylua.toml", ".luacheckrc"],
+            "ruby": [".rubocop.yml"],
         }
 
         for language, paths in expected.items():

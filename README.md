@@ -23,7 +23,7 @@ raven install python --dry-run
 raven install python
 ```
 
-Replace `python` with `typescript`, `go`, `rust`, `swift`, `elixir`, `lua`, or `dotfiles`.
+Replace `python` with `typescript`, `go`, `rust`, `swift`, `elixir`, `lua`, `ruby`, or `dotfiles`.
 
 If you prefer not to edit `PATH`, use `"$RAVEN_PATH/scripts/raven"` in place of `raven`.
 
@@ -247,6 +247,7 @@ Language templates include `.mcp.json` defaults for Semble, GitNexus, and LSP. F
 | Swift      | `sourcekit-lsp`                      |
 | Elixir     | `expert --stdio`                     |
 | Lua        | `lua-language-server`                |
+| Ruby       | `ruby-lsp`                            |
 
 Install `mcp-language-server` and the language server for the template you chose from their official documentation. Raven includes the `.mcp.json` command shape; see `.claude/docs/raven-lsp-mcp.md` after installation for official documentation links and template-specific command shapes.
 
@@ -267,7 +268,7 @@ See [raven-lsp-mcp.md](.claude/docs/raven-lsp-mcp.md) and [raven-tool-assessment
 Raven-managed paths use `raven-*` wherever possible.
 
 - `common/`: shared policy, skills, subagents, hooks, docs, rules, scripts, and MCP examples.
-- `python/`, `swift/`, `rust/`, `typescript/`, `go/`, `elixir/`, `lua/`, `dotfiles/`: templates that assemble common guidance with stack-specific Raven rules.
+- `python/`, `swift/`, `rust/`, `typescript/`, `go/`, `elixir/`, `lua/`, `ruby/`, `dotfiles/`: templates that assemble common guidance with stack-specific Raven rules.
 - `scripts/raven`: executable CLI wrapper for `raven init`, `raven install`, `raven upgrade`, `raven doctor`, and `raven assess`.
 - `scripts/raven.py` and `scripts/raven_lib/`: Python implementation for the CLI.
 - `tests/`: applicator tests.

@@ -56,6 +56,7 @@ COMPONENT_PATHS = {
         ".formatter.exs",
         ".golangci.yml",
         ".luacheckrc",
+        ".rubocop.yml",
         ".swift-format",
         ".swiftlint.yml",
         "eslint.config.mjs",

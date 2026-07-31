@@ -100,6 +100,7 @@ LSP_DEFAULTS = {
     "swift": ("sourcekit-lsp", False),
     "elixir": ("expert", True),
     "lua": ("lua-language-server", False),
+    "ruby": ("ruby-lsp", False),
 }
 
 
