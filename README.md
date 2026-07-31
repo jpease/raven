@@ -68,7 +68,7 @@ cd /path/to/destination-repo
 raven init <language>
 ```
 
-Raven currently has support for Python, TypeScript, Go, Rust, Swift, Elixir, Lua, and dotfiles. So for example, if you're using Raven in a Rust project you'd use:
+Raven currently has support for Python, TypeScript, Go, Rust, Swift, Elixir, Lua, Ruby, and dotfiles. So for example, if you're using Raven in a Rust project you'd use:
 
 ```sh
 raven init rust

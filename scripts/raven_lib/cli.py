@@ -691,7 +691,7 @@ File safety:
         "language",
         nargs="?",
         default=None,
-        help="language template (e.g. python, swift, rust, typescript, elixir); prompts interactively if omitted",
+        help="language template (e.g. python, swift, rust, typescript, elixir, ruby); prompts interactively if omitted",
     )
     init_parser.add_argument(
         "--platform",
