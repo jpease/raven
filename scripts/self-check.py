@@ -186,6 +186,7 @@ def validate_context_budget() -> None:
         "typescript/.claude/rules/raven-typescript.md": 660,
         "go/.claude/rules/raven-go.md": 840,
         "lua/.claude/rules/raven-lua.md": 680,
+        "ruby/.claude/rules/raven-ruby.md": 850,
         "dotfiles/.claude/rules/raven-dotfiles.md": 530,
         # shared rules files (symlinked from language dirs)
         "common/.claude/rules/raven-security.md": 45,
@@ -243,6 +244,7 @@ def validate_aggregate_budget() -> None:
         "typescript": (1838, "typescript/.claude/rules/raven-typescript.md"),
         "go": (1998, "go/.claude/rules/raven-go.md"),
         "lua": (1838, "lua/.claude/rules/raven-lua.md"),
+        "ruby": (2008, "ruby/.claude/rules/raven-ruby.md"),
         "dotfiles": (1672, "dotfiles/.claude/rules/raven-dotfiles.md"),
     }
     print("==> validate aggregate context budget per language profile")
