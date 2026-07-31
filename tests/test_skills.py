@@ -510,6 +510,7 @@ class AntipatternRegistrySymlinkTests(unittest.TestCase):
             "go",
             "lua",
             "python",
+            "ruby",
             "rust",
             "swift",
             "typescript",

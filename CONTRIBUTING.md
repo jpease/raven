@@ -32,7 +32,7 @@ This validates the installed shape, runs `upgrade --dry-run`, applies `upgrade`,
 | Path | Purpose |
 |---|---|
 | `common/` | Shared, canonical template content installed into every destination repo |
-| `python/`, `go/`, `rust/`, `typescript/`, `swift/`, `elixir/`, `lua/`, `dotfiles/` | Per-language template trees |
+| `python/`, `go/`, `rust/`, `typescript/`, `swift/`, `elixir/`, `lua/`, `ruby/`, `dotfiles/` | Per-language template trees |
 | `scripts/raven.py` | The installer and upgrade engine |
 | `scripts/self-check.py` | Self-test harness for this repo |
 | `tests/` | Unit tests |
