@@ -369,6 +369,18 @@ class PlatformGatingTests(RavenTestCase):
             "raven-gitlab-issues should be excluded when platform=none",
         )
 
+    def test_triage_discovery_skill_installs_at_every_platform(self):
+        # Deliberately absent from PLATFORM_GATED_SKILLS: FOLD IN, DROP, and the
+        # sub-agent reporting contract are all tracker-independent, so the skill
+        # must ship even where no issue tracker is configured.
+        for platform in ("github", "gitlab", "none"):
+            with self.subTest(platform=platform):
+                entries = self._skill_entries(platform)
+                self.assertTrue(
+                    any("raven-triage-discovery" in e for e in entries),
+                    f"raven-triage-discovery should install at platform={platform}",
+                )
+
     def test_platform_excluded_helper_directly(self):
         config_github = self._make_config("github")
         config_gitlab = self._make_config("gitlab")

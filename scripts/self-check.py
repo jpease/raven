@@ -308,18 +308,19 @@ def _parse_frontmatter_description(text: str) -> str | None:
 # in common/.agents/skills (language trees symlink to it), so counting common/
 # once matches what a session actually loads.
 #
-# 372 words in-tree + 4 words of slack. The slack is deliberately tight: it is
-# the same 4 words the previous limit left, so unplanned description growth still
-# trips this. Raised from 362 for issue #124's raven-debloat, a deliberate skill
-# addition, not drift -- a new skill needs a description, and the old ceiling had
-# no room for one. Raise this only alongside a new skill, and only to the new
-# in-tree total plus that same slack.
+# 388 words in-tree + 4 words of slack. The slack is deliberately tight: it is
+# the same 4 words every previous limit left, so unplanned description growth
+# still trips this. Raised from 376 for raven-triage-discovery, a deliberate
+# skill addition, not drift -- a new skill needs a description, and the old
+# ceiling had no room for one. This is the second such sanctioned raise (the
+# first was 362 -> 376 for issue #124's raven-debloat). Raise this only
+# alongside a new skill, and only to the new in-tree total plus that same slack.
 #
 # Module-level so tests can read the real numbers. They previously restated them
 # and drifted to a stale 362, which left the aggregate test's fixture clearing
 # the true limit by 4 words -- still passing, but one raise away from silently
 # testing nothing.
-SKILL_DESCRIPTION_AGGREGATE_LIMIT = 376
+SKILL_DESCRIPTION_AGGREGATE_LIMIT = 392
 SKILL_DESCRIPTION_PER_SKILL_LIMIT = 30
 
 

@@ -899,6 +899,72 @@ class DebloatSkillTests(unittest.TestCase):
         )
 
 
+class TriageDiscoverySkillTests(unittest.TestCase):
+    """Guards the discovered-work disposition contract.
+
+    Reads the canonical skill source directly (not the installed root
+    copy) since `common/.agents/skills/` is where edits must land.
+    """
+
+    def setUp(self):
+        path = REPO_ROOT / "common" / ".agents" / "skills" / "raven-triage-discovery" / "SKILL.md"
+        self.content = path.read_text(encoding="utf-8")
+        self.lowered = self.content.lower()
+
+    def test_stays_under_line_ceiling(self):
+        # Same basis as raven-task-complete: this is invoked mid-task, so its
+        # cost is paid at the moment context is scarcest. Keep it short.
+        self.assertLess(
+            len(self.content.splitlines()),
+            75,
+            "raven-triage-discovery/SKILL.md should stay under ~75 lines",
+        )
+
+    def test_declares_the_required_sections(self):
+        for heading in (
+            "## skip when",
+            "## required constraints",
+            "## dispositions",
+            "## filing",
+            "## rationalization check",
+            "## output",
+        ):
+            with self.subTest(heading=heading):
+                self.assertIn(heading, self.lowered)
+
+    def test_dispositions_table_names_all_three_buckets(self):
+        region = section_region(self.lowered, "## dispositions")
+        for bucket in ("fold in", "file", "drop"):
+            with self.subTest(bucket=bucket):
+                self.assertIn(
+                    bucket,
+                    region,
+                    f"the disposition table must name the {bucket.upper()} bucket",
+                )
+
+    def test_comment_only_is_prohibited_as_a_disposition(self):
+        # The substance of the whole skill: commenting on the issue or epic is
+        # the observed failure mode, so the prohibition is load-bearing text,
+        # not decorative wording.
+        region = section_region(self.lowered, "## required constraints")
+        self.assertIn(
+            "is not a disposition",
+            region,
+            "expected a Required Constraint stating that a comment on the "
+            "issue or its epic is not a disposition",
+        )
+
+    def test_ambiguity_resolves_to_filing(self):
+        # Without a stated tiebreak, ambiguous findings drift to the cheapest
+        # action -- which is exactly how they became comments.
+        region = section_region(self.lowered, "## required constraints")
+        self.assertIn(
+            "is unclear, file",
+            region,
+            "expected a Required Constraint resolving FILE-vs-DROP ambiguity toward FILE",
+        )
+
+
 class AdapterNeutralScriptReferenceTests(unittest.TestCase):
     """`.agents/skills/` is the agent-neutral canonical tree (see
     `.claude/docs/raven-agent-compatibility.md`), but the helper scripts it
