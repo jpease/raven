@@ -30,6 +30,7 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 | "Nothing I touched affects the tests" | That's an assumption, not evidence. Run the narrowest relevant test to confirm. |
 | "I verified this earlier in the session" | State what changed since, or re-run against the current diff. |
 | "The code explains itself" | Then say that explicitly. Silence is indistinguishable from having no reason. |
+| "I noted the other problems in a comment" | A comment is not a disposition. Each finding gets FOLD IN, FILE, or DROP per `raven-triage-discovery`. |
 
 ## Process
 
@@ -37,7 +38,8 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 2. **Check diff scope** — run `git diff` and confirm only intended files changed. Flag unintended files, config drift, or stray hunks.
 3. **Remove debug scaffolding** — scan touched files for temporary additions left during the session: `print`, `console.log`, `dbg!`, `IO.inspect`, `fmt.Println`, temporary `TODO` comments, commented-out blocks.
 4. **Run lint and type-check** on touched files using the project's configured tools. If no tool is configured, note it and skip.
-5. **State the verification summary** before handing off.
+5. **Disposition discovered work** — enumerate anything surfaced during this unit that falls outside the current issue's acceptance criteria, including findings returned by sub-agents, and assign each one a disposition per `raven-triage-discovery`. "None" must be stated, not implied.
+6. **State the verification summary** before handing off.
 
 ## Integration with raven-project-lifecycle
 
@@ -56,3 +58,7 @@ When gaps exist:
 Always:
 
 > Intent: [what forced this design — the constraint, the rejected alternative, or the non-obvious behavior a future reader would trip on]. If none: `Intent: none — mechanical rename, no design decision.`
+
+Always:
+
+> Discovered work: [each item's disposition per `raven-triage-discovery`]. If none: `Discovered work: none.`
