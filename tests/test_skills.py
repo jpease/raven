@@ -989,6 +989,52 @@ class TriageDiscoverySkillTests(unittest.TestCase):
         )
 
 
+class IssueSkillTriageReferenceTests(unittest.TestCase):
+    """Both issue skills must delegate the disposition decision.
+
+    The rule they used to own -- "if new durable work is discovered: create
+    follow-up issues" -- left `durable` undefined, and these skills are
+    platform-gated, so neither ships at platform=none. The definition lives
+    in raven-triage-discovery; these skills supply only tracker mechanics.
+    """
+
+    SKILLS_DIR = REPO_ROOT / "common" / ".agents" / "skills"
+
+    def _skill(self, name):
+        return (self.SKILLS_DIR / name / "SKILL.md").read_text(encoding="utf-8").lower()
+
+    def test_both_issue_skills_route_discovered_work_to_the_triage_skill(self):
+        for name in ("raven-github-issues", "raven-gitlab-issues"):
+            with self.subTest(skill=name):
+                self.assertIn(
+                    "raven-triage-discovery",
+                    self._skill(name),
+                    "issue skill must route discovered work to "
+                    "raven-triage-discovery rather than restating a vague rule",
+                )
+
+    def test_neither_issue_skill_still_carries_the_undefined_durable_rule(self):
+        for name in ("raven-github-issues", "raven-gitlab-issues"):
+            with self.subTest(skill=name):
+                self.assertNotIn(
+                    "new durable work is discovered",
+                    self._skill(name),
+                    "the undefined 'durable work' phrasing is what let findings "
+                    "drift to comments; it must not survive alongside the "
+                    "replacement rule",
+                )
+
+    def test_both_issue_skills_prohibit_the_comment_as_terminal_record(self):
+        for name in ("raven-github-issues", "raven-gitlab-issues"):
+            with self.subTest(skill=name):
+                self.assertIn(
+                    "pointer to a filed issue",
+                    self._skill(name),
+                    "issue skills must state that a comment is legitimate only "
+                    "as a pointer to a filed issue",
+                )
+
+
 class SubagentOutOfScopeContractTests(unittest.TestCase):
     """Every shipped reviewer agent must return out-of-scope findings.
 
