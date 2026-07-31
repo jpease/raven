@@ -539,10 +539,34 @@ class TaskCompleteSkillTests(unittest.TestCase):
         self.lowered = self.content.lower()
 
     def test_stays_under_line_ceiling(self):
+        # Raised from 65 when the discovered-work disposition step landed: the
+        # step, its rationalization row, and its Output line cost 6 lines,
+        # taking the file from 58 to 64 -- inside the old ceiling by a single
+        # line, which is no headroom at all. Headroom here is one iteration,
+        # not a budget to spend.
         self.assertLess(
             len(self.content.splitlines()),
-            65,
-            "raven-task-complete/SKILL.md should stay under ~65 lines",
+            75,
+            "raven-task-complete/SKILL.md should stay under ~75 lines",
+        )
+
+    def test_process_requires_dispositioning_discovered_work(self):
+        # The gate: without a step here, nothing forces the agent to account for
+        # findings at the one moment it still has full recall of them.
+        region = section_region(self.lowered, "## process")
+        self.assertIn(
+            "raven-triage-discovery",
+            region,
+            "expected a Process step routing discovered work to raven-triage-discovery",
+        )
+
+    def test_output_requires_stating_discovered_work(self):
+        region = section_region(self.lowered, "## output")
+        self.assertIn(
+            "discovered work",
+            region,
+            "expected the Output contract to require stating discovered work, "
+            "so silence is not a passing state",
         )
 
     def test_required_constraints_demand_intent_not_derivable_from_the_diff(self):
