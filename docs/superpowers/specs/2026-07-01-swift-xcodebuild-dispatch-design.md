@@ -7,7 +7,7 @@
 
 ## Problem
 
-The `swift` template's `build`/`test` recipes are SwiftPM-only (`swift build`, `swift test`) and its `check` gate runs `swift build`/`swift test`. Neither works for an Xcode **app** target, which builds with `xcodebuild -scheme <S> -destination <D>`. All three real iOS repos dogfooded (a private iOS app repo, a second private iOS app repo, and the #60 reporter) had to hand-rewrite these recipes. Additionally `gate_data`'s `detect_signals: ["Package.swift"]` makes `raven assess` warn "no language signal" for iOS apps (no `Package.swift`), even though they are valid Swift projects.
+The `swift` template's `build`/`test` recipes are SwiftPM-only (`swift build`, `swift test`) and its `check` gate runs `swift build`/`swift test`. Neither works for an Xcode **app** target, which builds with `xcodebuild -scheme <S> -destination <D>`. All three real iOS repos dogfooded (two private app repos, plus the #60 reporter) had to hand-rewrite these recipes. Additionally `gate_data`'s `detect_signals: ["Package.swift"]` makes `raven assess` warn "no language signal" for iOS apps (no `Package.swift`), even though they are valid Swift projects.
 
 ## Decision
 
