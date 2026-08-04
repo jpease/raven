@@ -24,8 +24,8 @@ AGENTS.md Retrieval Discipline and Verification State already govern batching, S
 
 1. Discover existing patterns with Semble or `rg`. If a similar pattern is already known, use Semble `find_related` on it for a more targeted result than a fresh search.
 2. Use LSP to inspect relevant definitions and types.
-3. Identify the smallest integration point.
-4. Check GitNexus if the feature crosses module boundaries.
+3. Before picking an integration point, check whether the feature needs symbols from two components that do not already depend on each other. If so, resolve the dependency-direction question first — which side may legally import the other, or whether a new shared location is needed — using GitNexus or the project's dependency graph/build manifest (package config, module map, import-boundary rules). Do this before choosing where the code lives, not while writing it.
+4. Identify the smallest integration point consistent with that direction.
 5. Before editing, state:
    - the observable behavior change, in one or two sentences
    - the acceptance criteria you will verify against

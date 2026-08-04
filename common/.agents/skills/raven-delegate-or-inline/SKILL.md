@@ -11,6 +11,7 @@ Default to inline. Delegate only when the task matches at least one criterion be
 
 - The task is a surgical, single-file, single-symbol edit.
 - The user already told you which approach to use for this task.
+- The task is large but forms one continuous causal chain — each step's design depends on the previous step's resolved outcome. Splitting a chain like this forces independent subagents to either re-derive the same reasoning or receive it secondhand and lossily. Delegate breadth (independent files, parallel checks); keep depth (one unresolved chain of decisions) inline even at large size.
 
 ## When To Delegate
 
@@ -34,6 +35,7 @@ Default to inline. Delegate only when the task matches at least one criterion be
 | "This feels like it needs a deep look" | A feeling isn't a criterion. Match it to a bullet above, or stay inline. |
 | "Delegating is safer / more thorough" | Splitting off a surgical edit adds a context hop, not rigor. |
 | "I always delegate audits like this" | Habit isn't the test. Re-check the task's actual shape against the bullets. |
+| "This is large, I should split it up" | Size alone isn't the test either. If it's one coupled chain of decisions rather than independent pieces, splitting adds re-derivation cost, not speed. |
 
 ## Platform Notes
 

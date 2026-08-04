@@ -19,6 +19,8 @@ description: Use when adding, fixing, or reviewing tests.
 - Mock only true external boundaries: time, randomness, network, filesystem, process state, expensive services, unavailable platform APIs, or hard-to-trigger failure modes. Do not use mocks that merely restate implementation.
 - Separate behavior changes from refactors: existing tests must be green before starting a refactor; add or update tests for behavior changes before changing the implementation.
 - Run the new or changed test before the implementation lands and confirm it fails for the behavior it asserts — not from a compile, import, collection, or fixture error. A test written first but never run red can be one that would have passed anyway.
+- When a change adds or changes a required member on a shared interface, protocol, or abstract base, search for all implementers across the repo before treating the change as scoped to the file you're editing. The break can surface outside your test target entirely — as a compile error, an import-time failure, or a different package's test suite — not as a failing test where you made the change.
+- If a shared test double's fidelity gap blocks an assertion, prefer asserting on the observable call sequence over widening the double. Widening changes behavior for every other test that depends on it; a narrow assertion doesn't.
 - Run only the new or changed tests first.
 - Broaden test scope only after narrow tests pass.
 - Do not delete, weaken, or over-mock tests just to make a change pass.
@@ -32,6 +34,7 @@ description: Use when adding, fixing, or reviewing tests.
 | "It obviously fails without the implementation, no need to run it" | Obvious is not observed. An unrun test can pass already, or fail from a typo'd fixture that would mask a bogus assertion once the code lands. |
 | "The test broke, I'll update it to match" | Classify the failure first. Updating a stale assertion without classifying it can mask a regression. |
 | "Coverage looks thin but the main path works" | Missing edge cases and regressions are the gap this skill exists to close, not something to wave off. |
+| "This failure is in a different file, that's unrelated" | A required-member change on a shared interface breaks every implementer at once. Sweep repo-wide before deciding it's unrelated. |
 
 ## When Existing Tests Fail
 
