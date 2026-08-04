@@ -15,7 +15,7 @@ description: Use for renames, shared abstraction changes, API changes, moved cod
 - Do not combine refactor and behavior change unless asked.
 - Capture reference or dependency evidence before editing public or shared symbols.
 - Use syntax-aware tools for broad mechanical changes when available.
-- Verify textual leftovers with `rg` after renames, moves, or API changes.
+- Verify textual leftovers with `rg` after renames, moves, or API changes. Do not scope the sweep with extension filters (`--include`/`-t`/`-g '*.ext'`) — extensionless build and config files (`Dockerfile`, `Makefile`, `Rakefile`, `Fastfile`, `Vagrantfile`, `Jenkinsfile`) are invisible to them and are common places for a stale reference to survive.
 - Stop and ask or delegate when ownership, references, or blast radius remain unclear after targeted retrieval.
 - Do not reformat unrelated files.
 - Run targeted tests or explain why no targeted verification exists.
