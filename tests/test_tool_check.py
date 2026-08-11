@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -69,7 +70,7 @@ gitnexus: gitnexus mcp - ✓ Connected
             config.write_text(
                 json.dumps({"mcpServers": {"semble": {"command": "uvx"}}}), encoding="utf-8"
             )
-            module._claude_mcp_config_paths = lambda: [config]
+            module._claude_mcp_config_paths = lambda _root=None: [config]
             module._claude_mcp_server_names_from_config.cache_clear()
             try:
                 self.assertEqual(module.claude_mcp_server_status("semble"), "configured")
@@ -82,7 +83,7 @@ gitnexus: gitnexus mcp - ✓ Connected
         original_command_status = module.command_status
         original_status = module.claude_mcp_server_status
         module.command_status = lambda _command: "missing"
-        module.claude_mcp_server_status = lambda name: (
+        module.claude_mcp_server_status = lambda name, _root=None: (
             "configured" if name == "semble" else "not_configured"
         )
         try:
@@ -101,8 +102,8 @@ gitnexus: gitnexus mcp - ✓ Connected
         original_claude_status = module.claude_mcp_server_status
         original_codex_config = module._codex_mcp_server_names_from_config
         module.command_status = lambda _command: "missing"
-        module.claude_mcp_server_status = lambda _name: "not_configured"
-        module._codex_mcp_server_names_from_config = lambda: frozenset({"semble"})
+        module.claude_mcp_server_status = lambda _name, _root=None: "not_configured"
+        module._codex_mcp_server_names_from_config = lambda _root=None: frozenset({"semble"})
         try:
             available, source = module.check_tool_with_source(tool)
         finally:
@@ -130,7 +131,7 @@ gitnexus: gitnexus mcp - ✓ Connected
         module._claude_mcp_server_names.cache_clear()
         module._claude_mcp_server_names_from_config.cache_clear()
         module._claude_mcp_server_names_from_cli.cache_clear()
-        module._claude_mcp_config_paths = list
+        module._claude_mcp_config_paths = lambda _root=None: []
         try:
             self.assertEqual(module.claude_mcp_server_status("semble"), "timed_out")
             self.assertFalse(module.claude_mcp_server_configured("semble"))
@@ -240,6 +241,132 @@ class ToolCheckJsonEndToEndTests(RavenTestCase):
         result = self._run("[]", ["--session-start"])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("Traceback", result.stderr)
+
+
+class ProjectRootResolutionTests(RavenTestCase):
+    """Regression for #147: project-scoped MCP config is found from the script's
+    install location, not the process working directory.
+
+    A hook's cwd is not reliably the project. Codex Desktop can invoke a hook
+    from outside the worktree, and its launcher runs the script through
+    ``runpy`` without changing directory, so a cwd-anchored lookup silently
+    misses the project's ``.mcp.json`` / ``.codex/config.toml`` and reports an
+    MCP-configured tool as missing.
+    """
+
+    def test_project_root_ignores_the_process_working_directory(self):
+        module = load_script_module("raven_tool_check_root", TOOL_CHECK_SCRIPT)
+        module.project_root.cache_clear()
+        self.addCleanup(module.project_root.cache_clear)
+        original_cwd = Path.cwd()
+        os.chdir(self.destination)
+        try:
+            self.assertEqual(module.project_root(), REPO_ROOT / "common")
+        finally:
+            os.chdir(original_cwd)
+
+    def test_config_path_helpers_accept_an_explicit_root(self):
+        module = load_script_module("raven_tool_check_explicit_root", TOOL_CHECK_SCRIPT)
+        root = self.destination
+
+        self.assertEqual(module._claude_mcp_config_paths(root)[0], root / ".mcp.json")
+        self.assertEqual(module._codex_mcp_config_paths(root)[0], root / ".codex" / "config.toml")
+
+    def _install_project(self, adapter: str, script: Path) -> Path:
+        """Install one adapter's prober into a throwaway project worktree."""
+        project = self.destination / f"project{adapter}"
+        (project / ".git").mkdir(parents=True)
+        scripts = project / adapter / "scripts"
+        scripts.mkdir(parents=True)
+        shutil.copy2(script, scripts / "raven-tool-check.py")
+        return project
+
+    def _isolated_env(self) -> dict[str, str]:
+        """Environment with no user config and no tools other than python.
+
+        ``HOME`` is redirected so a globally configured MCP server on the
+        machine running the tests cannot mask a cwd bug, and ``PATH`` holds
+        only the interpreter so every probed CLI reports missing.
+        """
+        home = self.destination / "home"
+        bin_dir = self.destination / "bin"
+        home.mkdir(exist_ok=True)
+        bin_dir.mkdir(exist_ok=True)
+        python = bin_dir / "python"
+        if not python.exists():
+            python.symlink_to(sys.executable)
+        return {
+            "HOME": str(home),
+            "PATH": str(bin_dir),
+            "RAVEN_TOOL_MEMORY": str(home / "tool-memory.json"),
+        }
+
+    def _missing_tool_names(self, stdout: str) -> set[str]:
+        """Tool names the session-start prompt lists as missing.
+
+        Parses the bullet lines rather than substring-matching the whole
+        prompt: an unrelated tool's purpose text also mentions Semble.
+        """
+        return {
+            line[2:].split(":", 1)[0].strip()
+            for line in stdout.splitlines()
+            if line.startswith("- ") and ":" in line
+        }
+
+    def test_claude_adapter_reads_project_mcp_json_from_outside_the_worktree(self):
+        project = self._install_project(".claude", TOOL_CHECK_SCRIPT)
+        (project / ".mcp.json").write_text(
+            json.dumps({"mcpServers": {"semble": {"command": "uvx"}}}), encoding="utf-8"
+        )
+        outside = self.destination / "outside"
+        outside.mkdir()
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(project / ".claude" / "scripts" / "raven-tool-check.py"),
+                "--session-start",
+            ],
+            cwd=outside,
+            env=self._isolated_env(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        missing = self._missing_tool_names(result.stdout)
+        self.assertIn("ripgrep", missing)
+        self.assertNotIn("Semble", missing)
+
+    def test_codex_launcher_reads_project_config_from_outside_the_worktree(self):
+        project = self._install_project(".codex", CODEX_TOOL_CHECK_SCRIPT)
+        (project / ".codex" / "config.toml").write_text(
+            '[mcp_servers.semble]\ncommand = "uvx"\n', encoding="utf-8"
+        )
+        outside = self.destination / "outside"
+        outside.mkdir()
+        hooks = json.loads(
+            (REPO_ROOT / "common" / ".codex" / "hooks.json").read_text(encoding="utf-8")
+        )
+        command = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        payload = {"cwd": str(project), "hook_event_name": "SessionStart", "source": "startup"}
+
+        result = subprocess.run(
+            command,
+            cwd=outside,
+            input=json.dumps(payload),
+            env=self._isolated_env(),
+            capture_output=True,
+            text=True,
+            shell=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        missing = self._missing_tool_names(result.stdout)
+        self.assertIn("ripgrep", missing)
+        self.assertNotIn("Semble", missing)
 
 
 class AdapterHelpPathTests(unittest.TestCase):

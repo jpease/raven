@@ -10,7 +10,7 @@ import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from functools import lru_cache
+from functools import cache, lru_cache
 from pathlib import Path
 
 MEMORY_PATH = Path(os.environ.get("RAVEN_TOOL_MEMORY", Path.home() / ".raven" / "tool-memory.json"))
@@ -206,6 +206,7 @@ COMMAND_TIMEOUT_SECONDS = 3
 CLAUDE_MCP_TIMEOUT_SECONDS = 3
 RUN_COMMAND_PROBES = os.environ.get("RAVEN_TOOL_CHECK_EXECUTE") == "1"
 RUN_CLAUDE_MCP_CLI = os.environ.get("RAVEN_TOOL_CHECK_CLAUDE_CLI") == "1"
+_ADAPTER_DIRECTORY_NAMES = frozenset({".claude", ".codex"})
 
 
 def result_status(result: dict) -> str:
@@ -330,20 +331,63 @@ def _mcp_server_names_from_value(value: object) -> set[str]:
     return names
 
 
-def _claude_mcp_config_paths() -> list[Path]:
+def _root_from_install_layout() -> Path | None:
+    """Project root implied by this script's own install path.
+
+    Raven installs the prober at ``<root>/.claude/scripts/`` or
+    ``<root>/.codex/scripts/``, so the project is the third parent. Returns
+    ``None`` when the script runs from a location that does not match that
+    layout, so the caller can fall back to the process cwd.
+    """
+    try:
+        script = Path(__file__).resolve()
+    except (NameError, OSError):
+        return None
+    parents = script.parents
+    if len(parents) >= 3 and parents[1].name in _ADAPTER_DIRECTORY_NAMES:
+        return parents[2]
+    return None
+
+
+def _root_from_cwd() -> Path | None:
+    """Nearest enclosing project directory at or above the process cwd."""
+    try:
+        cwd = Path.cwd().resolve()
+    except OSError:
+        return None
+    for candidate in (cwd, *cwd.parents):
+        if (candidate / ".git").exists() or (candidate / ".raven").is_dir():
+            return candidate
+    return cwd
+
+
+@lru_cache(maxsize=1)
+def project_root() -> Path:
+    """Project root used for project-scoped MCP configuration lookups.
+
+    A hook's process working directory is not reliably the project. Codex
+    Desktop can invoke a hook from outside the worktree, and its launcher runs
+    this script through ``runpy`` without changing directory, so ``Path.cwd()``
+    is the wrong anchor. Prefer the script's own install location, which is
+    inside the project by construction.
+    """
+    return _root_from_install_layout() or _root_from_cwd() or Path(".")
+
+
+def _claude_mcp_config_paths(root: Path | None = None) -> list[Path]:
     home = Path.home()
     paths = [
-        Path.cwd() / ".mcp.json",
+        (root if root is not None else project_root()) / ".mcp.json",
         home / ".claude.json",
         home / ".claude" / "settings.json",
     ]
     return list(dict.fromkeys(paths))
 
 
-def _codex_mcp_config_paths() -> list[Path]:
+def _codex_mcp_config_paths(root: Path | None = None) -> list[Path]:
     home = Path.home()
     paths = [
-        Path.cwd() / ".codex" / "config.toml",
+        (root if root is not None else project_root()) / ".codex" / "config.toml",
         home / ".codex" / "config.toml",
     ]
     return list(dict.fromkeys(paths))
@@ -362,10 +406,10 @@ def _codex_mcp_server_names_from_toml(text: str) -> set[str]:
     return names
 
 
-@lru_cache(maxsize=1)
-def _claude_mcp_server_names_from_config() -> frozenset[str]:
+@cache
+def _claude_mcp_server_names_from_config(root: Path | None = None) -> frozenset[str]:
     names: set[str] = set()
-    for path in _claude_mcp_config_paths():
+    for path in _claude_mcp_config_paths(root):
         if not path.is_file():
             continue
         try:
@@ -375,10 +419,10 @@ def _claude_mcp_server_names_from_config() -> frozenset[str]:
     return frozenset(names)
 
 
-@lru_cache(maxsize=1)
-def _codex_mcp_server_names_from_config() -> frozenset[str]:
+@cache
+def _codex_mcp_server_names_from_config(root: Path | None = None) -> frozenset[str]:
     names: set[str] = set()
-    for path in _codex_mcp_config_paths():
+    for path in _codex_mcp_config_paths(root):
         if not path.is_file():
             continue
         try:
@@ -408,14 +452,14 @@ def _claude_mcp_server_names_from_cli() -> tuple[frozenset[str], bool]:
     return frozenset(_configured_mcp_server_names(result.stdout)), False
 
 
-@lru_cache(maxsize=1)
-def _claude_mcp_server_names() -> frozenset[str]:
+@cache
+def _claude_mcp_server_names(root: Path | None = None) -> frozenset[str]:
     cli_names, _timed_out = _claude_mcp_server_names_from_cli()
-    return _claude_mcp_server_names_from_config() | cli_names
+    return _claude_mcp_server_names_from_config(root) | cli_names
 
 
-def claude_mcp_server_status(server_name: str) -> str:
-    if server_name in _claude_mcp_server_names_from_config():
+def claude_mcp_server_status(server_name: str, root: Path | None = None) -> str:
+    if server_name in _claude_mcp_server_names_from_config(root):
         return "configured"
     cli_names, timed_out = _claude_mcp_server_names_from_cli()
     if server_name in cli_names:
@@ -425,12 +469,12 @@ def claude_mcp_server_status(server_name: str) -> str:
     return "not_configured"
 
 
-def claude_mcp_server_configured(server_name: str) -> bool:
-    return claude_mcp_server_status(server_name) == "configured"
+def claude_mcp_server_configured(server_name: str, root: Path | None = None) -> bool:
+    return claude_mcp_server_status(server_name, root) == "configured"
 
 
-def codex_mcp_server_configured(server_name: str) -> bool:
-    return server_name in _codex_mcp_server_names_from_config()
+def codex_mcp_server_configured(server_name: str, root: Path | None = None) -> bool:
+    return server_name in _codex_mcp_server_names_from_config(root)
 
 
 def _configured_mcp_server_names(output: str) -> set[str]:
@@ -447,7 +491,7 @@ def _configured_mcp_server_names(output: str) -> set[str]:
     return names
 
 
-def check_tool_with_source(tool: dict) -> tuple[bool, str | None]:
+def check_tool_with_source(tool: dict, root: Path | None = None) -> tuple[bool, str | None]:
     timed_out = False
     for command in tool["commands"]:
         status = command_status(command)
@@ -457,13 +501,13 @@ def check_tool_with_source(tool: dict) -> tuple[bool, str | None]:
             timed_out = True
     mcp_server = tool.get("claudeMcpServer")
     if isinstance(mcp_server, str):
-        mcp_status = claude_mcp_server_status(mcp_server)
+        mcp_status = claude_mcp_server_status(mcp_server, root)
         if mcp_status == "configured":
             return True, "claude-mcp-config"
         if mcp_status == "timed_out":
             timed_out = True
     codex_mcp_server = tool.get("codexMcpServer")
-    if isinstance(codex_mcp_server, str) and codex_mcp_server_configured(codex_mcp_server):
+    if isinstance(codex_mcp_server, str) and codex_mcp_server_configured(codex_mcp_server, root):
         return True, "codex-mcp-config"
     if timed_out:
         return False, "timed-out"
@@ -492,8 +536,8 @@ def _resolve_install(install: object, current_os: str) -> str:
     return _GENERIC_INSTALL_HINT
 
 
-def _tool_result(tool: dict, current_os: str) -> dict:
-    available, source = check_tool_with_source(tool)
+def _tool_result(tool: dict, current_os: str, root: Path | None = None) -> dict:
+    available, source = check_tool_with_source(tool, root)
     return {
         "id": tool["id"],
         "name": tool["name"],
@@ -516,15 +560,17 @@ def _print_streamed_result(result: dict) -> None:
         print(f"[missing] {result['name']}: not installed or configured", flush=True)
 
 
-def check_all_tools(current_os: str, *, stream: bool = False) -> list[dict]:
+def check_all_tools(
+    current_os: str, *, stream: bool = False, root: Path | None = None
+) -> list[dict]:
     if not stream:
         with ThreadPoolExecutor() as pool:
-            return list(pool.map(lambda tool: _tool_result(tool, current_os), TOOLS))
+            return list(pool.map(lambda tool: _tool_result(tool, current_os, root), TOOLS))
 
     order = {tool["id"]: index for index, tool in enumerate(TOOLS)}
     results: list[dict] = []
     with ThreadPoolExecutor() as pool:
-        futures = {pool.submit(_tool_result, tool, current_os): tool for tool in TOOLS}
+        futures = {pool.submit(_tool_result, tool, current_os, root): tool for tool in TOOLS}
         for future in as_completed(futures):
             result = future.result()
             _print_streamed_result(result)
