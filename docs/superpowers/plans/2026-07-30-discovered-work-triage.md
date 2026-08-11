@@ -64,9 +64,7 @@ class TriageDiscoverySkillTests(unittest.TestCase):
     """
 
     def setUp(self):
-        path = (
-            REPO_ROOT / "common" / ".agents" / "skills" / "raven-triage-discovery" / "SKILL.md"
-        )
+        path = REPO_ROOT / "common" / ".agents" / "skills" / "raven-triage-discovery" / "SKILL.md"
         self.content = path.read_text(encoding="utf-8")
         self.lowered = self.content.lower()
 
@@ -120,8 +118,7 @@ class TriageDiscoverySkillTests(unittest.TestCase):
         self.assertIn(
             "is unclear, file",
             region,
-            "expected a Required Constraint resolving FILE-vs-DROP ambiguity "
-            "toward FILE",
+            "expected a Required Constraint resolving FILE-vs-DROP ambiguity toward FILE",
         )
 ```
 
@@ -317,9 +314,11 @@ In `tests/test_skills.py`, inside `class TaskCompleteSkillTests`, change the exi
         )
 ```
 
-Add these two methods to the same class:
+Add these two methods to the same class (shown as a fragment, so the fence is
+`text` rather than `python` — the block is class-body indented and is not a
+valid standalone module):
 
-```python
+```text
     def test_process_requires_dispositioning_discovered_work(self):
         # The gate: without a step here, nothing forces the agent to account for
         # findings at the one moment it still has full recall of them.
@@ -455,8 +454,7 @@ class SubagentOutOfScopeContractTests(unittest.TestCase):
         self.assertEqual(
             claude,
             codex,
-            "adapter agent trees have diverged; one harness would ship a "
-            "reviewer the other lacks",
+            "adapter agent trees have diverged; one harness would ship a reviewer the other lacks",
         )
 
     def test_every_agent_requires_the_out_of_scope_section(self):

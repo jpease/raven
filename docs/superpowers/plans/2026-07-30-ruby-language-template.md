@@ -771,9 +771,9 @@ git commit -m "feat(ruby): add rules doc, quality doc, README, and context budge
 
 - [ ] **Step 1: Write failing Ruby-specific gate tests**
 
-In `tests/test_gates.py`, after `test_elixir_fmt_check_fallback_is_mix_format` (around line 106) and before `test_swift_lint_format_fallback_runs_swift_format`, add:
+In `tests/test_gates.py`, after `test_elixir_fmt_check_fallback_is_mix_format` (around line 106) and before `test_swift_lint_format_fallback_runs_swift_format`, add (shown as a fragment, so the fence is `text` rather than `python` — the block is class-body indented and is not a valid standalone module):
 
-```python
+```text
     def test_ruby_recipes_are_lint_and_test_only(self):
         # Ruby has no separate fmt-check (RuboCop covers lint+format in one
         # pass) and no typecheck (Sorbet/RBS are opt-in, not universal).
