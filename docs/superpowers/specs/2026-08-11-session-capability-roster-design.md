@@ -186,7 +186,7 @@ Nominal:
 ```text
 === RAVEN CAPABILITIES ===  probed 2026-08-11 · template: python
   CLI        rg fd just jq yq rtk ast-grep semgrep gitleaks osv-scanner uvx
-  MCP (cfg)  gitnexus semble semgrep
+  MCP (cfg)  gitnexus lsp semble semgrep
   Gates      ruff ✓  pyright ✓
   Tracker    gh ✓
   Index      gitnexus · 2703 nodes / 128 files · current
@@ -198,7 +198,7 @@ Degraded:
 ```text
 === RAVEN CAPABILITIES ===  probed 2026-08-11 · template: python
   CLI        rg fd just jq yq rtk ast-grep gitleaks uvx
-  MCP (cfg)  gitnexus semble
+  MCP (cfg)  gitnexus lsp semble
   Gates      ruff ✓  pyright ✗
   Tracker    gh ✓
   Index      gitnexus · 2703 nodes / 128 files · STALE (working tree modified)
@@ -566,6 +566,14 @@ Issue #143 must be fixed for the roster to reach subagents, but the two changes
 are independent and can land in either order. Neither ordering creates a
 regression.
 
-Two pre-existing bugs surfaced during review are tracked separately and are not
-prerequisites: the prober's `Path.cwd()` assumption, and `common/.mcp.json`
-omitting the `lsp` server that the shipped retrieval ladder names.
+One pre-existing bug surfaced during review is tracked separately and is not a
+prerequisite: the prober's `Path.cwd()` assumption (#147). The emitter resolves
+its own root, so it is unaffected, but the two touch adjacent code.
+
+A second finding from that review — that `common/.mcp.json` omits the `lsp`
+server the retrieval ladder names — was filed as #148 and **closed as invalid**.
+`common/.mcp.json` never installs; each language tree ships its own `.mcp.json`
+with a language-appropriate `lsp` entry, enforced against `LSP_DEFAULTS` in
+`tests/helpers.py` by `tests/test_template.py:343-390`. The roster examples
+above therefore show `lsp` as present, and any test fixture for this work should
+model a language tree's MCP config rather than `common/`.
