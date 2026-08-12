@@ -10,6 +10,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from helpers import REPO_ROOT, RavenTestCase, load_script_module
+from raven_lib.template import should_preserve_symlink
 
 TOOL_CHECK_SCRIPT = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
 CODEX_TOOL_CHECK_SCRIPT = REPO_ROOT / "common" / ".codex" / "scripts" / "raven-tool-check.py"
@@ -389,6 +390,66 @@ class ProjectRootResolutionTests(RavenTestCase):
         self.assertIn("Semble", cli_line)
 
 
+class AdapterDirectoryDerivationTests(RavenTestCase):
+    """The two adapters ship one shared file (issue #165), so the adapter
+    directory named in user-facing command examples has to be derived from the
+    install layout at runtime rather than embedded as a literal.
+
+    These tests load the *same bytes* from two different install locations and
+    require two different answers -- the property a byte-comparison between the
+    two trees can no longer express now that they are one file.
+    """
+
+    def _module_installed_at(self, relative: Path, name: str):
+        """Load the prober from a synthetic install path under a temp root."""
+        target = self.destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(TOOL_CHECK_SCRIPT, target)
+        return load_script_module(name, target)
+
+    def test_adapter_name_follows_the_install_layout(self):
+        claude = self._module_installed_at(
+            Path("proj/.claude/scripts/raven-tool-check.py"), "raven_tc_layout_claude"
+        )
+        codex = self._module_installed_at(
+            Path("proj/.codex/scripts/raven-tool-check.py"), "raven_tc_layout_codex"
+        )
+
+        self.assertEqual(claude.adapter_directory_name(), ".claude")
+        self.assertEqual(codex.adapter_directory_name(), ".codex")
+
+    def test_adapter_name_falls_back_outside_the_install_layout(self):
+        stray = self._module_installed_at(
+            Path("elsewhere/raven-tool-check.py"), "raven_tc_layout_stray"
+        )
+
+        self.assertEqual(stray.adapter_directory_name(), ".claude")
+
+    def test_project_root_still_agrees_with_the_adapter_directory(self):
+        # The name and the root are derived from one helper; a refactor that
+        # splits them would let the two disagree about which tree is in play.
+        codex = self._module_installed_at(
+            Path("proj/.codex/scripts/raven-tool-check.py"), "raven_tc_layout_root"
+        )
+        codex.project_root.cache_clear()
+        self.addCleanup(codex.project_root.cache_clear)
+
+        self.assertEqual(codex.project_root(), self.destination / "proj")
+
+    def test_source_embeds_no_adapter_script_path_literal(self):
+        # The criterion is that the literal is *gone*, not merely unused: a
+        # future edit that reintroduces one would silently be wrong in the
+        # other adapter, exactly as it was before unification.
+        source = TOOL_CHECK_SCRIPT.read_text(encoding="utf-8")
+
+        for literal in (
+            ".claude/scripts/raven-tool-check.py",
+            ".codex/scripts/raven-tool-check.py",
+        ):
+            with self.subTest(literal=literal):
+                self.assertNotIn(literal, source)
+
+
 class AdapterHelpPathTests(unittest.TestCase):
     """Regression for #105: a Codex-only install (no .claude tree) must
     advertise `.codex/scripts/raven-tool-check.py`, not the Claude adapter's
@@ -448,16 +509,18 @@ class AdapterHelpPathTests(unittest.TestCase):
         self.assertIn(".claude/docs/raven-lsp-mcp.md", tool["install"]["darwin"])
         self.assertIn(".claude/docs/raven-lsp-mcp.md", tool["install"]["linux"])
 
-    def test_both_adapters_register_the_same_tools(self):
-        # The Codex copy is a path-string adapter, not a fork: the two TOOLS
-        # registries must not drift, or a tool added to one adapter goes
-        # unreported for every repo installed with the other.
-        claude = load_script_module("raven_tool_check_ids_claude", TOOL_CHECK_SCRIPT)
-        codex = load_script_module("raven_tool_check_ids_codex", CODEX_TOOL_CHECK_SCRIPT)
+    def test_both_adapters_share_one_tools_registry(self):
+        # Replaces `test_both_adapters_register_the_same_tools` (issue #165).
+        # Comparing the two TOOLS registries now compares a file to itself
+        # through a symlink, so it can no longer detect the drift it was written
+        # for. The guarantee moved from "the two lists match" to "there is only
+        # one list", which is what this asserts instead.
+        self.assertTrue(CODEX_TOOL_CHECK_SCRIPT.is_symlink())
         self.assertEqual(
-            [tool["id"] for tool in claude.TOOLS],
-            [tool["id"] for tool in codex.TOOLS],
+            os.path.realpath(CODEX_TOOL_CHECK_SCRIPT),
+            os.path.realpath(TOOL_CHECK_SCRIPT),
         )
+        self.assertFalse(should_preserve_symlink(CODEX_TOOL_CHECK_SCRIPT))
 
     def test_codex_claude_app_detection_paths_are_unchanged(self):
         # _claude_mcp_config_paths() detects the globally-installed Claude

@@ -4,8 +4,14 @@ import os
 import unittest
 from pathlib import Path
 
-from helpers import RavenTestCase, raven
+from helpers import UNIFIED_ADAPTER_HOOKS, UNIFIED_ADAPTER_SCRIPTS, RavenTestCase, raven
 from raven_lib.cli import _build_run_plan, _symlink_adoption_decision, invalid_overrides
+
+# Which byte-identical files each adapter subdirectory unifies (issue #165).
+UNIFIED_BY_SUBDIR = {
+    "scripts": set(UNIFIED_ADAPTER_SCRIPTS),
+    "hooks": set(UNIFIED_ADAPTER_HOOKS),
+}
 
 
 class ApplyTests(RavenTestCase):
@@ -155,6 +161,73 @@ scripts = false
         self.assertFalse(any(path.startswith(".codex/scripts/") for path in entries))
         self.assertTrue(any(path.startswith(".claude/hooks/") for path in entries))
         self.assertTrue(any(path.startswith(".codex/hooks/") for path in entries))
+
+    def _assert_codex_subdir_materializes_alone(self, subdir: str) -> None:
+        """Install `.codex/<subdir>` with the Claude counterpart switched off.
+
+        The regression the issue #165 design exists to prevent. The two adapters
+        now share one copy of each byte-identical file, linked inside the
+        template -- but `.claude/<subdir>` and `.codex/<subdir>` are
+        independently toggleable components, so a Codex-only destination must
+        receive real files, never symlinks into a `.claude/<subdir>/` that was
+        never installed. See helpers.codex_symlink_target.
+        """
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir(exist_ok=True)
+        config_path.write_text(
+            f"""
+schema = 1
+template = "python"
+
+[components.claude]
+{subdir} = false
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        config = raven.load_config(self.destination)
+        entries = [
+            entry.relative
+            for entry in raven.iter_template_entries(self.template, self.excludes, config)
+        ]
+        codex_paths = sorted(path for path in entries if path.startswith(f".codex/{subdir}/"))
+        self.assertTrue(codex_paths, f"expected the Codex {subdir} to still install")
+        self.assertFalse(any(path.startswith(f".claude/{subdir}/") for path in entries))
+
+        raven.copy_paths(self.template, self.destination, codex_paths)
+
+        self.assertFalse(
+            (self.destination / ".claude" / subdir).exists(),
+            f"the Claude {subdir} component was disabled; nothing may install it",
+        )
+        unified = UNIFIED_BY_SUBDIR[subdir]
+        self.assertTrue(
+            unified.issubset({Path(path).name for path in codex_paths}),
+            "a unified file stopped installing under the Codex adapter",
+        )
+        for relative in codex_paths:
+            name = Path(relative).name
+            with self.subTest(path=relative):
+                installed = self.destination / relative
+                self.assertFalse(
+                    installed.is_symlink(),
+                    f"{relative} installed as a symlink; it would dangle here",
+                )
+                self.assertTrue(installed.is_file())
+                if name not in unified:
+                    # Path-transformed files (raven-session-checkpoint.py) keep
+                    # their own adapter's paths, so only the unified ones can be
+                    # compared byte-for-byte with the canonical copy.
+                    continue
+                canonical = raven.REPO_ROOT / "common" / ".claude" / subdir / name
+                self.assertEqual(installed.read_bytes(), canonical.read_bytes())
+
+    def test_codex_scripts_materialize_without_the_claude_adapter(self):
+        self._assert_codex_subdir_materializes_alone("scripts")
+
+    def test_codex_hooks_materialize_without_the_claude_adapter(self):
+        self._assert_codex_subdir_materializes_alone("hooks")
 
     def test_config_can_disable_agent_specific_components(self):
         config_path = self.destination / ".raven" / "config.toml"

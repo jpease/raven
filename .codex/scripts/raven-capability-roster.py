@@ -2,8 +2,10 @@
 
 """Emit a capability roster into session context at session start.
 
-Ships beside raven-tool-check.py in .codex/scripts/, and loads it as a
-sibling module rather than duplicating its probe primitives.
+Ships beside raven-tool-check.py in the adapter's scripts/ directory, and
+loads it as a sibling module rather than duplicating its probe primitives.
+Named adapter-neutrally on purpose: one file serves both the Claude and Codex
+adapters, so naming either one here would be wrong in the other.
 
 Probes inline rather than caching. Probing all recommended tools costs about
 3 ms because the prober short-circuits to ``shutil.which`` unless

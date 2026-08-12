@@ -1,7 +1,16 @@
 import os
 import unittest
 
-from helpers import REPO_ROOT, RavenTestCase, raven
+from helpers import (
+    REPO_ROOT,
+    UNIFIED_ADAPTER_HOOKS,
+    UNIFIED_ADAPTER_SCRIPTS,
+    RavenTestCase,
+    codex_hook_symlink_target,
+    codex_script_symlink_target,
+    raven,
+)
+from raven_lib.template import should_preserve_symlink
 
 # Subdirectories that language templates share from common via a whole-directory
 # symlink, mirroring the .codex/* convention. Linking the directory (rather than
@@ -43,6 +52,100 @@ class ClaudeWholeDirSymlinkParityTests(RavenTestCase):
                     )
                     target = os.readlink(link).replace("\\", "/")
                     self.assertEqual(target, f"../../common/.claude/{subdir}")
+
+
+class CodexScriptUnificationTests(RavenTestCase):
+    """The byte-identical adapter scripts are stored once and linked, instead of
+    being maintained as two copies a fix could land in only one of (issue #165).
+
+    Unlike the whole-directory language-tree links above, these are per-file:
+    `.codex/scripts/` also holds nothing else, but a future adapter-specific
+    script must be able to sit beside them as a real file.
+    """
+
+    @staticmethod
+    def _codex_script(name: str):
+        return REPO_ROOT / "common" / ".codex" / "scripts" / name
+
+    @staticmethod
+    def _claude_script(name: str):
+        return REPO_ROOT / "common" / ".claude" / "scripts" / name
+
+    def test_codex_scripts_link_to_the_claude_copies(self):
+        for name in UNIFIED_ADAPTER_SCRIPTS:
+            with self.subTest(script=name):
+                link = self._codex_script(name)
+                self.assertTrue(link.is_symlink(), f"{link} should be a symlink, not a copy")
+                self.assertEqual(
+                    os.readlink(link).replace("\\", "/"),
+                    codex_script_symlink_target(name),
+                )
+
+    def test_claude_copies_are_real_files(self):
+        # The direction matters: a `grep` in a fresh clone must land on real
+        # content, and the Claude tree is where the docs and skills point.
+        for name in UNIFIED_ADAPTER_SCRIPTS:
+            with self.subTest(script=name):
+                script = self._claude_script(name)
+                self.assertFalse(script.is_symlink(), f"{script} must hold the real content")
+                self.assertTrue(script.is_file())
+
+    def test_installer_dereferences_the_codex_script_links(self):
+        # This is the assertion that protects destinations. If a target is ever
+        # respelled so it no longer climbs through `common/`, the installer
+        # preserves it as a symlink and a Codex-only install (Claude scripts
+        # component disabled) gets a dangling link.
+        for name in UNIFIED_ADAPTER_SCRIPTS:
+            with self.subTest(script=name):
+                script = self._codex_script(name)
+                # Precondition, not decoration: should_preserve_symlink also
+                # returns False for a plain file, so without this the assertion
+                # below would pass for an un-unified copy too.
+                self.assertTrue(script.is_symlink(), f"{name} is not linked at all")
+                self.assertFalse(
+                    should_preserve_symlink(script),
+                    f"{name}: installer would ship this as a symlink instead of real content",
+                )
+
+    def test_byte_identical_codex_hooks_are_unified_too(self):
+        # Same duplication, same fix: these four hook scripts were byte-identical
+        # copies. `raven-session-checkpoint.py` is excluded because it embeds an
+        # adapter-specific path, and `raven-skeleton-read-guard.py` because it is
+        # deliberately Claude-only -- both are recorded in the classification
+        # table in `.claude/docs/raven-agent-compatibility.md`.
+        for name in UNIFIED_ADAPTER_HOOKS:
+            with self.subTest(hook=name):
+                link = REPO_ROOT / "common" / ".codex" / "hooks" / name
+                self.assertTrue(link.is_symlink(), f"{name} is a duplicate copy again")
+                self.assertEqual(
+                    os.readlink(link).replace("\\", "/"),
+                    codex_hook_symlink_target(name),
+                )
+                self.assertFalse(should_preserve_symlink(link))
+
+    def test_deliberately_unlinked_codex_hooks_stay_real_files(self):
+        # The classification is only useful if it is enforced in both
+        # directions: unifying either of these would be a behavior change, not a
+        # cleanup. The checkpoint hook shells out to its own adapter's
+        # raven-session.py, and the read guard has no Codex counterpart at all.
+        checkpoint = REPO_ROOT / "common" / ".codex" / "hooks" / "raven-session-checkpoint.py"
+        self.assertTrue(checkpoint.is_file())
+        self.assertFalse(checkpoint.is_symlink())
+
+        read_guard = REPO_ROOT / "common" / ".codex" / "hooks" / "raven-skeleton-read-guard.py"
+        self.assertFalse(
+            read_guard.exists() or read_guard.is_symlink(),
+            "the Claude-only read guard must not gain a Codex counterpart",
+        )
+
+    def test_a_non_common_spelling_would_be_preserved(self):
+        # Proves the check above has teeth rather than passing for every input:
+        # the shorter sibling spelling resolves to the same file, but the
+        # installer would preserve it, which is exactly the bug being guarded.
+        link = self.destination / "raven-session.py"
+        link.symlink_to("../../.claude/scripts/raven-session.py")
+
+        self.assertTrue(should_preserve_symlink(link))
 
 
 if __name__ == "__main__":

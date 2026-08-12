@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import sys
@@ -5,7 +6,8 @@ import unittest
 from pathlib import Path
 from typing import ClassVar
 
-from helpers import REPO_ROOT, RavenTestCase, load_script_module
+from helpers import REPO_ROOT, RavenTestCase, codex_script_symlink_target, load_script_module
+from raven_lib.template import should_preserve_symlink
 
 HAVE_ASTGREP = shutil.which("ast-grep") is not None
 HAVE_RG = shutil.which("rg") is not None
@@ -610,16 +612,32 @@ class CtagsSkeletonEndToEndTests(RavenTestCase):
 
 class CommonCopyParityTests(RavenTestCase):
     """The Claude and Codex adapters ship the same skeleton generator under
-    different roots; they must stay byte-identical so a fix applied to one
-    isn't silently missing from the other.
+    different roots; a fix applied to one must never be missing from the other.
+
+    Replaces `test_claude_and_codex_skeleton_scripts_are_byte_identical`
+    (issue #165). Byte-identity is no longer something to assert: the Codex
+    path is a symlink to the Claude copy, so comparing their bytes compares a
+    file to itself and would pass no matter what. What can still regress is the
+    unification itself -- someone replacing the link with a real copy, or
+    respelling its target so the installer stops dereferencing it.
     """
 
-    def test_claude_and_codex_skeleton_scripts_are_byte_identical(self):
-        self.assertEqual(
-            SKELETON_SCRIPT.read_bytes(),
-            CODEX_SKELETON_SCRIPT.read_bytes(),
-            "common/.claude and common/.codex raven-skeleton.py copies have diverged",
+    def test_codex_skeleton_is_unified_with_the_claude_copy(self):
+        self.assertTrue(
+            CODEX_SKELETON_SCRIPT.is_symlink(),
+            "the Codex copy is a real file again; the two can now diverge",
         )
+        self.assertEqual(
+            os.path.realpath(CODEX_SKELETON_SCRIPT),
+            os.path.realpath(SKELETON_SCRIPT),
+        )
+
+    def test_codex_skeleton_link_is_dereferenced_into_destinations(self):
+        self.assertEqual(
+            os.readlink(CODEX_SKELETON_SCRIPT).replace("\\", "/"),
+            codex_script_symlink_target(CODEX_SKELETON_SCRIPT.name),
+        )
+        self.assertFalse(should_preserve_symlink(CODEX_SKELETON_SCRIPT))
 
 
 class CliTests(RavenTestCase):

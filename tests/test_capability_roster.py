@@ -7,7 +7,8 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from helpers import REPO_ROOT, RavenTestCase, load_script_module
+from helpers import REPO_ROOT, RavenTestCase, codex_script_symlink_target, load_script_module
+from raven_lib.template import should_preserve_symlink
 
 ROSTER_SCRIPT = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-capability-roster.py"
 CODEX_ROSTER_SCRIPT = REPO_ROOT / "common" / ".codex" / "scripts" / "raven-capability-roster.py"
@@ -438,15 +439,41 @@ class IndexFreshnessTests(RavenTestCase):
 
 
 class AdapterParityTests(RavenTestCase):
-    def test_both_adapter_copies_exist(self):
+    """Replaces the old `test_copies_differ_only_in_embedded_adapter_paths`
+    (issue #165). That test asserted the two copies *differ* and that a
+    `.claude/` -> `.codex/` substitution maps one onto the other -- an
+    assertion unification inverts: there is now one file, reached from both
+    adapter paths, and it names no adapter at all.
+
+    The sync it was protecting is now structural rather than asserted, so what
+    is worth testing is the mechanism: the link exists, the installer
+    dereferences it, and no adapter path has crept back into the source.
+    """
+
+    def test_both_adapter_paths_resolve_to_one_file(self):
         self.assertTrue(ROSTER_SCRIPT.is_file())
         self.assertTrue(CODEX_ROSTER_SCRIPT.is_file())
+        self.assertTrue(CODEX_ROSTER_SCRIPT.is_symlink())
+        self.assertEqual(
+            os.path.realpath(CODEX_ROSTER_SCRIPT),
+            os.path.realpath(ROSTER_SCRIPT),
+        )
 
-    def test_copies_differ_only_in_embedded_adapter_paths(self):
-        claude = ROSTER_SCRIPT.read_text(encoding="utf-8")
-        codex = CODEX_ROSTER_SCRIPT.read_text(encoding="utf-8")
-        self.assertNotEqual(claude, codex, "expected adapter-specific paths to differ")
-        self.assertEqual(claude.replace(".claude/", ".codex/"), codex)
+    def test_codex_link_is_dereferenced_into_destinations(self):
+        # Without this the Codex adapter would install a symlink pointing into
+        # a `.claude/scripts/` that a Codex-only destination never receives.
+        self.assertEqual(
+            os.readlink(CODEX_ROSTER_SCRIPT).replace("\\", "/"),
+            codex_script_symlink_target(CODEX_ROSTER_SCRIPT.name),
+        )
+        self.assertFalse(should_preserve_symlink(CODEX_ROSTER_SCRIPT))
+
+    def test_source_names_no_adapter_directory(self):
+        # The shared file must stay adapter-neutral: an embedded `.claude/` or
+        # `.codex/` path would now be wrong for one of the two harnesses.
+        source = ROSTER_SCRIPT.read_text(encoding="utf-8")
+        self.assertNotIn(".claude/", source)
+        self.assertNotIn(".codex/", source)
 
     def test_codex_copy_imports_and_renders(self):
         module = load_script_module("raven_capability_roster_codex", CODEX_ROSTER_SCRIPT)

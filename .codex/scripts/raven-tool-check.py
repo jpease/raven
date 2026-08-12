@@ -213,6 +213,10 @@ CLAUDE_MCP_TIMEOUT_SECONDS = 3
 RUN_COMMAND_PROBES = os.environ.get("RAVEN_TOOL_CHECK_EXECUTE") == "1"
 RUN_CLAUDE_MCP_CLI = os.environ.get("RAVEN_TOOL_CHECK_CLAUDE_CLI") == "1"
 _ADAPTER_DIRECTORY_NAMES = frozenset({".claude", ".codex"})
+# Shown in command examples when this script is not running from an installed
+# `<root>/<adapter>/scripts/` layout and no adapter can be inferred.
+_DEFAULT_ADAPTER_DIRECTORY_NAME = ".claude"
+_PROBER_FILENAME = "raven-tool-check.py"
 
 
 def result_status(result: dict) -> str:
@@ -348,22 +352,62 @@ def _mcp_server_names_from_value(value: object) -> set[str]:
     return names
 
 
-def _root_from_install_layout() -> Path | None:
-    """Project root implied by this script's own install path.
+def _adapter_directory_from_install_layout() -> Path | None:
+    """The ``.claude``/``.codex`` directory this script was installed under.
 
     Raven installs the prober at ``<root>/.claude/scripts/`` or
-    ``<root>/.codex/scripts/``, so the project is the third parent. Returns
-    ``None`` when the script runs from a location that does not match that
-    layout, so the caller can fall back to the process cwd.
+    ``<root>/.codex/scripts/``, so the adapter directory is the second parent
+    and the project root is its parent. Returns ``None`` when the script runs
+    from a location that does not match that layout.
+
+    Single source of truth for every adapter-specific answer -- the project
+    root and the directory name shown in command examples -- because one file
+    now serves both adapters: in the template, ``.codex/scripts/`` entries are
+    symlinks to the ``.claude/scripts/`` copies.
+
+    That sharing is why the path is made absolute *without* resolving symlinks.
+    Adapter identity is a property of the path the script was invoked through,
+    not of where its bytes physically live, so following the link would make
+    the Codex copy answer ``.claude``. Installed destinations hold real files,
+    where the two spellings agree; and because both template trees sit at the
+    same depth under ``common/``, the derived project root is identical either
+    way.
     """
     try:
-        script = Path(__file__).resolve()
+        script = Path(os.path.abspath(__file__))
     except (NameError, OSError):
         return None
     parents = script.parents
     if len(parents) >= 3 and parents[1].name in _ADAPTER_DIRECTORY_NAMES:
-        return parents[2]
+        return parents[1]
     return None
+
+
+def _root_from_install_layout() -> Path | None:
+    """Project root implied by this script's own install path.
+
+    Returns ``None`` when the script runs from a location that does not match
+    the install layout, so the caller can fall back to the process cwd.
+    """
+    adapter = _adapter_directory_from_install_layout()
+    return adapter.parent if adapter is not None else None
+
+
+def adapter_directory_name() -> str:
+    """Adapter directory to name in user-facing command examples.
+
+    Falls back to ``.claude`` when the install layout gives no answer: no
+    adapter can be inferred at that point, and the Claude tree is both the
+    canonical copy and the more common install, so it is the least-wrong
+    suggestion for a command the reader is meant to paste.
+    """
+    adapter = _adapter_directory_from_install_layout()
+    return adapter.name if adapter is not None else _DEFAULT_ADAPTER_DIRECTORY_NAME
+
+
+def _prober_path() -> str:
+    """Repo-relative path to this script, as a command example should spell it."""
+    return f"{adapter_directory_name()}/scripts/{_PROBER_FILENAME}"
 
 
 def _root_from_cwd() -> Path | None:
@@ -647,14 +691,11 @@ def print_session_start_prompt(missing: list[dict], memory_path: Path) -> None:
         "Ask the user whether they want to install the missing tools,"
         " receive install instructions, be reminded later, or stop being reminded."
     )
+    prober = _prober_path()
     print(
-        "If tools are installed, run `python .codex/scripts/raven-tool-check.py --write` "
-        "afterward to update local memory."
+        f"If tools are installed, run `python {prober} --write` afterward to update local memory."
     )
-    print(
-        "If the user chooses not to be reminded, run"
-        " `python .codex/scripts/raven-tool-check.py --no-reminder`."
-    )
+    print(f"If the user chooses not to be reminded, run `python {prober} --no-reminder`.")
 
 
 def build_tool_check_report(memory: dict, current_os: str, *, stream: bool) -> ToolCheckReport:
@@ -732,14 +773,14 @@ def main() -> int:
             "Check recommended RAVEN tooling and optionally update RAVEN's local tool-check cache."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
 Default human use:
-  python .codex/scripts/raven-tool-check.py
+  python {_prober_path()}
 
 Agent/cache use:
-  python .codex/scripts/raven-tool-check.py --write
-  python .codex/scripts/raven-tool-check.py --session-start
-  python .codex/scripts/raven-tool-check.py --no-reminder
+  python {_prober_path()} --write
+  python {_prober_path()} --session-start
+  python {_prober_path()} --no-reminder
 
 Cache location:
   ~/.raven/tool-memory.json, or RAVEN_TOOL_MEMORY if set.
