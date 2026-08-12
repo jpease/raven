@@ -32,8 +32,9 @@ Use this skill when a change touches:
 
 ## Required Constraints
 
-- Run a Semgrep CE scan before the manual checklist when Semgrep is available.
-- Use `mcp__semgrep__semgrep_scan` with `--config auto` by default. Use `p/owasp-top-ten`, `p/security-audit`, or `semgrep_scan_with_custom_rule` only when the change calls for a narrower or project-specific scan.
+- Run a Semgrep scan before the manual checklist when a Semgrep interface (MCP or CLI) is available.
+- MCP: use `mcp__semgrep__semgrep_scan` with the changed files. It applies the server's default registry rules; there is no config argument to pass. For a narrower or project-specific scan, use `mcp__semgrep__semgrep_scan_with_custom_rule` with an inline rule body, not a registry ruleset name.
+- CLI: use `semgrep --config auto` by default, or `--config p/owasp-top-ten` / `--config p/security-audit` for a narrower ruleset. See `.claude/docs/raven-semgrep.md` for setup.
 - Do not treat a clean scan as proof of security; it is evidence for mechanical patterns only.
 - Review scanner findings manually before reporting them. Separate confirmed findings from false positives and open questions.
 - Keep the checklist language-neutral. Put language-specific remediation details in the relevant language quality docs or local project conventions.
@@ -53,7 +54,7 @@ Use this skill when a change touches:
 ## Process
 
 1. Identify changed files and the security-sensitive boundaries they touch.
-2. Run Semgrep CE on the changed files first, using `--config auto` unless a narrower CE ruleset is more appropriate.
+2. Run a Semgrep scan on the changed files first, using the MCP or CLI invocation described under Required Constraints.
 3. Triage Semgrep results: confirmed issue, false positive, or needs human judgment.
 4. Manually review untrusted input paths: validation, normalization, encoding, and trust-boundary crossing.
 5. Manually review auth/authz: identity source, permission checks, tenant or ownership isolation, and bypass paths.

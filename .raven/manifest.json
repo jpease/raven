@@ -86,9 +86,9 @@
       "sourceSha256": "67e325290ea9a8c2f83d630e132f105da52934b378adda32caffb844f7541d81"
     },
     ".agents/skills/raven-security-review/SKILL.md": {
-      "installedSha256": "81116e80a9709ae49bd2af6a8b9be402c8bad78d21fedfcc744ec4188fe44a2d",
+      "installedSha256": "ddb2ad909f60c1d83fa886492a1c1926438c6662c9538e12fe4f53eea51c7509",
       "kind": "file",
-      "sourceSha256": "81116e80a9709ae49bd2af6a8b9be402c8bad78d21fedfcc744ec4188fe44a2d"
+      "sourceSha256": "ddb2ad909f60c1d83fa886492a1c1926438c6662c9538e12fe4f53eea51c7509"
     },
     ".agents/skills/raven-skeleton/SKILL.md": {
       "installedSha256": "c0d0e7f0cee83af48d0f64cd6c208385fcbfe994ff49ef58bc48e33eed963ce9",
@@ -397,8 +397,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "f96e9dd4f192",
+  "ravenVersion": "8a7c5245af00",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-12T16:54:33.113215+00:00"
+  "updatedAt": "2026-08-12T19:29:42.671605+00:00"
 }

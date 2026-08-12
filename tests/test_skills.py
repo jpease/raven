@@ -1170,5 +1170,69 @@ class ContextHygieneSkillTests(unittest.TestCase):
         )
 
 
+class SecurityReviewSkillTests(unittest.TestCase):
+    """Guards issue #161: the Required Constraints bullets must name each
+    Semgrep interface (MCP scan, MCP custom-rule, CLI) with the invocation
+    it actually supports, instead of presenting `--config auto` and `p/*`
+    registry ruleset names as if they were arguments to the MCP scan tool.
+
+    Reads the canonical skill source directly (not an installed copy),
+    since `common/.agents/skills/` is where edits must land. Assertions
+    pin Raven's own prose hygiene -- something Raven owns and can always
+    fix -- not the third-party Semgrep MCP server's argument schema, which
+    is out of Raven's control and deliberately left unpinned (see issue
+    #161's non-goals).
+    """
+
+    def setUp(self):
+        path = REPO_ROOT / "common" / ".agents" / "skills" / "raven-security-review" / "SKILL.md"
+        self.content = path.read_text(encoding="utf-8")
+        self.lowered = self.content.lower()
+
+    def test_mcp_scan_tool_never_appears_with_a_cli_config_flag_or_ruleset(self):
+        # `mcp__semgrep__semgrep_scan` (and its `_with_custom_rule` sibling,
+        # a substring match) take no config argument -- neither must ever
+        # share a line with a `--config` flag or a `p/*` registry ruleset
+        # name, both of which are CLI-only forms.
+        for line in self.content.splitlines():
+            if "mcp__semgrep__semgrep_scan" not in line:
+                continue
+            self.assertNotIn(
+                "--config",
+                line,
+                f"MCP scan bullet must not carry a CLI --config flag: {line!r}",
+            )
+            self.assertNotRegex(
+                line,
+                r"`p/[\w-]+`",
+                f"MCP scan bullet must not carry a CLI p/* ruleset name: {line!r}",
+            )
+
+    def test_config_and_ruleset_forms_appear_only_in_cli_context(self):
+        for line in self.content.splitlines():
+            if "--config" not in line and not re.search(r"`p/[\w-]+`", line):
+                continue
+            self.assertIn(
+                "CLI",
+                line,
+                f"--config/p/* forms must be presented in a CLI-labeled bullet: {line!r}",
+            )
+            self.assertRegex(
+                line,
+                r"semgrep --config",
+                f"expected the bare `semgrep --config ...` CLI invocation form: {line!r}",
+            )
+
+    def test_custom_rule_tool_is_described_as_taking_an_inline_rule(self):
+        region = section_region(self.lowered, "## required constraints")
+        self.assertIn("semgrep_scan_with_custom_rule", region)
+        self.assertIn(
+            "inline rule",
+            region,
+            "expected semgrep_scan_with_custom_rule to be described as taking "
+            "an inline rule body, not a registry ruleset name",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
