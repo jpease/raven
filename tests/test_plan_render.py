@@ -207,7 +207,8 @@ class RenderDryRunPlanTest(unittest.TestCase):
 class PrintDelegatesToRenderTest(unittest.TestCase):
     """The print_* functions stay the module's public surface; they must emit
     exactly what the renderer produces, or the split has introduced a second
-    place where the report's wording lives."""
+    place where the report's wording lives.
+    """
 
     def test_print_section_emits_the_rendered_text(self):
         buf = io.StringIO()

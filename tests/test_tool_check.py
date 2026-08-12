@@ -165,7 +165,8 @@ gitnexus: gitnexus mcp - ✓ Connected
 
 class LoadMemoryRecoveryTests(RavenTestCase):
     """Structurally invalid local tool memory must recover to a clean versioned
-    object instead of crashing callers that assume a dict (issue #42)."""
+    object instead of crashing callers that assume a dict (issue #42).
+    """
 
     def _module_with_memory(self, contents: str):
         tmp = tempfile.TemporaryDirectory()
@@ -223,7 +224,8 @@ class LoadMemoryRecoveryTests(RavenTestCase):
 
 class ToolCheckJsonEndToEndTests(RavenTestCase):
     """End-to-end reproduction of issue #42: a damaged cache must not add a
-    traceback to --json or --session-start invocations."""
+    traceback to --json or --session-start invocations.
+    """
 
     def _run(self, memory_contents: str, args: list[str]) -> subprocess.CompletedProcess:
         tmp = tempfile.TemporaryDirectory()
@@ -390,7 +392,8 @@ class ProjectRootResolutionTests(RavenTestCase):
 class AdapterHelpPathTests(unittest.TestCase):
     """Regression for #105: a Codex-only install (no .claude tree) must
     advertise `.codex/scripts/raven-tool-check.py`, not the Claude adapter's
-    path, in its --help output and remediation guidance."""
+    path, in its --help output and remediation guidance.
+    """
 
     def _help_output(self, script: Path) -> str:
         result = subprocess.run(

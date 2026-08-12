@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""PreToolUse hook: deny edits to secret-like paths, and warn (without blocking) on high-churn ones.
+
+Denial output is shaped differently for Claude (stderr + exit 2) vs Codex (a
+``hookSpecificOutput`` JSON payload on stdout, exit 0) -- see `_deny` and
+`_is_codex_hook` -- since the two hosts expect different denial protocols.
+"""
 
 from __future__ import annotations
 
@@ -44,6 +50,7 @@ def _deny(message: str, payload: dict) -> int:
 
 
 def main() -> int:
+    """Read the hook payload from stdin and deny or warn based on the edited path."""
     payload = _load_payload()
     if payload is None:
         return 0

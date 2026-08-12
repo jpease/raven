@@ -1,3 +1,12 @@
+"""The ``raven`` argparse CLI: command dispatch, plus the write-gated `_run` preflight.
+
+Every mutating command (`cmd_install`, `cmd_upgrade`, `cmd_accept`) routes
+through `_run` or an equivalent preflight that checks path collisions and
+CLAUDE.md-symlink conflicts *before* writing, so a rejected request changes
+nothing on disk -- see `_build_run_plan`'s docstring for the pure/impure split
+this module leans on throughout.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -49,6 +58,7 @@ from .template import entries_for_destination
 
 
 def list_language_templates() -> list[str]:
+    """Top-level directories in the Raven repo that are installable language templates."""
     return sorted(
         d.name
         for d in REPO_ROOT.iterdir()
@@ -78,6 +88,7 @@ def swift_install_note() -> list[str]:
 
 
 def select_language_interactively() -> str:
+    """Prompt the user to pick a language template from a numbered list; exits 2 non-interactively."""
     if not sys.stdin.isatty():
         print(
             "error: language required; pass it as an argument (e.g. raven install python)",
@@ -193,6 +204,8 @@ def _symlink_adoption_decision(
 
 @dataclass
 class RunPlan:
+    """A computed `ApplyPlan` plus every precondition `_run` must check before writing."""
+
     plan: ApplyPlan
     collisions: list[str]
     state_symlinks: list[str]
@@ -458,6 +471,11 @@ def _create_config(
 
 
 def cmd_init(args: argparse.Namespace) -> int:
+    """``raven init``: write a fresh ``.raven/config.toml`` only, no template files.
+
+    Refuses if a config already exists, pointing the user at ``raven upgrade``
+    instead of silently overwriting their existing setup.
+    """
     destination = _resolve_destination(args)
     if destination is None:
         return 2
@@ -476,6 +494,13 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_install(args: argparse.Namespace) -> int:
+    """``raven install``: write config (if absent) and apply the template, together atomically.
+
+    The config write is staged as a callback (``write_config``) rather than
+    performed up front, so `_run`'s preflight can still reject the whole
+    request -- collisions, an unresolved template conflict -- without having
+    already written a config file for a request that ultimately fails.
+    """
     destination = _resolve_destination(args)
     if destination is None:
         return 2
@@ -530,6 +555,7 @@ def cmd_install(args: argparse.Namespace) -> int:
 
 
 def cmd_upgrade(args: argparse.Namespace) -> int:
+    """``raven upgrade``: re-apply the already-configured template. Requires an existing config."""
     destination = _resolve_destination(args)
     if destination is None:
         return 2
@@ -559,6 +585,8 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
 
 @dataclass
 class AcceptRequestClassification:
+    """The result of `classify_accept_requests`: which requested paths land in which bucket."""
+
     accepted: list[str]
     stale: list[str]
     skipped: list[str]
@@ -591,6 +619,13 @@ def classify_accept_requests(
 
 
 def cmd_accept(args: argparse.Namespace) -> int:
+    """``raven accept``: record the destination's current content as the trusted baseline.
+
+    Defaults to every path with a pending guided-merge artifact when no paths
+    are given explicitly. This is the only command that records a baseline
+    without copying template content -- it exists so a locally, deliberately
+    diverged file can stop being reported as drift.
+    """
     destination = _resolve_destination(args)
     if destination is None:
         return 2
@@ -688,6 +723,7 @@ def _ascii_marks_needed() -> bool:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
+    """``raven doctor``: print `build_doctor_findings` as human text or JSON; exit 1 on any error."""
     destination = _resolve_destination(args)
     if destination is None:
         return 2
@@ -702,6 +738,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_assess(args: argparse.Namespace) -> int:
+    """``raven assess``: print `build_assess_findings` as human text or JSON; exit 1 on any error."""
     destination = _resolve_destination(args)
     if destination is None:
         return 2
@@ -716,6 +753,7 @@ def cmd_assess(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    """Parse argv, dispatch to the matching ``cmd_*`` handler, and return its exit code."""
     supported_languages = ", ".join(list_language_templates())
     parser = argparse.ArgumentParser(
         prog="raven",

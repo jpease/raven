@@ -25,7 +25,8 @@ class ClaudeWholeDirSymlinkParityTests(RavenTestCase):
     directory symlink, like .codex already does. The installer follows ../common
     symlinks and materializes real files, so installs are unaffected; this is
     purely about retiring per-file symlink maintenance (and the bug class where a
-    new common file was silently dropped until linked into all eight templates)."""
+    new common file was silently dropped until linked into all eight templates).
+    """
 
     def test_scripts_and_hooks_are_whole_dir_symlinks_to_common(self):
         templates = list(_language_template_dirs())

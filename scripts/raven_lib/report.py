@@ -1,3 +1,5 @@
+"""Render `Finding` lists as human-readable text or JSON for `doctor`/`assess` output."""
+
 from __future__ import annotations
 
 import json
@@ -22,6 +24,12 @@ def supports_unicode_marks(encoding: str | None) -> bool:
 def render_human(
     command: str, os_name: str, findings: list[Finding], *, ascii_marks: bool = False
 ) -> str:
+    """Render findings grouped by category, in first-seen order, with a trailing severity summary.
+
+    ``ascii_marks`` swaps the unicode severity glyphs for ASCII ones -- callers
+    decide this via `supports_unicode_marks` rather than this function guessing
+    from its own inputs.
+    """
     marks = _MARK_ASCII if ascii_marks else _MARK
     lines: list[str] = [f"raven {command} ({os_name})", ""]
     categories = list(dict.fromkeys(f.category for f in findings))
@@ -43,6 +51,7 @@ def render_human(
 
 
 def render_json(command: str, os_name: str, findings: list[Finding]) -> str:
+    """Render findings as an indented JSON object with the same summary `render_human` shows."""
     payload = {
         "command": command,
         "os": os_name,

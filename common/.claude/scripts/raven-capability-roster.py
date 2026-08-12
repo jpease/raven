@@ -112,6 +112,7 @@ def sanitize_identifier(value: object) -> str | None:
 
 
 def sanitize_sha(value: object) -> str | None:
+    """A value if it looks like a git sha, else None -- dropped, not escaped, if unsafe."""
     if not isinstance(value, str):
         return None
     return value if SAFE_SHA.match(value) else None
@@ -261,6 +262,7 @@ def index_staleness(root: Path, meta: dict, run_git) -> str | None:
 
 
 def render_index_line(meta: dict | None, verdict: str | None) -> str | None:
+    """Render the "Index" roster line from GitNexus metadata, or None if absent/malformed."""
     if meta is None:
         return None
     stats = meta["stats"]
@@ -376,6 +378,12 @@ def build_roster(root: Path | None, prober: Any) -> str:
 
 
 def main() -> int:
+    """CLI/hook entry point: build and print the roster, always exiting 0.
+
+    Any exception during roster assembly is swallowed rather than surfaced --
+    see the ``except`` block below for why a crashing SessionStart hook is
+    worse than a silently missing roster.
+    """
     parser = argparse.ArgumentParser(
         description="Emit a Raven capability roster for the current session."
     )

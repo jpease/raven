@@ -1,3 +1,11 @@
+"""Read, validate, and write ``.raven/manifest.json``, the record of what Raven installed.
+
+Validation always degrades to a usable empty manifest rather than raising, so a
+corrupt or missing manifest fails a diff safely instead of crashing the CLI; the
+distinction is carried forward as ``ManifestStatus.state`` for callers that need
+to report it.
+"""
+
 from __future__ import annotations
 
 import json
@@ -39,6 +47,7 @@ class ManifestStatus:
 
     @property
     def usable(self) -> bool:
+        """Whether ``manifest`` reflects a trustworthy state (present-and-valid, or absent)."""
         return self.state in ("ok", "missing")
 
 
@@ -96,6 +105,7 @@ def load_manifest(destination: Path) -> dict:
 
 
 def git_ref() -> str:
+    """Short HEAD sha of this Raven checkout, or ``"unknown"`` outside a git repo."""
     result = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "rev-parse", "--short=12", "HEAD"],
         stdout=subprocess.PIPE,
@@ -109,6 +119,7 @@ def git_ref() -> str:
 
 
 def save_manifest(destination: Path, manifest: dict) -> None:
+    """Write ``manifest`` as sorted, indented JSON to ``.raven/manifest.json``."""
     path = destination / MANIFEST_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     # A symlinked manifest would route the write to a file outside the
@@ -166,6 +177,14 @@ def update_manifest(
     remove: list[str] | None = None,
     preserve_identical_block_baseline: bool = False,
 ) -> None:
+    """Record fresh fingerprints for ``paths`` and prune ``remove``, then save.
+
+    Reloads the on-disk manifest when one is not passed in, so repeated calls
+    within one command accumulate rather than clobber each other's writes.
+    ``preserve_identical_block_baseline`` is threaded through to
+    ``_make_manifest_record`` for the RAVEN-block special case: see its comment
+    for why a content-identical block must keep its stored record verbatim.
+    """
     if manifest is None:
         manifest = load_manifest(destination)
     manifest["schema"] = 1

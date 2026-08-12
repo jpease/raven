@@ -1,3 +1,12 @@
+"""Parse ``.raven/config.toml`` with a hand-rolled subset of TOML, and apply its gating rules.
+
+A real TOML library is deliberately not a dependency here: the config format is a
+small, stable subset (scalars, arrays, one level of section nesting), and parsing
+it directly keeps Raven's installer free of a third-party parsing dependency. A
+malformed file always raises `ConfigError` rather than silently degrading, so a
+typo in config never causes install/upgrade to fail open.
+"""
+
 from __future__ import annotations
 
 import fnmatch
@@ -37,6 +46,7 @@ class ConfigError(Exception):
 
 
 def strip_comment(line: str) -> str:
+    """Strip a trailing ``#`` comment from a config line, respecting quoted strings."""
     in_double = False
     in_single = False
     escaped = False
@@ -122,6 +132,13 @@ def _unquoted_contains(line: str, target: str) -> bool:
 
 
 def parse_value(value: str) -> ConfigValue:
+    """Parse one TOML scalar or array literal; raises `ConfigError` on an unterminated one.
+
+    An integer-looking bare value that fails `int()` is returned as the raw
+    string rather than rejected -- this parser has no string-quoting requirement
+    to enforce beyond what real TOML has, and being lenient here keeps template
+    names and similar bare words working without users needing to quote them.
+    """
     value = value.strip()
     if value in {"true", "false"}:
         return value == "true"
@@ -151,6 +168,15 @@ def parse_value(value: str) -> ConfigValue:
 
 
 def parse_simple_toml(text: str) -> dict[str, object]:
+    """Parse the supported TOML subset into nested dicts; raises `ConfigError` on anything else.
+
+    A multi-line array (an unclosed ``[`` on a ``key =`` line) is joined across
+    lines before section/assignment parsing runs, since values are otherwise
+    parsed one physical line at a time. Any line that is neither a section
+    header nor a ``key = value`` assignment fails the whole parse rather than
+    being dropped, so a typo cannot silently produce an empty, valid-looking
+    config.
+    """
     data: dict[str, object] = {}
     section: str | None = None
     lines: list[str] = []
@@ -237,6 +263,12 @@ def build_config(raw: dict, *, exists: bool) -> RavenConfig:
 
 
 def load_config(destination: Path) -> RavenConfig:
+    """Load and parse ``destination``'s config, or a default one if absent.
+
+    An absent config is a normal, healthy state (``exists=False``); an unreadable
+    or malformed one raises `ConfigError` so callers fail closed instead of
+    guessing at a template.
+    """
     path = destination / CONFIG_PATH
     if not path.exists():
         return build_config({}, exists=False)
@@ -263,6 +295,7 @@ def _config_template() -> string.Template:
 
 
 def default_config_text(template_name: str, include_readme: bool, platform: str = "none") -> str:
+    """Render the ``config.toml.tmpl`` starter config, filled in for a fresh install."""
     return _config_template().substitute(
         template=template_name,
         include_readme=str(include_readme).lower(),
@@ -276,6 +309,7 @@ def path_within(path: str, prefix: str) -> bool:
 
 
 def path_matches(path: str, pattern: str) -> bool:
+    """Whether ``path`` matches an exclude ``pattern``: a fnmatch glob, or ``prefix/**`` for a subtree."""
     normalized = pattern.strip().replace("\\", "/")
     if not normalized:
         return False
@@ -299,6 +333,7 @@ def _disabled_by_component(
 
 
 def component_disabled(relative: str, config: RavenConfig) -> bool:
+    """Whether ``relative`` falls under a component disabled globally, for Claude, or for Codex."""
     return any(
         _disabled_by_component(relative, components, component_paths)
         for components, component_paths in [
@@ -353,6 +388,7 @@ def template_excluded(relative: str, config: RavenConfig) -> bool:
 
 
 def config_excluded(relative: str, config: RavenConfig) -> bool:
+    """Whether config excludes ``relative``: by component, platform gate, template gate, or glob."""
     if component_disabled(relative, config):
         return True
     if platform_excluded(relative, config):

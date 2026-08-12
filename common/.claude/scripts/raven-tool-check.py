@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""Probe recommended Raven tooling and report/cache what's installed, configured, or missing.
+
+Every check tolerates absence and timeout as normal outcomes rather than errors --
+this runs unattended from a SessionStart hook as well as interactively, so a slow
+or missing tool must degrade to a reported status, never a crash.
+"""
 
 from __future__ import annotations
 
@@ -224,9 +230,12 @@ def result_status(result: dict) -> str:
 
 
 class ToolCheckReport:
+    """Check results for one run, split into present/timed-out/missing on demand."""
+
     def __init__(
         self, memory_path: Path, current_os: str, do_not_remind: bool, results: list[dict]
     ) -> None:
+        """Store the raw check results and run context this report summarizes."""
         self.memory_path = memory_path
         self.current_os = current_os
         self.do_not_remind = do_not_remind
@@ -234,18 +243,22 @@ class ToolCheckReport:
 
     @property
     def present(self) -> list[dict]:
+        """Results for tools found available."""
         return [result for result in self.results if result_status(result) == "available"]
 
     @property
     def timed_out(self) -> list[dict]:
+        """Results for tools whose check timed out (status unconfirmed, not "missing")."""
         return [result for result in self.results if result_status(result) == "timed_out"]
 
     @property
     def missing(self) -> list[dict]:
+        """Results for tools confirmed not available."""
         return [result for result in self.results if result_status(result) == "missing"]
 
 
 def os_key() -> str:
+    """Normalize the running platform to one of "darwin"/"windows"/"linux"."""
     name = platform.system().lower()
     if name == "darwin":
         return "darwin"
@@ -278,6 +291,7 @@ def _normalize_memory(raw: object) -> dict:
 
 
 def load_memory() -> dict:
+    """Load tool-check memory from disk, falling back to fresh defaults if absent or corrupt."""
     if not MEMORY_PATH.exists():
         return _default_memory()
     try:
@@ -288,11 +302,13 @@ def load_memory() -> dict:
 
 
 def save_memory(memory: dict) -> None:
+    """Write tool-check memory to disk as sorted, indented JSON."""
     MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
     MEMORY_PATH.write_text(json.dumps(memory, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def command_status(command: list[str]) -> str:
+    """Probe one command: "available", "timed_out", or "missing"; never raises."""
     executable = shutil.which(command[0])
     if not executable:
         return "missing"
@@ -314,6 +330,7 @@ def command_status(command: list[str]) -> str:
 
 
 def command_works(command: list[str]) -> bool:
+    """Whether a command probe reported "available"."""
     return command_status(command) == "available"
 
 
@@ -459,6 +476,7 @@ def _claude_mcp_server_names(root: Path | None = None) -> frozenset[str]:
 
 
 def claude_mcp_server_status(server_name: str, root: Path | None = None) -> str:
+    """Whether a Claude MCP server is "configured", "not_configured", or "timed_out" (CLI probe)."""
     if server_name in _claude_mcp_server_names_from_config(root):
         return "configured"
     cli_names, timed_out = _claude_mcp_server_names_from_cli()
@@ -470,10 +488,12 @@ def claude_mcp_server_status(server_name: str, root: Path | None = None) -> str:
 
 
 def claude_mcp_server_configured(server_name: str, root: Path | None = None) -> bool:
+    """Whether a Claude MCP server is configured (config file or `claude mcp list`)."""
     return claude_mcp_server_status(server_name, root) == "configured"
 
 
 def codex_mcp_server_configured(server_name: str, root: Path | None = None) -> bool:
+    """Whether a Codex MCP server is configured, per its ``config.toml``."""
     return server_name in _codex_mcp_server_names_from_config(root)
 
 
@@ -492,6 +512,13 @@ def _configured_mcp_server_names(output: str) -> set[str]:
 
 
 def check_tool_with_source(tool: dict, root: Path | None = None) -> tuple[bool, str | None]:
+    """Check a tool via its CLI commands, then MCP config, returning (available, how it was found).
+
+    Checked in that order because a CLI hit is the cheapest and most direct
+    evidence; MCP config is consulted only when no command succeeds. A timeout
+    anywhere in the chain is remembered but does not short-circuit the
+    remaining checks, so a slow CLI probe doesn't hide a working MCP config.
+    """
     timed_out = False
     for command in tool["commands"]:
         status = command_status(command)
@@ -563,6 +590,12 @@ def _print_streamed_result(result: dict) -> None:
 def check_all_tools(
     current_os: str, *, stream: bool = False, root: Path | None = None
 ) -> list[dict]:
+    """Check every tool in `TOOLS` concurrently, returning results in `TOOLS` order.
+
+    ``stream=True`` prints each result as it completes (for interactive human
+    use) but still returns them re-sorted to `TOOLS` order, since completion
+    order is nondeterministic and callers rely on a stable result order.
+    """
     if not stream:
         with ThreadPoolExecutor() as pool:
             return list(pool.map(lambda tool: _tool_result(tool, current_os, root), TOOLS))
@@ -594,10 +627,12 @@ def _build_tool_records(results: list[dict], checked_at: str, current_os: str) -
 
 
 def remember_results(memory: dict, results: list[dict], checked_at: str, current_os: str) -> None:
+    """Merge fresh check results into ``memory["tools"]`` in place, keyed by tool id."""
     memory["tools"].update(_build_tool_records(results, checked_at, current_os))
 
 
 def print_session_start_prompt(missing: list[dict], memory_path: Path) -> None:
+    """Print the SessionStart-hook prompt asking the agent how to handle missing tools."""
     print("Recommended RAVEN tools are not installed, configured, or verified for this OS.")
     print(f"Local tool memory: {memory_path}")
     print()
@@ -623,6 +658,7 @@ def print_session_start_prompt(missing: list[dict], memory_path: Path) -> None:
 
 
 def build_tool_check_report(memory: dict, current_os: str, *, stream: bool) -> ToolCheckReport:
+    """Run every tool check and assemble the report, carrying forward the no-reminder preference."""
     results = check_all_tools(current_os, stream=stream)
     return ToolCheckReport(
         memory_path=MEMORY_PATH,
@@ -633,6 +669,7 @@ def build_tool_check_report(memory: dict, current_os: str, *, stream: bool) -> T
 
 
 def print_json_report(report: ToolCheckReport) -> None:
+    """Print the report as JSON, for the SessionStart hook and other machine callers."""
     print(
         json.dumps(
             {
@@ -647,6 +684,7 @@ def print_json_report(report: ToolCheckReport) -> None:
 
 
 def print_human_report(report: ToolCheckReport) -> None:
+    """Print the report as readable text, grouped into timed-out/present/missing sections."""
     print(f"Tool memory: {report.memory_path}")
     print(f"OS: {report.current_os}")
     print()
@@ -688,6 +726,7 @@ def print_human_report(report: ToolCheckReport) -> None:
 
 
 def main() -> int:
+    """CLI entry point: parse args, run checks, print a report, and apply --write/--no-reminder."""
     parser = argparse.ArgumentParser(
         description=(
             "Check recommended RAVEN tooling and optionally update RAVEN's local tool-check cache."

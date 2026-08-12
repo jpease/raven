@@ -66,7 +66,8 @@ class AggregateBudgetTest(unittest.TestCase):
 class TemplateDiscoveryGuardTest(unittest.TestCase):
     """Regression tests for issue #73: a template's rules file must be
     covered by THRESHOLDS/PROFILES, or the checks must fail loudly instead
-    of silently skipping it."""
+    of silently skipping it.
+    """
 
     def setUp(self) -> None:
         self.module = load_script_module("self_check_under_test", SELF_CHECK)
@@ -110,7 +111,8 @@ class TemplateDiscoveryGuardTest(unittest.TestCase):
 class StrictFreshnessTest(unittest.TestCase):
     """Regression tests for issue #82: the weekly scheduled CI run must be
     able to fail on stale third-party setup docs instead of only logging a
-    warning inside an otherwise-green run."""
+    warning inside an otherwise-green run.
+    """
 
     def setUp(self) -> None:
         self.module = load_script_module("self_check_under_test", SELF_CHECK)
@@ -241,7 +243,8 @@ SKILL_DESC_PER_SKILL = _budget_module.SKILL_DESCRIPTION_PER_SKILL_LIMIT
 class SkillDescriptionBudgetTest(unittest.TestCase):
     """Issue #92: skill `description:` frontmatter is injected into every
     session's skill index, an always-loaded surface the file/aggregate rules
-    budgets never counted. Cap the sum and each single description."""
+    budgets never counted. Cap the sum and each single description.
+    """
 
     def setUp(self) -> None:
         self.module = load_script_module("self_check_under_test", SELF_CHECK)

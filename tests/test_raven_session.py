@@ -299,7 +299,8 @@ class UpdateGitignoreTests(unittest.TestCase):
 
 class SessionInitGitignoreTests(unittest.TestCase):
     """End-to-end: after --init, all three session-state paths are ignored even
-    when .gitignore already contains a misleading comment (issue #43)."""
+    when .gitignore already contains a misleading comment (issue #43).
+    """
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -573,7 +574,8 @@ def _codex_payload(command: str) -> str:
 class CodexCheckpointHookTests(unittest.TestCase):
     """Regression for #105: the Codex checkpoint hook must resolve
     ``.codex/scripts/raven-session.py``, not the Claude adapter's path, in a
-    Codex-only install (one without a ``.claude`` tree)."""
+    Codex-only install (one without a ``.claude`` tree).
+    """
 
     def setUp(self):
         import shutil

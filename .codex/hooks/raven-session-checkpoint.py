@@ -125,6 +125,7 @@ def _completion_unit(command: str) -> str | None:
 
 
 def main() -> int:
+    """Read the hook payload from stdin and deny a ``--complete`` bash call raven-session.py would reject."""
     payload = _load_payload()
     if payload is None:
         return 0

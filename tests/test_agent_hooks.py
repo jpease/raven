@@ -447,7 +447,8 @@ def find_codex_launcher_drift(hooks_config: dict, scripts_root: Path) -> list[st
 
 class CodexHookLauncherDriftFixtureTests(unittest.TestCase):
     """Prove find_codex_launcher_drift has teeth against synthetic fixtures
-    before trusting it to validate the real hooks.json (issue #129)."""
+    before trusting it to validate the real hooks.json (issue #129).
+    """
 
     @staticmethod
     def _good_suffixes():

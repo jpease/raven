@@ -160,7 +160,8 @@ class IsSupportedTests(RavenTestCase):
 
 class GuardHookEndToEndTests(RavenTestCase):
     """Drive the hook as a subprocess with cwd at a temp project so it reads a
-    temp .raven/config.toml, matching how Claude invokes it."""
+    temp .raven/config.toml, matching how Claude invokes it.
+    """
 
     def _setup_project(self, *, gate_enabled: bool, lines: int, filename: str = "big.py"):
         (self.destination / ".raven").mkdir(parents=True, exist_ok=True)

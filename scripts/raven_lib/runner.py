@@ -1,3 +1,10 @@
+"""Run external tool/gate commands with a timeout, never raising on failure or absence.
+
+Every failure mode -- command not found, non-zero exit, timeout -- is folded into
+`RunResult` fields rather than an exception, so `doctor`/`assess`/`gate_run` can
+treat "the tool isn't there" and "the tool ran and failed" uniformly.
+"""
+
 from __future__ import annotations
 
 import shutil
@@ -9,6 +16,8 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class RunResult:
+    """Outcome of one `run_command` invocation: success, exit code, output, and how it ended."""
+
     ok: bool
     code: int
     stdout: str
@@ -18,6 +27,11 @@ class RunResult:
 
 
 def run_command(command: list[str], cwd: Path, timeout: int = 120) -> RunResult:
+    """Run ``command`` in ``cwd``.
+
+    Resolves ``command[0]`` via PATH first, so a missing tool (``found=False``)
+    is distinguishable from one that ran and failed.
+    """
     executable = shutil.which(command[0])
     if executable is None:
         return RunResult(ok=False, code=127, stdout="", stderr="", found=False, timed_out=False)

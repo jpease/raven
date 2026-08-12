@@ -1,3 +1,10 @@
+"""Frozen dataclasses shared across the installer/upgrader: no behavior, just shape.
+
+Each type documents the fields a stage of `template` -> `apply` -> `plan` -> `report`
+hands to the next; grouping them here (rather than beside their producing function)
+keeps the pipeline's data contracts visible in one place.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -6,6 +13,8 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class TemplateEntry:
+    """One template-relative file or symlink discovered by `iter_template_entries`."""
+
     relative: str
     source: Path
     copy_as_symlink: bool = False
@@ -32,6 +41,8 @@ class ManifestRecord:
 
 @dataclass(frozen=True)
 class RavenConfig:
+    """Parsed, defaulted view of ``.raven/config.toml`` (or its absence)."""
+
     template: str | None
     include_readme: bool
     components: dict[str, bool]
@@ -44,6 +55,15 @@ class RavenConfig:
 
 @dataclass(frozen=True)
 class RavenBlock:
+    """A located ``RAVEN:BEGIN``/``RAVEN:END`` managed block within a host file.
+
+    ``start``/``end`` are line indices into the host file's text, so callers can
+    splice a replacement without re-parsing. ``declared_sha256`` is the hash the
+    BEGIN marker itself claims, which may be stale or absent -- it is not
+    recomputed here, only carried, so drift detection can compare it against the
+    actual content hash.
+    """
+
     start: int
     end: int
     content: str
@@ -52,6 +72,8 @@ class RavenBlock:
 
 @dataclass(frozen=True)
 class Classification:
+    """Destination-relative paths bucketed by what an install/upgrade would do to each."""
+
     will_copy: list[str]
     will_upgrade: list[str]
     identical: list[str]
@@ -83,6 +105,14 @@ class OrphanClassification:
 
 @dataclass(frozen=True)
 class ApplyPlan:
+    """A `Classification` resolved against override flags into a concrete apply plan.
+
+    ``effective_classification`` is the `Classification` actually acted on --
+    overrides can move paths between buckets (e.g. force an upgrade of a file
+    that would otherwise need a guided merge) -- while the top-level lists here
+    reflect the plan post-override.
+    """
+
     requested_overrides: list[str]
     overwritten: list[str]
     newly_copied_overrides: list[str]
@@ -97,4 +127,5 @@ class ApplyPlan:
 
     @property
     def copied(self) -> list[str]:
+        """All paths this plan will write as new files: fresh copies plus copied overrides."""
         return self.will_copy + self.newly_copied_overrides

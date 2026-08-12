@@ -1,3 +1,10 @@
+"""Build the `raven assess` report: whether gate wiring, template fit, and gate runs are healthy.
+
+Unlike `doctor` (install integrity), this module judges whether the *project*
+itself -- its git hooks, its detected language, its gate recipes -- lives up to
+what Raven's template expects, optionally by actually running the gates.
+"""
+
 from __future__ import annotations
 
 import re
@@ -112,7 +119,8 @@ def resolve_manager_hook(hooks_dir: Path, name: str) -> Path:
 
 def _hook_is_trivial(text: str) -> bool:
     """True when a hook has no executable content: only blank lines, a shebang,
-    or ``#`` comments. Such a hook wires no gate, so it is "not installed"."""
+    or ``#`` comments. Such a hook wires no gate, so it is "not installed".
+    """
     for line in text.splitlines():
         stripped = line.strip()
         if stripped and not stripped.startswith("#"):
@@ -190,6 +198,7 @@ def _hook_finding(
 
 
 def wiring_findings(destination: Path) -> list[Finding]:
+    """Check that pre-commit/pre-push hooks invoke the template's canonical gate recipes."""
     config = load_config(destination)
     spec = gate_spec_for(config.template) if config.template else None
     findings: list[Finding] = []
@@ -312,6 +321,12 @@ def wiring_findings(destination: Path) -> list[Finding]:
 
 
 def template_fit_findings(destination: Path) -> list[Finding]:
+    """Check the configured template's detect signals against the project, flagging a mismatch.
+
+    On a miss, scans every *other* template's signals too and names the first
+    one that hits, so the warning can suggest a likely correct template instead
+    of only saying the configured one is wrong.
+    """
     config = load_config(destination)
     spec = gate_spec_for(config.template) if config.template else None
     if spec is None:
@@ -360,6 +375,12 @@ def template_fit_findings(destination: Path) -> list[Finding]:
 def build_assess_findings(
     destination: Path, run: bool, runner: Runner = gate_runner
 ) -> list[Finding]:
+    """Assemble wiring and template-fit findings, plus gate-compliance findings when ``run`` is set.
+
+    Gates are only actually executed when ``run=True`` -- callers that just want
+    the cheap, read-only checks (e.g. a fast `doctor` path) pass ``run=False``
+    and skip invoking `gate_compliance_findings` entirely.
+    """
     try:
         config = load_config(destination)
     except ConfigError as exc:

@@ -1,3 +1,10 @@
+"""Turn a `Classification` plus override flags into an `ApplyPlan`, then execute or report it.
+
+Every report has a `render_*`/`print_*` pair -- see the module comment below --
+and `apply_plan` is the one function here that actually writes to the
+destination; everything else is either pure planning or pure text rendering.
+"""
+
 from __future__ import annotations
 
 import sys
@@ -23,12 +30,14 @@ from .orphans import remove_orphans
 
 
 def render_section(title: str, paths: list[str]) -> str:
+    """A titled list of paths, or "(none)" under the title when the list is empty."""
     if not paths:
         return f"{title}\n  (none)"
     return "\n".join([title, *(f"  {path}" for path in paths)])
 
 
 def print_section(title: str, paths: list[str]) -> None:
+    """Print `render_section`'s output."""
     print(render_section(title, paths))
 
 
@@ -43,6 +52,7 @@ def render_apply_summary(
     removed_orphans: list[str],
     orphan_modified: list[str],
 ) -> str:
+    """The post-apply summary report text: only sections with content are included."""
     sections = [render_section(f"Copied {len(copied)} file(s):", copied)]
 
     if upgraded:
@@ -117,6 +127,7 @@ def print_apply_summary(
     removed_orphans: list[str],
     orphan_modified: list[str],
 ) -> None:
+    """Print `render_apply_summary`'s output."""
     print(
         render_apply_summary(
             copied,
@@ -133,6 +144,7 @@ def print_apply_summary(
 
 
 def render_dry_run_summary(classification: Classification) -> str:
+    """The ``--dry-run`` preview text for a `Classification`, before any override handling."""
     sections = [
         render_section("Will copy new Raven files:", classification.will_copy),
         render_section("Will upgrade unchanged Raven-managed files:", classification.will_upgrade),
@@ -160,6 +172,7 @@ def render_dry_run_summary(classification: Classification) -> str:
 
 
 def print_dry_run_summary(classification: Classification) -> None:
+    """Print `render_dry_run_summary`'s output."""
     print(render_dry_run_summary(classification))
 
 
@@ -183,6 +196,13 @@ def build_apply_plan(
     *,
     adopt_claude_symlink: bool,
 ) -> ApplyPlan:
+    """Resolve a `Classification` and override flags into the concrete `ApplyPlan` to execute.
+
+    Requested overrides are pulled out of every classification bucket first
+    (they get their own copy/overwrite handling), then CLAUDE.md is pulled out
+    of ``needs_merge``/``unknown_existing`` when symlink adoption is requested,
+    since adoption resolves that conflict a different way.
+    """
     override_set = set(requested_overrides)
     overwritten = sorted(path for path in requested_overrides if path in existing_overrides)
     newly_copied_overrides = sorted(path for path in requested_overrides if path not in overwritten)
@@ -326,6 +346,13 @@ def apply_plan(
     plan: ApplyPlan,
     orphans: OrphanClassification,
 ) -> tuple[int, list[str], list[str], list[str]]:
+    """Execute an `ApplyPlan`: copy/upgrade files, remove orphans, update the manifest, write merges.
+
+    Returns ``(exit_code, adopted_claude, merge_artifacts, removed_orphans)``.
+    Exit code 2 on a CLAUDE.md-backup collision or a `ValueError` from
+    `copy_paths` (an unsafe managed-block state) aborts before the manifest is
+    touched, so a failed apply never records paths it did not actually write.
+    """
     adopted_claude: list[str] = []
     if plan.adopt_claude_symlink:
         try:
@@ -380,6 +407,7 @@ def apply_plan(
 
 
 def normalize_override(path: str) -> str:
+    """Normalize a user-supplied ``--override`` path to a template-relative POSIX form."""
     normalized = path.strip().replace("\\", "/")
     if normalized.startswith("./"):
         normalized = normalized[2:]

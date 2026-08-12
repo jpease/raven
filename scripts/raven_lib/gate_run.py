@@ -1,3 +1,5 @@
+"""Run a template's quality-gate recipes via `just` (with per-recipe fallbacks) and report the results."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,6 +13,14 @@ _GATES = "Gate compliance"
 
 
 def gate_compliance_findings(destination: Path, runner: Runner) -> list[Finding]:
+    """Run each of the template's gate recipes and return one `Finding` per recipe.
+
+    Prefers ``just <recipe>`` when `just` is actually usable (not merely on
+    PATH -- see the probe below) and the justfile declares the recipe;
+    otherwise falls back to the recipe's direct fallback command, if one is
+    configured. A recipe with no fallback and no justfile entry is silently
+    skipped rather than reported as failing.
+    """
     config = load_config(destination)
     spec = gate_spec_for(config.template) if config.template else None
     if spec is None:

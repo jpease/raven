@@ -24,6 +24,7 @@ select = [
     "B",
     "BLE",
     "C4",
+    "D",
     "E4",
     "E7",
     "E9",
@@ -38,10 +39,18 @@ select = [
     "SIM",
     "UP",
 ]
+# Style-only rules that fight this codebase's existing docstring voice;
+# the coverage rules (D100-D103) stay enforced.
+ignore = ["D203", "D205", "D213", "D400", "D401", "D415"]
 
 [tool.ruff.lint.per-file-ignores]
 # __all__ is grouped by source module with comment headers, not sorted alphabetically.
 "scripts/raven_lib/__init__.py" = ["RUF022"]
+# Test names are the documentation (test_hooks_tolerate_malformed_json_stdin
+# needs no docstring restating that). #153 scoped docstring coverage to
+# shipped modules/hooks/scripts; a blanket sweep of ~940 test methods would be
+# exactly the filler the issue's own quality bar warns against.
+"tests/*.py" = ["D100", "D101", "D102", "D103"]
 
 [tool.ruff.format]
 line-ending = "auto"

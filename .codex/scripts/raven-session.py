@@ -12,6 +12,8 @@ from typing import TypedDict
 
 
 class Unit(TypedDict):
+    """One tracked unit of work within a session: its name, completion, and linked issue."""
+
     name: str
     done: bool
     issue: str | None
@@ -19,6 +21,8 @@ class Unit(TypedDict):
 
 
 class SessionData(TypedDict):
+    """The full parsed contents of ``.raven/session.md``."""
+
     project_type: str
     started: str
     last_updated: str
@@ -147,6 +151,7 @@ def _render_session(data: SessionData) -> str:
 
 
 def cmd_init(args: list[str]) -> int:
+    """``--init``: create ``.raven/session.md`` for a new multi-unit session; refuses if one exists."""
     import argparse
 
     p = argparse.ArgumentParser()
@@ -216,6 +221,7 @@ def _update_gitignore() -> None:
 
 
 def cmd_status(args: list[str]) -> int:
+    """``--status``: print completed/pending unit counts and the current unit."""
     if not SESSION_FILE.exists():
         print("No active session. Run --init to start one.", file=sys.stderr)
         return 1
@@ -284,6 +290,12 @@ def _current_unit(data: SessionData) -> Unit | None:
 
 
 def cmd_validate(args: list[str]) -> int:
+    """``--validate <unit>``: check that ``<unit>`` is the current, not-yet-done unit.
+
+    Read-only precondition check `cmd_complete` also runs internally before
+    mutating state, so a caller can validate up front without the side effect
+    of completing the unit.
+    """
     if not args:
         print("error: --validate requires a unit name", file=sys.stderr)
         return 1
@@ -309,6 +321,7 @@ def cmd_validate(args: list[str]) -> int:
 
 
 def cmd_complete(args: list[str]) -> int:
+    """``--complete <unit>``: mark the current unit done and print the next one, under the session lock."""
     if not args:
         print("error: --complete requires a unit name", file=sys.stderr)
         return 1
@@ -341,6 +354,7 @@ def cmd_complete(args: list[str]) -> int:
 
 
 def cmd_archive(args: list[str]) -> int:
+    """``--archive``: move completed units out of ``session.md`` into ``session-archive.md``."""
     if not SESSION_FILE.exists():
         print("error: no active session", file=sys.stderr)
         return 1
@@ -365,6 +379,7 @@ def cmd_archive(args: list[str]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI entry point: dispatch ``--init``/``--status``/``--validate``/``--complete``/``--archive``."""
     args = argv if argv is not None else sys.argv[1:]
     if not args:
         print(

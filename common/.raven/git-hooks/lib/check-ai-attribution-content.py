@@ -315,6 +315,11 @@ _USAGE = "usage: check-ai-attribution-content.py {staged|outbound} [--push-plan]
 
 
 def main() -> int:
+    """CLI entry point: scan staged content or an outbound push for AI-attribution phrases.
+
+    Config-gated: ``.raven/config.toml``'s ``block_ai_attribution_content`` (default
+    on) can disable the check entirely for a repo that wants attribution left in.
+    """
     argv = sys.argv[1:]
     mode = argv[0] if argv else ""
     if mode not in ("staged", "outbound"):

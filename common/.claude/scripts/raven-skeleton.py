@@ -105,7 +105,8 @@ LEXICAL_FUNCTION_LANGS: frozenset[str] = frozenset({"typescript", "tsx", "javasc
 def lexical_function_rule(language: str) -> str | None:
     """Return the supplemental ast-grep YAML rule that matches function-valued
     `const`/`let` declarations for ``language``, or None when the language has
-    no such supplement."""
+    no such supplement.
+    """
     if language not in LEXICAL_FUNCTION_LANGS:
         return None
     return (
@@ -140,19 +141,22 @@ def detect_language(path: str) -> str | None:
 
 def node_kinds(language: str) -> list[str]:
     """Return the declaration node kinds for a language, or [] if the ast-grep
-    backend handles it with a structural rule instead (or not at all)."""
+    backend handles it with a structural rule instead (or not at all).
+    """
     return NODE_KINDS.get(language, [])
 
 
 def astgrep_rule(language: str) -> str | None:
     """Return the ast-grep YAML structural rule for a language, or None when the
-    language is handled by the node-kind table (or unsupported)."""
+    language is handled by the node-kind table (or unsupported).
+    """
     return STRUCTURAL_RULES.get(language)
 
 
 def astgrep_supports(language: str) -> bool:
     """Whether the ast-grep backend can skeletonize a language -- via either the
-    node-kind table or a structural rule."""
+    node-kind table or a structural rule.
+    """
     return bool(node_kinds(language)) or astgrep_rule(language) is not None
 
 
@@ -176,7 +180,8 @@ def exclusive_range_to_lines(start: dict, end: dict) -> tuple[int, int]:
 def _header(text: str) -> str:
     """First non-empty line of a matched declaration, stripped. With a --kind
     query ast-grep does not isolate the symbol name, so the declaration header
-    is the most reliable, fragile-free label."""
+    is the most reliable, fragile-free label.
+    """
     for line in text.splitlines():
         stripped = line.strip()
         if stripped:
@@ -187,7 +192,8 @@ def _header(text: str) -> str:
 def parse_astgrep_stream(text: str) -> list[dict]:
     """Parse ast-grep ``--json=stream`` output (one JSON match per line) into
     sorted ``{start_line, end_line, header}`` rows with one-based inclusive
-    lines. Blank lines are ignored."""
+    lines. Blank lines are ignored.
+    """
     rows: list[dict] = []
     for line in text.splitlines():
         line = line.strip()
@@ -209,7 +215,8 @@ def parse_astgrep_stream(text: str) -> list[dict]:
 def sort_rows(rows: list[dict]) -> list[dict]:
     """Order rows by start line ascending, then by end line descending so a
     container (wider range) precedes the members it encloses. Exact duplicates
-    are removed."""
+    are removed.
+    """
     seen: set[tuple] = set()
     unique: list[dict] = []
     for row in rows:
@@ -224,7 +231,8 @@ def sort_rows(rows: list[dict]) -> list[dict]:
 
 def format_skeleton(rows: list[dict], max_symbols: int = 300) -> str:
     """Render rows as ``start-end<TAB>header`` lines, capped at ``max_symbols``
-    with a trailing note when truncated."""
+    with a trailing note when truncated.
+    """
     lines = [f"{r['start_line']}-{r['end_line']}\t{r['header']}" for r in rows[:max_symbols]]
     remaining = len(rows) - max_symbols
     if remaining > 0:
@@ -234,7 +242,8 @@ def format_skeleton(rows: list[dict], max_symbols: int = 300) -> str:
 
 def astgrep_binary() -> str | None:
     """Resolve the ast-grep executable. Always invoke it as ``ast-grep``; never
-    ``sg``, which on some Linux systems is the unrelated ``setgroups`` utility."""
+    ``sg``, which on some Linux systems is the unrelated ``setgroups`` utility.
+    """
     return shutil.which("ast-grep")
 
 
@@ -337,7 +346,8 @@ def parse_ctags_json(text: str, source_lines: list[str]) -> list[dict]:
     *exact* fallback tier: a tag is kept only when it carries both an integer
     ``line`` and an integer ``end`` (the scope boundary). Tags without ``end``
     cannot yield an exact range and are dropped. The header is read from the
-    source so it matches the ast-grep tier's "first line of the declaration"."""
+    source so it matches the ast-grep tier's "first line of the declaration".
+    """
     rows: list[dict] = []
     for line in text.splitlines():
         line = line.strip()
@@ -363,7 +373,8 @@ def parse_ctags_json(text: str, source_lines: list[str]) -> list[dict]:
 def ctags_skeleton(path: str, language: str | None = None) -> list[dict] | None:
     """Generate a skeleton with Universal Ctags. Returns ``None`` when the
     language is undetectable or no Universal Ctags binary is available -- the
-    signal to fall through to the degraded backend."""
+    signal to fall through to the degraded backend.
+    """
     language = language or detect_language(path)
     if language is None:
         return None
@@ -432,7 +443,8 @@ def rg_declaration_pattern(language: str) -> str | None:
 def parse_rg_matches(text: str, total_lines: int) -> list[dict]:
     """Turn ``rg --line-number --no-heading`` output (``<lineno>:<text>`` lines
     for a single file) into rows. Each declaration's end is inferred as the line
-    before the next declaration start, with EOF for the last."""
+    before the next declaration start, with EOF for the last.
+    """
     starts: list[tuple[int, str]] = []
     for line in text.splitlines():
         if not line.strip():
@@ -463,7 +475,8 @@ def _count_lines(path: str) -> int | None:
 def rg_skeleton(path: str, language: str | None = None) -> list[dict] | None:
     """Generate an approximate skeleton with ``rg`` declaration matching. The
     final degraded tier: returns ``None`` when the language has no pattern or
-    ``rg`` is unavailable."""
+    ``rg`` is unavailable.
+    """
     language = language or detect_language(path)
     if language is None:
         return None
@@ -491,7 +504,8 @@ def rg_skeleton(path: str, language: str | None = None) -> list[dict] | None:
 @dataclass
 class Skeleton:
     """A generated skeleton plus provenance: which backend produced it and
-    whether its ranges are approximate (true only for the degraded rg tier)."""
+    whether its ranges are approximate (true only for the degraded rg tier).
+    """
 
     rows: list[dict]
     backend: str
@@ -504,7 +518,8 @@ def generate_skeleton(path: str) -> Skeleton | None:
     backend that runs but returns nothing is treated like an unavailable one, so
     an empty/bad skeleton degrades to the next tier instead of being emitted.
     Returns ``None`` when the language is unsupported or every tier comes up
-    empty."""
+    empty.
+    """
     language = detect_language(path)
     if language is None:
         return None
@@ -521,6 +536,7 @@ def generate_skeleton(path: str) -> Skeleton | None:
 
 
 def main(argv: list[str]) -> int:
+    """CLI entry point: print a skeleton for the one file path in ``argv``, or a no-skeleton note."""
     if len(argv) != 1:
         print("usage: raven-skeleton.py <file>", file=sys.stderr)
         return 2

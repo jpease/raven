@@ -1,3 +1,11 @@
+"""Shared path, component-map, and marker constants for the installer/upgrader.
+
+Values here are the single source of truth other modules read from -- for example
+``COMPONENT_PATHS`` drives both what `apply`/`plan` copy and what `config` gates --
+so a path or component name that needs to change belongs here, not re-typed at the
+call site.
+"""
+
 from __future__ import annotations
 
 import re

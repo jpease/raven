@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""Raven's own self-test: install-shape/budget validations, a real self-upgrade, then the test suite.
+
+This is the workflow `CLAUDE.md`'s "Self-Test Workflow" section tells agents to
+run after touching templates or `raven.py`: it dogfoods `raven upgrade` against
+this very repository, so a regression here is a regression any downstream
+consumer would hit too.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +22,7 @@ RAVEN_SCRIPT = REPO_ROOT / "scripts" / "raven.py"
 
 
 def run(label: str, args: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run a subprocess step, printing its output (and exiting) only on failure."""
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     result = subprocess.run(
         args,
@@ -36,6 +44,7 @@ def run(label: str, args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def load_raven_module():
+    """Import `raven_lib`, adding its parent directory to ``sys.path`` first if needed."""
     scripts_dir = str(RAVEN_SCRIPT.parent)
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
@@ -45,6 +54,7 @@ def load_raven_module():
 
 
 def validate_shared_docs_sync() -> None:
+    """Fail if a language template's copy of a shared ``.claude/docs`` file has drifted from common/."""
     print("==> validate shared docs are in sync with common/")
     non_template_dirs = load_raven_module().NON_TEMPLATE_DIRS
     common_docs = REPO_ROOT / "common" / ".claude" / "docs"
@@ -175,6 +185,11 @@ def _template_rules_files() -> dict[str, Path]:
 
 
 def validate_context_budget() -> None:
+    """Fail if any always-loaded guidance file exceeds its per-file word budget.
+
+    Every always-loaded rules file must have a threshold entry -- a new one
+    with no entry fails loudly rather than silently going unbudgeted.
+    """
     # always-loaded tier — raise thresholds only with deliberate justification
     THRESHOLDS: dict[str, int] = {
         "common/AGENTS.md": 1110,
@@ -225,6 +240,12 @@ def validate_context_budget() -> None:
 
 
 def validate_aggregate_budget() -> None:
+    """Fail if a language's SUM of always-loaded files exceeds its aggregate word budget.
+
+    Complements `validate_context_budget`'s per-file caps: a file could stay
+    under its own limit while every file's headroom is spent at once, bloating
+    the total context a session loads. This closes that gap.
+    """
     # Per-language always-loaded tier = AGENTS.md + that language's rules file +
     # the shared security rules (symlinked into each language dir).
     # Per-file thresholds cap each file alone; this caps the SUM, which they do
@@ -325,6 +346,12 @@ SKILL_DESCRIPTION_PER_SKILL_LIMIT = 30
 
 
 def validate_skill_description_budget() -> None:
+    """Fail if any skill description exceeds its per-skill cap, or the total exceeds the aggregate cap.
+
+    Every SKILL.md's frontmatter description contributes to the always-loaded
+    skill index every session sees; an unbounded per-skill or aggregate total
+    would silently bloat that index one skill at a time.
+    """
     print("==> validate context budget for skill-index descriptions")
 
     skills_dir = REPO_ROOT / "common" / ".agents" / "skills"
@@ -372,6 +399,12 @@ def validate_skill_description_budget() -> None:
 
 
 def validate_installed_shape() -> None:
+    """Fail unless this repo's own installed AGENTS.md/CLAUDE.md/.claude/skills shape is intact.
+
+    Run both before and after the self-upgrade in `main`: before, to catch a
+    pre-existing broken state early; after, to confirm the upgrade itself
+    didn't damage the managed block or the CLAUDE.md symlink.
+    """
     print("==> validate installed RAVEN shape")
     raven = load_raven_module()
     agents = REPO_ROOT / "AGENTS.md"
@@ -532,6 +565,7 @@ def validate_upgrade_convergence() -> None:
 
 
 def main() -> int:
+    """Run every self-check validation, a real self-upgrade, then the full quality gate."""
     validate_shared_docs_sync()
     validate_symlink_canonicality()
     validate_context_budget()

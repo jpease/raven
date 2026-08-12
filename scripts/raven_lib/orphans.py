@@ -1,3 +1,9 @@
+"""Classify and remove manifest-tracked files the current template no longer ships.
+
+An orphan is only ever deleted when it still matches its recorded baseline exactly;
+anything customized or already gone is reported instead, never silently dropped.
+"""
+
 from __future__ import annotations
 
 import sys

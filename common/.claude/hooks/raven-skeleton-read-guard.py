@@ -90,7 +90,8 @@ def should_gate(
 ) -> bool:
     """Deny only when the gate is on, the file is a supported language, the read
     is unbounded, and the file is at least ``threshold`` lines. Everything else
-    passes through."""
+    passes through.
+    """
     if not enabled:
         return False
     if not supported:
@@ -101,6 +102,7 @@ def should_gate(
 
 
 def is_supported(path: str) -> bool:
+    """Whether ``path``'s extension is one `raven-skeleton` can produce a real skeleton for."""
     _, ext = os.path.splitext(path)
     return ext.lower() in SUPPORTED_EXTENSIONS
 
@@ -147,6 +149,7 @@ def _deny(message: str, payload: dict) -> int:
 
 
 def main() -> int:
+    """Read the hook payload from stdin and deny an unbounded large-file read, if the gate applies."""
     payload = _load_payload()
     if payload is None:
         return 0

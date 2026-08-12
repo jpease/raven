@@ -35,7 +35,8 @@ def _module():
 class ExclusiveRangeConversionTests(RavenTestCase):
     """ast-grep emits zero-based lines with an exclusive end (tree-sitter
     convention). The generator must convert these to one-based inclusive
-    line numbers that match how editors and ``Read`` count lines."""
+    line numbers that match how editors and ``Read`` count lines.
+    """
 
     def test_multiline_symbol_with_nonzero_end_column(self):
         module = _module()
@@ -214,7 +215,8 @@ class AstgrepSkeletonTests(RavenTestCase):
     """End-to-end golden tests against the real ast-grep binary. Values were
     captured from ast-grep 0.43.0; a grammar/version change that shifts node
     kinds or ranges fails these loudly rather than silently emitting a bad
-    skeleton."""
+    skeleton.
+    """
 
     def _write(self, name: str, body: str) -> Path:
         path = self.destination / name
@@ -440,7 +442,8 @@ class AstgrepSkeletonTests(RavenTestCase):
 class ParseCtagsJsonTests(RavenTestCase):
     """The Universal Ctags fallback is the *exact* tier: a tag counts only when
     it carries both ``line`` and ``end``. The header is read from the source so
-    it matches the ast-grep tier's "first line of the declaration" convention."""
+    it matches the ast-grep tier's "first line of the declaration" convention.
+    """
 
     SOURCE_LINES: ClassVar[list[str]] = [
         "def top_function(x):",  # 1
@@ -501,7 +504,8 @@ class RgDeclarationPatternTests(RavenTestCase):
 class ParseRgMatchesTests(RavenTestCase):
     """The rg tier is start-only: it locates declaration starts and infers each
     end as the line before the next declaration (EOF for the last). Ranges are
-    approximate by construction."""
+    approximate by construction.
+    """
 
     def test_infers_ranges_from_declaration_starts(self):
         module = _module()
@@ -525,7 +529,8 @@ class GenerateSkeletonLadderTests(RavenTestCase):
     """The ladder is ast-grep -> ctags -> rg. The runtime sanity check treats an
     empty result (a backend that ran but found nothing) the same as an
     unavailable backend, so a bad/empty skeleton degrades to the next tier
-    instead of being emitted."""
+    instead of being emitted.
+    """
 
     def _patched(self, *, astgrep, ctags, rg):
         module = _module()
@@ -606,7 +611,8 @@ class CtagsSkeletonEndToEndTests(RavenTestCase):
 class CommonCopyParityTests(RavenTestCase):
     """The Claude and Codex adapters ship the same skeleton generator under
     different roots; they must stay byte-identical so a fix applied to one
-    isn't silently missing from the other."""
+    isn't silently missing from the other.
+    """
 
     def test_claude_and_codex_skeleton_scripts_are_byte_identical(self):
         self.assertEqual(

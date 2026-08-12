@@ -1,3 +1,11 @@
+"""Parse the raw `data.gate_data.GATE_DATA` table into typed, cached `GateSpec` objects.
+
+`GATE_DATA` is hand-authored JSON-shaped data (per-language quality-gate recipes,
+tools, and detection signals); this module is the only place that trusts its shape
+enough to build attribute-access dataclasses from it, defensively coercing
+anything malformed to an empty tuple/mapping rather than raising.
+"""
+
 from __future__ import annotations
 
 import re
@@ -11,6 +19,8 @@ from .data.gate_data import GATE_DATA
 
 @dataclass(frozen=True)
 class GateSpec:
+    """One language/template's quality-gate configuration, parsed from `GATE_DATA`."""
+
     recipes: tuple[str, ...]
     tools: tuple[str, ...]
     config_signals: tuple[tuple[str, str | None], ...]
@@ -51,10 +61,12 @@ def _build_spec(raw: dict[str, object]) -> GateSpec:
 
 @lru_cache(maxsize=1)
 def load_gate_specs() -> dict[str, GateSpec]:
+    """Parse `GATE_DATA` into `GateSpec` objects once per process, then cache the result."""
     return {name: _build_spec(raw) for name, raw in GATE_DATA.items() if isinstance(raw, dict)}
 
 
 def gate_spec_for(template: str) -> GateSpec | None:
+    """The `GateSpec` for a template name, or None if it has no gate configuration."""
     return load_gate_specs().get(template)
 
 

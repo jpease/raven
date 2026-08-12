@@ -1,3 +1,10 @@
+"""Build the read-only `raven doctor` health report: install integrity, drift, hooks, toolchain.
+
+Every check here only reads state and returns `Finding`s -- it never writes to
+the destination -- so `doctor` is always safe to run, including against an
+install `raven` did not create.
+"""
+
 from __future__ import annotations
 
 import json
@@ -33,6 +40,7 @@ _NO_VERSION_FLAG = {"gofmt"}
 
 
 def integrity_findings(destination: Path) -> list[Finding]:
+    """Check that a Raven install's own bookkeeping (config, template) is coherent."""
     config = load_config(destination)
     if not config.exists:
         return [
@@ -200,6 +208,7 @@ def _symlink_finding(destination: Path) -> Finding:
 
 
 def drift_findings(destination: Path) -> list[Finding]:
+    """Classify installed files against the current template and report anything not identical."""
     config = load_config(destination)
     if config.template is None:
         return [
@@ -381,6 +390,7 @@ def _tool_check_results(destination: Path, runner: Runner) -> list[dict[str, obj
 
 
 def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list[Finding]:
+    """Report tool-check results (found/missing recommended tools), or warn if the script failed."""
     findings: list[Finding] = []
     results = _tool_check_results(destination, runner)
     if results is None:
@@ -474,6 +484,12 @@ def hook_manager_findings(destination: Path) -> list[Finding]:
 
 
 def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> list[Finding]:
+    """Assemble the full `raven doctor` findings list: config sanity, then every other check.
+
+    Config is validated first and, if malformed, short-circuits the rest --
+    every other check assumes a loadable config and would otherwise raise or
+    produce misleading findings from a config it cannot trust.
+    """
     try:
         load_config(destination)
     except ConfigError as exc:

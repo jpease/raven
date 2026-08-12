@@ -1,3 +1,11 @@
+"""Raven's installer/upgrader library: package boundary and its public re-export surface.
+
+Sub-modules keep single responsibilities (config parsing, manifest tracking, block
+diffing, apply planning, ...); this file is the only place that assembles them into
+one flat namespace, via ``__all__``, for ``raven.py`` and the test suite to import
+from. It owns no logic of its own.
+"""
+
 from __future__ import annotations
 
 from .apply import (

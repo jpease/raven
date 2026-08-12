@@ -172,6 +172,7 @@ def _staged_text(root: Path, name: str) -> str | None:
 
 
 def main() -> int:
+    """Pre-commit entry point: fail if any staged root instruction file's managed block was hand-edited."""
     root = _repo_root()
     if root is None:
         return 0

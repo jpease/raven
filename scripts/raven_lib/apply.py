@@ -1,3 +1,11 @@
+"""Classify destination files against the template and copy the ones an apply should write.
+
+`classify` is the read-only decision step (what state is each path in?);
+`copy_paths` and the CLAUDE.md-symlink helpers are the write step that acts on
+that classification. Keeping them separate lets `plan`/`doctor` classify without
+risking a write.
+"""
+
 from __future__ import annotations
 
 import os
@@ -122,6 +130,15 @@ def classify(
     manifest: dict | None = None,
     entries: dict[str, TemplateEntry] | None = None,
 ) -> Classification:
+    """Bucket every template entry by what installing it at ``destination`` would do.
+
+    Read-only: only inspects the filesystem and manifest, never writes. A path
+    absent at the destination is ``will_copy``; present and matching the
+    manifest baseline is ``will_upgrade`` (or ``identical`` if content is
+    already current); present, locally modified, but with an unchanged
+    template is ``local_only``; anything else present and untracked or
+    diverged is ``needs_merge`` or ``unknown_existing``.
+    """
     if manifest is None:
         manifest = load_manifest(destination)
 
@@ -234,6 +251,13 @@ def copy_paths(
     entries: dict[str, TemplateEntry] | None = None,
     update_managed_blocks: bool = False,
 ) -> None:
+    """Write each of ``paths`` from the template to ``destination``.
+
+    ``update_managed_blocks`` opts into rewriting just the RAVEN block in place
+    (via `update_raven_block`) for a root instruction file whose block state is
+    "upgradeable", instead of overwriting the whole file -- everything else is
+    a plain symlink-or-copy.
+    """
     if entries is None:
         entries = entries_for_destination(template, set(), config, destination)
     for relative in paths:
@@ -253,6 +277,7 @@ def copy_paths(
 
 
 def claude_symlink_adoption_needed(destination: Path, entries: dict[str, TemplateEntry]) -> bool:
+    """Whether CLAUDE.md exists but is not already the template's AGENTS.md symlink."""
     entry = entries.get(CLAUDE_PATH)
     target = destination / CLAUDE_PATH
     if entry is None or not entry.copy_as_symlink or not _any_exists(target):
@@ -261,6 +286,12 @@ def claude_symlink_adoption_needed(destination: Path, entries: dict[str, Templat
 
 
 def adopt_claude_symlink(destination: Path, entries: dict[str, TemplateEntry]) -> list[str]:
+    """Replace an existing CLAUDE.md with the AGENTS.md symlink, backing up any real content first.
+
+    Refuses (raises) rather than overwriting a pre-existing backup file, since
+    that would silently discard whatever content it holds. Returns the
+    destination-relative paths actually written, for the caller to report.
+    """
     entry = entries.get(CLAUDE_PATH)
     if entry is None or not entry.copy_as_symlink:
         raise ValueError("CLAUDE.md is not configured as a Raven symlink in this template")
@@ -281,6 +312,12 @@ def adopt_claude_symlink(destination: Path, entries: dict[str, TemplateEntry]) -
 
 
 def prompt_for_claude_symlink_adoption(destination: Path) -> bool:
+    """Interactively ask whether to adopt the CLAUDE.md symlink; False in any non-interactive context.
+
+    Checks ``stdin.isatty()`` up front so a non-interactive run (CI, a script,
+    piped input) defaults to "no" instead of hanging on `input()` or consuming
+    unrelated piped data as an answer.
+    """
     if not sys.stdin.isatty():
         return False
     print(

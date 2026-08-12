@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""PostToolUse hook: best-effort auto-format a just-edited file with its language's formatter.
+
+Silent and always exits 0 -- a missing formatter, an unsupported extension, or a
+malformed hook payload all mean "nothing to do", never a hook failure that would
+block the edit or spam the transcript.
+"""
 
 from __future__ import annotations
 
@@ -24,6 +30,7 @@ def _extract_path(payload: dict) -> str:
 
 
 def run(command: list[str]) -> None:
+    """Run a formatter command, discarding its output; failure is not reported (best-effort)."""
     subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
 
@@ -37,6 +44,7 @@ def _swift_format_cmd() -> list[str] | None:
 
 
 def main() -> int:
+    """Read the hook payload from stdin and format the edited file, if its type is supported."""
     payload = _load_payload()
     if payload is None:
         return 0

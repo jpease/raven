@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""PostToolUse hook: nudge toward RTK when a just-run bash command looks like a noisy test/build/CLI."""
 
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ def _extract_command(payload: dict) -> str:
 
 
 def main() -> int:
+    """Read the hook payload from stdin and print an RTK hint if the command matches a noisy tool."""
     payload = _load_payload()
     if payload is None:
         return 0

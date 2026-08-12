@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""PreToolUse hook: deny destructive bash commands (rm -rf /, git reset --hard, dropdb, ...).
+
+Destructive `rm`/`git clean` intents are caught by tokenizing and normalizing
+options rather than a single regex, so `-rf`, `-fr`, and `--recursive --force`
+are all recognized as the same intent instead of only the one spelling a regex
+happened to match.
+"""
 
 from __future__ import annotations
 
@@ -66,7 +73,8 @@ def _deny_message(command: str) -> str:
 def _pattern_deny_message(command: str) -> str:
     """Message for raw-text regex pattern matches, which cannot distinguish
     between code that executes and inert text (comments, quoted strings, heredoc
-    bodies, etc.). This is conservative but necessary for safety."""
+    bodies, etc.). This is conservative but necessary for safety.
+    """
     return (
         "Blocked: Pattern matched in raw command text (before tokenization)."
         " This check cannot distinguish from quoted strings or heredoc bodies."
@@ -107,7 +115,8 @@ def _command_segments(command: str) -> list[list[str]]:
 def _program_and_args(segment: list[str]) -> tuple[str, list[str]] | None:
     """Return (program, remaining tokens), skipping leading env-assignments, sudo,
     and an ``rtk proxy`` wrapper prefix so the checks below reason about the
-    real command being run."""
+    real command being run.
+    """
     index = 0
     while index < len(segment):
         token = segment[index]
@@ -208,6 +217,7 @@ def _ripgrep_deny_message(command: str) -> str:
 
 
 def main() -> int:
+    """Read the hook payload from stdin and deny the command if it matches a destructive pattern."""
     payload = _load_payload()
     if payload is None:
         return 0

@@ -1,3 +1,11 @@
+"""Resolve Git's effective hooks directory and symlink Raven's git-hooks into it.
+
+Detects when another hook manager (husky) or an external ``core.hooksPath`` owns
+that directory and defers to it instead of installing -- Raven's hooks are then
+written to ``.raven/git-hooks/`` but left unexecuted, with guidance printed on how
+to wire them through the other manager.
+"""
+
 from __future__ import annotations
 
 import os

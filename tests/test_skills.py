@@ -474,7 +474,8 @@ class AntipatternRegistrySkillTests(unittest.TestCase):
     def test_review_pr_registry_entry_requires_authorization(self):
         """Writing the registry entry itself is gated on explicit user
         authorization, so the review step cannot silently drift into
-        unrequested doc edits (issue #127)."""
+        unrequested doc edits (issue #127).
+        """
         region = section_region(self.review_pr_lower, "## process")
 
         self.assertIn(

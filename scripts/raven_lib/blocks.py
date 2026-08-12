@@ -1,3 +1,13 @@
+"""Detect, hash, update, and guided-merge the ``RAVEN:BEGIN``/``RAVEN:END`` managed block.
+
+Three content-normalization strengths are deliberately kept distinct --
+``normalized_block_content`` (line endings/trailing whitespace only),
+``identity_block_content`` (also formatter-invariant table restyling), and
+``comparison_block_content`` (also whitespace-collapsed) -- each is exactly as
+permissive as its caller needs and no more, since over-normalizing risks
+silently treating an edit as unmodified.
+"""
+
 from __future__ import annotations
 
 import difflib
@@ -21,6 +31,7 @@ BlockState = Literal["identical", "upgradeable", "modified"]
 
 
 def normalized_block_content(text: str) -> str:
+    """Normalize line endings and trailing whitespace; the weakest of the three block normalizers."""
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     return "\n".join(line.rstrip() for line in lines).strip("\n")
 
@@ -70,7 +81,7 @@ def _normalize_markdown_table_row(line: str) -> str | None:
 
 
 def identity_block_content(text: str) -> str:
-    """Normalize a block for *identity* hashing (issue #118).
+    r"""Normalize a block for *identity* hashing (issue #118).
 
     ``normalized_block_content`` plus per-line markdown-table folding -- both
     separator style and cell padding -- with newlines preserved. That middle
@@ -111,10 +122,12 @@ def comparison_block_content(text: str) -> str:
 
 
 def block_content_matches(left: str, right: str) -> bool:
+    """Whether two blocks are the same under the permissive "upgradeable" comparison."""
     return comparison_block_content(left) == comparison_block_content(right)
 
 
 def raven_block_sha256(text: str) -> str:
+    """The current identity hash for a block's content, declared in a fresh BEGIN marker."""
     return sha256_bytes(identity_block_content(text).encode("utf-8"))
 
 
@@ -129,15 +142,23 @@ def legacy_raven_block_sha256(text: str) -> str:
 
 
 def raven_block_begin_for(text: str) -> str:
+    """The BEGIN marker line declaring ``text``'s current identity hash."""
     return f"<!-- RAVEN:BEGIN sha256={raven_block_sha256(text)} -->"
 
 
 def raven_managed_block(text: str) -> str:
+    """Wrap ``text`` in a fresh, hash-stamped BEGIN/END block, led by a blank separator line."""
     content = normalized_block_content(text)
     return "\n".join(["", raven_block_begin_for(content), *content.splitlines(), RAVEN_BLOCK_END])
 
 
 def find_raven_block(text: str) -> RavenBlock | None:
+    """Locate the first BEGIN/END managed block in ``text``, or None if there isn't one.
+
+    A BEGIN with no matching END is treated as no block found at all, not a
+    parse error -- callers fall back to their unknown/missing-block handling
+    rather than raising on a hand-edited or truncated marker.
+    """
     lines = text.splitlines()
     for start, line in enumerate(lines):
         match = RAVEN_BLOCK_BEGIN_RE.fullmatch(line.strip())
@@ -186,6 +207,15 @@ def raven_block_is_unchanged(block: RavenBlock) -> bool:
 
 
 def block_managed_state(entry: TemplateEntry, target: Path) -> BlockState | None:
+    """Classify a root instruction file's managed block against the template, or None if not applicable.
+
+    None covers every case where there is nothing to classify: the entry is not
+    a root instruction file, it is installed as a symlink, the target is not a
+    plain file, the target is unreadable, or the target has no managed block at
+    all. Otherwise returns "identical" (current hash, content matches),
+    "upgradeable" (safe to rewrite -- includes the legacy-hash migration case),
+    or "modified" (user edits Raven must not overwrite).
+    """
     if (
         entry.relative not in ROOT_INSTRUCTION_FILES
         or entry.copy_as_symlink
@@ -219,6 +249,13 @@ def block_managed_state(entry: TemplateEntry, target: Path) -> BlockState | None
 
 
 def update_raven_block(entry: TemplateEntry, target: Path) -> None:
+    """Rewrite ``target``'s managed block in place with the template's current content.
+
+    Raises rather than overwriting when the block is missing or has diverged
+    from both the current and legacy identity hash *and* doesn't content-match
+    the template -- callers must route a genuinely modified block through the
+    guided-merge path instead of calling this directly.
+    """
     text = target.read_text(encoding="utf-8")
     block = find_raven_block(text)
     source_text = normalized_block_content(entry.source.read_text(encoding="utf-8"))
@@ -238,6 +275,12 @@ def update_raven_block(entry: TemplateEntry, target: Path) -> None:
 
 
 def template_entry_text(entry: TemplateEntry) -> str:
+    """The text a merge artifact for ``entry`` should contain.
+
+    A symlink entry has no text of its own to offer as merge material, so this
+    substitutes an explanatory stub telling the user what Raven would normally
+    have done, rather than dumping the symlink target's raw bytes.
+    """
     if entry.copy_as_symlink:
         target = os.readlink(entry.source)
         return (
@@ -555,6 +598,13 @@ def _write_merge_artifact(path: Path, text: str) -> None:
 def write_guided_merge_artifacts(
     destination: Path, entries: dict[str, TemplateEntry], paths: list[str]
 ) -> list[str]:
+    """Write ``.raven/merge/<path>.raven`` plus a patch/diff for every path needing a guided merge.
+
+    Skips a path silently when its entry is missing from ``entries`` or the
+    destination file doesn't exist -- both mean there is nothing meaningful to
+    merge against. Returns the destination-relative paths of every artifact
+    actually written, for the caller to report.
+    """
     written: list[str] = []
     merge_dir = destination / MERGE_DIR
     for relative in sorted(set(paths)):
