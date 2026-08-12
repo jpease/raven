@@ -41,7 +41,7 @@ For projects with an external issue tracker, check `[issue_tracker].platform` in
 2. Name units with kebab-case (e.g., `add-auth-middleware`, `write-auth-tests`)
 3. Run: `raven-session.py --init <greenfield|brownfield> <unit-1> <unit-2> ...`
    - If the parent task is a tracked issue and `[issue_tracker].platform` is set, add `--parent <issue-number>`
-   - After `--init`, create child issues manually using `gh issue create` or `glab issue create` and record their numbers in `session.md`
+   - After `--init`, create child issues manually using `gh issue create` or `glab issue create`, then record each with `raven-session.py --link <unit> <issue>` — do not hand-edit `session.md`
 4. Present the unit plan to the user and wait for confirmation before proceeding
 
 ## Phase 3 — Execution Loop _(repeats per unit)_

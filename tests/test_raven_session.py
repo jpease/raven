@@ -160,6 +160,132 @@ class SessionValidateCompleteTests(unittest.TestCase):
         self.assertNotEqual(rc, 0)
 
 
+class SessionLinkTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.raven_dir = self.root / ".raven"
+        self.raven_dir.mkdir()
+        self.session_file = self.raven_dir / "session.md"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run(self, args: list[str]) -> int:
+        mod = load_session()
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            return mod.main(args)
+        finally:
+            os.chdir(orig)
+
+    def _init(self, *units: str) -> None:
+        self._run(["--init", "greenfield", *list(units)])
+
+    def test_link_records_issue_reference(self):
+        self._init("unit-a", "unit-b")
+        rc = self._run(["--link", "unit-a", "#123"])
+        self.assertEqual(rc, 0)
+        content = self.session_file.read_text()
+        self.assertIn("unit-a → #123", content)
+
+    def test_link_records_gitlab_style_issue_reference(self):
+        self._init("unit-a")
+        rc = self._run(["--link", "unit-a", "group/project#123"])
+        self.assertEqual(rc, 0)
+        content = self.session_file.read_text()
+        self.assertIn("unit-a → group/project#123", content)
+
+    def test_link_fails_for_unknown_unit(self):
+        self._init("unit-a")
+        rc = self._run(["--link", "unit-does-not-exist", "#123"])
+        self.assertNotEqual(rc, 0)
+        content = self.session_file.read_text()
+        self.assertNotIn("#123", content)
+
+    def test_link_fails_when_no_session(self):
+        rc = self._run(["--link", "unit-a", "#123"])
+        self.assertNotEqual(rc, 0)
+
+    def test_link_allows_recording_issue_on_completed_unit(self):
+        self._init("unit-a", "unit-b")
+        self._run(["--complete", "unit-a"])
+        rc = self._run(["--link", "unit-a", "#123"])
+        self.assertEqual(rc, 0)
+        content = self.session_file.read_text()
+        self.assertIn("unit-a → #123", content)
+        self.assertIn("(completed", content)
+
+
+class SessionValidateAllTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.raven_dir = self.root / ".raven"
+        self.raven_dir.mkdir()
+        self.session_file = self.raven_dir / "session.md"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run(self, args: list[str]) -> int:
+        mod = load_session()
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            return mod.main(args)
+        finally:
+            os.chdir(orig)
+
+    def _init(self, *units: str) -> None:
+        self._run(["--init", "greenfield", *list(units)])
+
+    def test_validate_with_no_args_passes_when_no_duplicates(self):
+        self._init("unit-a", "unit-b")
+        self._run(["--link", "unit-a", "#123"])
+        self._run(["--link", "unit-b", "#124"])
+        rc = self._run(["--validate"])
+        self.assertEqual(rc, 0)
+
+    def test_validate_with_no_args_passes_when_no_issues_recorded(self):
+        self._init("unit-a", "unit-b")
+        rc = self._run(["--validate"])
+        self.assertEqual(rc, 0)
+
+    def test_validate_with_no_args_detects_duplicate_issue(self):
+        self._init("unit-a", "unit-b")
+        self._run(["--link", "unit-a", "#123"])
+        self._run(["--link", "unit-b", "#123"])
+        rc = self._run(["--validate"])
+        self.assertNotEqual(rc, 0)
+
+    def test_validate_with_no_args_fails_when_no_session(self):
+        rc = self._run(["--validate"])
+        self.assertNotEqual(rc, 0)
+
+    def test_validate_with_unit_unaffected_by_duplicates_elsewhere(self):
+        self._init("unit-a", "unit-b")
+        self._run(["--link", "unit-a", "#123"])
+        self._run(["--link", "unit-b", "#123"])
+        rc = self._run(["--validate", "unit-a"])
+        self.assertEqual(rc, 0)
+
+    def test_complete_unaffected_by_duplicate_issue_references(self):
+        # Regression guard: --complete must not be blocked by session-wide
+        # duplicate-issue detection, which only runs when --validate has no
+        # argument. cmd_complete always calls cmd_validate with a unit name.
+        self._init("unit-a", "unit-b")
+        self._run(["--link", "unit-a", "#123"])
+        self._run(["--link", "unit-b", "#123"])
+        rc = self._run(["--complete", "unit-a"])
+        self.assertEqual(rc, 0)
+
+
 class SessionArchiveTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -400,6 +526,88 @@ class MultiWordUnitNameTests(unittest.TestCase):
         self.assertEqual(first["completed_at"], "2026-01-02T03:04:05Z")
         self.assertEqual(second["name"], "second unit: add parser")
         self.assertEqual(second["issue"], "#13")
+
+    def test_render_parse_round_trip_with_gitlab_style_issue(self):
+        mod = load_session()
+        data = {
+            "project_type": "brownfield",
+            "started": "2026-01-01T00:00:00Z",
+            "last_updated": "2026-01-01T00:00:00Z",
+            "parent_issue": None,
+            "units": [
+                {
+                    "name": "unit-a",
+                    "done": False,
+                    "issue": "group/project#123",
+                    "completed_at": None,
+                },
+            ],
+            "context_lines": [""],
+        }
+        reparsed = mod._parse_session(mod._render_session(data))
+        unit = reparsed["units"][0]
+        self.assertEqual(unit["name"], "unit-a")
+        self.assertEqual(unit["issue"], "group/project#123")
+
+    def test_render_parse_round_trip_with_nested_group_issue(self):
+        mod = load_session()
+        data = {
+            "project_type": "brownfield",
+            "started": "2026-01-01T00:00:00Z",
+            "last_updated": "2026-01-01T00:00:00Z",
+            "parent_issue": None,
+            "units": [
+                {
+                    "name": "unit-a",
+                    "done": False,
+                    "issue": "group/sub/project#7",
+                    "completed_at": None,
+                },
+            ],
+            "context_lines": [""],
+        }
+        reparsed = mod._parse_session(mod._render_session(data))
+        unit = reparsed["units"][0]
+        self.assertEqual(unit["name"], "unit-a")
+        self.assertEqual(unit["issue"], "group/sub/project#7")
+
+    def test_render_parse_round_trip_with_no_issue(self):
+        mod = load_session()
+        data = {
+            "project_type": "brownfield",
+            "started": "2026-01-01T00:00:00Z",
+            "last_updated": "2026-01-01T00:00:00Z",
+            "parent_issue": None,
+            "units": [
+                {"name": "unit-a", "done": False, "issue": None, "completed_at": None},
+            ],
+            "context_lines": [""],
+        }
+        rendered = mod._render_session(data)
+        self.assertNotIn("→", rendered)
+        reparsed = mod._parse_session(rendered)
+        unit = reparsed["units"][0]
+        self.assertEqual(unit["name"], "unit-a")
+        self.assertIsNone(unit["issue"])
+
+    def test_parse_does_not_misparse_arrow_in_unit_name_without_issue(self):
+        # Guards the widened issue-suffix pattern: a unit name that legitimately
+        # contains "→" and has no issue reference must round-trip as-is, not
+        # have its tail misread as an issue.
+        mod = load_session()
+        text = (
+            "# Raven Session\n\n"
+            "**Project Type:** brownfield  \n"
+            "**Started:** 2026-01-01T00:00:00Z  \n"
+            "**Last Updated:** 2026-01-01T00:00:00Z  \n\n"
+            "## Units\n\n"
+            "- [ ] migrate A → B (current)\n\n"
+            "## Context\n"
+        )
+        data = mod._parse_session(text)
+        unit = data["units"][0]
+        self.assertEqual(unit["name"], "migrate A → B")
+        self.assertIsNone(unit["issue"])
 
 
 def load_hook():

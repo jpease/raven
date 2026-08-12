@@ -66,9 +66,9 @@
       "sourceSha256": "b00e52fc08a61c42ab8171a3644fccab96e237d4f28b740729df870385fdeeef"
     },
     ".agents/skills/raven-project-lifecycle/SKILL.md": {
-      "installedSha256": "123d0846b3eb7cb35e3742c262e96919132689b604269d0720dbb616e6c41512",
+      "installedSha256": "4c04aa439c7b2ccea542cf09003d161b4e76e11cadd75eca23058a4b5a11c110",
       "kind": "file",
-      "sourceSha256": "123d0846b3eb7cb35e3742c262e96919132689b604269d0720dbb616e6c41512"
+      "sourceSha256": "4c04aa439c7b2ccea542cf09003d161b4e76e11cadd75eca23058a4b5a11c110"
     },
     ".agents/skills/raven-review-pr/SKILL.md": {
       "installedSha256": "159f4f18252236d75dc43f92ea4a29ffc40c66cc2ee28e572fbbebbb96cc5db8",
@@ -226,9 +226,9 @@
       "sourceSha256": "8f69bbf98ff402faae604782a120f26385367e518e00f99344068e0798cbf72a"
     },
     ".claude/scripts/raven-session.py": {
-      "installedSha256": "259d037a05aa2de5f6c3128358e219eefd5b36ee8cd9232842e96cf30135a2fa",
+      "installedSha256": "9c2cdf5839e38134f7d53226fd5a886b595c1d4e268198d41537122022be6afb",
       "kind": "file",
-      "sourceSha256": "259d037a05aa2de5f6c3128358e219eefd5b36ee8cd9232842e96cf30135a2fa"
+      "sourceSha256": "9c2cdf5839e38134f7d53226fd5a886b595c1d4e268198d41537122022be6afb"
     },
     ".claude/scripts/raven-skeleton.py": {
       "installedSha256": "a6791715f8d0f7123d53efb560760c3b27488af9c2be3d91f9e2e5df2caf95c0",
@@ -317,9 +317,9 @@
       "sourceSha256": "8f69bbf98ff402faae604782a120f26385367e518e00f99344068e0798cbf72a"
     },
     ".codex/scripts/raven-session.py": {
-      "installedSha256": "259d037a05aa2de5f6c3128358e219eefd5b36ee8cd9232842e96cf30135a2fa",
+      "installedSha256": "9c2cdf5839e38134f7d53226fd5a886b595c1d4e268198d41537122022be6afb",
       "kind": "file",
-      "sourceSha256": "259d037a05aa2de5f6c3128358e219eefd5b36ee8cd9232842e96cf30135a2fa"
+      "sourceSha256": "9c2cdf5839e38134f7d53226fd5a886b595c1d4e268198d41537122022be6afb"
     },
     ".codex/scripts/raven-skeleton.py": {
       "installedSha256": "a6791715f8d0f7123d53efb560760c3b27488af9c2be3d91f9e2e5df2caf95c0",
@@ -392,8 +392,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "190f6aa0e823",
+  "ravenVersion": "121bd460a6e2",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-12T22:05:30.219775+00:00"
+  "updatedAt": "2026-08-12T22:36:04.946609+00:00"
 }

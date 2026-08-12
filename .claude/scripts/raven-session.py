@@ -91,7 +91,7 @@ def _parse_session(text: str) -> SessionData:
                 rest = rest[: cm.start()]
             else:
                 rest = re.sub(r"\s*\(current\)\s*$", "", rest)
-            if im := re.search(r"\s*→ (#\d+)\s*$", rest):
+            if im := re.search(r"\s*→ ([^\s→]*#\d+)\s*$", rest):
                 issue = im.group(1)
                 rest = rest[: im.start()]
             name = rest
@@ -184,7 +184,8 @@ def cmd_init(args: list[str]) -> int:
     if ns.parent:
         print(
             f"Parent issue: {ns.parent}."
-            " Create child issues manually with gh/glab and record them in session.md."
+            " Create child issues manually with gh/glab, then record each with"
+            " --link <unit> <issue>."
         )
     _update_gitignore()
     return 0
@@ -289,21 +290,49 @@ def _current_unit(data: SessionData) -> Unit | None:
     return None
 
 
-def cmd_validate(args: list[str]) -> int:
-    """``--validate <unit>``: check that ``<unit>`` is the current, not-yet-done unit.
+def _validate_session(data: SessionData) -> int:
+    """Session-wide checks over already-parsed state.
 
+    Currently the only rule: no issue reference may be assigned to more than
+    one unit. The field is an opaque string, so "same reference" means exact,
+    case-sensitive string equality — no tracker-specific normalization.
+    """
+    by_issue: dict[str, list[str]] = {}
+    for u in data["units"]:
+        issue = u.get("issue")
+        if issue:
+            by_issue.setdefault(issue, []).append(u["name"])
+    duplicates = {issue: names for issue, names in by_issue.items() if len(names) > 1}
+    if duplicates:
+        for issue, names in duplicates.items():
+            print(
+                f"error: issue '{issue}' is assigned to multiple units: {', '.join(names)}",
+                file=sys.stderr,
+            )
+        return 1
+    print("Session valid: no duplicate issue references.")
+    return 0
+
+
+def cmd_validate(args: list[str]) -> int:
+    """``--validate [unit]``: per-unit precondition check, or session-wide checks.
+
+    With a unit name, checks that ``<unit>`` is the current, not-yet-done unit.
     Read-only precondition check `cmd_complete` also runs internally before
     mutating state, so a caller can validate up front without the side effect
     of completing the unit.
+
+    With no argument, runs session-wide checks instead — currently, duplicate
+    issue-reference detection. `cmd_complete` always calls this with a unit
+    name, so it is unaffected by the session-wide checks.
     """
-    if not args:
-        print("error: --validate requires a unit name", file=sys.stderr)
-        return 1
-    unit_name = args[0]
     if not SESSION_FILE.exists():
         print("error: no active session", file=sys.stderr)
         return 1
     data = _parse_session(SESSION_FILE.read_text(encoding="utf-8"))
+    if not args:
+        return _validate_session(data)
+    unit_name = args[0]
     current = _current_unit(data)
     if current is None:
         print("error: all units already complete", file=sys.stderr)
@@ -353,6 +382,42 @@ def cmd_complete(args: list[str]) -> int:
     return 0
 
 
+def cmd_link(args: list[str]) -> int:
+    """``--link <unit> <issue>``: record an opaque issue reference on ``<unit>``, under the session lock.
+
+    ``<issue>`` is stored verbatim — ``#123``, ``group/project#123``, and
+    ``group/sub/project#7`` all round-trip unchanged. No tracker-specific
+    parsing or issue creation happens here; creation stays manual. Allowed on
+    a completed unit as well as the current one: linking is bookkeeping, not
+    a state-machine transition, so it does not carry `cmd_complete`'s
+    current-unit precondition.
+    """
+    if len(args) < 2:
+        print("error: --link requires a unit name and an issue reference", file=sys.stderr)
+        return 1
+    unit_name, issue_ref = args[0], args[1]
+    if not SESSION_FILE.exists():
+        print("error: no active session", file=sys.stderr)
+        return 1
+    data = _parse_session(SESSION_FILE.read_text(encoding="utf-8"))
+    if not any(u["name"] == unit_name for u in data["units"]):
+        print(f"error: unknown unit '{unit_name}'", file=sys.stderr)
+        return 1
+    _acquire_lock()
+    try:
+        data = _parse_session(SESSION_FILE.read_text(encoding="utf-8"))
+        for u in data["units"]:
+            if u["name"] == unit_name:
+                u["issue"] = issue_ref
+                break
+        data["last_updated"] = _now()
+        _atomic_write(SESSION_FILE, _render_session(data))
+    finally:
+        _release_lock()
+    print(f"Unit '{unit_name}' linked to issue {issue_ref}.")
+    return 0
+
+
 def cmd_archive(args: list[str]) -> int:
     """``--archive``: move completed units out of ``session.md`` into ``session-archive.md``."""
     if not SESSION_FILE.exists():
@@ -379,11 +444,11 @@ def cmd_archive(args: list[str]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point: dispatch ``--init``/``--status``/``--validate``/``--complete``/``--archive``."""
+    """CLI entry point: dispatch ``--init``/``--status``/``--validate``/``--link``/``--complete``/``--archive``."""
     args = argv if argv is not None else sys.argv[1:]
     if not args:
         print(
-            "usage: raven-session.py --init|--status|--validate|--complete|--archive [args]",
+            "usage: raven-session.py --init|--status|--validate|--link|--complete|--archive [args]",
             file=sys.stderr,
         )
         return 1
@@ -395,6 +460,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_status(rest)
     if cmd == "--validate":
         return cmd_validate(rest)
+    if cmd == "--link":
+        return cmd_link(rest)
     if cmd == "--complete":
         return cmd_complete(rest)
     if cmd == "--archive":
