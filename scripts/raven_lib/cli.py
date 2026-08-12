@@ -757,8 +757,16 @@ def cmd_assess(args: argparse.Namespace) -> int:
     return exit_code(findings)
 
 
-def main() -> int:
-    """Parse argv, dispatch to the matching ``cmd_*`` handler, and return its exit code."""
+def build_parser() -> argparse.ArgumentParser:
+    """Build the ``raven`` argparse parser: global flags, subcommands, and their own flags.
+
+    Split out of ``main()`` so a caller can introspect the real parser object
+    (subcommand names via the subparsers action's ``choices``, each
+    subparser's flags via its ``_actions``) instead of relying on a
+    hand-maintained, independently-driftable list of the same information --
+    see ``scripts/check-guidance.py``, which validates documented CLI
+    examples against this parser.
+    """
     supported_languages = ", ".join(list_language_templates())
     parser = argparse.ArgumentParser(
         prog="raven",
@@ -1005,6 +1013,12 @@ template as its source, then removes the merge artifacts.
     )
     assess_parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
 
+    return parser
+
+
+def main() -> int:
+    """Parse argv, dispatch to the matching ``cmd_*`` handler, and return its exit code."""
+    parser = build_parser()
     args = parser.parse_args()
 
     if args.command == "init":

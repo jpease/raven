@@ -662,6 +662,21 @@ def validate_upgrade_convergence() -> None:
     _report_convergence(report.get("findings", []))
 
 
+def validate_guidance_docs() -> None:
+    """Fail if `scripts/check-guidance.py` finds a broken relative Markdown link or a
+    documented `raven` CLI flag/subcommand the argument parser does not define.
+
+    Run as a subprocess (like ruff/pytest below), not imported, so this
+    validator can also be invoked standalone -- see the script's own
+    docstring. Placed with the other validators, before the self-upgrade
+    steps, so a docs defect surfaces before a real upgrade is applied.
+    """
+    run(
+        "guidance docs check",
+        [sys.executable, str(REPO_ROOT / "scripts" / "check-guidance.py")],
+    )
+
+
 def run_type_check() -> None:
     """Run `pyright` when it's on PATH; otherwise skip with a loud, explicit notice.
 
@@ -699,6 +714,7 @@ def main() -> int:
     validate_skill_description_budget()
     warn_stale_docs()
     validate_installed_shape()
+    validate_guidance_docs()
     run(
         "RAVEN self-upgrade dry run",
         [sys.executable, str(RAVEN_SCRIPT), "--destination", ".", "upgrade", "--dry-run"],

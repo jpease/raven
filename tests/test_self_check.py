@@ -433,5 +433,34 @@ class SkillDescriptionBudgetTest(unittest.TestCase):
         self.assertIn("raven-broken", str(ctx.exception))
 
 
+class GuidanceDocsWiringTests(unittest.TestCase):
+    """Issue #164: `check-guidance.py` must run as an in-process validator, before
+    the self-upgrade is applied, so a docs defect surfaces before a real
+    upgrade -- not buried after it alongside ruff/pytest.
+    """
+
+    def setUp(self) -> None:
+        self.module = load_script_module("self_check_guidance_wiring", SELF_CHECK)
+
+    def test_validate_guidance_docs_runs_the_real_script(self) -> None:
+        calls: list[list[str]] = []
+        self.module.run = lambda label, args: calls.append(args)
+        self.module.validate_guidance_docs()
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(str(calls[0][-1]).endswith("check-guidance.py"))
+
+    def test_main_runs_guidance_docs_before_self_upgrade(self) -> None:
+        import inspect
+
+        source = inspect.getsource(self.module.main)
+        guidance_pos = source.index("validate_guidance_docs()")
+        upgrade_pos = source.index("RAVEN self-upgrade dry run")
+        installed_shape_positions = [
+            i for i in range(len(source)) if source.startswith("validate_installed_shape()", i)
+        ]
+        self.assertGreater(guidance_pos, installed_shape_positions[0])
+        self.assertLess(guidance_pos, upgrade_pos)
+
+
 if __name__ == "__main__":
     unittest.main()
