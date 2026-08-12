@@ -1127,8 +1127,8 @@ class ContextHygieneSkillTests(unittest.TestCase):
     """Guards the harness-aware fix for the unconditional /clear interrupt
     (issue #145): the manual /clear-or-/compact prompt must become
     conditional on whether the current harness states it manages context
-    automatically, without losing the manual offer for harnesses (Codex,
-    unfamiliar harnesses) that don't make that claim.
+    automatically, without losing the manual offer for harnesses that don't
+    make that claim.
 
     Reads the canonical skill source directly (not an installed copy),
     since `common/.agents/skills/` is where edits must land.
@@ -1140,8 +1140,8 @@ class ContextHygieneSkillTests(unittest.TestCase):
         self.lowered = self.content.lower()
 
     def test_process_still_offers_the_manual_clear_compact_choice(self):
-        # The Codex / unfamiliar-harness path must not lose the explicit
-        # offer -- only Claude Code's unconditional interrupt was the bug.
+        # The unfamiliar-harness path must not lose the explicit offer --
+        # only Claude Code's unconditional interrupt was the bug.
         region = section_region(self.lowered, "## process")
         self.assertIn("/clear", region)
         self.assertIn("/compact", region)
@@ -1168,6 +1168,30 @@ class ContextHygieneSkillTests(unittest.TestCase):
             region,
             "the /clear prompt must be conditional, not an unconditional step 2",
         )
+
+    def test_fallback_branch_does_not_name_harness_products(self):
+        # Issue #163: the fallback branch (harnesses that don't make capability
+        # claims) must not name specific products as examples of lacking context
+        # management. The capability-check branch (line 19) can name Claude Code
+        # as a positive illustration, but the fallback branch must use generic
+        # terms ("unfamiliar harness") instead of "Codex" or other product names.
+        region = section_region(self.lowered, "## process")
+        # Extract just the "if not" fallback clause
+        if_not_start = region.find("- if not (")
+        self.assertNotEqual(if_not_start, -1, "expected to find the 'if not' fallback clause")
+        if_not_clause = region[if_not_start:]
+        next_bullet = if_not_clause.find("\n   - if")
+        if_not_clause = if_not_clause if next_bullet == -1 else if_not_clause[:next_bullet]
+        # A denylist rather than a single name: the criterion is that *no*
+        # harness is named here, and an unlisted newcomer only weakens this
+        # test, never breaks an honest commit.
+        for product in ("codex", "cursor", "windsurf", "copilot", "aider", "cline", "gemini"):
+            self.assertNotIn(
+                product,
+                if_not_clause,
+                f"fallback branch must not name {product} as a harness lacking "
+                "automatic context management",
+            )
 
 
 class SecurityReviewSkillTests(unittest.TestCase):

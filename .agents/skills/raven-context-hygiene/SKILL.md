@@ -18,4 +18,4 @@ model: haiku
    - New-session language: user says something like "now let's work on X" or "next up is Y"
 2. Check whether the current harness's own instructions state that context is managed automatically (e.g. Claude Code states conversations are summarized/compacted automatically and work should continue without manually clearing).
    - If so: skip the manual-clear prompt. Briefly restate the new goal and continue — the harness already handles context growth.
-   - If not (Codex, an unfamiliar harness, or genuine uncertainty): ask "Looks like we're starting something new — would you like to `/clear` context, `/compact`, or continue as-is?" and wait for a response before proceeding.
+   - If not (an unfamiliar harness, or genuine uncertainty): ask "Looks like we're starting something new — would you like to `/clear` context, `/compact`, or continue as-is?" and wait for a response before proceeding.
