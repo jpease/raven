@@ -1,6 +1,33 @@
+# Interpreter launcher for `test` (and other dev-only commands that need
+# pytest). Defaults to a uv-managed, reproducible dev environment -- see
+# [dependency-groups].dev in pyproject.toml and the committed uv.lock.
+# Override for contributors not using uv, either per-invocation:
+#   just PYTHON='python' test
+# or for the session:
+#   RAVEN_PYTHON=python just test
+# An override interpreter must have the dev group installed itself, e.g.
+# `python -m pip install --group dev`.
+PYTHON := env_var_or_default("RAVEN_PYTHON", "uv run --group dev python")
+
 # Run the test suite
 test:
-    python -m pytest
+    #!/usr/bin/env sh
+    if ! {{PYTHON}} -c 'import pytest' >/dev/null 2>&1; then
+        echo "error: no pytest available via '{{PYTHON}}'." >&2
+        if command -v uv >/dev/null 2>&1; then
+            echo "Bootstrap the default dev environment and rerun: uv sync --group dev && just test" >&2
+        else
+            # The fresh-clone case: naming `uv sync` here would just hand the
+            # contributor a second `command not found`.
+            echo "uv is not installed; install it, then rerun 'just test':" >&2
+            echo "  https://docs.astral.sh/uv/getting-started/installation/" >&2
+        fi
+        echo "Using a different interpreter? Install the dev group into it first:" >&2
+        echo "  python -m pip install --group dev" >&2
+        echo "  then: just PYTHON='python' test   (or RAVEN_PYTHON=python just test)" >&2
+        exit 1
+    fi
+    {{PYTHON}} -m pytest
 
 # Run lint checks
 lint:

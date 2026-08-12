@@ -276,13 +276,23 @@ Raven-managed paths use `raven-*` wherever possible.
 
 ## Developing Raven
 
+Raven's runtime (`scripts/raven.py` + `scripts/raven_lib/`) is stdlib-only, so
+*using* Raven needs no dependencies. Developing Raven needs `pytest`, plus
+[`uv`](https://docs.astral.sh/uv/) to run it reproducibly:
+
 ```sh
-python -m pip install pytest   # development-only; Raven's runtime is stdlib
-python -m pytest
-python scripts/self-check.py
+just test                             # uv run --group dev python -m pytest, via the justfile
+uv run --group dev python scripts/self-check.py
 ```
 
-Use `python scripts/self-check.py` for the dogfood workflow: it validates this repo's installed Raven shape, runs self-upgrade dry-run/apply, and then runs the unit tests. `self-check.py` requires Raven to already be installed in this repo (`.raven/config.toml` must exist); run `python scripts/raven.py install <language>` first if you have a fresh clone.
+`just test` and `just check` resolve their own `uv`-managed dev environment
+by default (see `[dependency-groups]` in `pyproject.toml` and the committed
+`uv.lock`) -- no manual venv setup needed. Not using `uv`? Install the dev
+group into your own interpreter (`python -m pip install --group dev`) and
+override the launcher: `RAVEN_PYTHON=python just test` or
+`just PYTHON='python' test`.
+
+Use `scripts/self-check.py` for the dogfood workflow: it validates this repo's installed Raven shape, runs self-upgrade dry-run/apply, and then runs the unit tests. `self-check.py` requires Raven to already be installed in this repo (`.raven/config.toml` must exist); run `python scripts/raven.py install <language>` first if you have a fresh clone.
 
 Project-local maintenance skills live under `project-skills/`; destination-facing files live in `common/` or language template directories.
 

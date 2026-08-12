@@ -5,7 +5,7 @@ This repository is Raven itself: the reusable template library and installer for
 ## Self-Test Workflow
 
 - Use this repository as a live testbed for Raven installation and upgrade behavior.
-- After changing template files, managed guidance, or `scripts/raven.py`, run `python scripts/self-check.py`.
+- After changing template files, managed guidance, or `scripts/raven.py`, run `uv run --group dev python scripts/self-check.py` (the documented dev environment — see "Developing Raven" in `README.md`).
 - The self-check validates the installed shape, runs `upgrade --dry-run`, applies `upgrade`, then runs the unit tests.
 - Treat unexpected self-upgrade output as a product issue unless the changed behavior was intentional.
 

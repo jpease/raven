@@ -1,10 +1,26 @@
 # Raven's runtime (scripts/raven.py + scripts/raven_lib/) is stdlib-only, so
 # using Raven needs no dependencies. pytest is a development-only dependency for
 # running this repo's own test suite -- Raven dogfoods the pytest default it
-# ships in the python template. Install with `pip install pytest` or, with a
-# PEP 735-aware tool, `pip install --group dev` / `uv sync`.
+# ships in the python template. The documented contributor path is `uv run
+# --group dev python -m pytest` (or `just test`, which wraps it); uv resolves
+# and installs this group into a project-local venv automatically. Not using
+# uv? Install the group into your own interpreter with
+# `python -m pip install --group dev`, then override the launcher (see the
+# justfile's `PYTHON` variable / `RAVEN_PYTHON` env var).
 [dependency-groups]
 dev = ["pytest"]
+
+# No runtime package to build here -- this table exists so `uv run`/`uv lock`
+# can resolve a `requires-python` floor instead of silently defaulting to the
+# interpreter that happened to invoke uv (see `[tool.uv] package = false`
+# below).
+[project]
+name = "raven"
+version = "0"
+requires-python = ">=3.9"
+
+[tool.uv]
+package = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

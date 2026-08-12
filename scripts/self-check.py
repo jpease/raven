@@ -583,8 +583,20 @@ def main() -> int:
     )
     validate_installed_shape()
     validate_upgrade_convergence()
-    run("ruff format check", [sys.executable, "-m", "ruff", "format", "--check", "."])
-    run("ruff lint", [sys.executable, "-m", "ruff", "check", "."])
+    # ruff is a PATH binary, not a module Raven's dev group installs (the
+    # justfile's `lint`/`fmt-check` recipes call it the same way), so invoke it
+    # by name rather than as `sys.executable -m ruff` -- the latter breaks
+    # under any interpreter that lacks ruff importable as a module, including
+    # the uv dev-group venv this script is documented to run under (issue #168).
+    run("ruff format check", ["ruff", "format", "--check", "."])
+    run("ruff lint", ["ruff", "check", "."])
+    # Unlike ruff above, `sys.executable -m pytest` is intentional here, not an
+    # oversight: this script deliberately tests with whatever interpreter it
+    # was launched under, because .github/workflows/ci.yml runs it across a
+    # 3.9-3.14 matrix -- hardwiring one uv-resolved interpreter would silently
+    # collapse that matrix to a single Python version. The documented
+    # contributor invocation is `uv run --group dev python scripts/self-check.py`,
+    # which supplies its own pytest via sys.executable already (issue #168).
     run("unit tests", [sys.executable, "-m", "pytest", "tests"])
     print("RAVEN self-check passed")
     return 0

@@ -7,14 +7,23 @@ Thank you for your interest in contributing.
 ```sh
 git clone https://github.com/jpease/raven
 cd raven
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt   # if present, otherwise no extra deps needed
 ```
 
-Run the test suite:
+Raven's runtime is stdlib-only; developing Raven needs `pytest`, run through
+[`uv`](https://docs.astral.sh/uv/) for a reproducible environment:
 
 ```sh
-python -m pytest
+just test
+```
+
+`just test` resolves and runs `uv run --group dev python -m pytest` --
+no manual venv or `pip install` needed. `uv` isn't required to *run* Raven,
+only for this documented verification path; if you don't use `uv`, install
+the dev group into your own interpreter and override the launcher:
+
+```sh
+python -m pip install --group dev
+just PYTHON='python' test        # or: RAVEN_PYTHON=python just test
 ```
 
 ## Development Workflow
@@ -22,7 +31,7 @@ python -m pytest
 Raven uses itself as a live testbed. After changing template files or `scripts/raven.py`:
 
 ```sh
-python scripts/self-check.py
+uv run --group dev python scripts/self-check.py
 ```
 
 This validates the installed shape, runs `upgrade --dry-run`, applies `upgrade`, then runs the unit tests. If you do not have Raven installed in this repo yet, run `python scripts/raven.py install python` (or your preferred language) first.
@@ -66,7 +75,7 @@ Files that legitimately differ per language are real (non-symlinked) files:
 
 - Open an issue first for significant changes so we can discuss the approach.
 - Keep PRs focused — one concern per PR.
-- Ensure `python -m pytest` passes before opening.
+- Ensure `just test` passes before opening.
 - Follow the existing code style (no type annotations in shell scripts; type hints required in Python).
 
 ## Reporting Bugs
