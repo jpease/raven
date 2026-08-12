@@ -45,8 +45,16 @@ fmt-check:
 typecheck:
     pyright
 
+# Scan staged content for home-directory absolute paths and (if a local
+# denylist is configured) private repository names. Repo-only: this is
+# Raven's own public-repo hygiene gate (see AGENTS.md's "Public Repository
+# Hygiene" section), not part of the shipped python/justfile template, so it
+# lives here rather than in a recipe common templates inherit.
+hygiene:
+    ./scripts/check-staged-hygiene.py
+
 # Fast static checks for the pre-commit hook (no type check, no tests)
-check-fast: lint fmt-check
+check-fast: lint fmt-check hygiene
 
 # Run the standard local verification set (also runs in the pre-push hook).
 # A successful run credits the pre-push stamp too, so a manual `just check`

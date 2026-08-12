@@ -32,7 +32,7 @@ ALLOWED_BASH_COMMANDS = [
     "rm -rf /tmp/foo",
     "rm -rf ./build",
     "rm -rf build/",
-    "rm -rf /home/me/project",
+    "rm -rf /home/me/project",  # raven-hygiene: allow (synthetic path, unrelated fixture)
     "npm run clean",
     "git clean -n",
     "cat /etc/rm-notes",

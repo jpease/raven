@@ -21,7 +21,8 @@ This repository is Raven itself: the reusable template library and installer for
 - Dogfooding and downstream validation happen in private repos. Refer to them by role, never by name: "a private iOS app repo", "the #60 reporter", "a downstream Node consumer".
 - Do not commit local absolute paths. Write repro steps as `cd <downstream-repo> && raven doctor`, not `cd /Users/<name>/Developer/...`.
 - This matters most in specs and plans, which are written during dogfooding — exactly when naming the real test repo is the natural thing to type.
-- Before committing docs that reference downstream validation, grep the diff for private repo names and `/Users/`. Keep the name list in local memory or `.git/info/exclude`d config; putting it in a tracked file recreates the leak.
+- `just check-fast` (and therefore the pre-commit hook) runs `scripts/check-staged-hygiene.py`, which blocks a commit whose staged diff adds a home-directory absolute path (macOS `/Users/<name>`, Linux `/home/<name>`, Windows `C:\Users\<name>` or `C:/Users/<name>`, WSL `/mnt/c/Users/<name>`) or, if `.git/info/raven-private-names` (or `RAVEN_HYGIENE_DENYLIST`) lists one, a private repository name. It scans only added lines, so removing a leak is never itself a violation.
+- A line the checker flags but that is legitimate (this rule's own prose, a test fixture asserting the detector works, documentation *about* the pattern) can carry a trailing `raven-hygiene: allow` comment to suppress just that line — visible in the diff, reviewable, and not a file- or directory-level exclusion. Keep the local name list itself out of tracked files: in local memory or `.git/info/`-excluded config; putting it in a tracked file recreates the leak.
 
 ## Local Instruction Boundary
 
