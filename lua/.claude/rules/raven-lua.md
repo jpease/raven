@@ -28,7 +28,7 @@ performance, security, or dependency policy.
   configured or clearly appropriate. `selene` is a common single-binary alternative
   to `luacheck`.
 
-## Pause And Ask
+## Additional Pause And Ask Triggers
 
 In addition to the guardrails in AGENTS.md, ask before changing:
 

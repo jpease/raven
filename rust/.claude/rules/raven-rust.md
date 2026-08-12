@@ -21,7 +21,7 @@ Use `.claude/docs/raven-rust-quality.md` for detailed Rust quality guidance when
   - `cargo deny check`
 - Do not assume every project supports `--all-features`, `cargo audit`, `cargo deny`, `nextest`, or benchmarks. Use them when configured or clearly appropriate.
 
-## Pause And Ask
+## Additional Pause And Ask Triggers
 
 In addition to the guardrails in AGENTS.md, ask before changing:
 

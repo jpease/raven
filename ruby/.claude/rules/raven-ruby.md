@@ -20,7 +20,7 @@ Use `.claude/docs/raven-ruby-quality.md` for detailed Ruby quality guidance when
 - Use `bundle exec` to run gem executables against the project's locked versions; do not assume a bare binary on PATH matches `Gemfile.lock`.
 - Do not assume every project uses RuboCop, Minitest, or Bundler. Use them when configured or clearly appropriate; RSpec is a common alternative to Minitest.
 
-## Pause And Ask
+## Additional Pause And Ask Triggers
 
 In addition to the guardrails in AGENTS.md, ask before changing:
 

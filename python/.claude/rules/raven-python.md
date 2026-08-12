@@ -20,7 +20,7 @@ Use `.claude/docs/raven-python-quality.md` for detailed Python quality guidance 
   - `mypy .` or `pyright` for type checking
 - Do not assume every project uses the same toolchain. Confirm before using.
 
-## Pause And Ask
+## Additional Pause And Ask Triggers
 
 In addition to the guardrails in AGENTS.md, ask before changing:
 

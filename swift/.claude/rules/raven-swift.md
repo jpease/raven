@@ -16,7 +16,7 @@ Use `.claude/docs/raven-swift-quality.md` for detailed Swift quality guidance wh
 - Adding `.swift` files to existing synchronized source folders usually should not require project regeneration.
 - Prefer the repository's task runner, such as `just`, `make`, or scripts, over raw `xcodebuild` when it defines the expected workflow.
 
-## Pause And Ask
+## Additional Pause And Ask Triggers
 
 In addition to the guardrails in AGENTS.md, ask before changing:
 

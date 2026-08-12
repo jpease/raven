@@ -20,7 +20,7 @@ Use `.claude/docs/raven-go-quality.md` for detailed Go quality guidance when the
   - `golangci-lint run`
 - Do not assume every project supports `golangci-lint`, race tests, fuzzing, or benchmarks. Use them when configured or clearly appropriate.
 
-## Pause And Ask
+## Additional Pause And Ask Triggers
 
 In addition to the guardrails in AGENTS.md, ask before changing:
 

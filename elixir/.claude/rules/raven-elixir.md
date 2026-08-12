@@ -25,7 +25,7 @@ Use `.claude/docs/raven-elixir-quality.md` for detailed Elixir quality guidance 
 - Run `mix help <task>` before using an unfamiliar Mix task or option.
 - Avoid `mix deps.clean --all` unless there is a clear dependency corruption reason.
 
-## Pause And Ask
+## Additional Pause And Ask Triggers
 
 In addition to the guardrails in AGENTS.md, ask before changing:
 

@@ -40,7 +40,7 @@ The live file at its runtime path is frequently NOT the file you should edit.
 - Warn that a bad config can fail late — only at next login, shell start, daemon
   reload, or display-manager restart — not at edit time.
 
-## Pause And Ask
+## Additional Pause And Ask Triggers
 
 In addition to AGENTS.md guardrails, pause before editing config that can lock the
 user out or only fails late:
