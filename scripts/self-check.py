@@ -514,7 +514,6 @@ _APPROVED_CUSTOMIZATION: dict[str, str] = {
 }
 
 _RECONCILIATION_DEBT: dict[str, str] = {
-    ".claude/docs/raven-tool-assessment.md": "#170",
     ".claude/rules/raven-python.md": "#171",
 }
 
