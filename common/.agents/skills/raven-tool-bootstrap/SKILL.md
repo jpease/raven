@@ -20,6 +20,13 @@ Goal: respond to Raven tool availability checks without repeated tool discovery.
 - Treat `.mcp.json` tools as optional local capabilities until verified.
 - If the SessionStart hook reports missing tools, ask whether the user wants installation, instructions, a later reminder, or no future reminders.
 
+## Reading The Roster's `Absent` And `Optional` Lines
+
+The session capability roster (`raven-capability-roster.py`) splits missing tools into two lines, and no longer explains either one inline:
+
+- `Absent` — a tool with no fallback. Always worth raising: nothing else in the session covers the gap it names.
+- `Optional` — a name-only list of tools where something else already covers the work (another approved control, a platform default). Worth mentioning only when the current task actually needs that tool; the reasoning for why each one is optional is not in the roster output — look it up in the prober's `TOOLS` table (`raven-tool-check.py`) if the user asks why.
+
 ## Commands
 
 The tool-check helper ships per adapter: `.claude/scripts/raven-tool-check.py` (Claude Code) or `.codex/scripts/raven-tool-check.py` (Codex). Use the one your agent installed.

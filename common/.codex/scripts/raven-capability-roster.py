@@ -285,14 +285,8 @@ def render_roster(
     index_line: str | None = None,
 ) -> str:
     """Format the roster. Pure: no I/O, no probing."""
-    available, absent, unverified = [], [], []
-    for result in tool_results:
-        if result.get("available"):
-            available.append(result)
-        elif result.get("source") == "timed-out":
-            unverified.append(result)
-        else:
-            absent.append(result)
+    available = [r for r in tool_results if r.get("available")]
+    required_absent, optional_absent, unverified = _gap_lines(tool_results)
 
     header = f"=== RAVEN CAPABILITIES ===  probed {probed_on}"
     safe_template = sanitize_identifier(template)
@@ -312,25 +306,51 @@ def render_roster(
         lines.append(index_line)
 
     if not do_not_remind:
-        if absent:
-            lines.extend(_absent_block("Absent", absent))
+        if required_absent:
+            lines.extend(_entry_lines("Absent", required_absent))
         else:
             lines.append(_line("Absent", "—"))
+        if optional_absent:
+            names = " ".join(sorted(str(r["name"]) for r in optional_absent))
+            lines.append(_line("Optional", names))
         if unverified:
-            lines.extend(_absent_block("Unverified", unverified))
+            lines.extend(_entry_lines("Unverified", unverified))
 
     return cap_roster("\n".join(lines) + "\n")
 
 
-def _absent_block(label: str, results: list[dict]) -> list[str]:
-    """Render one entry per line, hanging-indented under the label."""
+def _gap_lines(tool_results: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
+    """Split not-available results into required-absent, optional-absent, and unverified.
+
+    A timed-out result is unverified regardless of optionalWhen -- its
+    availability is unknown, not confirmed missing, so it never joins the
+    optional-absent collapse.
+    """
+    required_absent, optional_absent, unverified = [], [], []
+    for result in tool_results:
+        if result.get("available"):
+            continue
+        if result.get("source") == "timed-out":
+            unverified.append(result)
+        elif result.get("optionalWhen"):
+            optional_absent.append(result)
+        else:
+            required_absent.append(result)
+    return required_absent, optional_absent, unverified
+
+
+def _entry_lines(label: str, results: list[dict]) -> list[str]:
+    """Render one `name — purpose` entry per line, hanging-indented under the label.
+
+    Used for required-absent and unverified tools, where the reader has no
+    fallback and needs the full purpose string to judge the gap. Optional-absent
+    tools skip this in favor of a single name-only Optional line -- something
+    else already covers the work, so the reasoning lives only in TOOLS.
+    """
     lines = []
     pad = INDENT + " " * (LABEL_WIDTH + 2)
     for index, result in enumerate(results):
         text = f"{result['name']} — {result.get('purpose', '')}".rstrip(" —")
-        optional = result.get("optionalWhen")
-        if optional:
-            text += f" (optional: {optional})"
         lines.append(_line(label, text) if index == 0 else f"{pad}{text}")
     return lines
 

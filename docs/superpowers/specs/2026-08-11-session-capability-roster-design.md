@@ -203,19 +203,25 @@ Degraded:
   Tracker    gh ✓
   Index      gitnexus · 2703 nodes / 128 files · STALE (working tree modified)
   Absent     semgrep — security, policy, and multi-language static-analysis rules
-             osv-scanner — surfacing known advisories in dependency lockfiles
-               via `just audit` (optional: dependency advisories are surfaced by
-               another approved control)
+  Optional   osv-scanner
   Unverified —
 ```
 
 Format rules:
 
-- **Strings come from the prober's own data.** `purpose` and `optionalWhen` are
-  rendered verbatim from the `TOOLS` table rather than paraphrased. The real
-  strings are long — the five tools carrying `optionalWhen` total roughly 450
-  characters — so `Absent` wraps with a hanging indent and the optional clause
-  is parenthesized after the purpose.
+- **`Absent` no longer carries `optionalWhen`.** Only tools with no
+  `optionalWhen` fallback render a full `name — purpose` entry — the reader
+  has no other coverage for those and needs the purpose string to judge the
+  gap. Tools with an `optionalWhen` (something else already covers the work)
+  collapse onto a single name-only `Optional` line; the reasoning for why
+  each is optional lives only in `TOOLS`, not in the roster.
+  Reversed 2026-08-12 (#156): this section originally rendered `purpose` and
+  `optionalWhen` verbatim for every absent tool, priced at roughly 450
+  characters for the five `optionalWhen` tools. That was cheap once, but the
+  roster has no suppression path short of `doNotRemind` — which also
+  silences genuine gaps — so the same 450 characters re-emit into context
+  every session until every tool is installed. See #156's measurement:
+  1825 bytes / 18 lines before this change, 1078 / 15 after on this repo.
 - **`MCP (cfg)` is deliberately labelled.** The list is derived from
   configuration files, and configured is not connected: Claude Code requires
   per-project approval, and a misconfigured remote server can fail to connect
@@ -238,10 +244,10 @@ Format rules:
 - **`Absent —` on a fully-provisioned machine is deliberate.** Its presence
   confirms the roster ran and found nothing missing, which is a different fact
   from the roster having been suppressed.
-- **`preferences.doNotRemind` suppresses `Absent` and `Unverified` only.** The
-  rest of the roster still emits. The preference means "stop nagging me about
-  installing things", not "stop telling me what I have". This is a
-  display-only rule; the emitter always probes.
+- **`preferences.doNotRemind` suppresses `Absent`, `Optional`, and
+  `Unverified` only.** The rest of the roster still emits. The preference
+  means "stop nagging me about installing things", not "stop telling me what
+  I have". This is a display-only rule; the emitter always probes.
 
 ### Index staleness
 
@@ -453,9 +459,13 @@ testable with fixture data and no subprocess.
 
 - Nominal roster renders all sections
 - Each section line is omitted when its category is inapplicable
-- Absent-required versus absent-optional render differently, using the real
-  `purpose` and `optionalWhen` strings from `TOOLS`
-- `timed_out` results render under `Unverified`, not `Absent`
+- Required-absent tools render a full `name — purpose` entry; optional-absent
+  tools (an `optionalWhen` fallback exists) collapse onto a single name-only
+  `Optional` line instead
+- `Absent —` still renders when every gap is optional, so "no mandatory
+  gaps" stays legible independent of a populated `Optional` line
+- `timed_out` results render under `Unverified`, not `Absent`, regardless of
+  whether they also carry an `optionalWhen`
 - `doNotRemind` suppresses `Absent` and `Unverified` but nothing else
 - Gate tools render present/absent state
 - Staleness: committed drift, uncommitted drift, both, neither, and

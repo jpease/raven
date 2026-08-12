@@ -77,7 +77,7 @@ class CliSectionTests(RavenTestCase):
         self.assertIn("semgrep — security rules", text)
         self.assertNotIn("CLI        semgrep", text)
 
-    def test_optional_absent_tool_renders_its_optional_clause(self):
+    def test_optional_absent_tool_collapses_to_a_name_only_optional_line(self):
         text = self.module.render_roster(
             probed_on="2026-08-11",
             template="python",
@@ -91,7 +91,49 @@ class CliSectionTests(RavenTestCase):
             ],
             do_not_remind=False,
         )
-        self.assertIn("optional: Dependabot covers it", text)
+        self.assertIn("Optional", text)
+        self.assertIn("osv-scanner", text)
+        self.assertNotIn("Dependabot covers it", text)
+        self.assertNotIn("advisories", text)
+
+    def test_required_and_optional_absent_tools_render_in_separate_sections(self):
+        text = self.module.render_roster(
+            probed_on="2026-08-11",
+            template="python",
+            tool_results=[
+                tool_result("semgrep", available=False, purpose="security rules"),
+                tool_result(
+                    "osv-scanner",
+                    available=False,
+                    purpose="advisories",
+                    optional="Dependabot covers it",
+                ),
+            ],
+            do_not_remind=False,
+        )
+        self.assertIn("semgrep — security rules", text)
+        self.assertIn("Optional", text)
+        self.assertIn("osv-scanner", text)
+        self.assertNotIn("osv-scanner — advisories", text)
+
+    def test_absent_dash_renders_even_when_optional_line_is_populated(self):
+        # No required-absent tools -- the dash still confirms "no mandatory
+        # gaps" is legible on its own, independent of the Optional line.
+        text = self.module.render_roster(
+            probed_on="2026-08-11",
+            template="python",
+            tool_results=[
+                tool_result(
+                    "osv-scanner",
+                    available=False,
+                    purpose="advisories",
+                    optional="Dependabot covers it",
+                )
+            ],
+            do_not_remind=False,
+        )
+        self.assertIn("Absent     —", text)
+        self.assertIn("Optional", text)
 
     def test_do_not_remind_suppresses_absent_but_not_the_roster(self):
         text = self.module.render_roster(
@@ -102,6 +144,17 @@ class CliSectionTests(RavenTestCase):
         )
         self.assertIn("rg", text)
         self.assertNotIn("Absent", text)
+
+    def test_do_not_remind_suppresses_optional_too(self):
+        text = self.module.render_roster(
+            probed_on="2026-08-11",
+            template="python",
+            tool_results=[
+                tool_result("osv-scanner", available=False, optional="Dependabot covers it")
+            ],
+            do_not_remind=True,
+        )
+        self.assertNotIn("Optional", text)
 
     def test_timed_out_tools_render_as_unverified_not_absent(self):
         timed = tool_result("gitleaks", available=False)
