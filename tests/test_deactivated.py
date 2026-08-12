@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -179,14 +180,13 @@ class ClassifyDeactivatedTests(unittest.TestCase):
         result = classify_deactivated(template, dest, manifest, _config(platform="github"))
         self.assertEqual(result, DeactivatedClassification([], [], []))
 
-    def test_template_gated_skill_is_out_of_scope_for_this_classification(self) -> None:
-        # judgment call: #160 is scoped to the *platform* gate only. The
-        # template gate (raven-dotfiles) uses an identical mechanism, but
-        # extending coverage to it is a deliberate future decision (see the
-        # module docstring), not a silent side effect of this change -- so a
-        # template-gated-but-still-shipped file must not be classified here,
-        # even though platform_excluded's sibling, template_excluded, would
-        # gate it out of a fresh install.
+    def test_template_gated_skill_matching_baseline_is_removable(self) -> None:
+        # #169 extends coverage from the platform axis to the template axis:
+        # a template-gated-but-still-shipped file (raven-dotfiles, gated to
+        # template="dotfiles") must now be classified through the same
+        # unmodified_baseline safety gate as the platform-gated skills above,
+        # even though template_excluded is a distinct config field from
+        # platform_excluded.
         template, dest = self._setup()
         rel = self._install_skill(template, dest, "raven-dotfiles")
         sha = file_sha256(dest / rel)
@@ -199,7 +199,56 @@ class ClassifyDeactivatedTests(unittest.TestCase):
         config = _config(template="python")
         self.assertTrue(template_excluded(rel, config))  # confirms the premise
         result = classify_deactivated(template, dest, manifest, config)
-        self.assertEqual(result, DeactivatedClassification([], [], []))
+        self.assertEqual(result.removable, [rel])
+        self.assertEqual(result.preserved, [])
+        self.assertEqual(result.absent, [])
+
+    def test_template_gated_skill_locally_modified_is_preserved(self) -> None:
+        # Mirrors test_gated_skill_locally_modified_is_preserved for the
+        # template axis: the shared unmodified_baseline gate must still
+        # refuse to remove a locally edited template-gated file.
+        template, dest = self._setup()
+        rel = self._install_skill(template, dest, "raven-dotfiles")
+        sha = file_sha256(dest / rel)
+        (dest / rel).write_text("edited locally\n", encoding="utf-8")
+        manifest = {
+            "schema": 1,
+            "files": {rel: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        result = classify_deactivated(template, dest, manifest, _config(template="python"))
+        self.assertEqual(result.preserved, [rel])
+        self.assertEqual(result.removable, [])
+        self.assertEqual(result.absent, [])
+
+    def test_handles_both_agents_and_claude_skills_twins_for_template_gate(self) -> None:
+        # judgment call: verify (not just assume) that the .claude/skills
+        # twin handling #160 found "falls out for free" from the candidate
+        # derivation also holds for the template axis, mirroring
+        # test_handles_both_agents_and_claude_skills_twins_when_not_symlinked
+        # above.
+        template, dest = self._setup()
+        rel = self._install_skill(template, dest, "raven-dotfiles")
+        (template / ".claude").mkdir(parents=True, exist_ok=True)
+        (template / ".claude" / "skills").symlink_to(
+            Path("..") / ".agents" / "skills", target_is_directory=True
+        )
+
+        twin_rel = ".claude/skills/raven-dotfiles/SKILL.md"
+        _write(dest / twin_rel, (dest / rel).read_text(encoding="utf-8"))
+
+        sha = file_sha256(dest / rel)
+        twin_sha = file_sha256(dest / twin_rel)
+        manifest = {
+            "schema": 1,
+            "files": {
+                rel: {"kind": "file", "installedSha256": sha, "sourceSha256": sha},
+                twin_rel: {"kind": "file", "installedSha256": twin_sha, "sourceSha256": twin_sha},
+            },
+        }
+        result = classify_deactivated(template, dest, manifest, _config(template="python"))
+        self.assertEqual(sorted(result.removable), sorted([rel, twin_rel]))
+        self.assertEqual(result.preserved, [])
+        self.assertEqual(result.absent, [])
 
     def test_handles_both_agents_and_claude_skills_twins_when_not_symlinked(self) -> None:
         # judgment call: when the destination declined .claude/skills symlink
@@ -447,6 +496,109 @@ class PlatformTransitionEndToEndTests(RavenTestCase):
             rc = raven.cmd_upgrade(_upgrade_ns(self.destination))
         self.assertEqual(rc, 2)
         self.assertTrue(skill_path.exists())
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: the template-axis sibling of PlatformTransitionEndToEndTests
+# above. raven-dotfiles is gated to template="dotfiles"; in the real repo it
+# is shipped by every language tree (via the common/ symlink) but only
+# selected for install when that config value matches -- so the fake repo
+# here mirrors that with two throwaway template dirs that both ship the same
+# raven-dotfiles skill content, matching issue #169's required "template
+# transition away from dotfiles" regression.
+# ---------------------------------------------------------------------------
+
+
+class TemplateTransitionEndToEndTests(RavenTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self._fake_repo_tmp = TemporaryDirectory()
+        self.addCleanup(self._fake_repo_tmp.cleanup)
+        self.fake_repo_root = Path(self._fake_repo_tmp.name)
+        dotfiles_skill_rel = ".agents/skills/raven-dotfiles/SKILL.md"
+        for template_name in ("dotfiles", "other"):
+            _write(self.fake_repo_root / template_name / "AGENTS.md", "root instructions\n")
+            _write(
+                self.fake_repo_root / template_name / dotfiles_skill_rel,
+                "dotfiles skill content\n",
+            )
+        patcher = mock.patch("raven_lib.cli.REPO_ROOT", self.fake_repo_root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _install(self, template_name: str) -> None:
+        ns = _install_ns(self.destination, language=template_name, platform=None)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = raven.cmd_install(ns)
+        self.assertEqual(rc, 0)
+
+    def _switch_template(self, template_name: str) -> None:
+        from raven_lib.constants import CONFIG_PATH
+
+        config_path = self.destination / CONFIG_PATH
+        text = config_path.read_text(encoding="utf-8")
+        new_text = re.sub(
+            r'(?m)^template\s*=\s*".*"$', f'template = "{template_name}"', text, count=1
+        )
+        self.assertNotEqual(text, new_text)  # confirms the substitution actually matched
+        config_path.write_text(new_text, encoding="utf-8")
+
+    def _dry_run_upgrade(self) -> tuple[int, str]:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc = raven.cmd_upgrade(_upgrade_ns(self.destination, dry_run=True))
+        return rc, buf.getvalue()
+
+    def _upgrade(self) -> tuple[int, str]:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc = raven.cmd_upgrade(_upgrade_ns(self.destination))
+        return rc, buf.getvalue()
+
+    def test_dotfiles_to_other_template_deactivates_raven_dotfiles(self) -> None:
+        self._install("dotfiles")
+        project_skill = self.destination / ".agents" / "skills" / "my-custom-skill" / "SKILL.md"
+        _write(project_skill, "project-owned, not raven's\n")
+        project_content = project_skill.read_text(encoding="utf-8")
+
+        deactivated_rel = ".agents/skills/raven-dotfiles/SKILL.md"
+        deactivated_path = self.destination / deactivated_rel
+        self.assertTrue(deactivated_path.exists())
+        self.assertIn(deactivated_rel, load_manifest(self.destination)["files"])
+
+        self._switch_template("other")
+
+        rc, dry_output = self._dry_run_upgrade()
+        self.assertEqual(rc, 0)
+        self.assertIn("deactivated by config", dry_output)
+        self.assertIn(deactivated_rel, dry_output)
+        # dry-run must not touch the filesystem.
+        self.assertTrue(deactivated_path.exists())
+
+        rc, output = self._upgrade()
+        self.assertEqual(rc, 0)
+        self.assertFalse(deactivated_path.exists())
+        self.assertNotIn(deactivated_rel, load_manifest(self.destination)["files"])
+        self.assertIn("deactivated by config", output)
+        self.assertIn(deactivated_rel, output)
+
+        self.assertTrue(project_skill.exists())
+        self.assertEqual(project_skill.read_text(encoding="utf-8"), project_content)
+
+    def test_locally_modified_template_gated_skill_is_preserved_not_deleted(self) -> None:
+        self._install("dotfiles")
+        skill_path = self.destination / ".agents" / "skills" / "raven-dotfiles" / "SKILL.md"
+        skill_path.write_text("user edited this locally\n", encoding="utf-8")
+        self._switch_template("other")
+
+        rc, output = self._upgrade()
+        self.assertEqual(rc, 0)
+        self.assertTrue(skill_path.exists())
+        self.assertEqual(skill_path.read_text(encoding="utf-8"), "user edited this locally\n")
+        self.assertIn(
+            ".agents/skills/raven-dotfiles/SKILL.md", load_manifest(self.destination)["files"]
+        )
+        self.assertIn("Deactivated by config but left in place because you modified them", output)
 
 
 if __name__ == "__main__":

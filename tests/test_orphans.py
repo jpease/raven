@@ -161,6 +161,50 @@ class ClassifyOrphansTests(unittest.TestCase):
         self.assertEqual(result.orphan_modified, [])
         self.assertEqual(result.already_gone, [])
 
+    def test_template_gated_file_is_never_in_the_orphan_set(self) -> None:
+        # Regression guard for #97/#169 (the template-axis sibling of #160's
+        # platform guard above): shipped_relatives is policy-neutral on
+        # purpose, so a file the template gate excludes (a template mismatch)
+        # must still be counted as shipped, and classify_orphans must never
+        # bucket it as an orphan. Folding config gating into this computation
+        # would regress #97: a template typo or a transient config-read
+        # failure would then look like a template removal and delete the file.
+        # See raven_lib.deactivated for the distinct classification that
+        # config-gated-but-still-shipped files actually get.
+        template, dest = self._setup()
+        from raven_lib.config import RavenConfig, template_excluded
+        from raven_lib.hashing import file_sha256
+
+        skill_rel = ".agents/skills/raven-dotfiles/SKILL.md"
+        _write(template / skill_rel, "dotfiles skill content\n")
+        target = dest / skill_rel
+        _write(target, "dotfiles skill content\n")
+        sha = file_sha256(target)
+
+        config = RavenConfig(
+            template="python",
+            include_readme=False,
+            components={},
+            claude_components={},
+            codex_components={},
+            exclude_paths=[],
+            platform="none",
+        )
+        # Confirm the premise: config *would* gate this file out of a fresh
+        # install (that is exactly what makes it a meaningful test case).
+        self.assertTrue(template_excluded(skill_rel, config))
+
+        self.assertIn(skill_rel, shipped_relatives(template, dest))
+
+        manifest = {
+            "schema": 1,
+            "files": {skill_rel: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        result = classify_orphans(template, dest, manifest)
+        self.assertEqual(result.will_remove, [])
+        self.assertEqual(result.orphan_modified, [])
+        self.assertEqual(result.already_gone, [])
+
     def test_still_shipped_file_is_not_an_orphan(self) -> None:
         template, dest = self._setup()
         from raven_lib.hashing import file_sha256
