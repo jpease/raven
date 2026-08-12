@@ -391,7 +391,7 @@ def main() -> int:
             print(json.dumps({"roster": text}, indent=2))
         else:
             sys.stdout.write(text)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- deliberate last-resort boundary, see spec's Error Handling
         # A hook that crashes noisily costs context every session and trains
         # the user to ignore hook output. Silence is the correct failure.
         return 0

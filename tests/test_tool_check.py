@@ -176,6 +176,13 @@ class LoadMemoryRecoveryTests(RavenTestCase):
         module.MEMORY_PATH = memory_path
         return module, memory_path
 
+    def test_malformed_json_falls_back_to_default(self):
+        # Issue #152: load_memory()'s except clause must stay narrowed to
+        # (ValueError, OSError) -- json.loads raises JSONDecodeError (a
+        # ValueError) on unparseable text, and this must still fail open.
+        module, _ = self._module_with_memory("not json{{{")
+        self.assertEqual(module.load_memory(), {"version": 1, "tools": {}, "preferences": {}})
+
     def test_list_root_falls_back_to_default(self):
         module, _ = self._module_with_memory("[]")
         self.assertEqual(module.load_memory(), {"version": 1, "tools": {}, "preferences": {}})

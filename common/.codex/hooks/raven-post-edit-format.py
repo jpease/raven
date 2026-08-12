@@ -12,7 +12,7 @@ from pathlib import Path
 def _load_payload() -> dict | None:
     try:
         return json.load(sys.stdin)
-    except Exception:
+    except (ValueError, OSError):
         return None
 
 

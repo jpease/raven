@@ -212,6 +212,32 @@ class AgentHooksTests(RavenTestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_hooks_tolerate_malformed_json_stdin(self):
+        # Issue #152: _load_payload()'s except clause must stay narrowed to
+        # (ValueError, OSError) -- json.load raises JSONDecodeError (a
+        # ValueError) on unparseable stdin, and the hook must still fail
+        # open (exit 0, no output) rather than crash noisily.
+        hooks = [
+            "raven-post-bash-summarize.py",
+            "raven-pre-bash-guard.py",
+            "raven-pre-edit-guard.py",
+            "raven-post-edit-format.py",
+            "raven-session-checkpoint.py",
+            "raven-skeleton-read-guard.py",
+        ]
+
+        for hook in hooks:
+            with self.subTest(hook=hook):
+                result = subprocess.run(
+                    [sys.executable, str(REPO_ROOT / "common" / ".claude" / "hooks" / hook)],
+                    input="not json",
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+
     def test_codex_pre_hooks_emit_deny_payload_for_blocked_actions(self):
         cases = [
             (

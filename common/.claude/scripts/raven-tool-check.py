@@ -282,7 +282,7 @@ def load_memory() -> dict:
         return _default_memory()
     try:
         raw = json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
-    except Exception:
+    except (ValueError, OSError):
         return _default_memory()
     return _normalize_memory(raw)
 

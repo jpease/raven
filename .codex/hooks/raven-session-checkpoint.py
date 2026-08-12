@@ -14,7 +14,7 @@ from pathlib import Path
 def _load_payload() -> dict | None:  # type: ignore[type-arg]
     try:
         return json.load(sys.stdin)
-    except Exception:
+    except (ValueError, OSError):
         return None
 
 

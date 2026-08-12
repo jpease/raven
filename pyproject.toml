@@ -22,6 +22,7 @@ extend-exclude = ["scripts/list_open_issues.py"]
 [tool.ruff.lint]
 select = [
     "B",
+    "BLE",
     "C4",
     "E4",
     "E7",
