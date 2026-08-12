@@ -1,9 +1,9 @@
 {
   "files": {
     ".agents/skills/raven-codebase-discovery/SKILL.md": {
-      "installedSha256": "a268cada6aa3dd912eb1de1991668d3145af495d2d1dda44a5f03a66affd1b54",
+      "installedSha256": "2e83eb9ca70049e56ac453fc7a184175afabffbfd37429f161f5415ddac9248f",
       "kind": "file",
-      "sourceSha256": "a268cada6aa3dd912eb1de1991668d3145af495d2d1dda44a5f03a66affd1b54"
+      "sourceSha256": "2e83eb9ca70049e56ac453fc7a184175afabffbfd37429f161f5415ddac9248f"
     },
     ".agents/skills/raven-commit/SKILL.md": {
       "installedSha256": "de54f9eadd16610206ecb8833da9cc021a464dc1e148135ae7fe91e1a6ec3284",
@@ -16,9 +16,9 @@
       "sourceSha256": "de5a6317339345a8beee84a8dc20eafcedfffb2774d79d418040f5d49fa252d6"
     },
     ".agents/skills/raven-debloat/SKILL.md": {
-      "installedSha256": "ea7d6e36f7116dcdde338d76066b3375d8ae1b23ba642dd49f2fb78f3d6d1318",
+      "installedSha256": "bda0f119212315babf775011561254126377c34919cdb963c9aeb042801a448c",
       "kind": "file",
-      "sourceSha256": "ea7d6e36f7116dcdde338d76066b3375d8ae1b23ba642dd49f2fb78f3d6d1318"
+      "sourceSha256": "bda0f119212315babf775011561254126377c34919cdb963c9aeb042801a448c"
     },
     ".agents/skills/raven-debug-failure/SKILL.md": {
       "installedSha256": "af09a9bda9c0ba76cb0dc11d58e5590f06210e3a6e34bf87ceaac46e00069a3d",
@@ -81,9 +81,9 @@
       "sourceSha256": "159f4f18252236d75dc43f92ea4a29ffc40c66cc2ee28e572fbbebbb96cc5db8"
     },
     ".agents/skills/raven-safe-refactor/SKILL.md": {
-      "installedSha256": "3ce8c786d96d7fc5a91377c99015c7d86dc0e5cebc10c49bfe1717ddf45756ec",
+      "installedSha256": "67e325290ea9a8c2f83d630e132f105da52934b378adda32caffb844f7541d81",
       "kind": "file",
-      "sourceSha256": "3ce8c786d96d7fc5a91377c99015c7d86dc0e5cebc10c49bfe1717ddf45756ec"
+      "sourceSha256": "67e325290ea9a8c2f83d630e132f105da52934b378adda32caffb844f7541d81"
     },
     ".agents/skills/raven-security-review/SKILL.md": {
       "installedSha256": "81116e80a9709ae49bd2af6a8b9be402c8bad78d21fedfcc744ec4188fe44a2d",
@@ -362,9 +362,9 @@
       "sourceSha256": "71eb99a14d1067bea6b45e113393bbe2f37548632206abb214b89abe543b1cff"
     },
     "AGENTS.md": {
-      "installedSha256": "01a9fa5d33561ed570ee270a66907e41af704a5e633bfd7932e19f4f99441ae0",
+      "installedSha256": "887e58f87d525f96bf60b4c1592a6011bdc9927e122cc1a8bb4beecf16d26382",
       "kind": "file",
-      "sourceSha256": "a15c14407f5927447d014db9706dacaa17ede94f324ddf451a769153f01e5ee6"
+      "sourceSha256": "8a3049b4009c176949e45dfa49ea2724c8c0aef5e4df5f95ce68e83541e430d3"
     },
     "CLAUDE.md": {
       "installedSha256": "343aa72d3e62ce112e77d36c5f47ef60a01e8f81754e53ff63bf7f996d04799b",
@@ -383,8 +383,8 @@
       "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
     }
   },
-  "ravenVersion": "bef88af81fd9",
+  "ravenVersion": "b276ab6a6d35",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-11T22:45:28.150354+00:00"
+  "updatedAt": "2026-08-12T04:47:12.018807+00:00"
 }

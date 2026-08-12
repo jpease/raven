@@ -366,7 +366,7 @@ implementation plan should note it so a future third copy is not created.
 
 Removed:
 
-- `, if index configured` from the `gitnexus_query` and `gitnexus_impact` rows.
+- `, if index configured` from the `mcp__gitnexus__query` and `mcp__gitnexus__impact` rows.
 - The bullet: "If a tool named above is not installed, fall back to `rg` plus
   targeted reads and flag the missing capability per Tool Availability Memory."
 

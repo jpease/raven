@@ -19,7 +19,7 @@ Periodic subtractive maintenance across an area: find code that no longer earns 
 - Every structural removal is proposed and confirmed before it is applied. No automatic deletion.
 - Deleting a subsystem is a broad refactor with unclear scope by definition — route to AGENTS.md Pause And Ask every time, no exceptions.
 - Replacing bespoke code with a third-party library is a dependency addition — route to AGENTS.md Pause And Ask before writing any code.
-- Dead-code claims need semantic evidence: LSP references, GitNexus impact, or a dead-code analyzer. Text search alone does not prove a symbol is unused — dynamic dispatch, reflection, config, and generated call sites never show up in `rg`.
+- Dead-code claims need semantic evidence: LSP references, GitNexus impact (`mcp__gitnexus__impact`), or a dead-code analyzer. Text search alone does not prove a symbol is unused — dynamic dispatch, reflection, config, and generated call sites never show up in `rg`.
 - Green tests prove behavior, not design health. A passing suite is not evidence the code deserves to stay.
 - Report "nothing structural to remove" as a conclusion with evidence when that is the finding. Never delete to have something to report.
 

@@ -25,7 +25,7 @@ AGENTS.md Retrieval Discipline already governs tool order, batching, skeleton-fi
 2. If exact terms are known, use `rg`.
 3. If location is unknown, use Semble with a natural-language query for a single targeted lookup.
 4. For promising symbols, use LSP definition and references.
-5. For conceptual/flow questions ("how does X work?"), use `gitnexus_query` if a code-intelligence index is configured. For change impact, use `gitnexus_impact`.
+5. For conceptual/flow questions ("how does X work?"), use `mcp__gitnexus__query` if a code-intelligence index is configured. For change impact, use `mcp__gitnexus__impact`.
 6. Read only the smallest relevant ranges.
 
 ## When To Stop
@@ -38,5 +38,5 @@ Report what you were trying to locate, what was tried, the best candidate paths,
 
 For architecture or "how does X work" questions that would need multiple queries to answer — not a single symbol lookup:
 
-- If a code-intelligence index is configured (e.g. GitNexus), use `gitnexus_query` first — it returns execution flows and process-grouped results in a single call. Results are richer if the index was built with `--embeddings`.
+- If a code-intelligence index is configured (e.g. GitNexus), use `mcp__gitnexus__query` first — it returns execution flows and process-grouped results in a single call. Results are richer if the index was built with `--embeddings`.
 - Otherwise delegate to the `semble-search` subagent (Claude Code) or fall back to direct Semble queries.
