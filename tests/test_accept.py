@@ -3,8 +3,10 @@ import contextlib
 import io
 import json
 import subprocess
+from pathlib import Path
 
 from helpers import RavenTestCase, raven
+from raven_lib.cli import classify_accept_requests
 
 
 class AcceptCommandTests(RavenTestCase):
@@ -216,3 +218,50 @@ class AcceptCommandTests(RavenTestCase):
 
         self.assertEqual(rc, 0)
         self.assertIn("Nothing to accept", output.getvalue())
+
+
+class ClassifyAcceptRequestsTests(RavenTestCase):
+    """`cmd_accept`'s per-path decision, exercised without capturing stdout."""
+
+    def _entries(self, *relatives):
+        return {rel: raven.TemplateEntry(rel, Path("/nonexistent") / rel) for rel in relatives}
+
+    def test_buckets_managed_stale_and_unknown_paths(self):
+        (self.destination / "AGENTS.md").write_text("here\n", encoding="utf-8")
+        entries = self._entries("AGENTS.md", ".mcp.json")
+
+        result = classify_accept_requests(
+            ["AGENTS.md", ".mcp.json", "dropped.md", "random.txt"],
+            entries,
+            {"dropped.md"},
+            self.destination,
+        )
+
+        self.assertEqual(result.accepted, ["AGENTS.md"])
+        self.assertEqual(result.stale, ["dropped.md"])
+        self.assertEqual(
+            result.skipped,
+            [
+                ".mcp.json (no such file in destination)",
+                "random.txt (not a Raven-managed template file)",
+            ],
+        )
+
+    def test_no_requests_yields_empty_buckets(self):
+        result = classify_accept_requests([], self._entries("AGENTS.md"), set(), self.destination)
+
+        self.assertEqual(result.accepted, [])
+        self.assertEqual(result.stale, [])
+        self.assertEqual(result.skipped, [])
+
+    def test_a_broken_symlink_still_counts_as_present(self):
+        # `_any_exists` is lstat-based, so an unmanaged-but-linked file is
+        # accepted rather than reported as missing -- matching what `cmd_accept`
+        # has always done.
+        (self.destination / "AGENTS.md").symlink_to("nowhere")
+
+        result = classify_accept_requests(
+            ["AGENTS.md"], self._entries("AGENTS.md"), set(), self.destination
+        )
+
+        self.assertEqual(result.accepted, ["AGENTS.md"])

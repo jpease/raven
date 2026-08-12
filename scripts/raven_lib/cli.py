@@ -4,8 +4,9 @@ import argparse
 import platform
 import sys
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Literal
 
 from .apply import (
     classify,
@@ -32,7 +33,7 @@ from .doctor import build_doctor_findings
 from .findings import exit_code
 from .git_hooks import detect_hook_manager, git_hooks_dir, hook_manager_guidance, install_git_hooks
 from .manifest import load_manifest, update_manifest
-from .models import ApplyPlan, RavenConfig
+from .models import ApplyPlan, Classification, RavenConfig, TemplateEntry
 from .orphans import classify_orphans
 from .plan import (
     apply_plan,
@@ -171,6 +172,59 @@ def _print_hook_manager_notice(destination: Path) -> None:
     )
 
 
+def invalid_overrides(entries: dict[str, TemplateEntry], requested: list[str]) -> list[str]:
+    """Requested override paths that aren't included files in the selected template."""
+    return [path for path in requested if path not in entries]
+
+
+def _symlink_adoption_decision(
+    *, needed: bool, conflict: bool, requested: bool
+) -> Literal["skip", "auto", "prompt"]:
+    """Whether to skip CLAUDE.md symlink adoption, auto-adopt it, or ask the user.
+
+    "auto" when --adopt-claude-symlink was passed explicitly; "prompt" when
+    adoption is needed and conflicts with the plan but wasn't pre-authorized;
+    "skip" otherwise.
+    """
+    if not (needed and conflict):
+        return "skip"
+    return "auto" if requested else "prompt"
+
+
+@dataclass
+class RunPlan:
+    plan: ApplyPlan
+    collisions: list[str]
+    state_symlinks: list[str]
+    backup_conflict: bool
+
+
+def _build_run_plan(
+    destination: Path,
+    classification: Classification,
+    requested_overrides_norm: list[str],
+    existing_overrides: set[str],
+    adopt_claude_symlink: bool,
+) -> RunPlan:
+    """Compute the apply plan and every precondition `_run` must check before writing.
+
+    Pure given the destination's on-disk state: no printing, no prompting, no
+    writes. `_run` renders the result and decides whether to proceed.
+    """
+    plan = build_apply_plan(
+        classification,
+        requested_overrides_norm,
+        existing_overrides,
+        adopt_claude_symlink=adopt_claude_symlink,
+    )
+    collisions = find_path_collisions(destination, _planned_write_paths(plan))
+    state_symlinks = find_state_symlink_collisions(
+        destination, [CONFIG_PATH.as_posix(), MANIFEST_PATH.as_posix()]
+    )
+    backup_conflict = plan.adopt_claude_symlink and _any_exists(destination / CLAUDE_BACKUP_PATH)
+    return RunPlan(plan, collisions, state_symlinks, backup_conflict)
+
+
 def _run(
     destination: Path,
     template_name: str,
@@ -203,13 +257,13 @@ def _run(
         {n for path in requested_overrides if (n := normalize_override(path))}
     )
     entries = entries_for_destination(template, excludes, config, destination)
-    invalid_overrides = [path for path in requested_overrides_norm if path not in entries]
-    if invalid_overrides:
+    invalid = invalid_overrides(entries, requested_overrides_norm)
+    if invalid:
         print(
             "Invalid override path(s); each override must be an included file in the selected template:",
             file=sys.stderr,
         )
-        for path in invalid_overrides:
+        for path in invalid:
             print(f"  {path}", file=sys.stderr)
         return 2
 
@@ -220,25 +274,30 @@ def _run(
     orphans = classify_orphans(template, destination, manifest)
     existing_overrides = {p for p in requested_overrides_norm if _any_exists(destination / p)}
     symlink_adoption_needed = claude_symlink_adoption_needed(destination, entries)
-    adopt_claude_symlink = False
-    if symlink_adoption_needed and claude_symlink_conflict(
+    conflict = symlink_adoption_needed and claude_symlink_conflict(
         classification, requested_overrides_norm
-    ):
-        if adopt_claude_symlink_requested:
-            adopt_claude_symlink = True
-        elif not dry_run and prompt_claude_symlink:
-            adopt_claude_symlink = prompt_for_claude_symlink_adoption(destination)
-    plan = build_apply_plan(
-        classification,
-        requested_overrides_norm,
-        existing_overrides,
-        adopt_claude_symlink=adopt_claude_symlink,
     )
+    decision = _symlink_adoption_decision(
+        needed=symlink_adoption_needed,
+        conflict=conflict,
+        requested=adopt_claude_symlink_requested,
+    )
+    adopt_claude_symlink = decision == "auto"
+    if decision == "prompt" and not dry_run and prompt_claude_symlink:
+        adopt_claude_symlink = prompt_for_claude_symlink_adoption(destination)
 
     # Preflight the whole write set before printing the plan or touching the
     # destination, so a path collision fails the same way for dry-run and live
     # and never leaves a partial install behind.
-    collisions = find_path_collisions(destination, _planned_write_paths(plan))
+    run_plan = _build_run_plan(
+        destination,
+        classification,
+        requested_overrides_norm,
+        existing_overrides,
+        adopt_claude_symlink,
+    )
+    plan = run_plan.plan
+    collisions = run_plan.collisions
     if collisions:
         print(
             "error: existing paths block directories Raven must create; nothing was written:",
@@ -257,9 +316,7 @@ def _run(
     # state file (with .raven a real directory) slips past it and would route the
     # config/manifest write through the link to a file outside the destination.
     # Reject those before printing the plan, so dry-run and live fail identically.
-    state_symlinks = find_state_symlink_collisions(
-        destination, [CONFIG_PATH.as_posix(), MANIFEST_PATH.as_posix()]
-    )
+    state_symlinks = run_plan.state_symlinks
     if state_symlinks:
         print(
             "error: Raven state files are symlinks; writes would escape the "
@@ -286,7 +343,7 @@ def _run(
     # Validation has passed. Reject a doomed symlink adoption before any durable
     # write, then write configuration only once the request is known good, so a
     # rejected install leaves config and managed files unchanged.
-    if plan.adopt_claude_symlink and _any_exists(destination / CLAUDE_BACKUP_PATH):
+    if run_plan.backup_conflict:
         print(
             f"error: {CLAUDE_BACKUP_PATH} already exists; "
             "remove it before adopting the CLAUDE.md symlink.",
@@ -500,6 +557,39 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     )
 
 
+@dataclass
+class AcceptRequestClassification:
+    accepted: list[str]
+    stale: list[str]
+    skipped: list[str]
+
+
+def classify_accept_requests(
+    requested: list[str],
+    entries: dict[str, TemplateEntry],
+    pending: set[str],
+    destination: Path,
+) -> AcceptRequestClassification:
+    """Bucket each requested path as accepted, a stale merge artifact, or skipped.
+
+    Pure given the destination's on-disk state: no printing, no writes.
+    """
+    accepted: list[str] = []
+    stale: list[str] = []
+    skipped: list[str] = []
+    for relative in requested:
+        if entries.get(relative) is None:
+            if relative in pending:
+                stale.append(relative)
+            else:
+                skipped.append(f"{relative} (not a Raven-managed template file)")
+        elif not _any_exists(destination / relative):
+            skipped.append(f"{relative} (no such file in destination)")
+        else:
+            accepted.append(relative)
+    return AcceptRequestClassification(accepted, stale, skipped)
+
+
 def cmd_accept(args: argparse.Namespace) -> int:
     destination = _resolve_destination(args)
     if destination is None:
@@ -535,19 +625,10 @@ def cmd_accept(args: argparse.Namespace) -> int:
         return 0
 
     pending = set(pending_merge_paths(destination))
-    accepted: list[str] = []
-    stale: list[str] = []
-    skipped: list[str] = []
-    for relative in requested:
-        if entries.get(relative) is None:
-            if relative in pending:
-                stale.append(relative)
-            else:
-                skipped.append(f"{relative} (not a Raven-managed template file)")
-        elif not _any_exists(destination / relative):
-            skipped.append(f"{relative} (no such file in destination)")
-        else:
-            accepted.append(relative)
+    requests = classify_accept_requests(requested, entries, pending, destination)
+    accepted = requests.accepted
+    stale = requests.stale
+    skipped = requests.skipped
 
     if args.dry_run:
         print_section("Would record as the accepted Raven baseline:", accepted)

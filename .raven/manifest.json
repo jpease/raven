@@ -397,8 +397,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "5e2dc679f4c1",
+  "ravenVersion": "9e11805bd308",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-12T06:39:27.797281+00:00"
+  "updatedAt": "2026-08-12T06:54:04.600834+00:00"
 }

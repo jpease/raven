@@ -2,8 +2,10 @@ import contextlib
 import io
 import os
 import unittest
+from pathlib import Path
 
 from helpers import RavenTestCase, raven
+from raven_lib.cli import _build_run_plan, _symlink_adoption_decision, invalid_overrides
 
 
 class ApplyTests(RavenTestCase):
@@ -307,6 +309,102 @@ class BuildApplyPlanTests(unittest.TestCase):
         self.assertNotIn("notes.md", plan.guided_merge_paths)
         self.assertIn("real.md", plan.guided_merge_paths)
         self.assertEqual(plan.effective_classification.local_only, ["notes.md"])
+
+
+def _entries(*relatives):
+    return {rel: raven.TemplateEntry(rel, Path("/nonexistent") / rel) for rel in relatives}
+
+
+class InvalidOverridesTests(unittest.TestCase):
+    """`invalid_overrides` decides which override paths `_run` must reject."""
+
+    def test_no_requested_overrides_are_all_valid(self):
+        self.assertEqual(invalid_overrides(_entries("AGENTS.md"), []), [])
+
+    def test_only_paths_absent_from_entries_are_invalid(self):
+        entries = _entries("AGENTS.md", ".mcp.json")
+        self.assertEqual(
+            invalid_overrides(entries, [".mcp.json", "nope.md", "AGENTS.md", "docs/gone.md"]),
+            ["nope.md", "docs/gone.md"],
+        )
+
+    def test_empty_entries_make_every_request_invalid(self):
+        self.assertEqual(invalid_overrides({}, ["AGENTS.md"]), ["AGENTS.md"])
+
+
+class SymlinkAdoptionDecisionTests(unittest.TestCase):
+    """The CLAUDE.md symlink-adoption decision, separated from the prompt."""
+
+    def test_skips_when_adoption_is_not_needed(self):
+        for requested in (False, True):
+            for conflict in (False, True):
+                self.assertEqual(
+                    _symlink_adoption_decision(
+                        needed=False, conflict=conflict, requested=requested
+                    ),
+                    "skip",
+                )
+
+    def test_skips_when_needed_but_no_conflict(self):
+        for requested in (False, True):
+            self.assertEqual(
+                _symlink_adoption_decision(needed=True, conflict=False, requested=requested),
+                "skip",
+            )
+
+    def test_auto_adopts_when_pre_authorized(self):
+        self.assertEqual(
+            _symlink_adoption_decision(needed=True, conflict=True, requested=True), "auto"
+        )
+
+    def test_prompts_when_needed_and_conflicting_but_not_pre_authorized(self):
+        self.assertEqual(
+            _symlink_adoption_decision(needed=True, conflict=True, requested=False), "prompt"
+        )
+
+
+class BuildRunPlanTests(RavenTestCase):
+    """`_build_run_plan` computes every precondition `_run` checks before writing."""
+
+    def _plan(self, adopt_claude_symlink=False):
+        return _build_run_plan(
+            self.destination,
+            _classification(will_copy=["AGENTS.md"]),
+            [],
+            set(),
+            adopt_claude_symlink,
+        )
+
+    def test_clean_destination_has_no_blocking_preconditions(self):
+        run_plan = self._plan()
+
+        self.assertEqual(run_plan.collisions, [])
+        self.assertEqual(run_plan.state_symlinks, [])
+        self.assertFalse(run_plan.backup_conflict)
+        self.assertEqual(run_plan.plan.will_copy, ["AGENTS.md"])
+
+    def test_reports_ancestor_collision_for_state_writes(self):
+        (self.destination / ".raven").write_text("not a directory\n", encoding="utf-8")
+
+        self.assertEqual(self._plan().collisions, [".raven"])
+
+    def test_reports_symlinked_state_files(self):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").symlink_to("/outside/config.toml")
+
+        run_plan = self._plan()
+
+        self.assertEqual(run_plan.collisions, [])
+        self.assertEqual(run_plan.state_symlinks, [".raven/config.toml"])
+
+    def test_backup_conflict_only_when_adopting_over_an_existing_backup(self):
+        (self.destination / raven.CLAUDE_BACKUP_PATH).write_text("old\n", encoding="utf-8")
+
+        self.assertFalse(self._plan(adopt_claude_symlink=False).backup_conflict)
+        self.assertTrue(self._plan(adopt_claude_symlink=True).backup_conflict)
+
+    def test_no_backup_conflict_when_adopting_without_a_backup(self):
+        self.assertFalse(self._plan(adopt_claude_symlink=True).backup_conflict)
 
 
 if __name__ == "__main__":
