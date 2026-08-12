@@ -3,7 +3,7 @@ import io
 import json
 import unittest
 
-from helpers import RavenTestCase, raven
+from helpers import RavenTestCase, install_ns, raven, upgrade_ns
 
 
 class ManifestTests(RavenTestCase):
@@ -161,6 +161,32 @@ class ManifestTests(RavenTestCase):
             manifest["files"][path]["installedSha256"],
             raven.file_sha256(self.destination / path),
         )
+
+
+class ManifestGateToolsTests(RavenTestCase):
+    def test_apply_records_resolved_gate_tools(self):
+        raven.cli.cmd_install(install_ns(self.destination, "python"))
+        manifest = json.loads((self.destination / ".raven" / "manifest.json").read_text("utf-8"))
+        self.assertEqual(manifest["gateTools"], ["ruff", "pyright"])
+
+    def test_recorded_tools_match_the_gate_spec(self):
+        # Derived from GATE_DATA, never hand-listed, so a gate change here
+        # cannot silently diverge from what the roster reports.
+        raven.cli.cmd_install(install_ns(self.destination, "python"))
+        manifest = json.loads((self.destination / ".raven" / "manifest.json").read_text("utf-8"))
+        spec = raven.gates.gate_spec_for("python")
+        assert spec is not None
+        self.assertEqual(manifest["gateTools"], list(spec.tools))
+
+    def test_upgrade_records_gate_tools_for_a_manifest_that_lacks_them(self):
+        raven.cli.cmd_install(install_ns(self.destination, "python"))
+        path = self.destination / ".raven" / "manifest.json"
+        manifest = json.loads(path.read_text("utf-8"))
+        del manifest["gateTools"]
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        raven.cli.cmd_upgrade(upgrade_ns(self.destination))
+        refreshed = json.loads(path.read_text("utf-8"))
+        self.assertEqual(refreshed["gateTools"], ["ruff", "pyright"])
 
 
 if __name__ == "__main__":

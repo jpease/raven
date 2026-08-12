@@ -725,7 +725,10 @@ Cache location:
     parser.add_argument(
         "--session-start",
         action="store_true",
-        help="Claude Code SessionStart hook mode; uses the local cache to avoid repeated prompts",
+        help=(
+            "deprecated: superseded by raven-capability-roster.py; retained so "
+            "repos whose hook wiring was customized or not upgraded keep working"
+        ),
     )
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
     args = parser.parse_args()

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 from .constants import KIND_SYMLINK, MANIFEST_PATH, REPO_ROOT
+from .gates import gate_spec_for
 from .hashing import destination_fingerprint, entry_fingerprint
 from .models import ManifestRecord, RavenConfig, TemplateEntry
 from .template import entries_for_destination
@@ -147,6 +148,12 @@ def update_manifest(
         manifest = load_manifest(destination)
     manifest["schema"] = 1
     manifest["template"] = template_name
+    # Resolved here so the shipped capability roster can read gate tools
+    # without importing raven_lib, which does not install. GATE_DATA stays
+    # the single source of truth; this is a derived artifact.
+    spec = gate_spec_for(template_name)
+    if spec is not None:
+        manifest["gateTools"] = list(spec.tools)
     manifest["ravenVersion"] = git_ref()
     manifest["updatedAt"] = datetime.now(timezone.utc).isoformat()
     manifest.setdefault("files", {})

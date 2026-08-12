@@ -301,7 +301,7 @@ paths = [".claude/skills/raven-plan/**"]
                 text=True,
                 check=True,
             )
-            script = project / ".codex" / "scripts" / "raven-tool-check.py"
+            script = project / ".codex" / "scripts" / "raven-capability-roster.py"
             script.parent.mkdir(parents=True)
             script.write_text(
                 "import json, sys\n"
@@ -324,7 +324,7 @@ paths = [".claude/skills/raven-plan/**"]
 
         self.assertEqual(result.returncode, 0, result.stderr)
         output = json.loads(result.stdout)
-        self.assertEqual(output["argv"], ["--session-start"])
+        self.assertEqual(output["argv"], [])
         self.assertEqual(output["payload"], payload)
 
     def test_templates_have_no_broken_symlinks(self):

@@ -23,8 +23,8 @@ Use the cheapest adequate source before reading full files.
 | File discovery by name, type, or extension | `fd` |
 | Unknown implementation location but clear intent | Semble |
 | Definition, references, type info, diagnostics | LSP |
-| "How does X work?" / conceptual flow discovery | `mcp__gitnexus__query`, if index configured |
-| Blast-radius before editing a symbol | `mcp__gitnexus__impact`, if index configured |
+| "How does X work?" / conceptual flow discovery | `mcp__gitnexus__query` |
+| Blast-radius before editing a symbol | `mcp__gitnexus__impact` |
 | Syntax-aware pattern or mechanical rewrite | ast-grep or Semgrep |
 | Build, test, or log output | RTK-wrapped shell command |
 
@@ -36,7 +36,7 @@ Use the cheapest adequate source before reading full files.
 - When a code-intelligence index is configured, prefer `mcp__gitnexus__query` over Semble for "how does X work" and flow-based questions — it returns execution paths grouped by process, not just file locations.
 - GitNexus tools are spelled `mcp__gitnexus__<tool>`. Vendor-generated GitNexus content uses shorter labels (`impact()`, `gitnexus_query`) for the same tools — read them as the MCP tools, and take parameter names from the tool schema, not from the skill prose. No MCP grant? A subagent with Bash but no MCP access can reach the same operations via the CLI: `gitnexus query|context|impact|trace|detect-changes`.
 - Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried and delegate per the Delegation section, or ask the user.
-- If a tool named above is not installed, fall back to `rg` plus targeted reads and flag the missing capability per Tool Availability Memory.
+- Tool availability comes from the session capability roster. If no roster is present, probe before relying on any non-baseline tool. MCP servers the roster lists as configured may still be unapproved or unconnected; a failed call is information, not a contradiction of the roster.
 - When the repo configures a code-intelligence index (such as GitNexus), its impact analysis before a symbol edit and change-detection before a commit are mandatory, not optional table picks. If it is stale, reindex or say so — do not silently skip it.
 
 ## Delegation

@@ -338,7 +338,7 @@ class CodexHookLauncherDriftFixtureTests(unittest.TestCase):
     @staticmethod
     def _good_suffixes():
         return [
-            ".codex/scripts/raven-tool-check.py --session-start",
+            ".codex/scripts/raven-capability-roster.py",
             ".codex/hooks/raven-pre-bash-guard.py",
             ".codex/hooks/raven-pre-edit-guard.py",
             ".codex/hooks/raven-session-checkpoint.py",

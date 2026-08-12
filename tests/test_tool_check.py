@@ -13,6 +13,7 @@ from helpers import REPO_ROOT, RavenTestCase, load_script_module
 
 TOOL_CHECK_SCRIPT = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
 CODEX_TOOL_CHECK_SCRIPT = REPO_ROOT / "common" / ".codex" / "scripts" / "raven-tool-check.py"
+CODEX_ROSTER_SCRIPT = REPO_ROOT / "common" / ".codex" / "scripts" / "raven-capability-roster.py"
 
 
 class ToolCheckTests(RavenTestCase):
@@ -340,7 +341,11 @@ class ProjectRootResolutionTests(RavenTestCase):
         self.assertNotIn("Semble", missing)
 
     def test_codex_launcher_reads_project_config_from_outside_the_worktree(self):
+        # The SessionStart hook now launches raven-capability-roster.py, not
+        # raven-tool-check.py directly; the roster imports the prober as a
+        # sibling module, so both must be installed.
         project = self._install_project(".codex", CODEX_TOOL_CHECK_SCRIPT)
+        shutil.copy2(CODEX_ROSTER_SCRIPT, project / ".codex" / "scripts" / CODEX_ROSTER_SCRIPT.name)
         (project / ".codex" / "config.toml").write_text(
             '[mcp_servers.semble]\ncommand = "uvx"\n', encoding="utf-8"
         )
@@ -364,9 +369,15 @@ class ProjectRootResolutionTests(RavenTestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        missing = self._missing_tool_names(result.stdout)
-        self.assertIn("ripgrep", missing)
-        self.assertNotIn("Semble", missing)
+        # ripgrep is CLI-only and absent under the isolated PATH; Semble is
+        # detected via the project's .codex/config.toml, which is only
+        # possible if the root resolved correctly from the payload cwd.
+        self.assertIn("ripgrep —", result.stdout)
+        self.assertNotIn("Semble —", result.stdout)
+        cli_line = next(
+            (line for line in result.stdout.splitlines() if line.strip().startswith("CLI")), ""
+        )
+        self.assertIn("Semble", cli_line)
 
 
 class AdapterHelpPathTests(unittest.TestCase):
