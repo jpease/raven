@@ -360,8 +360,12 @@ def platform_excluded(relative: str, config: RavenConfig) -> bool:
     Skills under .agents/skills/<name> (and their derived .claude/skills/<name>
     twins) are gated: raven-github-issues requires platform=github, and
     raven-gitlab-issues requires platform=gitlab.  Both are excluded when
-    platform is "none" or unset.  Previously-installed skills are not removed
-    by upgrade; this exclusion only prevents new installations.
+    platform is "none" or unset.  This exclusion only prevents new
+    installations; it does not decide what happens to a previously-installed
+    skill that is now excluded here.  That is a distinct decision -- the skill
+    is still shipped by the template, just no longer selected by this config --
+    handled by ``raven_lib.deactivated.classify_deactivated``, which never
+    treats a config-gated file as an orphan (see ``orphans.shipped_relatives``).
     """
     for skill_name, required_platform in _PLATFORM_GATED_SKILLS.items():
         is_this_skill = path_within(relative, f".agents/skills/{skill_name}") or path_within(

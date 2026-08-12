@@ -11,7 +11,12 @@ import io
 import unittest
 
 from helpers import raven  # noqa: F401  (ensures scripts/ is on sys.path)
-from raven_lib.models import ApplyPlan, Classification, OrphanClassification
+from raven_lib.models import (
+    ApplyPlan,
+    Classification,
+    DeactivatedClassification,
+    OrphanClassification,
+)
 from raven_lib.plan import (
     print_dry_run_summary,
     print_section,
@@ -59,6 +64,12 @@ def orphan_classification(**overrides) -> OrphanClassification:
     fields = {"will_remove": [], "orphan_modified": [], "already_gone": []}
     fields.update(overrides)
     return OrphanClassification(**fields)
+
+
+def deactivated_classification(**overrides) -> DeactivatedClassification:
+    fields = {"removable": [], "preserved": [], "absent": []}
+    fields.update(overrides)
+    return DeactivatedClassification(**fields)
 
 
 class RenderSectionTest(unittest.TestCase):
@@ -137,6 +148,23 @@ class RenderApplySummaryTest(unittest.TestCase):
         self.assertIn("Upgraded 1 unchanged Raven-managed file(s):", text)
         self.assertIn("Removed 3 orphaned file(s)", text)
 
+    def test_omitted_deactivated_arguments_render_no_deactivated_section(self):
+        # Backward-compat: existing callers that only pass the orphan args
+        # must not crash, and must not gain a spurious empty section.
+        text = self._summary()
+        self.assertNotIn("deactivated by config", text)
+
+    def test_deactivated_sections_distinguish_removed_from_preserved_and_from_orphans(self):
+        text = self._summary(
+            removed_deactivated=["skill-a.md"], deactivated_preserved=["skill-b.md"]
+        )
+        self.assertIn("Removed 1 skill(s) deactivated by config", text)
+        self.assertIn("Deactivated by config but left in place because you modified them", text)
+        self.assertIn("skill-a.md", text)
+        self.assertIn("skill-b.md", text)
+        self.assertNotIn("orphaned file(s) the template no longer ships", text)
+        self.assertNotIn("Orphaned but left in place", text)
+
 
 class RenderDryRunPlanTest(unittest.TestCase):
     def test_minimal_plan_renders_just_the_summary(self):
@@ -202,6 +230,30 @@ class RenderDryRunPlanTest(unittest.TestCase):
         self.assertIn("Orphaned but locally modified; left in place", text)
         self.assertIn("gone.md", text)
         self.assertIn("kept.md", text)
+
+    def test_omitted_deactivated_argument_renders_no_deactivated_section(self):
+        # Backward-compat: existing callers that only pass orphans must not
+        # crash, and must not gain a spurious empty section.
+        text = render_dry_run_plan(
+            apply_plan(), orphan_classification(), show_claude_symlink_note=False
+        )
+        self.assertNotIn("deactivated by config", text)
+
+    def test_deactivated_sections_distinguish_removable_from_preserved_and_from_orphans(self):
+        text = render_dry_run_plan(
+            apply_plan(),
+            orphan_classification(),
+            deactivated_classification(removable=["skill-a.md"], preserved=["skill-b.md"]),
+            show_claude_symlink_note=False,
+        )
+        self.assertIn("Would remove skill(s) deactivated by config", text)
+        self.assertIn("Deactivated by config but locally modified; left in place", text)
+        self.assertIn("skill-a.md", text)
+        self.assertIn("skill-b.md", text)
+        # Labeled distinctly from the orphan wording, per #160's acceptance
+        # criteria: never described as the template no longer shipping it.
+        self.assertNotIn("Will remove orphaned Raven files", text)
+        self.assertNotIn("Orphaned but locally modified", text)
 
 
 class PrintDelegatesToRenderTest(unittest.TestCase):

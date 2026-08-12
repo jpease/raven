@@ -10,11 +10,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from raven_lib.constants import KIND_FILE, KIND_SYMLINK
 from raven_lib.models import Fingerprint, ManifestRecord
 from raven_lib.orphans import (
-    _unmodified_baseline,
     classify_orphans,
     is_canonical_manifest_key,
     remove_orphans,
     shipped_relatives,
+    unmodified_baseline,
 )
 
 
@@ -126,6 +126,41 @@ class ClassifyOrphansTests(unittest.TestCase):
         self.assertEqual(result.already_gone, ["docs/dropped.md"])
         self.assertEqual(result.will_remove, [])
 
+    def test_platform_gated_file_is_never_in_the_orphan_set(self) -> None:
+        # Regression guard for #97/#160: shipped_relatives is policy-neutral on
+        # purpose, so a file config gating excludes (e.g. a platform mismatch)
+        # must still be counted as shipped, and classify_orphans must never
+        # bucket it as an orphan. Folding config gating into this computation
+        # would regress #97: a platform typo or a transient config-read
+        # failure would then look like a template removal and delete the file.
+        # See raven_lib.deactivated for the distinct classification that
+        # config-gated-but-still-shipped files actually get.
+        template, dest = self._setup()
+        from raven_lib.config import RavenConfig, platform_excluded
+        from raven_lib.hashing import file_sha256
+
+        skill_rel = ".agents/skills/raven-gitlab-issues/SKILL.md"
+        _write(template / skill_rel, "gitlab skill content\n")
+        target = dest / skill_rel
+        _write(target, "gitlab skill content\n")
+        sha = file_sha256(target)
+
+        config = RavenConfig(None, False, {}, {}, {}, [], platform="github")
+        # Confirm the premise: config *would* gate this file out of a fresh
+        # install (that is exactly what makes it a meaningful test case).
+        self.assertTrue(platform_excluded(skill_rel, config))
+
+        self.assertIn(skill_rel, shipped_relatives(template, dest))
+
+        manifest = {
+            "schema": 1,
+            "files": {skill_rel: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        result = classify_orphans(template, dest, manifest)
+        self.assertEqual(result.will_remove, [])
+        self.assertEqual(result.orphan_modified, [])
+        self.assertEqual(result.already_gone, [])
+
     def test_still_shipped_file_is_not_an_orphan(self) -> None:
         template, dest = self._setup()
         from raven_lib.hashing import file_sha256
@@ -221,7 +256,7 @@ class UnmodifiedBaselineTests(unittest.TestCase):
             kind=KIND_SYMLINK, installed_sha256=sha, source_sha256=sha, target="a"
         )
         fingerprint = Fingerprint(kind=KIND_FILE, sha256=sha)
-        self.assertFalse(_unmodified_baseline(record, fingerprint))
+        self.assertFalse(unmodified_baseline(record, fingerprint))
 
     def test_symlink_target_mismatch_is_not_unmodified(self) -> None:
         sha = "a" * 64
@@ -229,7 +264,7 @@ class UnmodifiedBaselineTests(unittest.TestCase):
             kind=KIND_SYMLINK, installed_sha256=sha, source_sha256=sha, target="a"
         )
         fingerprint = Fingerprint(kind=KIND_SYMLINK, sha256=sha, target="b")
-        self.assertFalse(_unmodified_baseline(record, fingerprint))
+        self.assertFalse(unmodified_baseline(record, fingerprint))
 
     def test_symlink_clean_match_is_unmodified(self) -> None:
         sha = "a" * 64
@@ -237,7 +272,7 @@ class UnmodifiedBaselineTests(unittest.TestCase):
             kind=KIND_SYMLINK, installed_sha256=sha, source_sha256=sha, target="a"
         )
         fingerprint = Fingerprint(kind=KIND_SYMLINK, sha256=sha, target="a")
-        self.assertTrue(_unmodified_baseline(record, fingerprint))
+        self.assertTrue(unmodified_baseline(record, fingerprint))
 
 
 class RemoveOrphansTests(unittest.TestCase):

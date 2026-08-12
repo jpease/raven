@@ -31,7 +31,7 @@ def _classification(needs_merge, local_only=(), will_copy=()):
     )
 
 
-def _install(testcase):
+def _install(testcase, platform=None):
     """Perform a real Raven install of the python template into the temp dir."""
     ns = argparse.Namespace(
         destination=str(testcase.destination),
@@ -41,7 +41,7 @@ def _install(testcase):
         dry_run=False,
         include_readme=False,
         adopt_claude_symlink=False,
-        platform=None,
+        platform=platform,
     )
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         rc = raven.cmd_install(ns)
@@ -275,6 +275,60 @@ class DoctorDriftTests(RavenTestCase):
         self.assertEqual(findings["doctor.orphan.modified"].severity, Severity.WARN)
         self.assertIn("docs/dropped.md", findings["doctor.orphan.modified"].detail)
         self.assertNotIn("doctor.orphan.removable", findings)
+
+
+class DoctorDeactivatedTests(RavenTestCase):
+    """#160 -- doctor must report config-gated-but-still-shipped skills distinctly from orphans."""
+
+    def _switch_platform(self, platform: str) -> None:
+        from raven_lib.config import _update_config_platform
+        from raven_lib.constants import CONFIG_PATH
+
+        _update_config_platform(self.destination / CONFIG_PATH, platform)
+
+    def test_doctor_reports_removable_deactivated_skill(self) -> None:
+        _install(self, platform="github")
+        self._switch_platform("gitlab")
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertIn("doctor.deactivated.removable", findings)
+        self.assertEqual(findings["doctor.deactivated.removable"].severity, Severity.WARN)
+        self.assertIn(
+            ".agents/skills/raven-github-issues/SKILL.md",
+            findings["doctor.deactivated.removable"].detail,
+        )
+        self.assertNotIn("doctor.deactivated.preserved", findings)
+        # Never labeled as an orphan: the template still ships this file.
+        self.assertNotIn("doctor.orphan.removable", findings)
+        self.assertNotIn("doctor.orphan.modified", findings)
+
+    def test_removable_deactivated_skill_suppresses_no_drift_ok(self) -> None:
+        _install(self, platform="github")
+        self._switch_platform("gitlab")
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertIn("doctor.deactivated.removable", findings)
+        ok_modified = findings.get("doctor.drift.modified")
+        self.assertFalse(ok_modified and ok_modified.severity == Severity.OK)
+
+    def test_doctor_reports_preserved_deactivated_skill(self) -> None:
+        _install(self, platform="github")
+        skill_path = self.destination / ".agents" / "skills" / "raven-github-issues" / "SKILL.md"
+        skill_path.write_text("edited locally\n", encoding="utf-8")
+        self._switch_platform("gitlab")
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertIn("doctor.deactivated.preserved", findings)
+        self.assertEqual(findings["doctor.deactivated.preserved"].severity, Severity.WARN)
+        self.assertIn(
+            ".agents/skills/raven-github-issues/SKILL.md",
+            findings["doctor.deactivated.preserved"].detail,
+        )
+        self.assertNotIn("doctor.deactivated.removable", findings)
+
+    def test_matching_platform_reports_no_deactivation(self) -> None:
+        _install(self, platform="github")
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertNotIn("doctor.deactivated.removable", findings)
+        self.assertNotIn("doctor.deactivated.preserved", findings)
+        self.assertEqual(findings["doctor.drift.modified"].severity, Severity.OK)
 
 
 # ---------------------------------------------------------------------------

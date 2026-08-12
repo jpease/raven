@@ -104,6 +104,33 @@ class OrphanClassification:
 
 
 @dataclass(frozen=True)
+class DeactivatedClassification:
+    """Manifest-tracked skills the template still ships but the current config no longer selects.
+
+    Distinct from `OrphanClassification`: the template has not stopped shipping
+    these files -- `shipped_relatives` stays policy-neutral on purpose (see its
+    docstring) -- a platform or template config change simply no longer selects
+    them for installation, e.g. switching ``platform`` from ``"github"`` to
+    ``"gitlab"`` deactivates ``raven-github-issues`` without the template
+    dropping it. Uses its own vocabulary, deliberately distinct from
+    `OrphanClassification`'s, so the two paths can never be confused for one
+    another at a call site.
+
+    ``removable``: destination still matches the recorded baseline and the
+    baseline is not a customization, so upgrade can safely delete it.
+    ``preserved``: destination differs from the baseline, or the baseline is a
+    customization, or there is no trustworthy baseline to compare against;
+    upgrade reports and keeps it, same rule as `OrphanClassification.
+    orphan_modified`. ``absent``: the file is already gone on disk, so only the
+    stale manifest record needs pruning.
+    """
+
+    removable: list[str]
+    preserved: list[str]
+    absent: list[str]
+
+
+@dataclass(frozen=True)
 class ApplyPlan:
     """A `Classification` resolved against override flags into a concrete apply plan.
 

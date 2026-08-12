@@ -95,8 +95,15 @@ def _reject(relative: object) -> None:
     )
 
 
-def _unmodified_baseline(record: ManifestRecord, fingerprint: Fingerprint) -> bool:
-    """Whether the on-disk file still matches its recorded, non-customized baseline."""
+def unmodified_baseline(record: ManifestRecord, fingerprint: Fingerprint) -> bool:
+    """Whether the on-disk file still matches its recorded, non-customized baseline.
+
+    The shared safety gate behind every destructive decision that reuses this
+    module: `classify_orphans` uses it to separate `will_remove` from
+    `orphan_modified`, and `raven_lib.deactivated.classify_deactivated` reuses
+    this exact function (not a copy) to separate its own ``removable`` from
+    ``preserved`` bucket, so the rule can never drift between the two paths.
+    """
     if record.source_sha256 is None:
         # Legacy record predating sourceSha256: no baseline to trust, never delete.
         return False
@@ -134,7 +141,7 @@ def classify_orphans(template: Path, destination: Path, manifest: dict) -> Orpha
         fingerprint = destination_fingerprint(target)
         if fingerprint is None:
             already_gone.append(relative)
-        elif record is not None and _unmodified_baseline(record, fingerprint):
+        elif record is not None and unmodified_baseline(record, fingerprint):
             will_remove.append(relative)
         else:
             orphan_modified.append(relative)

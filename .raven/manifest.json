@@ -50,11 +50,6 @@
       "kind": "file",
       "sourceSha256": "01b100f43074d8fd8c9b127ca1c1d1f2301cc2827aca8a4644bc4de742a05230"
     },
-    ".agents/skills/raven-gitlab-issues/SKILL.md": {
-      "installedSha256": "23d2faf620cf1c5d515c5ea5bb4eaea91d66cfe014d43acda6ab78a9deeab492",
-      "kind": "file",
-      "sourceSha256": "23d2faf620cf1c5d515c5ea5bb4eaea91d66cfe014d43acda6ab78a9deeab492"
-    },
     ".agents/skills/raven-implement-feature/SKILL.md": {
       "installedSha256": "3ab0b2494ba605b1b942cb6e7af0f110641fd09e1a57889d978d59e9a7fc6387",
       "kind": "file",
@@ -397,8 +392,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "4704fd8ea6ea",
+  "ravenVersion": "d796b949240b",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-12T19:37:06.575839+00:00"
+  "updatedAt": "2026-08-12T20:13:30.416606+00:00"
 }

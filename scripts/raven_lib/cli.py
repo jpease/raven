@@ -38,6 +38,7 @@ from .constants import (
     REPO_ROOT,
     _any_exists,
 )
+from .deactivated import classify_deactivated
 from .doctor import build_doctor_findings
 from .findings import exit_code
 from .git_hooks import detect_hook_manager, git_hooks_dir, hook_manager_guidance, install_git_hooks
@@ -285,6 +286,7 @@ def _run(
         template, destination, excludes, config, manifest=manifest, entries=entries
     )
     orphans = classify_orphans(template, destination, manifest)
+    deactivated = classify_deactivated(template, destination, manifest, config)
     existing_overrides = {p for p in requested_overrides_norm if _any_exists(destination / p)}
     symlink_adoption_needed = claude_symlink_adoption_needed(destination, entries)
     conflict = symlink_adoption_needed and claude_symlink_conflict(
@@ -349,7 +351,7 @@ def _run(
     print()
 
     if dry_run:
-        rc = print_dry_run_plan(destination, classification, entries, plan, orphans)
+        rc = print_dry_run_plan(destination, classification, entries, plan, orphans, deactivated)
         _print_hook_manager_notice(destination)
         return rc
 
@@ -369,7 +371,7 @@ def _run(
         if rc != 0:
             return rc
 
-    rc, adopted_claude, merge_artifacts, removed_orphans = apply_plan(
+    rc, adopted_claude, merge_artifacts, removed_orphans, removed_deactivated = apply_plan(
         destination,
         template_name,
         template,
@@ -379,6 +381,7 @@ def _run(
         entries,
         plan,
         orphans,
+        deactivated,
     )
     if rc != 0:
         return rc
@@ -395,6 +398,8 @@ def _run(
         plan.unknown_existing,
         removed_orphans,
         orphans.orphan_modified,
+        removed_deactivated,
+        deactivated.preserved,
     )
     if merge_artifacts:
         print()

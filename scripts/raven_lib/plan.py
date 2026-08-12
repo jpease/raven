@@ -18,7 +18,14 @@ from .apply import (
 from .blocks import write_guided_merge_artifacts
 from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH, _any_exists
 from .manifest import update_manifest
-from .models import ApplyPlan, Classification, OrphanClassification, RavenConfig, TemplateEntry
+from .models import (
+    ApplyPlan,
+    Classification,
+    DeactivatedClassification,
+    OrphanClassification,
+    RavenConfig,
+    TemplateEntry,
+)
 from .orphans import remove_orphans
 
 # Rendering is kept separate from printing throughout this module: each
@@ -51,8 +58,12 @@ def render_apply_summary(
     unknown_existing: list[str],
     removed_orphans: list[str],
     orphan_modified: list[str],
+    removed_deactivated: list[str] | None = None,
+    deactivated_preserved: list[str] | None = None,
 ) -> str:
     """The post-apply summary report text: only sections with content are included."""
+    removed_deactivated = removed_deactivated or []
+    deactivated_preserved = deactivated_preserved or []
     sections = [render_section(f"Copied {len(copied)} file(s):", copied)]
 
     if upgraded:
@@ -113,6 +124,25 @@ def render_apply_summary(
             )
         )
 
+    if removed_deactivated:
+        sections.append(
+            render_section(
+                f"Removed {len(removed_deactivated)} skill(s) deactivated by config "
+                "(still shipped by the template, but not selected by the current "
+                "platform/template):",
+                removed_deactivated,
+            )
+        )
+
+    if deactivated_preserved:
+        sections.append(
+            render_section(
+                "Deactivated by config but left in place because you modified them "
+                "(still shipped by the template; remove manually if unwanted):",
+                deactivated_preserved,
+            )
+        )
+
     return "\n\n".join(sections)
 
 
@@ -126,6 +156,8 @@ def print_apply_summary(
     unknown_existing: list[str],
     removed_orphans: list[str],
     orphan_modified: list[str],
+    removed_deactivated: list[str] | None = None,
+    deactivated_preserved: list[str] | None = None,
 ) -> None:
     """Print `render_apply_summary`'s output."""
     print(
@@ -139,6 +171,8 @@ def print_apply_summary(
             unknown_existing,
             removed_orphans,
             orphan_modified,
+            removed_deactivated,
+            deactivated_preserved,
         )
     )
 
@@ -247,6 +281,7 @@ def build_apply_plan(
 def render_dry_run_plan(
     plan: ApplyPlan,
     orphans: OrphanClassification,
+    deactivated: DeactivatedClassification | None = None,
     *,
     show_claude_symlink_note: bool,
 ) -> str:
@@ -257,6 +292,7 @@ def render_dry_run_plan(
     section-assembly -- which sections appear, in which order, with which
     wording -- testable without building a destination tree on disk.
     """
+    deactivated = deactivated or DeactivatedClassification([], [], [])
     sections = []
     if plan.requested_overrides:
         sections.append(
@@ -305,6 +341,22 @@ def render_dry_run_plan(
                 orphans.orphan_modified,
             )
         )
+    if deactivated.removable:
+        sections.append(
+            render_section(
+                "Would remove skill(s) deactivated by config (still shipped by the "
+                "template, but not selected by the current platform/template):",
+                deactivated.removable,
+            )
+        )
+    if deactivated.preserved:
+        sections.append(
+            render_section(
+                "Deactivated by config but locally modified; left in place (still "
+                "shipped by the template — delete manually if unwanted):",
+                deactivated.preserved,
+            )
+        )
     return "\n\n".join(sections)
 
 
@@ -314,6 +366,7 @@ def print_dry_run_plan(
     entries: dict[str, TemplateEntry],
     plan: ApplyPlan,
     orphans: OrphanClassification,
+    deactivated: DeactivatedClassification | None = None,
 ) -> int:
     """Imperative shell: the filesystem probes and the failure exit code.
 
@@ -331,7 +384,11 @@ def print_dry_run_plan(
         and CLAUDE_PATH in set(classification.needs_merge) | set(classification.unknown_existing)
         and claude_symlink_adoption_needed(destination, entries)
     )
-    print(render_dry_run_plan(plan, orphans, show_claude_symlink_note=show_claude_symlink_note))
+    print(
+        render_dry_run_plan(
+            plan, orphans, deactivated, show_claude_symlink_note=show_claude_symlink_note
+        )
+    )
     return 0
 
 
@@ -345,13 +402,15 @@ def apply_plan(
     entries: dict[str, TemplateEntry],
     plan: ApplyPlan,
     orphans: OrphanClassification,
-) -> tuple[int, list[str], list[str], list[str]]:
+    deactivated: DeactivatedClassification,
+) -> tuple[int, list[str], list[str], list[str], list[str]]:
     """Execute an `ApplyPlan`: copy/upgrade files, remove orphans, update the manifest, write merges.
 
-    Returns ``(exit_code, adopted_claude, merge_artifacts, removed_orphans)``.
-    Exit code 2 on a CLAUDE.md-backup collision or a `ValueError` from
-    `copy_paths` (an unsafe managed-block state) aborts before the manifest is
-    touched, so a failed apply never records paths it did not actually write.
+    Returns ``(exit_code, adopted_claude, merge_artifacts, removed_orphans,
+    removed_deactivated)``. Exit code 2 on a CLAUDE.md-backup collision or a
+    `ValueError` from `copy_paths` (an unsafe managed-block state) aborts
+    before the manifest is touched, so a failed apply never records paths it
+    did not actually write.
     """
     adopted_claude: list[str] = []
     if plan.adopt_claude_symlink:
@@ -359,7 +418,7 @@ def apply_plan(
             adopted_claude = adopt_claude_symlink(destination, entries)
         except FileExistsError as exc:
             print(f"error: {exc}", file=sys.stderr)
-            return 2, [], [], []
+            return 2, [], [], [], []
 
     try:
         if plan.requested_overrides:
@@ -377,9 +436,15 @@ def apply_plan(
             )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2, adopted_claude, [], []
+        return 2, adopted_claude, [], [], []
 
     removed_orphans = remove_orphans(destination, orphans.will_remove)
+    # Deactivated-by-config skills reuse remove_orphans as-is: it is a pure
+    # delete-and-prune-empty-parents filesystem primitive that does not care
+    # *why* a path is being removed, only that the baseline safety gate
+    # already cleared it (deactivated.removable, like orphans.will_remove, is
+    # only ever populated by classify_deactivated's unmodified_baseline check).
+    removed_deactivated = remove_orphans(destination, deactivated.removable)
 
     managed_paths = (
         plan.copied
@@ -388,7 +453,10 @@ def apply_plan(
         + plan.identical
         + ([CLAUDE_PATH] if adopted_claude else [])
     )
-    if managed_paths or removed_orphans or orphans.already_gone:
+    stale_records = (
+        removed_orphans + orphans.already_gone + removed_deactivated + deactivated.absent
+    )
+    if managed_paths or stale_records:
         update_manifest(
             destination,
             template_name,
@@ -398,12 +466,12 @@ def apply_plan(
             managed_paths,
             manifest=manifest,
             entries=entries,
-            remove=removed_orphans + orphans.already_gone,
+            remove=stale_records,
             preserve_identical_block_baseline=True,
         )
 
     merge_artifacts = write_guided_merge_artifacts(destination, entries, plan.guided_merge_paths)
-    return 0, adopted_claude, merge_artifacts, removed_orphans
+    return 0, adopted_claude, merge_artifacts, removed_orphans, removed_deactivated
 
 
 def normalize_override(path: str) -> str:

@@ -21,6 +21,7 @@ from .constants import (
     REPO_ROOT,
     _any_exists,
 )
+from .deactivated import classify_deactivated
 from .findings import Finding, Severity
 from .gates import gate_spec_for
 from .git_hooks import detect_hook_manager, hook_manager_guidance
@@ -245,6 +246,7 @@ def drift_findings(destination: Path) -> list[Finding]:
         template, destination, set(DEFAULT_EXCLUDES), config, manifest=manifest
     )
     orphans = classify_orphans(template, destination, manifest)
+    deactivated = classify_deactivated(template, destination, manifest, config)
     pending = pending_merge_paths(destination)
     # Template entries absent from the destination -- individually deleted (or
     # never installed) managed files. They are drift the user must restore, and
@@ -292,6 +294,8 @@ def drift_findings(destination: Path) -> list[Finding]:
         and manifest_status.usable
         and not orphans.will_remove
         and not orphans.orphan_modified
+        and not deactivated.removable
+        and not deactivated.preserved
     ):
         findings.append(
             Finding(
@@ -366,6 +370,32 @@ def drift_findings(destination: Path) -> list[Finding]:
                 title=f"{len(orphans.orphan_modified)} orphaned + locally modified Raven file(s)",
                 detail=", ".join(orphans.orphan_modified),
                 fix="template no longer ships these; review and delete manually if unwanted",
+            )
+        )
+
+    if deactivated.removable:
+        findings.append(
+            Finding(
+                id="doctor.deactivated.removable",
+                severity=Severity.WARN,
+                category=_DRIFT,
+                title=(f"{len(deactivated.removable)} Raven-owned skill(s) deactivated by config"),
+                detail=", ".join(deactivated.removable),
+                fix="run `raven upgrade` to remove them",
+            )
+        )
+    if deactivated.preserved:
+        findings.append(
+            Finding(
+                id="doctor.deactivated.preserved",
+                severity=Severity.WARN,
+                category=_DRIFT,
+                title=(
+                    f"{len(deactivated.preserved)} deactivated-by-config + locally "
+                    "modified Raven skill(s)"
+                ),
+                detail=", ".join(deactivated.preserved),
+                fix="no longer selected by platform/template config; review and delete manually if unwanted",
             )
         )
     return findings
