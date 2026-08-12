@@ -121,6 +121,94 @@ class BashGuardDestructiveOptionTests(RavenTestCase):
                 self.assertEqual(result.stdout.strip(), "")
 
 
+class BashGuardRegexPatternTests(RavenTestCase):
+    """Regression tests for issue #155: regex-pattern matches in raw command text.
+
+    These tests verify that matches found by scanning raw command text (before
+    tokenization) are still denied, but the deny message correctly explains the
+    conservative, text-level nature of the check. This includes false positives
+    like a heredoc body containing "git reset --hard" text that never actually
+    executes.
+    """
+
+    def test_claude_copy_denies_heredoc_with_trigger_phrase_in_body(self):
+        """A heredoc body containing a trigger phrase is still denied (false positive).
+
+        The guard scans raw command text and cannot distinguish between a trigger
+        phrase that actually executes vs. one that appears in a quoted string or
+        heredoc body. This is conservative but necessary for safety.
+        """
+        # Python heredoc: the literal text 'git reset --hard' appears in the body
+        # but never executes as a command.
+        command = "python - <<'EOF'\n# Example showing: git reset --hard\nprint('hello')\nEOF"
+        payload = {"tool_input": {"command": command}}
+        result = _run_bash_guard(CLAUDE_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 2, f"stdout={result.stdout!r} stderr={result.stderr!r}")
+        self.assertIn("Blocked", result.stderr)
+        # Message should explain it's a raw-text match, not a real execution threat
+        self.assertIn("raw", result.stderr.lower())
+
+    def test_codex_copy_denies_heredoc_with_trigger_phrase_in_body(self):
+        """Codex version: heredoc body trigger phrase is still denied."""
+        command = "python - <<'EOF'\n# Example: git reset --hard\nprint('hello')\nEOF"
+        payload = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+        }
+        result = _run_bash_guard(CODEX_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        response = json.loads(result.stdout)
+        self.assertEqual(response["hookSpecificOutput"]["permissionDecision"], "deny")
+        # Message should mention raw text
+        reason = response["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("raw", reason.lower())
+
+    def test_claude_copy_denies_real_git_reset_hard_command(self):
+        """A real 'git reset --hard' invocation is still denied."""
+        command = "git reset --hard HEAD"
+        payload = {"tool_input": {"command": command}}
+        result = _run_bash_guard(CLAUDE_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 2, f"stdout={result.stdout!r} stderr={result.stderr!r}")
+        self.assertIn("Blocked", result.stderr)
+
+    def test_codex_copy_denies_real_git_reset_hard_command(self):
+        """Codex version: real 'git reset --hard' is still denied."""
+        command = "git reset --hard HEAD"
+        payload = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+        }
+        result = _run_bash_guard(CODEX_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        response = json.loads(result.stdout)
+        self.assertEqual(response["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_claude_copy_denies_heredoc_with_other_trigger_phrases(self):
+        """Test other regex patterns: dropdb in heredoc body."""
+        command = "sh - <<'SCRIPT'\n# Safety check: dropdb unsafe_db\nexit 0\nSCRIPT"
+        payload = {"tool_input": {"command": command}}
+        result = _run_bash_guard(CLAUDE_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 2, f"stdout={result.stdout!r} stderr={result.stderr!r}")
+        self.assertIn("raw", result.stderr.lower())
+
+    def test_codex_copy_denies_heredoc_with_other_trigger_phrases(self):
+        """Codex version: other patterns in heredoc."""
+        command = "sh - <<'SCRIPT'\n# Note: sudo rm -rf /\nexit 0\nSCRIPT"
+        payload = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+        }
+        result = _run_bash_guard(CODEX_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        response = json.loads(result.stdout)
+        self.assertEqual(response["hookSpecificOutput"]["permissionDecision"], "deny")
+        reason = response["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("raw", reason.lower())
+
+
 class BashGuardRipgrepReplaceFlagTests(RavenTestCase):
     def test_claude_copy_denies_bundled_replace_cluster(self):
         for command in RIPGREP_DENIED_COMMANDS:

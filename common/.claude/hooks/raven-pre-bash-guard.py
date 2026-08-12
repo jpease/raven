@@ -63,6 +63,17 @@ def _deny_message(command: str) -> str:
     )
 
 
+def _pattern_deny_message(command: str) -> str:
+    """Message for raw-text regex pattern matches, which cannot distinguish
+    between code that executes and inert text (comments, quoted strings, heredoc
+    bodies, etc.). This is conservative but necessary for safety."""
+    return (
+        "Blocked: Pattern matched in raw command text (before tokenization)."
+        " This check cannot distinguish from quoted strings or heredoc bodies."
+        f" Ask for explicit approval: {command}"
+    )
+
+
 def _command_segments(command: str) -> list[list[str]]:
     """Split a command into simple-command segments of tokens.
 
@@ -216,7 +227,7 @@ def main() -> int:
     ]
     for pattern in regex_patterns:
         if re.search(pattern, command, re.IGNORECASE):
-            return _deny(_deny_message(command), payload)
+            return _deny(_pattern_deny_message(command), payload)
 
     # Tokenized checks for destructive intents with option-spelling variants:
     # rm force+recursive at / or ~, and git clean force+d+x.
