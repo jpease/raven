@@ -24,6 +24,7 @@ Use `.claude/docs/raven-python-quality.md` for detailed Python quality guidance 
 
 In addition to the guardrails in AGENTS.md, ask before changing:
 
+- Configuration schemas, environment variable contracts, or deployment behavior.
 - CI/CD workflows or release automation.
 
 ## Python Safety
@@ -67,6 +68,7 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 ## Dependencies
 
+- Prefer the standard library and existing dependencies before adding new packages.
 - Do not add packages that create version incompatibilities without a documented resolution.
 
 ## Performance And Benchmarks

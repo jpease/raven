@@ -211,9 +211,9 @@
       "sourceSha256": "0075ccd213611296c331a6c194b91487753c8dcaca350a391da0aaa3eb6fefdb"
     },
     ".claude/rules/raven-python.md": {
-      "installedSha256": "92392b08450e11070c4ad6c10a3eb335a47736007e4d5b80d1df6e782b4f4ee7",
+      "installedSha256": "d01fd83d18648611a7a23fdb6d6ca3cf5cd49909af2879ebc27ceba9cb25e2da",
       "kind": "file",
-      "sourceSha256": "92392b08450e11070c4ad6c10a3eb335a47736007e4d5b80d1df6e782b4f4ee7"
+      "sourceSha256": "d01fd83d18648611a7a23fdb6d6ca3cf5cd49909af2879ebc27ceba9cb25e2da"
     },
     ".claude/rules/raven-security.md": {
       "installedSha256": "a77dd28fe85964e47b3ac26b266f77b6da76618710455f4e3df381e498fff8f0",
@@ -392,8 +392,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "0af145f8c8ea",
+  "ravenVersion": "944256825661",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-12T22:49:03.083797+00:00"
+  "updatedAt": "2026-08-12T22:56:27.148060+00:00"
 }

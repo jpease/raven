@@ -284,8 +284,18 @@ class ConvergenceStateTest(unittest.TestCase):
     def _customization_path(self) -> str:
         return next(iter(self.module._APPROVED_CUSTOMIZATION))
 
+    # A synthetic debt entry, injected into the freshly-loaded module under test
+    # rather than read out of the real `_RECONCILIATION_DEBT`. These tests assert
+    # the reporting behavior for the debt-present state, which must hold whether
+    # or not this repository currently carries any debt -- and it legitimately
+    # carries none once every tracked entry is resolved (#170, #171). `setUp`
+    # loads a fresh module per test, so the injection cannot leak between tests.
+    _SYNTHETIC_DEBT_PATH = "docs/synthetic-debt-fixture.md"
+    _SYNTHETIC_DEBT_ISSUE = "#9999"
+
     def _debt_path(self) -> str:
-        return next(iter(self.module._RECONCILIATION_DEBT))
+        self.module._RECONCILIATION_DEBT = {self._SYNTHETIC_DEBT_PATH: self._SYNTHETIC_DEBT_ISSUE}
+        return self._SYNTHETIC_DEBT_PATH
 
     def test_clean_convergence_reports_no_customization_and_no_debt(self) -> None:
         findings: list = []

@@ -6,7 +6,7 @@ Use these rules for Python applications, services, libraries, CLIs, scripts, and
 
 Project-specific `AGENTS.md`, nested `AGENTS.md`, local docs, and existing task-runner commands override this file when they are more specific.
 
-Use `.claude/docs/raven-python-quality.md` for detailed Python quality guidance when the task touches public APIs, error design, architecture, async behavior, testing strategy, security, or dependency policy.
+Use `.claude/docs/raven-python-quality.md` for detailed Python quality guidance when the task touches public APIs, error design, architecture, async behavior, testing strategy, security, dependency policy, or performance.
 
 ## Setup And Commands
 
@@ -20,7 +20,7 @@ Use `.claude/docs/raven-python-quality.md` for detailed Python quality guidance 
   - `mypy .` or `pyright` for type checking
 - Do not assume every project uses the same toolchain. Confirm before using.
 
-## Pause And Ask
+## Additional Pause And Ask Triggers
 
 In addition to the guardrails in AGENTS.md, ask before changing:
 
@@ -43,9 +43,6 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Use context managers for cleanup; do not rely on `finally` blocks where `with` is cleaner.
 - Preserve exception context when re-raising: use `raise NewError(...) from original_error`.
 
-For full error-design guidance (custom exception hierarchies, result types, boundary patterns),
-see `.claude/docs/raven-python-quality.md`.
-
 ## Architecture
 
 - Preserve existing module and package boundaries unless the task is explicitly architectural.
@@ -53,15 +50,10 @@ see `.claude/docs/raven-python-quality.md`.
 - Prefer dependency injection over importing singletons or globals directly in business logic.
 - Do not import from sibling packages in ways that create circular dependencies.
 
-For full architecture guidance (functional core/imperative shell, module boundaries, validation),
-see `.claude/docs/raven-python-quality.md`.
-
 ## Async And Concurrency
 
 - Do not block an async event loop with synchronous filesystem, network, subprocess, or CPU-heavy work.
 - Do not mix `asyncio` and `threading` without understanding the safety implications.
-
-For full async guidance, see `.claude/docs/raven-python-quality.md`.
 
 ## Testing
 
@@ -72,20 +64,17 @@ For full async guidance, see `.claude/docs/raven-python-quality.md`.
 - Add regression tests for bug fixes when the failure can be reproduced deterministically.
 - Do not delete or weaken tests to make a change pass unless explicitly requested.
 - Broaden to the repository's standard test or quality command only after targeted tests pass.
+- Avoid brittle sleeps, timing assumptions, and oversized snapshots unless the codebase already relies on them.
 
 ## Dependencies
 
 - Prefer the standard library and existing dependencies before adding new packages.
 - Do not add packages that create version incompatibilities without a documented resolution.
 
-For full dependency and license hygiene, see `.claude/docs/raven-python-quality.md`.
-
 ## Performance And Benchmarks
 
 - Profile before optimizing; do not make performance claims from a single local run.
 - CPU-bound threads do not parallelize due to the GIL; reach for `multiprocessing` or a C extension when needed.
-
-For full performance guidance, see `.claude/docs/raven-python-quality.md`.
 
 ## Quality Gates
 
@@ -93,3 +82,4 @@ For full performance guidance, see `.claude/docs/raven-python-quality.md`.
 - If no final gate exists, run formatter check, lint, type check, and tests at minimum.
 - Fix formatter, lint, and type-checking failures in touched code.
 - Do not add broad `# noqa` or `# type: ignore` comments. Prefer fixing the code or using the narrowest scoped suppression with a reason comment.
+

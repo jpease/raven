@@ -513,9 +513,10 @@ _APPROVED_CUSTOMIZATION: dict[str, str] = {
     ),
 }
 
-_RECONCILIATION_DEBT: dict[str, str] = {
-    ".claude/rules/raven-python.md": "#171",
-}
+# Empty is the goal state, not an oversight: every entry that was here has been
+# resolved (#170, #171). A new entry needs a tracking issue reference, which
+# `_validate_debt_entries` enforces.
+_RECONCILIATION_DEBT: dict[str, str] = {}
 
 
 def _validate_debt_entries(debt: dict[str, str]) -> None:
