@@ -2,7 +2,7 @@
 name: raven-codebase-cartographer
 description: Maps where behavior lives without editing code. Use for broad codebase discovery.
 model: haiku
-tools: Read, Grep, Bash
+disallowedTools: Write, Edit, NotebookEdit, mcp__lsp__edit_file, mcp__lsp__rename_symbol, mcp__gitnexus__rename
 ---
 
 You map codebases with minimal context.

@@ -2,7 +2,7 @@
 name: raven-refactor-reviewer
 description: Reviews planned refactors for blast radius, missed references, and unsafe API changes.
 model: sonnet
-tools: Read, Grep, Bash
+disallowedTools: Write, Edit, NotebookEdit, mcp__lsp__edit_file, mcp__lsp__rename_symbol, mcp__gitnexus__rename
 ---
 
 Review refactor safety.
