@@ -230,6 +230,141 @@ class UpgradeConvergenceTest(unittest.TestCase):
         self.assertIn("upgrade convergence ok", buf.getvalue())
 
 
+class DebtEntryStructureTest(unittest.TestCase):
+    """Issue #162: a reconciliation-debt entry with no tracking issue reference
+    is a structural error, not a silent pass -- it must fail loudly.
+    """
+
+    def setUp(self) -> None:
+        self.module = load_script_module("self_check_debt_structure", SELF_CHECK)
+
+    def test_real_debt_table_has_issue_references_for_every_entry(self) -> None:
+        # Must not raise: the shipped table is well-formed.
+        self.module._validate_debt_entries(self.module._RECONCILIATION_DEBT)
+
+    def test_missing_issue_reference_raises(self) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            self.module._validate_debt_entries({"some/path.md": ""})
+        self.assertIn("some/path.md", str(ctx.exception))
+
+    def test_none_like_issue_reference_raises(self) -> None:
+        # Whitespace-only counts as missing, not a silent pass.
+        with self.assertRaises(SystemExit):
+            self.module._validate_debt_entries({"some/path.md": "   "})
+
+    def test_well_formed_entry_does_not_raise(self) -> None:
+        self.module._validate_debt_entries({"some/path.md": "#999"})
+
+
+class ConvergenceStateTest(unittest.TestCase):
+    """Issue #162, Part 1 & 2: permanent customization and reconciliation debt
+    are distinct representations with distinct output. This covers the four
+    states a post-upgrade `raven doctor` run can leave self-check in:
+    clean convergence, customization only, debt present, and unexpected
+    drift. Each assertion below targets something the other three states do
+    not produce, so a sabotage that breaks exactly one state trips exactly
+    one test -- see the task report for the sabotage matrix.
+    """
+
+    def setUp(self) -> None:
+        self.module = load_script_module("self_check_convergence_states", SELF_CHECK)
+        self.addCleanup(os.environ.pop, "RAVEN_SELF_CHECK_STRICT_DEBT", None)
+
+    @staticmethod
+    def _finding(finding_id, severity, detail, category="Drift & freshness"):
+        return {
+            "id": finding_id,
+            "severity": severity,
+            "category": category,
+            "title": "t",
+            "detail": detail,
+            "fix": None,
+        }
+
+    def _customization_path(self) -> str:
+        return next(iter(self.module._APPROVED_CUSTOMIZATION))
+
+    def _debt_path(self) -> str:
+        return next(iter(self.module._RECONCILIATION_DEBT))
+
+    def test_clean_convergence_reports_no_customization_and_no_debt(self) -> None:
+        findings: list = []
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.module._report_convergence(findings)
+        out = buf.getvalue()
+        self.assertIn("upgrade convergence ok", out)
+        # Distinguishes from the customization-only and debt-present states,
+        # which both report a nonzero count of one kind or the other.
+        self.assertIn("0 approved customization", out)
+        self.assertIn("no reconciliation debt", out)
+        self.assertNotIn("DEBT:", out)
+
+    def test_customization_only_reports_count_but_no_debt(self) -> None:
+        path = self._customization_path()
+        findings = [self._finding("doctor.drift.modified", "warn", path)]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.module._report_convergence(findings)
+        out = buf.getvalue()
+        self.assertIn("upgrade convergence ok", out)
+        # Distinguishes from clean: a nonzero customization count.
+        self.assertIn("1 approved customization", out)
+        # Distinguishes from debt-present: no debt is named or flagged.
+        self.assertIn("no reconciliation debt", out)
+        self.assertNotIn("DEBT:", out)
+        self.assertNotIn(self._debt_path(), out)
+
+    def test_debt_present_names_the_entry_and_its_issue(self) -> None:
+        path = self._debt_path()
+        issue = self.module._RECONCILIATION_DEBT[path]
+        findings = [self._finding("doctor.drift.pending", "warn", path)]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.module._report_convergence(findings)
+        out = buf.getvalue()
+        self.assertIn("upgrade convergence ok", out)
+        # Distinguishes from clean and customization-only: the debt path and
+        # its tracking issue are both named, not merely counted.
+        self.assertIn(path, out)
+        self.assertIn(issue, out)
+        self.assertIn("DEBT:", out)
+
+    def test_unexpected_drift_raises_and_names_the_unapproved_path(self) -> None:
+        findings = [self._finding("doctor.drift.modified", "warn", "some/unapproved/path.md")]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit) as ctx:
+            self.module._report_convergence(findings)
+        # Distinguishes from all three other states: this is the only one
+        # that raises SystemExit at all.
+        self.assertIn("some/unapproved/path.md", buf.getvalue() + str(ctx.exception))
+
+    def test_debt_present_does_not_raise_by_default(self) -> None:
+        path = self._debt_path()
+        findings = [self._finding("doctor.drift.pending", "warn", path)]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.module._report_convergence(findings)  # must not raise
+
+    def test_strict_debt_env_var_fails_when_debt_remains(self) -> None:
+        path = self._debt_path()
+        issue = self.module._RECONCILIATION_DEBT[path]
+        os.environ["RAVEN_SELF_CHECK_STRICT_DEBT"] = "1"
+        findings = [self._finding("doctor.drift.pending", "warn", path)]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit) as ctx:
+            self.module._report_convergence(findings)
+        self.assertIn(path, str(ctx.exception))
+        self.assertIn(issue, str(ctx.exception))
+
+    def test_strict_debt_env_var_is_harmless_without_debt(self) -> None:
+        os.environ["RAVEN_SELF_CHECK_STRICT_DEBT"] = "1"
+        findings: list = []
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.module._report_convergence(findings)  # must not raise
+
+
 # Read from self-check.py rather than restated here. The mirrored copies drifted
 # (362 vs a real 376) and left the aggregate fixture clearing the true limit by
 # only 4 words -- it still failed for the right reason, but the next raise would

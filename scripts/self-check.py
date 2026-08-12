@@ -13,6 +13,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -483,23 +484,61 @@ def warn_stale_docs() -> None:
 # differ from what the template ships. Each entry is an explicit, reviewed
 # decision -- the gate fails on anything not listed, which is the point.
 #
-# `justfile`: carries repo-only recipes (`list-open`) the template does not ship.
+# Two distinct kinds of expected drift get two distinct representations, so
+# reporting can tell them apart instead of flattening both into one silent
+# allowlist (issue #162):
 #
-# The next two are known reconciliation debt, not endorsement. They are listed so
-# the gate can start enforcing today instead of waiting on a content decision:
-#   `.claude/docs/raven-tool-assessment.md`: installed copy is Prettier-formatted
-#     (padded table cells); the template ships unpadded. Cosmetic, but it
-#     re-conflicts on every upgrade until the template ships formatted tables.
-#   `.claude/rules/raven-python.md`: installed copy and python/ template have
-#     diverged in both directions; merging them is a content judgment call.
-#   `pyproject.toml`: this repo's own project config, necessarily richer than the
-#     starter config the template ships.
-_APPROVED_LOCAL_DIVERGENCE = {
-    ".claude/docs/raven-tool-assessment.md",
-    ".claude/rules/raven-python.md",
-    "justfile",
-    "pyproject.toml",
+# `_APPROVED_CUSTOMIZATION`: permanent, intentional divergence. Reported as
+# approved and does not affect the verdict -- there is nothing to converge.
+#
+# `_RECONCILIATION_DEBT`: known drift that is NOT endorsement, only tracked so
+# the gate can enforce today instead of waiting on a content decision. Each
+# entry carries a tracking issue reference (a debt entry without one is a
+# structural error -- see `_validate_debt_entries`) and is named individually,
+# by path, in the success message every green run prints, so a passing gate
+# still says out loud what remains unconverged. `RAVEN_SELF_CHECK_STRICT_DEBT=1`
+# turns that into a hard failure for maintainers who want it.
+#
+# Deliberately no calendar-based expiry: a date-based gate turns red on
+# whichever contributor's branch happens to be open that day, for divergence
+# unrelated to their change and which they have no context to resolve -- the
+# same failure mode the `audit` recipe in this justfile documents and refuses.
+# An issue reference plus an opt-in strict mode gives accountability without
+# the time bomb.
+_APPROVED_CUSTOMIZATION: dict[str, str] = {
+    "justfile": "carries repo-only recipes (`list-open`) the template does not ship.",
+    "pyproject.toml": (
+        "this repo's own project config, necessarily richer than the starter "
+        "config the template ships."
+    ),
 }
+
+_RECONCILIATION_DEBT: dict[str, str] = {
+    ".claude/docs/raven-tool-assessment.md": "#170",
+    ".claude/rules/raven-python.md": "#171",
+}
+
+
+def _validate_debt_entries(debt: dict[str, str]) -> None:
+    """Fail loudly if any reconciliation-debt entry has no tracking issue reference.
+
+    A debt entry without one is a structural error, not a silent pass: nothing
+    would hold it accountable, and it would look identical to permanent
+    customization in every report this script prints. Called at module import
+    time (below) so a broken table fails every self-check invocation that
+    loads this script -- including test collection -- not only the runs that
+    happen to reach `validate_upgrade_convergence`.
+    """
+    missing = sorted(path for path, issue in debt.items() if not issue or not issue.strip())
+    if missing:
+        raise SystemExit(
+            "Reconciliation debt entry missing a tracking issue reference in "
+            f"scripts/self-check.py's _RECONCILIATION_DEBT: {', '.join(missing)}. "
+            "Add one (e.g. '#123'), or resolve the divergence and remove the entry."
+        )
+
+
+_validate_debt_entries(_RECONCILIATION_DEBT)
 
 _DRIFT_CATEGORY = "Drift & freshness"
 # The manifest records the commit a destination was installed from, so any commit
@@ -508,14 +547,14 @@ _DRIFT_CATEGORY = "Drift & freshness"
 _SELF_CHASING_FINDING_IDS = {"doctor.drift.version"}
 
 
-def unconverged_paths(findings: list[dict], approved: set[str]) -> list[str]:
-    """Paths a post-upgrade `raven doctor` still flags as drift, minus approved ones.
+def _flagged_drift_paths(findings: list[dict]) -> set[str]:
+    """Every path current findings flag as drift, before approval/debt classification.
 
     Keys on category and severity rather than a fixed set of finding ids: a drift
-    finding added to doctor later should fail this gate loudly, not slip past an
+    finding added to doctor later should be reported loudly, not slip past an
     allowlist written before it existed.
     """
-    unconverged: set[str] = set()
+    flagged: set[str] = set()
     for finding in findings:
         if finding.get("category") != _DRIFT_CATEGORY:
             continue
@@ -524,8 +563,77 @@ def unconverged_paths(findings: list[dict], approved: set[str]) -> list[str]:
         if finding.get("id") in _SELF_CHASING_FINDING_IDS:
             continue
         detail = finding.get("detail") or ""
-        unconverged.update(part.strip() for part in detail.split(",") if part.strip())
-    return sorted(unconverged - approved)
+        flagged.update(part.strip() for part in detail.split(",") if part.strip())
+    return flagged
+
+
+def unconverged_paths(findings: list[dict], approved: set[str]) -> list[str]:
+    """Paths a post-upgrade `raven doctor` still flags as drift, minus approved ones."""
+    return sorted(_flagged_drift_paths(findings) - approved)
+
+
+def _classify_convergence(findings: list[dict]) -> tuple[list[str], list[str], list[str]]:
+    """Split currently-flagged drift into (outstanding, customization, debt), each sorted.
+
+    - outstanding: neither approved customization nor tracked debt -- fails the gate.
+    - customization: matches `_APPROVED_CUSTOMIZATION` -- approved, does not affect
+      the verdict.
+    - debt: matches `_RECONCILIATION_DEBT` -- named individually in the success
+      message and, in strict mode, fails the gate.
+    """
+    flagged = _flagged_drift_paths(findings)
+    customization = sorted(flagged & _APPROVED_CUSTOMIZATION.keys())
+    debt = sorted(flagged & _RECONCILIATION_DEBT.keys())
+    approved = set(_APPROVED_CUSTOMIZATION) | set(_RECONCILIATION_DEBT)
+    # Route the outstanding set through `unconverged_paths` rather than
+    # re-deriving `sorted(flagged - approved)` here: that keeps the function the
+    # convergence tests exercise on the production path, so they guard what
+    # actually runs instead of a parallel copy of the same subtraction.
+    outstanding = unconverged_paths(findings, approved)
+    return outstanding, customization, debt
+
+
+def _report_convergence(findings: list[dict]) -> None:
+    """Report convergence for one `raven doctor` findings list; raise if it did not converge.
+
+    Split out of `validate_upgrade_convergence` so the classification, success
+    message, and strict-debt behavior are testable directly against a
+    synthetic findings list, without shelling out to `raven doctor`.
+    """
+    outstanding, customization, debt = _classify_convergence(findings)
+    if outstanding:
+        for path in outstanding:
+            print(f"  UNCONVERGED: {path}")
+        raise SystemExit(
+            "Self-upgrade left Raven-managed drift that is not in "
+            "scripts/self-check.py's approved-customization or reconciliation-debt "
+            f"lists: {', '.join(outstanding)}. Resolve the merge (see .raven/merge/), "
+            "or add the path with a written reason if the divergence is intended."
+        )
+
+    if not debt:
+        print(
+            f"upgrade convergence ok -- {len(customization)} approved customization(s), "
+            "no reconciliation debt remains"
+        )
+        return
+
+    named = ", ".join(f"{path} ({_RECONCILIATION_DEBT[path]})" for path in debt)
+    print(
+        f"upgrade convergence ok -- {len(customization)} approved customization(s), "
+        f"{len(debt)} reconciliation debt entry(ies) remain: {named}"
+    )
+    strict = os.environ.get("RAVEN_SELF_CHECK_STRICT_DEBT") == "1"
+    print(f"==> reconciliation debt ({'fatal' if strict else 'non-fatal'})")
+    for path in debt:
+        print(f"  DEBT: {path} ({_RECONCILIATION_DEBT[path]})")
+    if strict:
+        raise SystemExit(
+            "Reconciliation debt remains in scripts/self-check.py's "
+            f"_RECONCILIATION_DEBT: {named} (RAVEN_SELF_CHECK_STRICT_DEBT=1). This is "
+            "drift you likely did not introduce -- resolve the tracked issue(s), or "
+            "omit RAVEN_SELF_CHECK_STRICT_DEBT for a non-fatal report."
+        )
 
 
 def validate_upgrade_convergence() -> None:
@@ -551,21 +659,39 @@ def validate_upgrade_convergence() -> None:
         print(result.stderr, end="")
         raise SystemExit(f"`raven doctor --json` did not emit parseable JSON: {exc}") from exc
 
-    outstanding = unconverged_paths(report.get("findings", []), _APPROVED_LOCAL_DIVERGENCE)
-    if outstanding:
-        for path in outstanding:
-            print(f"  UNCONVERGED: {path}")
-        raise SystemExit(
-            "Self-upgrade left Raven-managed drift that is not in the approved "
-            "divergence list in scripts/self-check.py. Resolve the merge (see "
-            ".raven/merge/), or add the path with a written reason if the "
-            "divergence is intended."
-        )
-    print("upgrade convergence ok")
+    _report_convergence(report.get("findings", []))
+
+
+def run_type_check() -> None:
+    """Run `pyright` when it's on PATH; otherwise skip with a loud, explicit notice.
+
+    `just check` (this repo's own definition of the full gate) runs
+    `check-fast typecheck test`, and `typecheck` is `pyright`. Matching that
+    order here is why this runs after ruff and before the unit tests below.
+
+    Not made mandatory: `.github/workflows/ci.yml`'s `checks` matrix job
+    already runs pyright across the full Python 3.9-3.14 matrix, while the
+    separate `self-check` job installs only ruff+pytest. Requiring pyright
+    here would break that job for no new signal the matrix job doesn't
+    already give across six interpreters. So: run it when available, and
+    when it is not, say so loudly rather than silently passing -- matching
+    this repo's own precedent for optional tools (`gate_run._recipe_finding`'s
+    "gate could not run: command not found" WARN, and the justfile `audit`
+    recipe's "osv-scanner is not installed; skipping").
+    """
+    if shutil.which("pyright") is None:
+        print("==> type check (skipped: pyright not found on PATH)")
+        print("    Type coverage is expected from CI's `checks` job (pyright across")
+        print("    the Python 3.9-3.14 matrix). Install pyright to check it locally too:")
+        print("    https://microsoft.github.io/pyright/#/installation")
+        return
+    run("pyright", ["pyright"])
 
 
 def main() -> int:
-    """Run every self-check validation, a real self-upgrade, then the full quality gate."""
+    """Run every self-check validation, a real self-upgrade, ruff, pyright when
+    it is on PATH (skipped with a loud notice otherwise), then the unit tests.
+    """
     validate_shared_docs_sync()
     validate_symlink_canonicality()
     validate_context_budget()
@@ -590,6 +716,7 @@ def main() -> int:
     # the uv dev-group venv this script is documented to run under (issue #168).
     run("ruff format check", ["ruff", "format", "--check", "."])
     run("ruff lint", ["ruff", "check", "."])
+    run_type_check()
     # Unlike ruff above, `sys.executable -m pytest` is intentional here, not an
     # oversight: this script deliberately tests with whatever interpreter it
     # was launched under, because .github/workflows/ci.yml runs it across a
