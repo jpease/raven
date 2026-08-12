@@ -1122,5 +1122,52 @@ class AdapterNeutralScriptReferenceTests(unittest.TestCase):
         )
 
 
+class ContextHygieneSkillTests(unittest.TestCase):
+    """Guards the harness-aware fix for the unconditional /clear interrupt
+    (issue #145): the manual /clear-or-/compact prompt must become
+    conditional on whether the current harness states it manages context
+    automatically, without losing the manual offer for harnesses (Codex,
+    unfamiliar harnesses) that don't make that claim.
+
+    Reads the canonical skill source directly (not an installed copy),
+    since `common/.agents/skills/` is where edits must land.
+    """
+
+    def setUp(self):
+        path = REPO_ROOT / "common" / ".agents" / "skills" / "raven-context-hygiene" / "SKILL.md"
+        self.content = path.read_text(encoding="utf-8")
+        self.lowered = self.content.lower()
+
+    def test_process_still_offers_the_manual_clear_compact_choice(self):
+        # The Codex / unfamiliar-harness path must not lose the explicit
+        # offer -- only Claude Code's unconditional interrupt was the bug.
+        region = section_region(self.lowered, "## process")
+        self.assertIn("/clear", region)
+        self.assertIn("/compact", region)
+
+    def test_process_keys_off_harness_stated_auto_compaction(self):
+        # The fix's substance: the agent checks its own harness's stated
+        # behavior (Claude Code states context is summarized/compacted
+        # automatically) before deciding whether to interrupt.
+        region = section_region(self.lowered, "## process")
+        self.assertIn(
+            "automatically",
+            region,
+            "expected Process to key off harness-stated automatic context management",
+        )
+
+    def test_manual_prompt_is_no_longer_an_unconditional_step(self):
+        # The bug: step 2 was a bare "Ask: ..." with no condition attached.
+        # Guard against regressing to that literal shape -- the ask must be
+        # gated behind a not-managed-automatically branch, not simply be
+        # the next numbered step.
+        region = section_region(self.lowered, "## process")
+        self.assertNotIn(
+            "\n2. ask:",
+            region,
+            "the /clear prompt must be conditional, not an unconditional step 2",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
