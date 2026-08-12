@@ -1,6 +1,8 @@
+import argparse
 import contextlib
 import io
 import json
+import subprocess
 import unittest
 
 from helpers import RavenTestCase, install_ns, raven, upgrade_ns
@@ -187,6 +189,104 @@ class ManifestGateToolsTests(RavenTestCase):
         raven.cli.cmd_upgrade(upgrade_ns(self.destination))
         refreshed = json.loads(path.read_text("utf-8"))
         self.assertEqual(refreshed["gateTools"], ["ruff", "pyright"])
+
+
+class ManifestBlockPreservationTests(RavenTestCase):
+    """Issue #139: an automatic upgrade must not silently absorb outside-block
+    drift into the manifest baseline for a managed-block file that classifies
+    "identical" only because its RAVEN block matches the template -- Raven
+    never touched the outside-block content on that path. Explicit
+    ``raven accept`` must keep recording the full on-disk state exactly as
+    before; only the automatic upgrade/apply path changes.
+    """
+
+    def _install(self):
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(raven.default_config_text("python", False, "none"), encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            raven._run(self.destination, "python", False, False, [])
+
+    def _accept_agents_md(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_accept(
+                argparse.Namespace(
+                    destination=str(self.destination),
+                    paths=["AGENTS.md"],
+                    dry_run=False,
+                    include_readme=False,
+                )
+            )
+        self.assertEqual(rc, 0)
+
+    def _manifest_files(self):
+        return json.loads(
+            (self.destination / ".raven" / "manifest.json").read_text(encoding="utf-8")
+        )["files"]
+
+    def _install_and_accept_agents_md_with_managed_block(self):
+        """AGENTS.md with local preamble plus an accepted, template-matching block.
+
+        Mirrors #63's guided-merge flow (see test_accept.py): a pre-existing
+        AGENTS.md gets a RAVEN block appended via patch rather than overwritten,
+        then explicitly accepted to record the initial baseline.
+        """
+        (self.destination / "AGENTS.md").write_text(
+            "# Local preamble\n\nSome existing local guidance.\n", encoding="utf-8"
+        )
+        self._install()
+        patch_file = self.destination / ".raven" / "merge" / "AGENTS.md.patch"
+        result = subprocess.run(
+            ["patch", "-p1", "-i", str(patch_file)],
+            cwd=self.destination,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self._accept_agents_md()
+
+    def test_upgrade_preserves_installed_sha_for_identical_managed_block(self):
+        self._install_and_accept_agents_md_with_managed_block()
+
+        baseline_sha = self._manifest_files()["AGENTS.md"]["installedSha256"]
+        agents_md = self.destination / "AGENTS.md"
+        self.assertEqual(baseline_sha, raven.file_sha256(agents_md))
+
+        # Edit only outside the RAVEN block; the block itself stays byte-identical
+        # to the template, so this file classifies "identical" via block_state,
+        # not whole-file content_matches.
+        with agents_md.open("a", encoding="utf-8") as f:
+            f.write("\nAn outside-block edit made after acceptance.\n")
+
+        classification = raven.classify(self.template, self.destination, self.excludes)
+        self.assertIn("AGENTS.md", classification.identical)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_upgrade(upgrade_ns(self.destination))
+        self.assertEqual(rc, 0)
+
+        after_upgrade_sha = self._manifest_files()["AGENTS.md"]["installedSha256"]
+        # The automatic upgrade path writes nothing outside the block, so it must
+        # not silently absorb the outside-block edit into the recorded baseline.
+        self.assertEqual(after_upgrade_sha, baseline_sha)
+        self.assertNotEqual(after_upgrade_sha, raven.file_sha256(agents_md))
+
+    def test_accept_still_records_full_state_after_outside_block_edit(self):
+        self._install_and_accept_agents_md_with_managed_block()
+
+        agents_md = self.destination / "AGENTS.md"
+        with agents_md.open("a", encoding="utf-8") as f:
+            f.write("\nAn outside-block edit made after acceptance.\n")
+
+        classification = raven.classify(self.template, self.destination, self.excludes)
+        self.assertIn("AGENTS.md", classification.identical)
+
+        self._accept_agents_md()
+
+        after_accept_sha = self._manifest_files()["AGENTS.md"]["installedSha256"]
+        # Explicit `raven accept` keeps blessing the full current on-disk
+        # content -- its own call site is unchanged by the upgrade-path fix.
+        self.assertEqual(after_accept_sha, raven.file_sha256(agents_md))
 
 
 if __name__ == "__main__":

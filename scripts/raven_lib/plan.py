@@ -372,6 +372,7 @@ def apply_plan(
             manifest=manifest,
             entries=entries,
             remove=removed_orphans + orphans.already_gone,
+            preserve_identical_block_baseline=True,
         )
 
     merge_artifacts = write_guided_merge_artifacts(destination, entries, plan.guided_merge_paths)

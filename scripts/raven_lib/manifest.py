@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
+from .blocks import block_managed_state
 from .constants import KIND_SYMLINK, MANIFEST_PATH, REPO_ROOT
 from .gates import gate_spec_for
 from .hashing import destination_fingerprint, entry_fingerprint
@@ -119,7 +120,27 @@ def save_manifest(destination: Path, manifest: dict) -> None:
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _make_manifest_record(entry: TemplateEntry, target: Path) -> dict[str, str] | None:
+def _make_manifest_record(
+    entry: TemplateEntry,
+    target: Path,
+    *,
+    existing_record: dict | None = None,
+    preserve_identical_block: bool = False,
+) -> dict[str, str] | None:
+    if (
+        preserve_identical_block
+        and existing_record is not None
+        and block_managed_state(entry, target) == "identical"
+    ):
+        # The automatic upgrade/apply path only ever writes the RAVEN block
+        # itself (see update_raven_block); it never touches content outside
+        # it. Recomputing installedSha256 from the whole file here would
+        # silently absorb any outside-block drift into the baseline on every
+        # upgrade, turning "upgrade" into an implicit, un-asked-for "accept"
+        # for content the user never blessed (#139). Return the raw stored
+        # record unchanged -- not round-tripped through parse_record -- to
+        # avoid any reformatting risk.
+        return existing_record
     installed = destination_fingerprint(target)
     if installed is None:
         return None
@@ -143,6 +164,7 @@ def update_manifest(
     manifest: dict | None = None,
     entries: dict[str, TemplateEntry] | None = None,
     remove: list[str] | None = None,
+    preserve_identical_block_baseline: bool = False,
 ) -> None:
     if manifest is None:
         manifest = load_manifest(destination)
@@ -160,11 +182,20 @@ def update_manifest(
 
     if entries is None:
         entries = entries_for_destination(template, excludes, config, destination)
+    existing_files = manifest.get("files", {})
     new_records = {
         relative: record
         for relative in sorted(set(paths))
         if (entry := entries.get(relative)) is not None
-        if (record := _make_manifest_record(entry, destination / relative)) is not None
+        if (
+            record := _make_manifest_record(
+                entry,
+                destination / relative,
+                existing_record=existing_files.get(relative),
+                preserve_identical_block=preserve_identical_block_baseline,
+            )
+        )
+        is not None
     }
     manifest["files"].update(new_records)
     for relative in remove or []:
