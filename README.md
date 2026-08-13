@@ -141,7 +141,7 @@ Dry runs separate files into clear categories:
 
 Raven overwrites only explicit override paths and managed files whose current content still matches the last installed manifest hash. Existing project-owned content is preserved by default.
 
-Upgrade also removes Raven-managed files the template no longer ships, but only when a file still matches its recorded baseline exactly; anything you edited is reported and left in place, and starter tool configs such as `pyproject.toml` are never removed. Because switching `template` in `.raven/config.toml` changes the whole shipped file set, Raven refuses that upgrade until you confirm it with `raven upgrade --confirm-template-switch`.
+Upgrade also removes Raven-managed files the template no longer ships, but only when a file still matches its recorded baseline exactly; anything you edited is reported and left in place, and starter tool configs such as `pyproject.toml` are never removed. Changing `platform` in `.raven/config.toml` and running upgrade also removes previously-installed platform-gated skills that are no longer selected, under the same unmodified-baseline condition; modified ones are reported and kept. Because switching `template` in `.raven/config.toml` changes the whole shipped file set, Raven refuses that upgrade until you confirm it with `raven upgrade --confirm-template-switch`.
 
 ## Merge Behavior for AGENTS.md and CLAUDE.md
 

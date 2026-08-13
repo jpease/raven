@@ -127,7 +127,9 @@ checkpoint_enforcement = true
 # This setting also gates skill installation: raven-github-issues is
 # installed only when platform = "github", and raven-gitlab-issues only
 # when platform = "gitlab".  Neither skill is installed when platform =
-# "none".  Note: upgrade does not remove previously-installed skills.
+# "none".  Changing platform and running upgrade removes unmodified
+# platform-gated skills that are no longer selected; modified ones are
+# reported and kept.
 #
 # platform = "github"   # use raven-github-issues + gh CLI
 # platform = "gitlab"   # use raven-gitlab-issues + glab CLI

@@ -38,7 +38,7 @@ The command should produce no output.
 3. Run the template applicator tests:
 
 ```sh
-just test
+PYTHONDONTWRITEBYTECODE=1 just test
 ```
 
 (`just test` resolves `uv run --group dev python -m pytest`; see

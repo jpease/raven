@@ -971,6 +971,10 @@ File safety:
   - Upgrade removes Raven-managed files the template no longer ships, but only
     when they still match their recorded baseline exactly; locally changed ones
     are reported and kept, and starter tool configs are never removed.
+  - Changing `platform` in .raven/config.toml and running upgrade also removes
+    previously-installed platform-gated skills that are no longer selected,
+    under the same unmodified-baseline condition; modified ones are reported
+    and kept.
   - Changing `template` in .raven/config.toml is refused unless you confirm it
     with --confirm-template-switch, because the new template ships a different
     file set.

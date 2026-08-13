@@ -734,12 +734,13 @@ def main() -> int:
     run("ruff lint", ["ruff", "check", "."])
     run_type_check()
     # Unlike ruff above, `sys.executable -m pytest` is intentional here, not an
-    # oversight: this script deliberately tests with whatever interpreter it
-    # was launched under, because .github/workflows/ci.yml runs it across a
-    # 3.9-3.14 matrix -- hardwiring one uv-resolved interpreter would silently
-    # collapse that matrix to a single Python version. The documented
-    # contributor invocation is `uv run --group dev python scripts/self-check.py`,
-    # which supplies its own pytest via sys.executable already (issue #168).
+    # oversight: the documented contributor invocation is
+    # `uv run --group dev python scripts/self-check.py`, which launches this
+    # script under a uv-resolved venv with the dev dependency group (including
+    # pytest) installed. `sys.executable` guarantees the pytest subprocess runs
+    # under the same interpreter/environment self-check.py itself is running
+    # under, rather than resolving a possibly-different bare python/python3 on
+    # PATH that might lack pytest or the dev dependencies (issue #168).
     run("unit tests", [sys.executable, "-m", "pytest", "tests"])
     print("RAVEN self-check passed")
     return 0
