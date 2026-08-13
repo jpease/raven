@@ -291,15 +291,20 @@ class GitHookInstallerTests(unittest.TestCase):
         return bin_dir
 
     def test_pre_commit_hook_falls_back_to_protect_on_pre_8_19_gitleaks(self):
-        # gitleaks < 8.19 has no `git` subcommand and exits with a cobra
-        # "unknown command" error indistinguishable from a real leak (issue #81).
-        # The hook must recognize that failure and retry with the older
-        # `protect` subcommand instead of blocking every commit.
+        # gitleaks < 8.19 has no `git` subcommand (added in 8.19; issue #81).
+        # The hook decides the subcommand up front from `gitleaks version`,
+        # so a pre-8.19 gitleaks must be routed straight to `protect` without
+        # ever invoking `git` at all (issue #198). The `git` branch below
+        # still answers with the classic cobra "unknown command" error so
+        # that a regression back to always trying `git` first is caught.
         bin_dir = self._bin_dir_with_git()
         fake_gitleaks = bin_dir / "gitleaks"
         fake_gitleaks.write_text(
             "#!/bin/sh\n"
-            'if [ "$1" = "git" ]; then\n'
+            'if [ "$1" = "version" ]; then\n'
+            '    echo "8.18.4"\n'
+            "    exit 0\n"
+            'elif [ "$1" = "git" ]; then\n'
             '    echo \'Error: unknown command "git" for "gitleaks"\' >&2\n'
             "    exit 1\n"
             'elif [ "$1" = "protect" ]; then\n'
@@ -323,14 +328,164 @@ class GitHookInstallerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_pre_commit_hook_blocks_on_detected_leak_with_modern_gitleaks(self):
-        # A real leak from a modern gitleaks (the `git` subcommand exists and
-        # runs) must still block the commit -- the fallback must not swallow
-        # genuine findings.
+        # A real leak from a modern (>= 8.19) gitleaks -- selected via
+        # `gitleaks version`, not by sniffing `git`'s error text -- must
+        # still block the commit. The `protect` branch below reports clean;
+        # if the hook regressed to choosing `protect` for a modern version,
+        # the leak would go unreported and this test would catch it.
         bin_dir = self._bin_dir_with_git()
         fake_gitleaks = bin_dir / "gitleaks"
         fake_gitleaks.write_text(
             "#!/bin/sh\n"
-            'if [ "$1" = "git" ]; then\n'
+            'if [ "$1" = "version" ]; then\n'
+            '    echo "8.24.0"\n'
+            "    exit 0\n"
+            'elif [ "$1" = "git" ]; then\n'
+            "    echo 'leak detected' >&2\n"
+            "    exit 1\n"
+            'elif [ "$1" = "protect" ]; then\n'
+            "    exit 0\n"
+            "fi\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        fake_gitleaks.chmod(0o755)
+
+        env = self._hook_env(bin_dir)
+        result = subprocess.run(
+            ["/bin/sh", str(raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-commit")],
+            cwd=self.destination,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_pre_commit_hook_blocks_on_detected_leak_with_pre_8_19_gitleaks(self):
+        # A real leak from a pre-8.19 gitleaks, found via `protect` (the
+        # only scanning subcommand that version has), must still block the
+        # commit. The `git` branch below reports clean; if the hook
+        # regressed to trying `git` for a pre-8.19 version, the leak would
+        # go unreported and this test would catch it.
+        bin_dir = self._bin_dir_with_git()
+        fake_gitleaks = bin_dir / "gitleaks"
+        fake_gitleaks.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "version" ]; then\n'
+            '    echo "8.18.4"\n'
+            "    exit 0\n"
+            'elif [ "$1" = "protect" ]; then\n'
+            "    echo 'leak detected' >&2\n"
+            "    exit 1\n"
+            'elif [ "$1" = "git" ]; then\n'
+            "    exit 0\n"
+            "fi\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        fake_gitleaks.chmod(0o755)
+
+        env = self._hook_env(bin_dir)
+        result = subprocess.run(
+            ["/bin/sh", str(raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-commit")],
+            cwd=self.destination,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_pre_commit_hook_does_not_block_on_pre_8_19_gitleaks_with_unrelated_git_error(self):
+        # Issue #198: the old fallback sniffed `git`'s error text for the
+        # substring "unknown command"; a differently worded (or unrelated)
+        # failure from `git` on a pre-8.19 binary was indistinguishable from
+        # a real leak and blocked every commit. The new hook decides the
+        # subcommand purely from `gitleaks version`, so a gitleaks that
+        # reports itself as < 8.19 must never even invoke `git` -- whatever
+        # `git` would have said is irrelevant.
+        bin_dir = self._bin_dir_with_git()
+        fake_gitleaks = bin_dir / "gitleaks"
+        fake_gitleaks.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "version" ]; then\n'
+            '    echo "8.18.4"\n'
+            "    exit 0\n"
+            'elif [ "$1" = "git" ]; then\n'
+            "    echo 'some unrelated failure, not a leak' >&2\n"
+            "    exit 1\n"
+            'elif [ "$1" = "protect" ]; then\n'
+            "    exit 0\n"
+            "fi\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        fake_gitleaks.chmod(0o755)
+
+        env = self._hook_env(bin_dir)
+        result = subprocess.run(
+            ["/bin/sh", str(raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-commit")],
+            cwd=self.destination,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_pre_commit_hook_treats_empty_gitleaks_version_as_modern_and_blocks_leak(self):
+        # `gitleaks version` producing no output at all is unparseable. The
+        # hook must fail closed to the modern `git` subcommand -- an
+        # unrecognized gitleaks is more likely to be newer than 8.19 (which
+        # shipped a long time ago) than older -- and a real leak reported
+        # via `git` must still block the commit.
+        bin_dir = self._bin_dir_with_git()
+        fake_gitleaks = bin_dir / "gitleaks"
+        fake_gitleaks.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "version" ]; then\n'
+            "    printf ''\n"
+            "    exit 0\n"
+            'elif [ "$1" = "git" ]; then\n'
+            "    echo 'leak detected' >&2\n"
+            "    exit 1\n"
+            "fi\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        fake_gitleaks.chmod(0o755)
+
+        env = self._hook_env(bin_dir)
+        result = subprocess.run(
+            ["/bin/sh", str(raven.REPO_ROOT / "common" / ".raven" / "git-hooks" / "pre-commit")],
+            cwd=self.destination,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_pre_commit_hook_treats_unrecognized_gitleaks_version_string_as_modern_and_blocks_leak(
+        self,
+    ):
+        # A version string that fails to parse as N.N (not "no output at
+        # all", but output that still doesn't look like a version) must be
+        # treated the same as no version output: fail closed to `git`, and a
+        # real leak reported via `git` must still block the commit.
+        bin_dir = self._bin_dir_with_git()
+        fake_gitleaks = bin_dir / "gitleaks"
+        fake_gitleaks.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "version" ]; then\n'
+            '    echo "unknown"\n'
+            "    exit 0\n"
+            'elif [ "$1" = "git" ]; then\n'
             "    echo 'leak detected' >&2\n"
             "    exit 1\n"
             "fi\n"
