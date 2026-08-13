@@ -36,6 +36,7 @@ from .constants import (
     MERGE_DIR,
     NON_TEMPLATE_DIRS,
     REPO_ROOT,
+    VALID_PLATFORMS,
     _any_exists,
 )
 from .deactivated import classify_deactivated
@@ -241,6 +242,7 @@ def _build_run_plan(
 
 def _run(
     destination: Path,
+    config: RavenConfig,
     template_name: str,
     include_readme: bool,
     dry_run: bool,
@@ -250,7 +252,16 @@ def _run(
     platform_override: str | None = None,
     write_config: Callable[[], int] | None = None,
 ) -> int:
-    config = load_config(destination)
+    """Validate, then apply or preview, a template installation/upgrade.
+
+    ``config`` must already be validated by the caller (via
+    ``_load_config_or_report``) -- this used to re-read it here with a bare
+    ``load_config``, so a config that became malformed between the caller's
+    check and this call raised an uncaught ``ConfigError`` (#173). Both
+    current callers, ``cmd_install`` and ``cmd_upgrade``, already validate
+    before calling in, so this takes the validated result rather than
+    re-reading and re-validating it a second time.
+    """
     if platform_override is not None:
         # The effective config reflects the requested platform's skill gating
         # for both dry-run previews and the live plan; the durable write happens
@@ -549,6 +560,7 @@ def cmd_install(args: argparse.Namespace) -> int:
 
     return _run(
         destination,
+        config,
         template_name,
         include_readme,
         args.dry_run,
@@ -580,6 +592,7 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     include_readme = args.include_readme or config.include_readme
     return _run(
         destination,
+        config,
         template_name,
         include_readme,
         args.dry_run,
@@ -827,7 +840,7 @@ File safety:
     )
     init_parser.add_argument(
         "--platform",
-        choices=["github", "gitlab", "none"],
+        choices=list(VALID_PLATFORMS),
         default=None,
         help="issue-tracker platform: github, gitlab, or none (default: none)",
     )
@@ -896,7 +909,7 @@ AGENTS.md and CLAUDE.md:
     )
     install_parser.add_argument(
         "--platform",
-        choices=["github", "gitlab", "none"],
+        choices=list(VALID_PLATFORMS),
         default=None,
         help="issue-tracker platform: github, gitlab, or none; updates existing config if already installed",
     )

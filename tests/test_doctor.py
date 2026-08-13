@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from helpers import RavenTestCase, raven
+from raven_lib.config import _update_config_platform
+from raven_lib.constants import CONFIG_PATH
 from raven_lib.doctor import build_doctor_findings, drift_findings, integrity_findings
 from raven_lib.findings import Severity, exit_code
 from raven_lib.models import Classification
@@ -57,6 +59,21 @@ class DoctorIntegrityTests(RavenTestCase):
         ids = self._ids(findings)
         self.assertIn("doctor.install.config", ids)
         self.assertEqual(ids["doctor.install.config"].severity, Severity.ERROR)
+
+    def test_invalid_platform_value_is_error_not_clean(self):
+        # #173: a typo'd `[issue_tracker].platform` value (e.g. "gihtub") must
+        # surface as a `build_doctor_findings` ERROR, not report the
+        # destination clean -- doctor.install.config already short-circuits
+        # the rest of the findings on a malformed config, matching the
+        # existing missing-config-file behavior above.
+        _install(self, platform="github")
+        _update_config_platform(self.destination / CONFIG_PATH, "gihtub")
+        findings = build_doctor_findings(self.destination)
+        self.assertTrue(any(f.severity == Severity.ERROR for f in findings))
+        ids = self._ids(findings)
+        self.assertIn("doctor.install.config", ids)
+        self.assertEqual(ids["doctor.install.config"].severity, Severity.ERROR)
+        self.assertEqual(len(findings), 1)
 
     def test_missing_agents_md_is_error_when_config_exists(self):
         (self.destination / ".raven").mkdir()

@@ -49,7 +49,12 @@ class RavenConfig:
     claude_components: dict[str, bool]
     codex_components: dict[str, bool]
     exclude_paths: list[str]
-    platform: str = "none"
+    # None means the config has no explicit platform value (an absent
+    # `[issue_tracker]` section, an absent `platform` key, or no config file
+    # at all -- e.g. an install that predates platform gating). Distinct from
+    # the explicit string "none": only an explicit value may drive
+    # deactivation (see `deactivated._platform_gated`); unset never does.
+    platform: str | None = None
     exists: bool = False
 
 

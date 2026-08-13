@@ -24,6 +24,7 @@ from .constants import (
     DEFAULT_CLAUDE_COMPONENTS,
     DEFAULT_CODEX_COMPONENTS,
     DEFAULT_COMPONENTS,
+    VALID_PLATFORMS,
 )
 from .models import RavenConfig
 
@@ -242,7 +243,20 @@ def build_config(raw: dict, *, exists: bool) -> RavenConfig:
     raw_platform = (
         raw_issue_tracker.get("platform") if isinstance(raw_issue_tracker, dict) else None
     )
-    platform = raw_platform if isinstance(raw_platform, str) else "none"
+    # `parse_value` never produces a Python None, so an absent [issue_tracker]
+    # section or an absent `platform` key both surface here as None -- that
+    # unambiguously means "unset", never "explicitly none". A present value
+    # that isn't one of VALID_PLATFORMS (a typo, or a non-string like an int)
+    # must fail closed rather than silently collapsing to a default, since
+    # this value gates file deletion in `deactivated.py` (#173).
+    if raw_platform is None:
+        platform: str | None = None
+    elif isinstance(raw_platform, str) and raw_platform in VALID_PLATFORMS:
+        platform = raw_platform
+    else:
+        raise ConfigError(
+            f"[issue_tracker].platform must be one of {list(VALID_PLATFORMS)}, got {raw_platform!r}"
+        )
     raw_include_readme = raw.get("include_readme", False)
     if not isinstance(raw_include_readme, bool):
         raise ConfigError(f"include_readme must be true or false, got {raw_include_readme!r}")
@@ -360,18 +374,23 @@ def platform_excluded(relative: str, config: RavenConfig) -> bool:
     Skills under .agents/skills/<name> (and their derived .claude/skills/<name>
     twins) are gated: raven-github-issues requires platform=github, and
     raven-gitlab-issues requires platform=gitlab.  Both are excluded when
-    platform is "none" or unset.  This exclusion only prevents new
-    installations; it does not decide what happens to a previously-installed
-    skill that is now excluded here.  That is a distinct decision -- the skill
-    is still shipped by the template, just no longer selected by this config --
-    handled by ``raven_lib.deactivated.classify_deactivated``, which never
-    treats a config-gated file as an orphan (see ``orphans.shipped_relatives``).
+    platform is "none" or unset (``None``) -- for install-time purposes,
+    unset is treated identically to explicit "none".  This exclusion only
+    prevents new installations; it does not decide what happens to a
+    previously-installed skill that is now excluded here.  That is a distinct
+    decision -- the skill is still shipped by the template, just no longer
+    selected by this config -- handled by
+    ``raven_lib.deactivated.classify_deactivated``, which never treats a
+    config-gated file as an orphan (see ``orphans.shipped_relatives``), and
+    additionally never fires on an unset (as opposed to explicit) platform
+    value (see ``deactivated._platform_gated``).
     """
+    effective_platform = config.platform or "none"
     for skill_name, required_platform in _PLATFORM_GATED_SKILLS.items():
         is_this_skill = path_within(relative, f".agents/skills/{skill_name}") or path_within(
             relative, f".claude/skills/{skill_name}"
         )
-        if is_this_skill and config.platform != required_platform:
+        if is_this_skill and effective_platform != required_platform:
             return True
     return False
 

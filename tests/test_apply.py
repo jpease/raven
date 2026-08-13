@@ -301,6 +301,7 @@ rules = false
         with contextlib.redirect_stdout(output):
             rc = raven._run(
                 self.destination,
+                raven.load_config(self.destination),
                 "python",
                 False,
                 False,

@@ -12,7 +12,9 @@ class BuildConfigTests(unittest.TestCase):
         self.assertFalse(config.exists)
         self.assertIsNone(config.template)
         self.assertFalse(config.include_readme)
-        self.assertEqual(config.platform, "none")
+        # Empty/absent config is the canonical "unset" case -- distinct from
+        # the explicit string "none" (#173).
+        self.assertIsNone(config.platform)
         self.assertEqual(config.exclude_paths, [])
         self.assertEqual(config.components, raven.DEFAULT_COMPONENTS)
         # Must not alias the module-level defaults.
@@ -46,6 +48,27 @@ class BuildConfigTests(unittest.TestCase):
         self.assertTrue(config.include_readme)
         self.assertEqual(config.platform, "github")
         self.assertEqual(config.exclude_paths, ["a/b", "c/d"])
+
+    def test_typo_platform_value_raises_config_error(self):
+        # #173 — an unrecognized platform value (e.g. a typo like "gihtub")
+        # must fail closed instead of silently coercing to a default that
+        # could later drive a deletion decision.
+        with self.assertRaises(raven.ConfigError):
+            raven.build_config({"issue_tracker": {"platform": "gihtub"}}, exists=True)
+
+    def test_non_string_platform_value_raises_config_error(self):
+        with self.assertRaises(raven.ConfigError):
+            raven.build_config({"issue_tracker": {"platform": 123}}, exists=True)
+
+    def test_absent_issue_tracker_section_yields_unset_platform(self):
+        # A config that predates `[issue_tracker]` entirely must not collapse
+        # to the explicit "none" value -- see RavenConfig.platform's docstring.
+        config = raven.build_config({"template": "python"}, exists=True)
+        self.assertIsNone(config.platform)
+
+    def test_issue_tracker_section_without_platform_key_yields_unset_platform(self):
+        config = raven.build_config({"issue_tracker": {}}, exists=True)
+        self.assertIsNone(config.platform)
 
     def test_include_readme_true_parses_to_bool_true(self):
         config = raven.build_config({"include_readme": True}, exists=True)
@@ -313,12 +336,62 @@ class PlatformGatingTests(RavenTestCase):
 
     def test_load_config_parses_platform_none(self):
         config = self._make_config("none")
+        # Explicit "none" is a real value, distinct from unset (None) -- see
+        # test_load_config_default_platform_is_unset below (#173).
         self.assertEqual(config.platform, "none")
+        self.assertIsNotNone(config.platform)
 
-    def test_load_config_default_platform_is_none(self):
-        # No config file present
+    def test_load_config_default_platform_is_unset(self):
+        # No config file present at all -- platform must come back unset
+        # (None), not collapse to the explicit string "none" (#173). This
+        # test's name and assertion previously pinned the collapse this issue
+        # fixes; renamed from test_load_config_default_platform_is_none.
         config = raven.load_config(self.destination)
-        self.assertEqual(config.platform, "none")
+        self.assertIsNone(config.platform)
+
+    def test_load_config_predating_issue_tracker_section_yields_unset_platform(self):
+        # #173 regression: an install whose config predates `[issue_tracker]`
+        # gating entirely (no section at all) must not lose platform-gated
+        # skills on upgrade -- the root cause was this collapsing to "none",
+        # which platform_excluded treats as "exclude every gated skill".
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text('template = "python"\ninclude_readme = false\n', encoding="utf-8")
+        config = raven.load_config(self.destination)
+        self.assertIsNone(config.platform)
+
+    def test_load_config_raises_on_typo_platform_value(self):
+        # #173 regression: a hand-edited or corrupted config with an
+        # unrecognized platform value (e.g. "gihtub") must raise ConfigError
+        # when loaded, so callers route it through the abort path instead of
+        # ever reaching a deletion decision.
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            raven.default_config_text("python", False, "gihtub"), encoding="utf-8"
+        )
+        with self.assertRaises(raven.ConfigError):
+            raven.load_config(self.destination)
+
+    def test_platform_excluded_treats_unset_like_explicit_none(self):
+        # platform_excluded is the install-time gate and must keep its
+        # current effective behavior for unset config: exclude both
+        # issue-tracker skills, same as explicit platform="none" (#173).
+        config_unset = raven.RavenConfig(
+            template="python",
+            include_readme=False,
+            components={},
+            claude_components={},
+            codex_components={},
+            exclude_paths=[],
+            platform=None,
+        )
+        self.assertTrue(
+            raven.platform_excluded(".agents/skills/raven-github-issues/SKILL.md", config_unset)
+        )
+        self.assertTrue(
+            raven.platform_excluded(".agents/skills/raven-gitlab-issues/SKILL.md", config_unset)
+        )
 
     def test_load_config_raises_on_unreadable_file(self):
         # An unreadable config is a damaged install: fail closed with ConfigError

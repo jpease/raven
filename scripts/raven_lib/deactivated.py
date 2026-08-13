@@ -44,10 +44,19 @@ from .orphans import _safe_relative, shipped_relatives, unmodified_baseline
 def _platform_gated(relative: str, config: RavenConfig) -> bool:
     """Whether ``relative`` is currently excluded by the platform gate.
 
+    Fires only when ``config.platform`` is an explicit value (including the
+    explicit string ``"none"``); an unset platform (``None`` -- a config that
+    predates ``[issue_tracker]``, a config missing ``platform``, or an absent
+    config file entirely) must never drive deactivation, even though
+    ``platform_excluded`` itself keeps treating unset like "none" for its own
+    install-time purposes (#173).
+
     One of two axes ``_config_gated`` combines; see that function's docstring
     for the narrowness boundary this module holds against ``config.
     config_excluded``.
     """
+    if config.platform is None:
+        return False
     return platform_excluded(relative, config)
 
 

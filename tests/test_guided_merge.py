@@ -227,7 +227,9 @@ class GuidedMergeTests(RavenTestCase):
         output = io.StringIO()
 
         with contextlib.redirect_stdout(output):
-            rc = raven._run(self.destination, "python", False, False, [])
+            rc = raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
 
         self.assertEqual(rc, 0)
         self.assertTrue((self.destination / ".raven" / "merge" / ".mcp.json.diff").is_file())
@@ -238,7 +240,9 @@ class GuidedMergeTests(RavenTestCase):
         output = io.StringIO()
 
         with contextlib.redirect_stdout(output):
-            rc = raven._run(self.destination, "python", False, True, [])
+            rc = raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, True, []
+            )
 
         self.assertEqual(rc, 0)
         self.assertIn("Would write guided merge artifacts", output.getvalue())

@@ -205,7 +205,9 @@ class ManifestBlockPreservationTests(RavenTestCase):
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(raven.default_config_text("python", False, "none"), encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()):
-            raven._run(self.destination, "python", False, False, [])
+            raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
 
     def _accept_agents_md(self):
         with contextlib.redirect_stdout(io.StringIO()):

@@ -54,6 +54,7 @@ class ClaudeSymlinkTests(RavenTestCase):
         with contextlib.redirect_stdout(output):
             rc = raven._run(
                 self.destination,
+                raven.load_config(self.destination),
                 "python",
                 False,
                 False,
@@ -82,6 +83,7 @@ class ClaudeSymlinkTests(RavenTestCase):
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             rc = raven._run(
                 self.destination,
+                raven.load_config(self.destination),
                 "python",
                 False,
                 False,
@@ -105,6 +107,7 @@ class ClaudeSymlinkTests(RavenTestCase):
         with contextlib.redirect_stdout(output):
             rc = raven._run(
                 self.destination,
+                raven.load_config(self.destination),
                 "python",
                 False,
                 True,
@@ -127,6 +130,7 @@ class ClaudeSymlinkTests(RavenTestCase):
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             rc = raven._run(
                 self.destination,
+                raven.load_config(self.destination),
                 "python",
                 False,
                 True,
@@ -152,6 +156,7 @@ class ClaudeSymlinkTests(RavenTestCase):
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             rc = raven._run(
                 self.destination,
+                raven.load_config(self.destination),
                 "python",
                 False,
                 True,
@@ -177,6 +182,7 @@ class ClaudeSymlinkTests(RavenTestCase):
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             rc = raven._run(
                 self.destination,
+                raven.load_config(self.destination),
                 "python",
                 False,
                 False,
@@ -203,6 +209,7 @@ class ClaudeSymlinkTests(RavenTestCase):
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             rc = raven._run(
                 self.destination,
+                raven.load_config(self.destination),
                 "python",
                 False,
                 True,

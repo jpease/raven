@@ -13,6 +13,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_EXCLUDES = {"README.md"}
+# The complete set of valid `[issue_tracker].platform` config values, and the
+# only values `--platform` accepts. Both `cli.py`'s two `--platform`
+# `choices=` argparse definitions and `config.py`'s config-value validation
+# import this rather than duplicating the set (#173).
+VALID_PLATFORMS = ("github", "gitlab", "none")
 EXCLUDED_NAMES = {".DS_Store", ".ruff_cache", "__pycache__"}
 CONFIG_PATH = Path(".raven") / "config.toml"
 MANIFEST_PATH = Path(".raven") / "manifest.json"

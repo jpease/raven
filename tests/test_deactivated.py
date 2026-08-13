@@ -36,7 +36,7 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _config(platform: str = "none", template: str | None = None) -> RavenConfig:
+def _config(platform: str | None = "none", template: str | None = None) -> RavenConfig:
     return RavenConfig(
         template=template,
         include_readme=False,
@@ -133,6 +133,41 @@ class ClassifyDeactivatedTests(unittest.TestCase):
         self.assertEqual(result.absent, [rel])
         self.assertEqual(result.removable, [])
         self.assertEqual(result.preserved, [])
+
+    def test_unset_platform_never_deactivates(self) -> None:
+        # #173: an explicit platform value (including explicit "none") may
+        # gate deactivation, but an unset platform (None) must never -- even
+        # though platform_excluded itself still treats unset like "none" for
+        # its own install-time purposes.
+        template, dest = self._setup()
+        rel = self._install_skill(template, dest, "raven-github-issues")
+        sha = file_sha256(dest / rel)
+        manifest = {
+            "schema": 1,
+            "files": {rel: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        result = classify_deactivated(template, dest, manifest, _config(platform=None))
+        self.assertEqual(result, DeactivatedClassification([], [], []))
+
+    def test_missing_config_file_platform_is_unset_and_never_deactivates(self) -> None:
+        # #173 regression: a manifest can persist even after `.raven/
+        # config.toml` is deleted entirely (or never had `[issue_tracker]`).
+        # `load_config` then returns a default config with platform unset,
+        # and that must never drive deletion of a gated-but-still-shipped
+        # skill on the next upgrade.
+        template, dest = self._setup()
+        rel = self._install_skill(template, dest, "raven-github-issues")
+        sha = file_sha256(dest / rel)
+        manifest = {
+            "schema": 1,
+            "files": {rel: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        from raven_lib.config import load_config
+
+        config = load_config(dest)  # no .raven/config.toml present at all
+        self.assertIsNone(config.platform)
+        result = classify_deactivated(template, dest, manifest, config)
+        self.assertEqual(result, DeactivatedClassification([], [], []))
 
     def test_non_gated_skill_is_not_classified(self) -> None:
         # platform=github selects raven-github-issues, so it is not gated at
@@ -477,6 +512,46 @@ class PlatformTransitionEndToEndTests(RavenTestCase):
             ".agents/skills/raven-github-issues/SKILL.md", load_manifest(self.destination)["files"]
         )
         self.assertIn("Deactivated by config but left in place because you modified them", output)
+
+    def test_config_predating_issue_tracker_section_does_not_lose_skills_on_upgrade(self) -> None:
+        # #173 regression: an install whose config predates `[issue_tracker]`
+        # gating entirely (the section was never written) must not have
+        # upgrade treat that as "platform=none" and delete both issue-tracker
+        # skills.
+        self._install("github")
+        skill_path = self.destination / ".agents" / "skills" / "raven-github-issues" / "SKILL.md"
+        self.assertTrue(skill_path.exists())
+        from raven_lib.constants import CONFIG_PATH
+
+        config_path = self.destination / CONFIG_PATH
+        text = config_path.read_text(encoding="utf-8")
+        new_text = re.sub(r"(?ms)^\[issue_tracker\]\n(?:.*?\n)*?(?=^\[|\Z)", "", text)
+        self.assertNotIn("[issue_tracker]", new_text)
+        config_path.write_text(new_text, encoding="utf-8")
+
+        rc, output = self._upgrade()
+        self.assertEqual(rc, 0)
+        self.assertTrue(skill_path.exists())
+        self.assertIn(
+            ".agents/skills/raven-github-issues/SKILL.md", load_manifest(self.destination)["files"]
+        )
+        self.assertNotIn("deactivated by config", output)
+
+    def test_typo_platform_value_aborts_upgrade_without_deleting_skill(self) -> None:
+        # #173 regression: a typo'd platform value ("gihtub") must route
+        # through the ConfigError abort path -- the exact defect that let
+        # upgrade silently delete raven-github-issues before this fix.
+        self._install("github")
+        skill_path = self.destination / ".agents" / "skills" / "raven-github-issues" / "SKILL.md"
+        self.assertTrue(skill_path.exists())
+        self._switch_platform("gihtub")
+
+        rc, _output = self._upgrade()
+        self.assertEqual(rc, 2)
+        self.assertTrue(skill_path.exists())
+        self.assertIn(
+            ".agents/skills/raven-github-issues/SKILL.md", load_manifest(self.destination)["files"]
+        )
 
     def test_malformed_config_never_deletes_a_deactivated_skill(self) -> None:
         # The config-read-failure guarantee: classify_deactivated is only ever
