@@ -13,6 +13,11 @@ collects and re-runs this entire suite, including this file, which invokes
 directory has no `tests/` for pytest to discover, so even a justfile that
 (pre-fix) ignores its launcher override entirely and always shells out to
 pytest can only ever collect zero tests there.
+
+These tests are gated by `HAVE_JUST` and are skipped wherever `just` is not
+on `PATH`. CI installs `just` in the `checks` job (see
+`.github/workflows/ci.yml`), so this coverage runs there too, not just
+locally.
 """
 
 from __future__ import annotations
