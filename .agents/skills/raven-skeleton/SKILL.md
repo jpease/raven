@@ -53,9 +53,7 @@ The helper tries a backend ladder and notes which tier produced the skeleton:
 
 1. **ast-grep** (exact): Python, TypeScript/TSX, JavaScript, Go, Rust, Swift, Lua,
    and Elixir (via a structural rule). Needs an installed `ast-grep` binary.
-2. **Universal Ctags** (exact): used when ast-grep is unavailable or finds nothing;
-   requires genuine Universal Ctags with JSON support.
-3. **`rg`** (approximate): a final degraded declaration scan; see Approximate
-   Ranges above.
+2. **`rg`** (approximate): a degraded declaration scan used when ast-grep is
+   unavailable or finds nothing; see Approximate Ranges above.
 
 Languages outside these tiers fall through to the no-skeleton message.

@@ -4,12 +4,11 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
-from typing import ClassVar
 
 from helpers import REPO_ROOT, RavenTestCase, codex_script_symlink_target, load_script_module
 from raven_lib.template import should_preserve_symlink
 
-# ast-grep, rg, and universal-ctags are all installed by CI's `checks` job
+# ast-grep and rg are both installed by CI's `checks` job
 # (see .github/workflows/ci.yml: "Install check tools" / "Install search/tagging
 # tools"), unlike test_list_open_issues.py's HAVE_LIST_OPEN_ISSUES, which is a
 # genuinely local-only case (a private-repo symlink target). A skip on these
@@ -17,19 +16,6 @@ from raven_lib.template import should_preserve_symlink
 HAVE_ASTGREP = shutil.which("ast-grep") is not None
 HAVE_RG = shutil.which("rg") is not None
 
-
-def _have_universal_ctags() -> bool:
-    binary = shutil.which("ctags")
-    if binary is None:
-        return False
-    try:
-        version = subprocess.run([binary, "--version"], capture_output=True, text=True, check=False)
-    except OSError:
-        return False
-    return "Universal Ctags" in version.stdout
-
-
-HAVE_UNIVERSAL_CTAGS = _have_universal_ctags()
 
 SKELETON_SCRIPT = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-skeleton.py"
 CODEX_SKELETON_SCRIPT = REPO_ROOT / "common" / ".codex" / "scripts" / "raven-skeleton.py"
@@ -446,47 +432,6 @@ class AstgrepSkeletonTests(RavenTestCase):
         )
 
 
-class ParseCtagsJsonTests(RavenTestCase):
-    """The Universal Ctags fallback is the *exact* tier: a tag counts only when
-    it carries both ``line`` and ``end``. The header is read from the source so
-    it matches the ast-grep tier's "first line of the declaration" convention.
-    """
-
-    SOURCE_LINES: ClassVar[list[str]] = [
-        "def top_function(x):",  # 1
-        "    y = 1",  # 2
-        "    return y",  # 3
-        "",  # 4
-        "class Greeter:",  # 5
-        "    def greet(self):",  # 6
-        "        return 1",  # 7
-        "",  # 8
-        "def no_end():",  # 9
-    ]
-
-    def test_keeps_tags_with_end_and_discards_tags_without_end(self):
-        module = _module()
-        text = (
-            '{"_type":"tag","name":"top_function","line":1,"kind":"function","end":3}\n'
-            '{"_type":"tag","name":"Greeter","line":5,"kind":"class","end":7}\n'
-            '{"_type":"tag","name":"greet","line":6,"kind":"method","scope":"Greeter","end":7}\n'
-            '{"_type":"tag","name":"no_end","line":9,"kind":"function"}\n'
-        )
-        self.assertEqual(
-            module.parse_ctags_json(text, self.SOURCE_LINES),
-            [
-                {"start_line": 1, "end_line": 3, "header": "def top_function(x):"},
-                {"start_line": 5, "end_line": 7, "header": "class Greeter:"},
-                {"start_line": 6, "end_line": 7, "header": "def greet(self):"},
-            ],
-        )
-
-    def test_tolerates_blank_lines_and_non_tag_json(self):
-        module = _module()
-        text = '\n{"_type":"ptag","name":"!_TAG_PROGRAM"}\n'
-        self.assertEqual(module.parse_ctags_json(text, self.SOURCE_LINES), [])
-
-
 class RgDeclarationPatternTests(RavenTestCase):
     def test_has_pattern_for_shipped_languages(self):
         module = _module()
@@ -533,43 +478,35 @@ class ParseRgMatchesTests(RavenTestCase):
 
 
 class GenerateSkeletonLadderTests(RavenTestCase):
-    """The ladder is ast-grep -> ctags -> rg. The runtime sanity check treats an
-    empty result (a backend that ran but found nothing) the same as an
-    unavailable backend, so a bad/empty skeleton degrades to the next tier
-    instead of being emitted.
+    """The ladder is ast-grep -> rg. The runtime sanity check treats an empty
+    result (a backend that ran but found nothing) the same as an unavailable
+    backend, so a bad/empty skeleton degrades to the next tier instead of being
+    emitted.
     """
 
-    def _patched(self, *, astgrep, ctags, rg):
+    def _patched(self, *, astgrep, rg):
         module = _module()
         module.astgrep_skeleton = lambda *_a, **_k: astgrep
-        module.ctags_skeleton = lambda *_a, **_k: ctags
         module.rg_skeleton = lambda *_a, **_k: rg
         return module
 
     def test_prefers_astgrep_when_it_returns_rows(self):
         rows = [{"start_line": 1, "end_line": 2, "header": "def f():"}]
-        module = self._patched(astgrep=rows, ctags=None, rg=None)
+        module = self._patched(astgrep=rows, rg=None)
         result = module.generate_skeleton("/repo/a.py")
         self.assertEqual(result.rows, rows)
         self.assertEqual(result.backend, "ast-grep")
         self.assertFalse(result.approximate)
 
-    def test_empty_astgrep_degrades_to_ctags(self):
-        rows = [{"start_line": 1, "end_line": 2, "header": "def f():"}]
-        module = self._patched(astgrep=[], ctags=rows, rg=None)
-        result = module.generate_skeleton("/repo/a.py")
-        self.assertEqual(result.backend, "ctags")
-        self.assertFalse(result.approximate)
-
     def test_degrades_to_rg_and_marks_approximate(self):
         rows = [{"start_line": 1, "end_line": 3, "header": "def f():"}]
-        module = self._patched(astgrep=None, ctags=[], rg=rows)
+        module = self._patched(astgrep=None, rg=rows)
         result = module.generate_skeleton("/repo/a.py")
         self.assertEqual(result.backend, "rg")
         self.assertTrue(result.approximate)
 
     def test_returns_none_when_every_backend_is_empty(self):
-        module = self._patched(astgrep=[], ctags=None, rg=[])
+        module = self._patched(astgrep=[], rg=[])
         self.assertIsNone(module.generate_skeleton("/repo/a.py"))
 
     def test_returns_none_for_unsupported_language_without_calling_backends(self):
@@ -579,7 +516,6 @@ class GenerateSkeletonLadderTests(RavenTestCase):
             raise AssertionError("backend should not run for an unsupported language")
 
         module.astgrep_skeleton = _boom
-        module.ctags_skeleton = _boom
         module.rg_skeleton = _boom
         self.assertIsNone(module.generate_skeleton("/repo/notes.md"))
 
@@ -597,22 +533,6 @@ class RgSkeletonEndToEndTests(RavenTestCase):
                 {"start_line": 5, "end_line": 6, "header": "class Beta:"},
             ],
         )
-
-
-@unittest.skipUnless(HAVE_UNIVERSAL_CTAGS, "Universal Ctags not installed")
-class CtagsSkeletonEndToEndTests(RavenTestCase):
-    def test_python_exact_ranges(self):
-        module = _module()
-        path = self.destination / "ct.py"
-        path.write_text(
-            "def alpha(x):\n    return x\n\n\nclass Beta:\n    def m(self):\n        return 1\n",
-            encoding="utf-8",
-        )
-        rows = module.ctags_skeleton(str(path))
-        self.assertIsNotNone(rows)
-        headers = {r["header"] for r in rows}
-        self.assertIn("def alpha(x):", headers)
-        self.assertIn("class Beta:", headers)
 
 
 class CommonCopyParityTests(RavenTestCase):

@@ -289,7 +289,7 @@ def astgrep_skeleton(path: str, language: str | None = None) -> list[dict] | Non
         # error -- only other codes (e.g. an invalid --kind) are real
         # failures. Treating 1 as fatal would wrongly discard the primary
         # tier's (empty) result before the lexical-function supplement below
-        # ever runs, degrading all-arrow-function files to the ctags/rg tier.
+        # ever runs, degrading all-arrow-function files to the rg tier.
         if result.returncode not in (0, 1):
             return None
         rows = parse_astgrep_stream(result.stdout)
@@ -317,94 +317,6 @@ def astgrep_skeleton(path: str, language: str | None = None) -> list[dict] | Non
             rows = rows + parse_astgrep_stream(supplement_result.stdout)
 
     return sort_rows(rows)
-
-
-def ctags_binary() -> str | None:
-    """Resolve an executable that is genuinely **Universal** Ctags with JSON
-    support. BSD ctags (the default ``/usr/bin/ctags`` on macOS) and Exuberant
-    Ctags lack the ``end`` field this backend depends on, so they are rejected.
-    """
-    binary = shutil.which("ctags")
-    if binary is None:
-        return None
-    try:
-        version = subprocess.run([binary, "--version"], capture_output=True, text=True, check=False)
-        if "Universal Ctags" not in version.stdout:
-            return None
-        features = subprocess.run(
-            [binary, "--list-features"], capture_output=True, text=True, check=False
-        )
-    except OSError:
-        return None
-    if "json" not in features.stdout:
-        return None
-    return binary
-
-
-def parse_ctags_json(text: str, source_lines: list[str]) -> list[dict]:
-    """Parse Universal Ctags JSON-Lines output into sorted rows. This is the
-    *exact* fallback tier: a tag is kept only when it carries both an integer
-    ``line`` and an integer ``end`` (the scope boundary). Tags without ``end``
-    cannot yield an exact range and are dropped. The header is read from the
-    source so it matches the ast-grep tier's "first line of the declaration".
-    """
-    rows: list[dict] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            tag = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if tag.get("_type") != "tag":
-            continue
-        start = tag.get("line")
-        end = tag.get("end")
-        if not isinstance(start, int) or isinstance(start, bool):
-            continue
-        if not isinstance(end, int) or isinstance(end, bool):
-            continue
-        header = source_lines[start - 1].strip() if 1 <= start <= len(source_lines) else ""
-        rows.append({"start_line": start, "end_line": end, "header": header})
-    return sort_rows(rows)
-
-
-def ctags_skeleton(path: str, language: str | None = None) -> list[dict] | None:
-    """Generate a skeleton with Universal Ctags. Returns ``None`` when the
-    language is undetectable or no Universal Ctags binary is available -- the
-    signal to fall through to the degraded backend.
-    """
-    language = language or detect_language(path)
-    if language is None:
-        return None
-    binary = ctags_binary()
-    if binary is None:
-        return None
-    result = subprocess.run(
-        [
-            binary,
-            "--options=NONE",
-            "--output-format=json",
-            "--fields=+{line}{end}{kind}{scope}{signature}",
-            "--extras=-p",
-            "-o",
-            "-",
-            "--",
-            path,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        return None
-    try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            source_lines = handle.read().splitlines()
-    except OSError:
-        return None
-    return parse_ctags_json(result.stdout, source_lines)
 
 
 # Language -> declaration-start regex for the degraded ``rg`` tier. These locate
@@ -513,19 +425,25 @@ class Skeleton:
 
 
 def generate_skeleton(path: str) -> Skeleton | None:
-    """Run the backend ladder (ast-grep -> Universal Ctags -> rg) and return the
-    first non-empty result. The empty-result sanity check is deliberate: a
-    backend that runs but returns nothing is treated like an unavailable one, so
-    an empty/bad skeleton degrades to the next tier instead of being emitted.
-    Returns ``None`` when the language is unsupported or every tier comes up
-    empty.
+    """Run the backend ladder (ast-grep -> rg) and return the first non-empty
+    result. The empty-result sanity check is deliberate: a backend that runs but
+    returns nothing is treated like an unavailable one, so an empty/bad skeleton
+    degrades to the next tier instead of being emitted. Returns ``None`` when the
+    language is unsupported or every tier comes up empty.
+
+    Two rungs is the whole ladder. A tier between them would have to be more
+    available than ast-grep to ever be reached, and none is: ast-grep is what
+    `raven-tool-check.py` recommends, `rg` ships with most agent harnesses, and
+    every language in ``LANGUAGE_BY_EXTENSION`` is covered by both. Universal
+    Ctags in particular cannot serve -- it is not a probed tool, so nothing tells
+    anyone to install it, and the default ``/usr/bin/ctags`` on macOS is BSD
+    ctags, which lacks the scope-end field an exact tier needs.
     """
     language = detect_language(path)
     if language is None:
         return None
     ladder = (
         ("ast-grep", astgrep_skeleton, False),
-        ("ctags", ctags_skeleton, False),
         ("rg", rg_skeleton, True),
     )
     for backend, generate, approximate in ladder:

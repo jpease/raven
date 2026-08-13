@@ -36,7 +36,7 @@ jobs:
           python -m pip install ruff pyright pytest ast-grep-cli
 
       - name: Install search/tagging tools
-        run: sudo apt-get update && sudo apt-get install -y ripgrep universal-ctags
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
 
       - name: Install just
         run: curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
