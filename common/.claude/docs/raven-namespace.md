@@ -30,6 +30,8 @@ These integration files are also template-managed, but they cannot be fully name
 - `.codex/config.toml`
 - `.codex/hooks.json`
 
+`.claude/settings.json` is fully Raven-owned like any other managed file: it upgrades in place with no guided merge, even when a pre-existing hand-written copy needs one-time adoption consent first (`raven install --adopt-settings-json`). `.claude/settings.local.json` is the user's own local-overrides layer and is never touched or shipped by Raven. `.mcp.json`, by contrast, is explicitly **not** owned this way -- a pre-existing copy stays on the guided-merge path (`.raven/merge/`) like any other file Raven does not track.
+
 ## Rules
 
 - Do not put project-specific guidance in `raven-*` files.

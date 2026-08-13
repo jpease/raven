@@ -57,6 +57,31 @@ class GuidedMergeTests(RavenTestCase):
             (self.destination / ".raven" / "merge" / "CLAUDE.md.raven").read_text(encoding="utf-8"),
         )
 
+    def test_mcp_json_still_classifies_unknown_existing_not_needs_adoption(self):
+        # Regression pin for #200: .claude/settings.json got its own
+        # needs_adoption carve-out in _classify_entry, but .mcp.json is
+        # explicitly out of scope for that issue and must keep going through
+        # the exact same unknown_existing/guided-merge path as before.
+        (self.destination / ".mcp.json").write_text('{"local": true}\n', encoding="utf-8")
+        entries = raven.entries_for_destination(
+            self.template,
+            self.excludes,
+            raven.load_config(self.destination),
+            self.destination,
+        )
+
+        classification = raven.classify(
+            self.template, self.destination, self.excludes, entries=entries
+        )
+
+        self.assertIn(".mcp.json", classification.unknown_existing)
+        self.assertNotIn(".mcp.json", classification.needs_adoption)
+
+        written = raven.write_guided_merge_artifacts(self.destination, entries, [".mcp.json"])
+        self.assertIn(".raven/merge/.mcp.json.diff", written)
+        self.assertIn(".raven/merge/.mcp.json.raven", written)
+        self.assertIn(".raven/merge/.mcp.json.instructions.md", written)
+
     def test_guided_merge_artifacts_for_modified_non_instruction_file(self):
         original = '{"mcpServers": {"local": "keep me"}}\n'
         (self.destination / ".mcp.json").write_text(original, encoding="utf-8")

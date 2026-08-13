@@ -565,6 +565,26 @@ def _existing_ignore_patterns(text: str) -> set[str]:
     return patterns
 
 
+def _ensure_gitignored(destination: Path, entry: str, comment: str) -> None:
+    """Idempotently append ``entry`` to the destination's .gitignore, under ``comment``.
+
+    Shared append-once-only safety logic: an exact-pattern comparison (not
+    substring, see `_existing_ignore_patterns`) so a comment merely mentioning
+    the path never counts as the real rule, plus correct handling of a
+    .gitignore missing a trailing newline. Both `_ensure_merge_dir_gitignored`
+    and `ensure_settings_local_gitignored` (#200) call this rather than each
+    reimplementing it.
+    """
+    gitignore = destination / ".gitignore"
+    existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+    if entry in _existing_ignore_patterns(existing):
+        return
+    prefix = "" if not existing or existing.endswith("\n") else "\n"
+    block = f"{prefix}\n# {comment}\n{entry}\n"
+    with gitignore.open("a", encoding="utf-8") as f:
+        f.write(block)
+
+
 def _ensure_merge_dir_gitignored(destination: Path) -> None:
     """Ignore MERGE_DIR in the destination's .gitignore.
 
@@ -572,15 +592,25 @@ def _ensure_merge_dir_gitignored(destination: Path) -> None:
     something meant to be committed. Without this, a broad `git add` run
     before `raven accept` picks them up as ordinary untracked files.
     """
-    entry = f"{MERGE_DIR.as_posix()}/"
-    gitignore = destination / ".gitignore"
-    existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
-    if entry in _existing_ignore_patterns(existing):
-        return
-    prefix = "" if not existing or existing.endswith("\n") else "\n"
-    block = f"{prefix}\n# Raven guided-merge scratch artifacts\n{entry}\n"
-    with gitignore.open("a", encoding="utf-8") as f:
-        f.write(block)
+    _ensure_gitignored(
+        destination, f"{MERGE_DIR.as_posix()}/", "Raven guided-merge scratch artifacts"
+    )
+
+
+def ensure_settings_local_gitignored(destination: Path) -> None:
+    """Ignore ``.claude/settings.local.json`` in the destination's .gitignore.
+
+    Called only when Raven first installs or adopts ``.claude/settings.json``
+    as managed content (#200), not on every apply. ``settings.local.json`` is
+    Claude Code's own local-overlay file -- documented as the place for the
+    user's own overrides now that Raven owns settings.json -- and is never
+    something Raven ships or expects committed.
+    """
+    _ensure_gitignored(
+        destination,
+        ".claude/settings.local.json",
+        "Raven: your local Claude Code settings overlay (see .claude/settings.json)",
+    )
 
 
 def _write_merge_artifact(path: Path, text: str) -> None:

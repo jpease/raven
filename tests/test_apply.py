@@ -481,5 +481,414 @@ class BuildRunPlanTests(RavenTestCase):
         self.assertFalse(self._plan(adopt_claude_symlink=True).backup_conflict)
 
 
+class SettingsJsonClassificationTests(RavenTestCase):
+    """#200: a pre-existing hand-written .claude/settings.json needs adoption
+    consent instead of falling into the generic unknown_existing/guided-merge
+    path that every other untracked file (e.g. .mcp.json) still uses.
+    """
+
+    def test_pre_existing_untracked_settings_json_needs_adoption(self):
+        (self.destination / ".claude").mkdir(parents=True)
+        (self.destination / ".claude" / "settings.json").write_text(
+            '{"custom": true}\n', encoding="utf-8"
+        )
+
+        classification = raven.classify(self.template, self.destination, self.excludes)
+
+        self.assertIn(".claude/settings.json", classification.needs_adoption)
+        self.assertNotIn(".claude/settings.json", classification.unknown_existing)
+        self.assertNotIn(".claude/settings.json", classification.needs_merge)
+
+    def test_settings_json_content_identical_to_template_is_identical(self):
+        template_settings = (self.template / ".claude" / "settings.json").read_text(
+            encoding="utf-8"
+        )
+        (self.destination / ".claude").mkdir(parents=True)
+        (self.destination / ".claude" / "settings.json").write_text(
+            template_settings, encoding="utf-8"
+        )
+
+        classification = raven.classify(self.template, self.destination, self.excludes)
+
+        self.assertIn(".claude/settings.json", classification.identical)
+        self.assertNotIn(".claude/settings.json", classification.needs_adoption)
+
+    def test_missing_settings_json_still_will_copy(self):
+        classification = raven.classify(self.template, self.destination, self.excludes)
+
+        self.assertIn(".claude/settings.json", classification.will_copy)
+        self.assertNotIn(".claude/settings.json", classification.needs_adoption)
+
+
+class SettingsJsonAdoptionUnitTests(RavenTestCase):
+    """Unit tests for `adopt_settings_json`, mirroring `ClaudeSymlinkTests`."""
+
+    def _entries(self):
+        return raven.entries_for_destination(
+            self.template, self.excludes, raven.load_config(self.destination), self.destination
+        )
+
+    def test_first_install_writes_template_with_no_backup(self):
+        entries = self._entries()
+
+        changed = raven.adopt_settings_json(self.destination, entries)
+
+        self.assertEqual(changed, [".claude/settings.json"])
+        self.assertFalse((self.destination / ".claude" / "settings.json.bak").exists())
+        self.assertEqual(
+            (self.destination / ".claude" / "settings.json").read_text(encoding="utf-8"),
+            (self.template / ".claude" / "settings.json").read_text(encoding="utf-8"),
+        )
+
+    def test_backs_up_existing_file_byte_for_byte(self):
+        (self.destination / ".claude").mkdir(parents=True)
+        original = '{"custom": "hand-written", "keep": [1, 2, 3]}\n'
+        (self.destination / ".claude" / "settings.json").write_text(original, encoding="utf-8")
+        entries = self._entries()
+
+        changed = raven.adopt_settings_json(self.destination, entries)
+
+        self.assertEqual(changed, [".claude/settings.json.bak", ".claude/settings.json"])
+        # Byte-for-byte: the backup must be provably lossless.
+        self.assertEqual(
+            (self.destination / ".claude" / "settings.json.bak").read_bytes(),
+            original.encode("utf-8"),
+        )
+        self.assertEqual(
+            (self.destination / ".claude" / "settings.json").read_text(encoding="utf-8"),
+            (self.template / ".claude" / "settings.json").read_text(encoding="utf-8"),
+        )
+
+    def test_refuses_to_overwrite_existing_backup(self):
+        (self.destination / ".claude").mkdir(parents=True)
+        (self.destination / ".claude" / "settings.json").write_text(
+            '{"custom": true}\n', encoding="utf-8"
+        )
+        (self.destination / ".claude" / "settings.json.bak").write_text(
+            "existing backup\n", encoding="utf-8"
+        )
+        entries = self._entries()
+
+        with self.assertRaises(FileExistsError):
+            raven.adopt_settings_json(self.destination, entries)
+
+        self.assertEqual(
+            (self.destination / ".claude" / "settings.json").read_text(encoding="utf-8"),
+            '{"custom": true}\n',
+        )
+        self.assertEqual(
+            (self.destination / ".claude" / "settings.json.bak").read_text(encoding="utf-8"),
+            "existing backup\n",
+        )
+
+    def test_already_matching_template_is_a_noop(self):
+        (self.destination / ".claude").mkdir(parents=True)
+        (self.destination / ".claude" / "settings.json").write_text(
+            (self.template / ".claude" / "settings.json").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        entries = self._entries()
+
+        changed = raven.adopt_settings_json(self.destination, entries)
+
+        self.assertEqual(changed, [])
+        self.assertFalse((self.destination / ".claude" / "settings.json.bak").exists())
+
+
+class SettingsJsonAdoptionRunTests(RavenTestCase):
+    """`_run`-level integration for .claude/settings.json adoption (#200)."""
+
+    def test_run_leaves_pre_existing_settings_json_untouched_without_consent(self):
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / ".claude").mkdir(parents=True)
+        original = '{"custom": true}\n'
+        (self.destination / ".claude" / "settings.json").write_text(original, encoding="utf-8")
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+                prompt_settings_json=False,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            (self.destination / ".claude" / "settings.json").read_text(encoding="utf-8"), original
+        )
+        self.assertFalse((self.destination / ".claude" / "settings.json.bak").exists())
+        # No merge artifact for this path: adoption, not guided merge, is the fix.
+        self.assertFalse(
+            (self.destination / ".raven" / "merge" / ".claude" / "settings.json.diff").exists()
+        )
+        self.assertIn("--adopt-settings-json", output.getvalue())
+
+    def test_run_with_adopt_settings_json_backs_up_and_installs_template(self):
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / ".claude").mkdir(parents=True)
+        original = '{"custom": true}\n'
+        (self.destination / ".claude" / "settings.json").write_text(original, encoding="utf-8")
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+                adopt_settings_json_requested=True,
+                prompt_settings_json=False,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            (self.destination / ".claude" / "settings.json.bak").read_text(encoding="utf-8"),
+            original,
+        )
+        self.assertEqual(
+            (self.destination / ".claude" / "settings.json").read_text(encoding="utf-8"),
+            (self.template / ".claude" / "settings.json").read_text(encoding="utf-8"),
+        )
+        self.assertIn("Adopted .claude/settings.json", output.getvalue())
+        manifest = raven.load_manifest(self.destination)
+        self.assertIn(".claude/settings.json", manifest.get("files", {}))
+
+    def test_run_with_adopt_settings_json_fails_if_backup_exists(self):
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / ".claude").mkdir(parents=True)
+        (self.destination / ".claude" / "settings.json").write_text(
+            '{"custom": true}\n', encoding="utf-8"
+        )
+        (self.destination / ".claude" / "settings.json.bak").write_text(
+            "existing backup\n", encoding="utf-8"
+        )
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+                adopt_settings_json_requested=True,
+                prompt_settings_json=False,
+            )
+
+        self.assertEqual(rc, 2)
+        self.assertEqual(
+            (self.destination / ".claude" / "settings.json").read_text(encoding="utf-8"),
+            '{"custom": true}\n',
+        )
+        self.assertEqual(
+            (self.destination / ".claude" / "settings.json.bak").read_text(encoding="utf-8"),
+            "existing backup\n",
+        )
+        self.assertIn("settings.json.bak already exists", output.getvalue())
+
+    def test_dry_run_with_adopt_settings_json_reports_without_writing(self):
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / ".claude").mkdir(parents=True)
+        original = '{"custom": true}\n'
+        (self.destination / ".claude" / "settings.json").write_text(original, encoding="utf-8")
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                True,
+                [],
+                adopt_settings_json_requested=True,
+                prompt_settings_json=False,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            (self.destination / ".claude" / "settings.json").read_text(encoding="utf-8"), original
+        )
+        self.assertFalse((self.destination / ".claude" / "settings.json.bak").exists())
+        self.assertIn("Would adopt .claude/settings.json", output.getvalue())
+
+    def test_clean_install_writes_settings_json_as_managed_no_merge_artifact(self):
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            rc = raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.destination / ".claude" / "settings.json").is_file())
+        manifest = raven.load_manifest(self.destination)
+        self.assertIn(".claude/settings.json", manifest.get("files", {}))
+        self.assertFalse((self.destination / ".raven" / "merge").exists())
+
+    def test_first_install_gitignores_settings_local_json(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+        gitignore = (self.destination / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn(".claude/settings.local.json", gitignore.splitlines())
+
+    def test_adoption_gitignores_settings_local_json(self):
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / ".claude").mkdir(parents=True)
+        (self.destination / ".claude" / "settings.json").write_text(
+            '{"custom": true}\n', encoding="utf-8"
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+                adopt_settings_json_requested=True,
+                prompt_settings_json=False,
+            )
+
+        gitignore = (self.destination / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn(".claude/settings.local.json", gitignore.splitlines())
+
+    def test_upgrade_after_local_hand_edit_uses_reconcile_state_not_new_code(self):
+        # Decision #4: once adopted, reconcile_state's existing 3-way logic
+        # must own this file on every subsequent run -- a local hand-edit after
+        # adoption with the template unchanged is `local_only`, exactly like
+        # any other Raven-managed file, with no #200-specific code involved.
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / ".claude").mkdir(parents=True)
+        (self.destination / ".claude" / "settings.json").write_text(
+            '{"custom": true}\n', encoding="utf-8"
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+                adopt_settings_json_requested=True,
+                prompt_settings_json=False,
+            )
+
+        (self.destination / ".claude" / "settings.json").write_text(
+            '{"hand-edited-after-adoption": true}\n', encoding="utf-8"
+        )
+
+        classification = raven.classify(self.template, self.destination, self.excludes)
+
+        self.assertIn(".claude/settings.json", classification.local_only)
+        self.assertNotIn(".claude/settings.json", classification.unknown_existing)
+        self.assertNotIn(".claude/settings.json", classification.needs_adoption)
+        self.assertNotIn(".claude/settings.json", classification.needs_merge)
+
+    def test_second_run_after_adoption_is_identical_never_unknown_existing_or_re_prompted(self):
+        # Decision #4 / judgment call #4: prove the second `raven upgrade`
+        # after adoption classifies the file as identical (upgrade-clean, like
+        # any other template file), never re-prompts, and never double-backs-up.
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / ".claude").mkdir(parents=True)
+        original = '{"custom": true}\n'
+        (self.destination / ".claude" / "settings.json").write_text(original, encoding="utf-8")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            first_rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+                adopt_settings_json_requested=True,
+                prompt_settings_json=False,
+            )
+        self.assertEqual(first_rc, 0)
+
+        classification = raven.classify(self.template, self.destination, self.excludes)
+        self.assertIn(".claude/settings.json", classification.identical)
+        self.assertNotIn(".claude/settings.json", classification.unknown_existing)
+        self.assertNotIn(".claude/settings.json", classification.needs_adoption)
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            second_rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+                # No adopt_settings_json_requested and no prompt override: if
+                # the second run still needed consent, a non-interactive test
+                # process answers "no" to any prompt reached, which would then
+                # surface as a spurious re-adoption request in the output.
+            )
+
+        self.assertEqual(second_rc, 0)
+        self.assertNotIn("Adopted .claude/settings.json", output.getvalue())
+        self.assertNotIn("--adopt-settings-json", output.getvalue())
+        # The original backup from the first adoption is untouched -- no
+        # second backup was ever attempted.
+        self.assertEqual(
+            (self.destination / ".claude" / "settings.json.bak").read_text(encoding="utf-8"),
+            original,
+        )
+
+
+class BuildApplyPlanSettingsJsonTests(unittest.TestCase):
+    """`build_apply_plan`'s settings.json adoption branch, isolated from the filesystem."""
+
+    def test_adopts_settings_json_when_decided(self):
+        classification = _classification(needs_adoption=[".claude/settings.json"])
+        plan = raven.build_apply_plan(
+            classification,
+            [],
+            existing_overrides=set(),
+            adopt_claude_symlink=False,
+            adopt_settings_json=True,
+        )
+        self.assertTrue(plan.adopt_settings_json)
+        self.assertNotIn(".claude/settings.json", plan.effective_classification.needs_adoption)
+
+    def test_leaves_needs_adoption_when_not_decided(self):
+        classification = _classification(needs_adoption=[".claude/settings.json"])
+        plan = raven.build_apply_plan(
+            classification,
+            [],
+            existing_overrides=set(),
+            adopt_claude_symlink=False,
+            adopt_settings_json=False,
+        )
+        self.assertFalse(plan.adopt_settings_json)
+        self.assertIn(".claude/settings.json", plan.effective_classification.needs_adoption)
+
+    def test_override_removes_settings_json_from_needs_adoption(self):
+        classification = _classification(needs_adoption=[".claude/settings.json"])
+        plan = raven.build_apply_plan(
+            classification,
+            [".claude/settings.json"],
+            existing_overrides={".claude/settings.json"},
+            adopt_claude_symlink=False,
+            adopt_settings_json=False,
+        )
+        self.assertNotIn(".claude/settings.json", plan.effective_classification.needs_adoption)
+        self.assertIn(".claude/settings.json", plan.overwritten)
+
+
 if __name__ == "__main__":
     unittest.main()

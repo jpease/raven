@@ -509,6 +509,7 @@ class BuildParserContractTests(unittest.TestCase):
             all_flags,
             {
                 "--adopt-claude-symlink",
+                "--adopt-settings-json",
                 "--confirm-template-switch",
                 "--destination",
                 "--dry-run",

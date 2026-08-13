@@ -22,7 +22,7 @@ from raven_lib.models import Classification
 from raven_lib.runner import RunResult
 
 
-def _classification(needs_merge, local_only=(), will_copy=()):
+def _classification(needs_merge, local_only=(), will_copy=(), needs_adoption=()):
     return Classification(
         will_copy=list(will_copy),
         will_upgrade=[],
@@ -31,6 +31,7 @@ def _classification(needs_merge, local_only=(), will_copy=()):
         unknown_existing=[],
         excluded=[],
         local_only=list(local_only),
+        needs_adoption=list(needs_adoption),
     )
 
 
@@ -215,13 +216,16 @@ class DoctorDriftTests(RavenTestCase):
             'schema = 1\ntemplate = "python"\n', encoding="utf-8"
         )
 
-    def _drift(self, *, needs_merge, pending, local_only=(), will_copy=()):
+    def _drift(self, *, needs_merge, pending, local_only=(), will_copy=(), needs_adoption=()):
         self._config()
         with (
             mock.patch(
                 "raven_lib.doctor.classify",
                 return_value=_classification(
-                    needs_merge, local_only=local_only, will_copy=will_copy
+                    needs_merge,
+                    local_only=local_only,
+                    will_copy=will_copy,
+                    needs_adoption=needs_adoption,
                 ),
             ),
             mock.patch("raven_lib.doctor.pending_merge_paths", return_value=list(pending)),
@@ -279,6 +283,22 @@ class DoctorDriftTests(RavenTestCase):
         self.assertIn("doctor.drift.local", findings)
         self.assertEqual(findings["doctor.drift.local"].severity, Severity.INFO)
         self.assertIn("justfile", findings["doctor.drift.local"].detail)
+        self.assertNotIn("doctor.drift.modified", findings)
+
+    def test_needs_adoption_is_warn_not_modified_and_suppresses_ok(self):
+        # #200: a file needing adoption consent (currently only ever
+        # .claude/settings.json) is real, actionable drift -- it must get its
+        # own WARN finding pointing at --adopt-settings-json, and must not be
+        # silently absorbed into (or masked by) the generic "modified"/"no
+        # drift" findings, which no longer see it since it left
+        # unknown_existing for its own classification bucket.
+        findings = self._drift(needs_merge=[], pending=[], needs_adoption=[".claude/settings.json"])
+        self.assertIn("doctor.drift.needs_adoption", findings)
+        finding = findings["doctor.drift.needs_adoption"]
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIn(".claude/settings.json", finding.detail)
+        assert finding.fix is not None
+        self.assertIn("--adopt-settings-json", finding.fix)
         self.assertNotIn("doctor.drift.modified", findings)
 
     def test_unsupported_template_drift_returns_error_not_false_ok(self):

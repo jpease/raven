@@ -16,14 +16,27 @@ from pathlib import Path
 from typing import Literal
 
 from .blocks import BlockState, block_managed_state, update_raven_block
-from .constants import CLAUDE_BACKUP_PATH, CLAUDE_PATH, KIND_SYMLINK, _any_exists
+from .constants import (
+    CLAUDE_BACKUP_PATH,
+    CLAUDE_PATH,
+    KIND_SYMLINK,
+    SETTINGS_JSON_BACKUP_PATH,
+    SETTINGS_JSON_PATH,
+    _any_exists,
+)
 from .hashing import destination_fingerprint, entry_fingerprint, same_content
 from .manifest import load_manifest, parse_record
 from .models import Classification, Fingerprint, ManifestRecord, RavenConfig, TemplateEntry
 from .template import entries_for_destination, iter_template_entries
 
 ClassifyState = Literal[
-    "will_copy", "will_upgrade", "identical", "needs_merge", "unknown_existing", "local_only"
+    "will_copy",
+    "will_upgrade",
+    "identical",
+    "needs_merge",
+    "unknown_existing",
+    "local_only",
+    "needs_adoption",
 ]
 
 
@@ -100,6 +113,13 @@ def _classify_entry(
                 return reconciled
         return "needs_merge"
     if record is None:
+        # `.claude/settings.json` is the one path (#200) Raven can take over
+        # outright rather than hand-merging: an existing, untracked copy needs
+        # explicit consent to adopt, not a guided-merge artifact. Every other
+        # untracked file (e.g. `.mcp.json`, out of scope for #200) keeps the
+        # generic unknown_existing/guided-merge path unchanged.
+        if entry.relative == SETTINGS_JSON_PATH:
+            return "needs_adoption"
         return "unknown_existing"
     return reconcile_state(record, fingerprint, template_fp)
 
@@ -154,6 +174,7 @@ def classify(
         "needs_merge": [],
         "unknown_existing": [],
         "local_only": [],
+        "needs_adoption": [],
     }
     for entry in entry_iter:
         target = destination / entry.relative
@@ -331,6 +352,78 @@ def prompt_for_claude_symlink_adoption(destination: Path) -> bool:
     while True:
         try:
             answer = input("Adopt CLAUDE.md symlink? [y/N]: ").strip().lower()
+        except EOFError:
+            return False
+        if answer in {"", "n", "no"}:
+            return False
+        if answer in {"y", "yes"}:
+            return True
+        print("  Enter y or n.")
+
+
+def adopt_settings_json(destination: Path, entries: dict[str, TemplateEntry]) -> list[str]:
+    """Take over an existing hand-written ``.claude/settings.json``, backing up the original first.
+
+    Mirrors ``adopt_claude_symlink``, but settings.json is a plain managed file
+    rather than a symlink target: adoption backs up the existing content, then
+    writes the template's version over it with the same ``shutil.copy2`` write
+    ``copy_paths`` uses for every non-symlink entry. Hand-rolled here (rather
+    than delegating to ``copy_paths``) because this function only has
+    ``entries``, not a template root -- ``copy_paths`` would need one it
+    doesn't otherwise use, purely to make its override/managed-block
+    parameters line up for a single-file, no-parent-dirs write it already
+    performs identically inline.
+
+    Refuses (raises) rather than overwriting a pre-existing backup file, since
+    that would silently discard whatever content it holds. Returns the
+    destination-relative paths actually written, for the caller to report.
+    """
+    entry = entries.get(SETTINGS_JSON_PATH)
+    if entry is None or entry.copy_as_symlink:
+        raise ValueError(
+            "settings.json is not configured as a plain Raven-managed file in this template"
+        )
+    target = destination / SETTINGS_JSON_PATH
+    backup = destination / SETTINGS_JSON_BACKUP_PATH
+    if not _any_exists(target):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(entry.source, target)
+        return [SETTINGS_JSON_PATH]
+    if same_content(entry, target):
+        return []
+    if _any_exists(backup):
+        raise FileExistsError(
+            f"refusing to adopt {SETTINGS_JSON_PATH} because {SETTINGS_JSON_BACKUP_PATH} "
+            "already exists"
+        )
+    target.rename(backup)
+    shutil.copy2(entry.source, target)
+    return [SETTINGS_JSON_BACKUP_PATH, SETTINGS_JSON_PATH]
+
+
+def prompt_for_settings_json_adoption(destination: Path) -> bool:
+    """Interactively ask whether to adopt ``.claude/settings.json``; False in any non-interactive context.
+
+    Checks ``stdin.isatty()`` up front so a non-interactive run (CI, a script,
+    piped input) defaults to "no" instead of hanging on `input()` or consuming
+    unrelated piped data as an answer -- same rule as
+    ``prompt_for_claude_symlink_adoption``.
+    """
+    if not sys.stdin.isatty():
+        return False
+    print(
+        "Raven does not yet manage this repository's .claude/settings.json; it exists but was "
+        "not installed by Raven."
+    )
+    print(f"This repository already has {destination / SETTINGS_JSON_PATH}.")
+    print(
+        f"Choose whether to leave it untouched or move it to {SETTINGS_JSON_BACKUP_PATH} and let "
+        "Raven manage the file from here on. Your own local overrides belong in "
+        ".claude/settings.local.json, which Raven never touches."
+    )
+    while True:
+        try:
+            answer = input("Adopt .claude/settings.json? [y/N]: ").strip().lower()
         except EOFError:
             return False
         if answer in {"", "n", "no"}:

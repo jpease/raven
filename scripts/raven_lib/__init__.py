@@ -10,12 +10,14 @@ from __future__ import annotations
 
 from .apply import (
     adopt_claude_symlink,
+    adopt_settings_json,
     classify,
     claude_symlink_adoption_needed,
     copy_paths,
     find_path_collisions,
     find_state_symlink_collisions,
     prompt_for_claude_symlink_adoption,
+    prompt_for_settings_json_adoption,
     prompt_for_template_switch,
     reconcile_state,
 )
@@ -25,6 +27,7 @@ from .blocks import (
     block_content_matches,
     block_managed_state,
     comparison_block_content,
+    ensure_settings_local_gitignored,
     find_raven_block,
     guided_merge_instructions,
     normalized_block_content,
@@ -82,6 +85,8 @@ from .constants import (
     RAVEN_BLOCK_END,
     REPO_ROOT,
     ROOT_INSTRUCTION_FILES,
+    SETTINGS_JSON_BACKUP_PATH,
+    SETTINGS_JSON_PATH,
     STARTER_TOOL_CONFIG_PATHS,
     _any_exists,
 )
@@ -120,6 +125,7 @@ from .plan import (
     print_apply_summary,
     print_dry_run_plan,
     print_section,
+    settings_json_adoption_conflict,
 )
 from .report import render_human, render_json
 from .template import (
@@ -138,6 +144,8 @@ __all__ = [
     "ROOT_INSTRUCTION_FILES",
     "CLAUDE_PATH",
     "CLAUDE_BACKUP_PATH",
+    "SETTINGS_JSON_PATH",
+    "SETTINGS_JSON_BACKUP_PATH",
     "RAVEN_BLOCK_BEGIN_RE",
     "RAVEN_BLOCK_END",
     "DEFAULT_COMPONENTS",
@@ -196,6 +204,7 @@ __all__ = [
     "write_guided_merge_artifacts",
     "pending_merge_paths",
     "remove_merge_artifacts",
+    "ensure_settings_local_gitignored",
     # manifest
     "load_manifest",
     "git_ref",
@@ -213,12 +222,15 @@ __all__ = [
     "claude_symlink_adoption_needed",
     "adopt_claude_symlink",
     "prompt_for_claude_symlink_adoption",
+    "adopt_settings_json",
+    "prompt_for_settings_json_adoption",
     "prompt_for_template_switch",
     # plan
     "print_section",
     "print_apply_summary",
     "build_apply_plan",
     "claude_symlink_conflict",
+    "settings_json_adoption_conflict",
     "print_dry_run_plan",
     "apply_plan",
     "normalize_override",

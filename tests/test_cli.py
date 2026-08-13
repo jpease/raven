@@ -53,6 +53,30 @@ class CliTests(RavenTestCase):
         self.assertIn("Supported languages:", result.stdout)
         self.assertNotIn("language_or_path", result.stdout)
 
+    def test_install_help_names_adopt_settings_json(self):
+        result = subprocess.run(
+            [sys.executable, str(RAVEN_PATH), "install", "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("--adopt-settings-json", result.stdout)
+        self.assertIn(".claude/settings.json.bak", result.stdout)
+
+    def test_upgrade_help_names_adopt_settings_json(self):
+        result = subprocess.run(
+            [sys.executable, str(RAVEN_PATH), "upgrade", "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("--adopt-settings-json", result.stdout)
+        self.assertIn(".claude/settings.json.bak", result.stdout)
+
 
 class DoctorAssessCliTests(RavenTestCase):
     def _run(self, *cli_args, env=None):

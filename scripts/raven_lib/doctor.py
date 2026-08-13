@@ -367,6 +367,11 @@ def drift_findings(destination: Path) -> list[Finding]:
     # baseline: nothing upstream to merge, so these are informational, not drift
     # that needs action (e.g. an editor reformatting an installed file).
     local_only = sorted(set(classification.local_only) - set(pending))
+    # Files needing adoption consent (#200, currently only ever
+    # .claude/settings.json) never get a pending guided-merge artifact, so no
+    # `- set(pending)` subtraction is needed here, but it is harmless and kept
+    # for symmetry with the other buckets above.
+    needs_adoption = sorted(set(classification.needs_adoption) - set(pending))
     if missing:
         findings.append(
             Finding(
@@ -394,6 +399,7 @@ def drift_findings(destination: Path) -> list[Finding]:
         not pending
         and not local_only
         and not missing
+        and not needs_adoption
         and manifest_status.usable
         and not orphans.will_remove
         and not orphans.orphan_modified
@@ -407,6 +413,21 @@ def drift_findings(destination: Path) -> list[Finding]:
                 category=_DRIFT,
                 title="No Raven-owned drift detected",
                 detail="installed Raven files match their templates",
+            )
+        )
+
+    if needs_adoption:
+        findings.append(
+            Finding(
+                id="doctor.drift.needs_adoption",
+                severity=Severity.WARN,
+                category=_DRIFT,
+                title=f"{len(needs_adoption)} file(s) need consent to become Raven-managed",
+                detail=", ".join(needs_adoption),
+                fix=(
+                    "run `raven upgrade --adopt-settings-json` (or accept the interactive "
+                    "prompt) to let Raven manage it"
+                ),
             )
         )
 

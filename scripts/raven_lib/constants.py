@@ -25,6 +25,13 @@ MERGE_DIR = Path(".raven") / "merge"
 ROOT_INSTRUCTION_FILES = {"AGENTS.md", "CLAUDE.md"}
 CLAUDE_PATH = "CLAUDE.md"
 CLAUDE_BACKUP_PATH = "CLAUDE.md.bak"
+# .claude/settings.json adoption (#200): a pre-existing hand-written copy is
+# backed up here before Raven takes over the file, mirroring the CLAUDE.md
+# symlink-adoption precedent above -- but settings.json is a plain managed
+# file, not a symlink, so adoption backs up and overwrites real content
+# instead of redirecting a link.
+SETTINGS_JSON_PATH = ".claude/settings.json"
+SETTINGS_JSON_BACKUP_PATH = ".claude/settings.json.bak"
 RAVEN_BLOCK_BEGIN = "<!-- RAVEN:BEGIN -->"
 RAVEN_BLOCK_BEGIN_RE = re.compile(r"<!-- RAVEN:BEGIN(?: sha256=([a-f0-9]{64}))? -->")
 RAVEN_BLOCK_END = "<!-- RAVEN:END -->"

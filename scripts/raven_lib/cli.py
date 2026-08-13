@@ -23,6 +23,7 @@ from .apply import (
     find_path_collisions,
     find_state_symlink_collisions,
     prompt_for_claude_symlink_adoption,
+    prompt_for_settings_json_adoption,
     prompt_for_template_switch,
 )
 from .assess import build_assess_findings
@@ -44,6 +45,8 @@ from .constants import (
     MERGE_DIR,
     NON_TEMPLATE_DIRS,
     REPO_ROOT,
+    SETTINGS_JSON_BACKUP_PATH,
+    SETTINGS_JSON_PATH,
     SYMLINK_CHECKOUT_FIX,
     VALID_PLATFORMS,
     _any_exists,
@@ -63,6 +66,7 @@ from .plan import (
     print_apply_summary,
     print_dry_run_plan,
     print_section,
+    settings_json_adoption_conflict,
 )
 from .report import render_human, render_json, supports_unicode_marks
 from .template import broken_template_symlinks, entries_for_destination
@@ -189,6 +193,8 @@ def _planned_write_paths(plan: ApplyPlan) -> list[str]:
     paths.update((MERGE_DIR / relative).as_posix() for relative in plan.guided_merge_paths)
     if plan.adopt_claude_symlink:
         paths.add(CLAUDE_PATH)
+    if plan.adopt_settings_json:
+        paths.add(SETTINGS_JSON_PATH)
     return sorted(paths)
 
 
@@ -259,6 +265,7 @@ class RunPlan:
     collisions: list[str]
     state_symlinks: list[str]
     backup_conflict: bool
+    settings_backup_conflict: bool = False
 
 
 def _build_run_plan(
@@ -267,6 +274,7 @@ def _build_run_plan(
     requested_overrides_norm: list[str],
     existing_overrides: set[str],
     adopt_claude_symlink: bool,
+    adopt_settings_json: bool = False,
 ) -> RunPlan:
     """Compute the apply plan and every precondition `_run` must check before writing.
 
@@ -278,13 +286,17 @@ def _build_run_plan(
         requested_overrides_norm,
         existing_overrides,
         adopt_claude_symlink=adopt_claude_symlink,
+        adopt_settings_json=adopt_settings_json,
     )
     collisions = find_path_collisions(destination, _planned_write_paths(plan))
     state_symlinks = find_state_symlink_collisions(
         destination, [CONFIG_PATH.as_posix(), MANIFEST_PATH.as_posix()]
     )
     backup_conflict = plan.adopt_claude_symlink and _any_exists(destination / CLAUDE_BACKUP_PATH)
-    return RunPlan(plan, collisions, state_symlinks, backup_conflict)
+    settings_backup_conflict = plan.adopt_settings_json and _any_exists(
+        destination / SETTINGS_JSON_BACKUP_PATH
+    )
+    return RunPlan(plan, collisions, state_symlinks, backup_conflict, settings_backup_conflict)
 
 
 def _symlink_checkout_refusal() -> int | None:
@@ -321,6 +333,8 @@ def _run(
     requested_overrides: list[str],
     adopt_claude_symlink_requested: bool = False,
     prompt_claude_symlink: bool = True,
+    adopt_settings_json_requested: bool = False,
+    prompt_settings_json: bool = True,
     confirm_template_switch_requested: bool = False,
     prompt_template_switch: bool = True,
     platform_override: str | None = None,
@@ -425,6 +439,23 @@ def _run(
     if decision == "prompt" and not dry_run and prompt_claude_symlink:
         adopt_claude_symlink = prompt_for_claude_symlink_adoption(destination)
 
+    # .claude/settings.json (#200): the classification bucket itself (
+    # "needs_adoption") already *is* the structural "adoption needed" check --
+    # unlike CLAUDE.md's symlink, there is no separate filesystem shape to
+    # probe -- so "needed" and "conflict" collapse to one membership test.
+    settings_adoption_needed = SETTINGS_JSON_PATH in classification.needs_adoption
+    settings_conflict = settings_adoption_needed and settings_json_adoption_conflict(
+        classification, requested_overrides_norm
+    )
+    settings_decision = _symlink_adoption_decision(
+        needed=settings_adoption_needed,
+        conflict=settings_conflict,
+        requested=adopt_settings_json_requested,
+    )
+    adopt_settings_json = settings_decision == "auto"
+    if settings_decision == "prompt" and not dry_run and prompt_settings_json:
+        adopt_settings_json = prompt_for_settings_json_adoption(destination)
+
     # Preflight the whole write set before printing the plan or touching the
     # destination, so a path collision fails the same way for dry-run and live
     # and never leaves a partial install behind.
@@ -434,6 +465,7 @@ def _run(
         requested_overrides_norm,
         existing_overrides,
         adopt_claude_symlink,
+        adopt_settings_json,
     )
     plan = run_plan.plan
     collisions = run_plan.collisions
@@ -479,13 +511,22 @@ def _run(
         _print_hook_manager_notice(destination)
         return rc
 
-    # Validation has passed. Reject a doomed symlink adoption before any durable
-    # write, then write configuration only once the request is known good, so a
-    # rejected install leaves config and managed files unchanged.
+    # Validation has passed. Reject a doomed symlink/settings-json adoption
+    # before any durable write, then write configuration only once the
+    # request is known good, so a rejected install leaves config and managed
+    # files unchanged.
     if run_plan.backup_conflict:
         print(
             f"error: {CLAUDE_BACKUP_PATH} already exists; "
             "remove it before adopting the CLAUDE.md symlink.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if run_plan.settings_backup_conflict:
+        print(
+            f"error: {SETTINGS_JSON_BACKUP_PATH} already exists; "
+            "remove it before adopting .claude/settings.json.",
             file=sys.stderr,
         )
         return 2
@@ -495,7 +536,14 @@ def _run(
         if rc != 0:
             return rc
 
-    rc, adopted_claude, merge_artifacts, removed_orphans, removed_deactivated = apply_plan(
+    (
+        rc,
+        adopted_claude,
+        adopted_settings_json,
+        merge_artifacts,
+        removed_orphans,
+        removed_deactivated,
+    ) = apply_plan(
         destination,
         template_name,
         template,
@@ -534,6 +582,8 @@ def _run(
         deactivated_modified,
         deactivated.stale,
         deactivated.customized,
+        adopted_settings_json,
+        plan.effective_classification.needs_adoption,
     )
     if merge_artifacts:
         print()
@@ -689,6 +739,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         args.dry_run,
         overrides,
         adopt_claude_symlink_requested=args.adopt_claude_symlink,
+        adopt_settings_json_requested=getattr(args, "adopt_settings_json", False),
         confirm_template_switch_requested=getattr(args, "confirm_template_switch", False),
         platform_override=platform,
         write_config=write_config,
@@ -722,6 +773,7 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
         args.dry_run,
         args.overrides,
         adopt_claude_symlink_requested=args.adopt_claude_symlink,
+        adopt_settings_json_requested=getattr(args, "adopt_settings_json", False),
         confirm_template_switch_requested=getattr(args, "confirm_template_switch", False),
     )
 
@@ -1020,8 +1072,9 @@ File safety:
         help="first-time apply; creates config if needed and copies safe Raven files",
         description=(
             "Install a language template into the destination repo. Run with --dry-run first.\n"
-            "Existing files are preserved unless they are explicitly named as override paths or\n"
-            "--adopt-claude-symlink is approved for CLAUDE.md."
+            "Existing files are preserved unless they are explicitly named as override paths,\n"
+            "--adopt-claude-symlink is approved for CLAUDE.md, or --adopt-settings-json is\n"
+            "approved for .claude/settings.json."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
@@ -1030,6 +1083,7 @@ Examples:
   raven install python
   raven install go --dry-run
   raven install python --adopt-claude-symlink
+  raven install python --adopt-settings-json
   raven install python .claude/scripts/raven-tool-check.py
 
 Language:
@@ -1044,6 +1098,14 @@ AGENTS.md and CLAUDE.md:
   AGENTS.md is canonical; CLAUDE.md is normally installed as a symlink to it.
   If CLAUDE.md already exists, Raven leaves it untouched unless you pass
   --adopt-claude-symlink, which moves it to CLAUDE.md.bak first.
+
+.claude/settings.json:
+  Raven manages .claude/settings.json as a template file, upgraded like any
+  other. If a hand-written settings.json already exists, Raven leaves it
+  untouched unless you pass --adopt-settings-json, which moves it to
+  .claude/settings.json.bak first. Put your own local overrides in
+  .claude/settings.local.json instead -- Raven never manages that file, and
+  installing/adopting settings.json gitignores it for you.
 """,
     )
     install_parser.add_argument(
@@ -1077,6 +1139,14 @@ AGENTS.md and CLAUDE.md:
         ),
     )
     install_parser.add_argument(
+        "--adopt-settings-json",
+        action="store_true",
+        help=(
+            "if .claude/settings.json exists but Raven does not manage it, move it to "
+            ".claude/settings.json.bak and install Raven's version; fails if backup exists"
+        ),
+    )
+    install_parser.add_argument(
         "--confirm-template-switch",
         action="store_true",
         help=(
@@ -1105,6 +1175,7 @@ Examples:
   raven upgrade --dry-run
   raven upgrade
   raven upgrade --adopt-claude-symlink
+  raven upgrade --adopt-settings-json
   raven upgrade .claude/scripts/raven-tool-check.py
 
 Override paths force-copy specific template-relative files. Use them only for
@@ -1114,6 +1185,14 @@ AGENTS.md and CLAUDE.md:
   AGENTS.md is canonical; CLAUDE.md is normally installed as a symlink to it.
   If CLAUDE.md already exists, Raven leaves it untouched unless you pass
   --adopt-claude-symlink, which moves it to CLAUDE.md.bak first.
+
+.claude/settings.json:
+  Raven manages .claude/settings.json as a template file, upgraded like any
+  other. If a hand-written settings.json already exists, Raven leaves it
+  untouched unless you pass --adopt-settings-json, which moves it to
+  .claude/settings.json.bak first. Put your own local overrides in
+  .claude/settings.local.json instead -- Raven never manages that file, and
+  installing/adopting settings.json gitignores it for you.
 """,
     )
     upgrade_parser.add_argument(
@@ -1137,6 +1216,14 @@ AGENTS.md and CLAUDE.md:
         help=(
             "if CLAUDE.md exists, move it to CLAUDE.md.bak and create the CLAUDE.md -> "
             "AGENTS.md symlink; fails if backup exists"
+        ),
+    )
+    upgrade_parser.add_argument(
+        "--adopt-settings-json",
+        action="store_true",
+        help=(
+            "if .claude/settings.json exists but Raven does not manage it, move it to "
+            ".claude/settings.json.bak and install Raven's version; fails if backup exists"
         ),
     )
     upgrade_parser.add_argument(

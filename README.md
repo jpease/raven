@@ -35,6 +35,7 @@ Raven installs reusable agent guidance and the state needed to upgrade it safely
 - `.raven/manifest.json`: machine-written install state used for safe upgrades.
 - `AGENTS.md`: canonical agent instructions, or a guided merge artifact if the file already exists.
 - `.agents/skills/`: canonical reusable skills.
+- `.claude/settings.json`: managed like any other template file, upgraded in place. `.claude/settings.local.json` is documented as your own local-overrides layer -- Raven never manages it, and gitignores it the first time it installs or adopts `settings.json`.
 - Claude Code and Codex adapter files when enabled in `.raven/config.toml`.
 - Optional starter tool configuration files when the selected language template includes them and the destination path does not already exist.
 
@@ -159,6 +160,19 @@ Raven treats `AGENTS.md` as canonical and normally installs `CLAUDE.md` as a sym
 - If that backup already exists, Raven fails instead of overwriting it.
 
 The generated `AGENTS.md` patch wraps Raven guidance in a marked block with a content hash. If that block is applied and left unchanged, later `upgrade` runs can limit updates to the Raven block, preserving project-owned content elsewhere in `AGENTS.md`. If the Raven block is edited, a Raven upgrade will report it as requiring manual merge.
+
+## Ownership of `.claude/settings.json`
+
+Raven owns `.claude/settings.json` as managed content -- it upgrades in place like any other template file, with no guided-merge artifact. `.claude/settings.local.json` is Claude Code's own local-overrides layer: put your personal preferences there instead. Raven never manages `settings.local.json`, and gitignores it for you the first time it installs or adopts `settings.json`.
+
+- On a clean install, Raven writes `.claude/settings.json` straight away; later `raven upgrade` runs update it in place.
+- If a destination repo already has a hand-written `.claude/settings.json` that Raven does not yet track, Raven leaves it alone by default and reports that it needs adoption consent -- no `.raven/merge/` artifact is written for it, since Raven can take the file over outright rather than hand-merging it.
+- To explicitly adopt it, answer Y when prompted or run with `--adopt-settings-json`.
+- When adoption is enabled, Raven moves the existing file to `.claude/settings.json.bak` before installing Raven's version.
+- If that backup already exists, Raven fails instead of overwriting it.
+- Once adopted (or freshly installed), `.claude/settings.json` is tracked in the manifest and upgrades like any other Raven-managed file from then on.
+
+`.mcp.json` remains outside this ownership model and continues to go through the guided-merge path described above.
 
 ## Finish a Manual Merge with `raven accept`
 
