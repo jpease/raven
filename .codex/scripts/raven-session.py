@@ -38,6 +38,16 @@ ARCHIVE_FILE = RAVEN_DIR / "session-archive.md"
 CONFIG_FILE = RAVEN_DIR / "config.toml"
 CONTEXT_SOFT_CAP = 50
 
+# The trailing shapes _format_unit_entry appends to a unit's rendered line,
+# and _parse_session strips back off on the next read. Named here so the
+# input validators below can reject a stored name/issue that already looks
+# like one of these shapes, instead of _parse_session misreading it later.
+_TRAILING_CURRENT_SUFFIX = re.compile(r"\s*\(current\)\s*$")
+_TRAILING_COMPLETED_SUFFIX = re.compile(r"\s*\(completed ([^)]+)\)\s*$")
+# The exact shape the parser's issue-capture group requires: no whitespace
+# or "→" (session.md's own field delimiter), ending in "#" plus digits.
+_ISSUE_REF_SHAPE = r"[^\s→]*#\d+"
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -86,12 +96,12 @@ def _parse_session(text: str) -> SessionData:
             # Strip the metadata that _render_session appends, from the end
             # inward, so unit names containing spaces and punctuation round-trip
             # instead of being truncated at the first whitespace.
-            if cm := re.search(r"\s*\(completed ([^)]+)\)\s*$", rest):
+            if cm := _TRAILING_COMPLETED_SUFFIX.search(rest):
                 completed_at = cm.group(1)
                 rest = rest[: cm.start()]
             else:
-                rest = re.sub(r"\s*\(current\)\s*$", "", rest)
-            if im := re.search(r"\s*→ ([^\s→]*#\d+)\s*$", rest):
+                rest = _TRAILING_CURRENT_SUFFIX.sub("", rest)
+            if im := re.search(rf"\s*→ ({_ISSUE_REF_SHAPE})\s*$", rest):
                 issue = im.group(1)
                 rest = rest[: im.start()]
             name = rest
@@ -150,6 +160,72 @@ def _render_session(data: SessionData) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _validate_unit_name(name: str) -> str | None:
+    r"""Check whether ``name`` is safe to store as a unit name in session.md.
+
+    Returns an error message if unsafe, else ``None``. session.md is a plain
+    text line format with no escaping: ``_format_unit_entry`` appends
+    `` → {issue}``, then either `` (completed ...)`` or `` (current)``, to
+    the end of a unit's rendered line, and ``_parse_session`` strips those
+    same shapes back off the end on the next read. A name that itself
+    contains a newline/carriage return/``→``, or already ends in one of
+    those appended shapes, is indistinguishable from render output and would
+    be silently truncated or split into extra lines on the next parse — so
+    it is rejected here instead. Trailing whitespace is rejected too: the
+    same stripping regexes' leading ``\s*`` greedily consumes a name's own
+    trailing space along with the appended suffix's separator space whenever
+    the unit becomes current, gets completed, or gets an issue linked, so
+    a trailing space is silently lost on the next parse unless it is banned
+    at the source.
+    """
+    if not name.strip():
+        return "unit name must not be empty or whitespace-only"
+    if name != name.strip():
+        return "unit name must not have leading or trailing whitespace"
+    if "\n" in name or "\r" in name:
+        return "unit name must not contain a newline or carriage return"
+    if "→" in name:
+        return "unit name must not contain '→', which session.md uses as its own field delimiter"
+    if _TRAILING_CURRENT_SUFFIX.search(name):
+        return (
+            "unit name must not end with '(current)': session.md's renderer appends"
+            " that suffix to the in-progress unit, and could not tell it apart from"
+            " the name itself on the next parse"
+        )
+    if _TRAILING_COMPLETED_SUFFIX.search(name):
+        return (
+            "unit name must not end with '(completed ...)': session.md's renderer"
+            " appends that suffix to a finished unit, and could not tell it apart"
+            " from the name itself on the next parse"
+        )
+    return None
+
+
+def _validate_issue_ref(issue_ref: str) -> str | None:
+    """Check whether ``issue_ref`` is safe to store verbatim in session.md.
+
+    Returns an error message if unsafe, else ``None``. ``_format_unit_entry``
+    splices ``issue_ref`` into a unit's rendered line with no escaping, so it
+    must not be able to introduce new physical lines (a newline or carriage
+    return would let it fabricate additional markdown that ``_parse_session``
+    would read back as legitimate units), nor contain ``→`` or whitespace
+    that would defeat the parser's issue-capture shape.
+    """
+    if "\n" in issue_ref or "\r" in issue_ref:
+        return "issue reference must not contain a newline or carriage return"
+    if "→" in issue_ref:
+        return (
+            "issue reference must not contain '→', which session.md uses as its own field delimiter"
+        )
+    if not re.fullmatch(_ISSUE_REF_SHAPE, issue_ref):
+        return (
+            "issue reference must match the shape '#123', 'group/project#123', or"
+            " 'group/sub/project#7': no internal whitespace, and it must end in '#'"
+            " followed by one or more digits"
+        )
+    return None
+
+
 def cmd_init(args: list[str]) -> int:
     """``--init``: create ``.raven/session.md`` for a new multi-unit session; refuses if one exists."""
     import argparse
@@ -159,6 +235,12 @@ def cmd_init(args: list[str]) -> int:
     p.add_argument("units", nargs="+")
     p.add_argument("--parent", default=None)
     ns = p.parse_args(args)
+
+    for unit_name in ns.units:
+        error = _validate_unit_name(unit_name)
+        if error:
+            print(f"error: invalid unit name {unit_name!r}: {error}", file=sys.stderr)
+            return 1
 
     if SESSION_FILE.exists():
         print(
@@ -385,17 +467,25 @@ def cmd_complete(args: list[str]) -> int:
 def cmd_link(args: list[str]) -> int:
     """``--link <unit> <issue>``: record an opaque issue reference on ``<unit>``, under the session lock.
 
-    ``<issue>`` is stored verbatim — ``#123``, ``group/project#123``, and
-    ``group/sub/project#7`` all round-trip unchanged. No tracker-specific
-    parsing or issue creation happens here; creation stays manual. Allowed on
-    a completed unit as well as the current one: linking is bookkeeping, not
-    a state-machine transition, so it does not carry `cmd_complete`'s
-    current-unit precondition.
+    ``<issue>`` must match ``_ISSUE_REF_SHAPE``: no newline, carriage return,
+    or ``→`` (session.md's own field delimiter), no internal whitespace, and
+    it must end in ``#`` followed by one or more digits. ``#123``,
+    ``group/project#123``, and ``group/sub/project#7`` all satisfy that shape
+    and round-trip unchanged; anything else is rejected with an error rather
+    than being stored and silently mangled on the next parse. No
+    tracker-specific parsing or issue creation happens here; creation stays
+    manual. Allowed on a completed unit as well as the current one: linking
+    is bookkeeping, not a state-machine transition, so it does not carry
+    `cmd_complete`'s current-unit precondition.
     """
     if len(args) < 2:
         print("error: --link requires a unit name and an issue reference", file=sys.stderr)
         return 1
     unit_name, issue_ref = args[0], args[1]
+    error = _validate_issue_ref(issue_ref)
+    if error:
+        print(f"error: invalid issue reference {issue_ref!r}: {error}", file=sys.stderr)
+        return 1
     if not SESSION_FILE.exists():
         print("error: no active session", file=sys.stderr)
         return 1

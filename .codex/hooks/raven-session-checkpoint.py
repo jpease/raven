@@ -95,32 +95,123 @@ def _enforcement_enabled() -> bool:
     return True
 
 
+def _strip_heredoc_bodies(text: str) -> str:
+    """Remove heredoc bodies from text before tokenization.
+
+    Tracks heredoc delimiters (dash variant, quoted or bare) and removes every
+    line between the opener and its matching terminator, including the terminator.
+    Known limitation: does not handle bash 4's tilde-indented variant. This is a
+    strict improvement over zero heredoc awareness.
+    """
+    lines = text.split("\n")
+    result = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        # Check for heredoc openers: <<EOF, <<'EOF', <<"EOF", <<-EOF, etc.
+        heredoc_match = re.search(r"<<-?(['\"]?)(\w+)\1(?:\s|$)", line)
+        if heredoc_match:
+            # Found a heredoc opener; extract the delimiter
+            delimiter = heredoc_match.group(2)
+            # Add the line up to and including the heredoc opener
+            result.append(line[: heredoc_match.start()] + "<<" + delimiter)
+            i += 1
+            # Skip all lines until we find the terminator
+            while i < len(lines):
+                if lines[i].strip() == delimiter:
+                    # Found the terminator; skip it and continue
+                    i += 1
+                    break
+                i += 1
+        else:
+            result.append(line)
+            i += 1
+    return "\n".join(result)
+
+
+_ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
 def _completion_unit(command: str) -> str | None:
     """Return the unit argument only for a genuine ``raven-session.py --complete``.
 
-    A completion command must actually invoke the session CLI: some token's
-    basename must be ``raven-session.py`` and a ``--complete`` token must be
-    present. The unit is the token immediately following ``--complete``. Any
-    other command — including one that merely mentions ``--complete`` — yields
-    ``None`` so unrelated shell commands are allowed through untouched.
+    A completion command must actually invoke the session CLI in command position:
+    the token in command position (after stripping env-var assignments and
+    interpreter prefixes) must have basename ``raven-session.py``, and a
+    ``--complete`` flag must follow in the same statement. Any other command —
+    including one that merely mentions those tokens in prose, heredocs, or
+    non-command positions — yields ``None`` so unrelated shell commands are
+    allowed through untouched.
 
-    Tokenizes with shell rules so a quoted unit name containing spaces survives
-    intact, matching the positional argument the session CLI receives. Falls
-    back to regexes only when the command is not validly quoted, so a malformed
-    command still defers to the CLI's own validation.
+    Algorithm:
+    1. Strip heredoc bodies before tokenization (shlex has no heredoc awareness).
+    2. Normalize newlines to statement separators.
+    3. Tokenize with shlex.shlex(punctuation_chars=True, posix=True, whitespace_split=True)
+       to isolate statement operators (;, |, &) as individual tokens.
+    4. Split the token stream into statements on those operators.
+    5. Per statement, skip leading NAME=value assignments and optional interpreter
+       prefixes (python/python3), then check that the next token's basename is
+       the session script filename and the statement contains --complete.
+
+    Falls back to regexes only when the command is not validly quoted (ValueError),
+    so a malformed command still defers to the CLI's own validation.
     """
+    # Strip heredoc bodies first
+    text = _strip_heredoc_bodies(command)
+
+    # Normalize newlines to a statement separator (semicolon)
+    # so multi-line commands are treated as separate statements.
+    text = text.replace("\n", ";")
+
     try:
-        tokens = shlex.split(command)
+        # Tokenize with punctuation_chars so statement operators are isolated.
+        lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
     except ValueError:
+        # Malformed quote: fall back to the regex-based fallback path.
         if not re.search(r"(?:^|[\s/])raven-session\.py(?:\s|$)", command):
             return None
         m = re.search(r"--complete\s+(\S+)", command)
         return m.group(1) if m else None
-    if not any(Path(token).name == "raven-session.py" for token in tokens):
-        return None
-    for i, token in enumerate(tokens):
-        if token == "--complete":
-            return tokens[i + 1] if i + 1 < len(tokens) else None
+
+    # Split tokens into statements on shell operators.
+    statement_operators = {";", "|", "&", "&&", "||"}
+    statements = []
+    current_statement = []
+    for token in tokens:
+        if token in statement_operators:
+            if current_statement:
+                statements.append(current_statement)
+                current_statement = []
+        else:
+            current_statement.append(token)
+    if current_statement:
+        statements.append(current_statement)
+
+    # Check each statement for a valid raven-session.py invocation.
+    for stmt in statements:
+        if not stmt:
+            continue
+
+        # Skip leading NAME=value assignments.
+        idx = 0
+        while idx < len(stmt) and _ENV_ASSIGNMENT_RE.match(stmt[idx]):
+            idx += 1
+
+        # Skip optional interpreter prefix (python or python3).
+        if idx < len(stmt) and stmt[idx] in ("python", "python3"):
+            idx += 1
+
+        # The next token must be the session script (or a path to it).
+        if idx >= len(stmt) or Path(stmt[idx]).name != "raven-session.py":
+            continue
+
+        # This statement invokes raven-session.py; now check for --complete.
+        for i in range(idx + 1, len(stmt)):
+            if stmt[i] == "--complete":
+                return stmt[i + 1] if i + 1 < len(stmt) else None
+
     return None
 
 
