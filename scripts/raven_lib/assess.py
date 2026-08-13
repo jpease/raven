@@ -17,6 +17,7 @@ from .gate_run import gate_compliance_findings
 from .gates import gate_spec_for, load_gate_specs, recipe_present
 from .git_hooks import git_hooks_dir
 from .runner import Runner, gate_runner
+from .template import is_known_template
 
 _WIRING = "Quality-gate wiring"
 _FIT = "Template fit"
@@ -203,16 +204,42 @@ def wiring_findings(destination: Path) -> list[Finding]:
     spec = gate_spec_for(config.template) if config.template else None
     findings: list[Finding] = []
     if spec is None:
-        # Distinguish "no template set" (warn) from "template set but unsupported" (error).
-        severity = Severity.ERROR if config.template is not None else Severity.WARN
+        # `gate_spec_for(name) is None` means only "this template ships no
+        # GATE_DATA entry", not "this is not a real template" -- `dotfiles` is a
+        # genuine template that legitimately has no gate recipes or tools. So the
+        # template name is judged against the actual roster, not the gate table
+        # (issue #191; the same conflation #187 fixed in `doctor`). Three distinct
+        # states, no gate wiring to check in any of them:
+        if config.template is None:
+            return [
+                Finding(
+                    id="assess.wiring.template",
+                    severity=Severity.WARN,
+                    category=_WIRING,
+                    title="No template configured",
+                    detail="config has no template; gate expectations are unknown",
+                    fix="set a supported `template` in .raven/config.toml",
+                )
+            ]
+        if not is_known_template(config.template):
+            return [
+                Finding(
+                    id="assess.wiring.template",
+                    severity=Severity.ERROR,
+                    category=_WIRING,
+                    title="Unsupported template configured",
+                    detail=f"template {config.template!r} is not a supported Raven template",
+                    fix="set a supported `template` in .raven/config.toml",
+                )
+            ]
         return [
             Finding(
                 id="assess.wiring.template",
-                severity=severity,
+                severity=Severity.INFO,
                 category=_WIRING,
-                title="No gate spec for template",
-                detail=f"template {config.template!r} has no gate expectations",
-                fix="set a supported `template` in .raven/config.toml",
+                title="Template ships no quality gates",
+                detail=f"template {config.template!r} defines no gate recipes or tools to check",
+                fix=None,
             )
         ]
 

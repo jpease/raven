@@ -26,6 +26,21 @@ from .models import RavenConfig, TemplateEntry
 _COMMON_CROSS_LINK = re.compile(r"(\.\./)+common/")
 
 
+def is_known_template(name: str) -> bool:
+    """Whether ``name`` is a real Raven template directory, independent of whether
+    it ships gate tooling. ``gate_spec_for(name) is None`` means only "no GATE_DATA
+    entry" -- see cli.list_language_templates() for the actual template roster, and
+    `dotfiles` for a real template that legitimately has no gate recipes at all.
+
+    Lives here rather than in a reporting module so `doctor` and `assess` share one
+    answer to "is this a known template name" instead of each deriving it from the
+    gate table (issues #187, #191).
+    """
+    from .cli import list_language_templates  # local: cli.py imports template.py at module level
+
+    return name in list_language_templates()
+
+
 def is_excluded(
     path: Path, relative: str, explicit_excludes: set[str], config: RavenConfig | None = None
 ) -> bool:

@@ -30,7 +30,7 @@ from .git_hooks import detect_hook_manager, hook_manager_guidance
 from .manifest import ManifestStatus, git_ref, validate_manifest
 from .orphans import classify_orphans
 from .runner import Runner, probe_runner
-from .template import broken_template_symlinks
+from .template import broken_template_symlinks, is_known_template
 
 _INTEGRITY = "Install integrity"
 _DRIFT = "Drift & freshness"
@@ -41,16 +41,6 @@ _HOOKS = "Git hooks"
 # exits 2 with "flag provided but not defined: -version"). For these, being
 # found on PATH is sufficient evidence of availability.
 _NO_VERSION_FLAG = {"gofmt"}
-
-
-def _is_known_template(name: str) -> bool:
-    """Whether `name` is a real Raven template directory, independent of whether
-    it ships gate tooling. `gate_spec_for(name) is None` means only "no GATE_DATA
-    entry" -- see cli.list_language_templates() for the actual template roster.
-    """
-    from .cli import list_language_templates  # local: cli.py imports doctor.py at module level
-
-    return name in list_language_templates()
 
 
 def _checkout_symlink_findings() -> list[Finding]:
@@ -151,7 +141,7 @@ def integrity_findings(destination: Path) -> list[Finding]:
         )
     )
 
-    if config.template is not None and not _is_known_template(config.template):
+    if config.template is not None and not is_known_template(config.template):
         findings.append(
             Finding(
                 id="doctor.install.template",
@@ -336,7 +326,7 @@ def drift_findings(destination: Path) -> list[Finding]:
             )
         ]
 
-    if not _is_known_template(config.template):
+    if not is_known_template(config.template):
         return [
             Finding(
                 id="doctor.drift.template",

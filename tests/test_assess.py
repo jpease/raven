@@ -133,6 +133,31 @@ class AssessWiringTests(RavenTestCase):
         match = next(f for f in findings if f.id == "assess.wiring.template")
         self.assertEqual(match.severity, Severity.ERROR)
 
+    def test_gateless_real_template_is_not_error(self):
+        # Issue #191 — `dotfiles` is a real template (per list_language_templates())
+        # that ships no gate recipes or tools at all. `gate_spec_for` returning None
+        # for it means "no gate expectations", not "unsupported template name", so it
+        # must not be graded as an ERROR the way "bogus" above is.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "dotfiles"\n', encoding="utf-8"
+        )
+        findings = wiring_findings(self.destination)
+        match = next(f for f in findings if f.id == "assess.wiring.template")
+        self.assertEqual(match.severity, Severity.INFO)
+        # Nothing else in the wiring section may fail either: dotfiles ships no
+        # justfile, so checking for gate recipes/hooks would be spurious.
+        self.assertEqual([f for f in findings if f.severity is Severity.ERROR], [])
+
+    def test_no_template_configured_is_warn(self):
+        # The third state alongside unsupported (ERROR) and gateless-but-real
+        # (INFO): no template set at all is a WARN, not an error.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text("schema = 1\n", encoding="utf-8")
+        findings = wiring_findings(self.destination)
+        match = next(f for f in findings if f.id == "assess.wiring.template")
+        self.assertEqual(match.severity, Severity.WARN)
+
     def test_invalid_utf8_justfile_emits_error_finding(self):
         # Issue #51 — invalid UTF-8 in justfile must produce a structured
         # ERROR finding, not a Python traceback.
