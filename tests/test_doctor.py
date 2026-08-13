@@ -156,6 +156,57 @@ class DoctorIntegrityTests(RavenTestCase):
         template_finding = ids.get("doctor.install.template")
         self.assertTrue(template_finding is None or template_finding.severity != Severity.ERROR)
 
+    def test_template_switch_mismatch_is_warn(self):
+        # Issue #188 -- config.template differs from the last-applied manifest
+        # template, so `raven upgrade` will refuse until
+        # --confirm-template-switch. doctor must surface this pending state
+        # instead of reporting clean.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "go"\n', encoding="utf-8"
+        )
+        (self.destination / ".raven" / "manifest.json").write_text(
+            json.dumps({"schema": 1, "template": "python", "files": {}}), encoding="utf-8"
+        )
+        ids = self._ids(integrity_findings(self.destination))
+        self.assertIn("doctor.install.template_switch_pending", ids)
+        finding = ids["doctor.install.template_switch_pending"]
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIn("go", finding.detail)
+        self.assertIn("python", finding.detail)
+
+    def test_template_switch_no_mismatch_produces_no_finding(self):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n', encoding="utf-8"
+        )
+        (self.destination / ".raven" / "manifest.json").write_text(
+            json.dumps({"schema": 1, "template": "python", "files": {}}), encoding="utf-8"
+        )
+        ids = self._ids(integrity_findings(self.destination))
+        self.assertNotIn("doctor.install.template_switch_pending", ids)
+
+    def test_template_switch_fresh_install_no_manifest_produces_no_finding(self):
+        # No manifest.json at all -- the normal pre-first-upgrade state, not a
+        # mismatch.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n', encoding="utf-8"
+        )
+        ids = self._ids(integrity_findings(self.destination))
+        self.assertNotIn("doctor.install.template_switch_pending", ids)
+
+    def test_template_switch_manifest_without_template_key_produces_no_finding(self):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n', encoding="utf-8"
+        )
+        (self.destination / ".raven" / "manifest.json").write_text(
+            json.dumps({"schema": 1, "files": {}}), encoding="utf-8"
+        )
+        ids = self._ids(integrity_findings(self.destination))
+        self.assertNotIn("doctor.install.template_switch_pending", ids)
+
 
 class DoctorDriftTests(RavenTestCase):
     def _config(self):

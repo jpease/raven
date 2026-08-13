@@ -165,6 +165,31 @@ def integrity_findings(destination: Path) -> list[Finding]:
         return findings
 
     manifest_status = validate_manifest(destination)
+
+    if config.template is not None:
+        from .cli import _template_switch_decision  # local: cli.py imports doctor.py at top level
+
+        switch = _template_switch_decision(
+            prior_template=manifest_status.manifest.get("template"),
+            template_name=config.template,
+            requested=False,
+        )
+        if switch == "prompt":
+            findings.append(
+                Finding(
+                    id="doctor.install.template_switch_pending",
+                    severity=Severity.WARN,
+                    category=_INTEGRITY,
+                    title="Template switch pending confirmation",
+                    detail=(
+                        f"config.template = {config.template!r} differs from the last-applied "
+                        f"template {manifest_status.manifest.get('template')!r}"
+                    ),
+                    fix="run `raven upgrade --confirm-template-switch` to apply it, "
+                    "or set `template` back in .raven/config.toml",
+                )
+            )
+
     findings.append(_manifest_finding(manifest_status))
     findings.extend(_flattened_install_findings(destination, manifest_status.manifest))
 
