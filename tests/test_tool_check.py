@@ -164,6 +164,207 @@ gitnexus: gitnexus mcp - ✓ Connected
             module.subprocess.run = original_run
 
 
+class ClaudeJsonProjectScopeTests(RavenTestCase):
+    """Regression for #194: ``~/.claude.json`` nests MCP config per project
+
+    under ``projects.<absolute-path>.mcpServers``. A server configured only
+    for another project on the machine must never be reported as configured
+    for this repo; a server configured for *this* repo's project entry, or
+    in the file's top-level ``mcpServers``, must be.
+    """
+
+    def _write_claude_json(self, tmp: str, projects: dict, top_level_servers=None) -> Path:
+        config = Path(tmp) / ".claude.json"
+        payload: dict = {"projects": projects}
+        if top_level_servers is not None:
+            payload["mcpServers"] = top_level_servers
+        config.write_text(json.dumps(payload), encoding="utf-8")
+        return config
+
+    def test_server_configured_only_for_another_project_is_not_reported(self):
+        module = load_script_module("raven_tool_check_claude_json_other", TOOL_CHECK_SCRIPT)
+        with tempfile.TemporaryDirectory() as tmp:
+            this_repo = Path(tmp) / "this-repo"
+            this_repo.mkdir()
+            config = self._write_claude_json(
+                tmp,
+                {
+                    str(Path(tmp) / "other-repo-a"): {
+                        "mcpServers": {"other-only-a": {"command": "x"}}
+                    },
+                    str(Path(tmp) / "other-repo-b"): {
+                        "mcpServers": {"other-only-b": {"command": "y"}}
+                    },
+                    str(this_repo): {"mcpServers": {"semble": {"command": "uvx"}}},
+                },
+            )
+            module._claude_mcp_config_paths = lambda _root=None: [config]
+            module._claude_mcp_server_names_from_config.cache_clear()
+            try:
+                self.assertEqual(
+                    module.claude_mcp_server_status("other-only-a", this_repo), "not_configured"
+                )
+                self.assertEqual(
+                    module.claude_mcp_server_status("other-only-b", this_repo), "not_configured"
+                )
+            finally:
+                module._claude_mcp_server_names_from_config.cache_clear()
+
+    def test_server_configured_for_this_project_is_reported(self):
+        # The "other-only" distractor is what makes this fail pre-fix: the
+        # path-blind recursion reports it as configured for this_repo too, so
+        # asserting it is *not* is what proves this test exercises the fix
+        # rather than passing vacuously.
+        module = load_script_module("raven_tool_check_claude_json_this", TOOL_CHECK_SCRIPT)
+        with tempfile.TemporaryDirectory() as tmp:
+            this_repo = Path(tmp) / "this-repo"
+            this_repo.mkdir()
+            config = self._write_claude_json(
+                tmp,
+                {
+                    str(Path(tmp) / "other-repo"): {"mcpServers": {"other-only": {"command": "x"}}},
+                    str(this_repo): {"mcpServers": {"semble": {"command": "uvx"}}},
+                },
+            )
+            module._claude_mcp_config_paths = lambda _root=None: [config]
+            module._claude_mcp_server_names_from_config.cache_clear()
+            try:
+                self.assertEqual(module.claude_mcp_server_status("semble", this_repo), "configured")
+                self.assertEqual(
+                    module.claude_mcp_server_status("other-only", this_repo), "not_configured"
+                )
+            finally:
+                module._claude_mcp_server_names_from_config.cache_clear()
+
+    def test_top_level_mcp_server_is_reported_for_every_project(self):
+        module = load_script_module("raven_tool_check_claude_json_top", TOOL_CHECK_SCRIPT)
+        with tempfile.TemporaryDirectory() as tmp:
+            this_repo = Path(tmp) / "this-repo"
+            this_repo.mkdir()
+            config = self._write_claude_json(
+                tmp,
+                {
+                    str(Path(tmp) / "other-repo"): {"mcpServers": {"other-only": {"command": "x"}}},
+                },
+                top_level_servers={"gitnexus": {"command": "gitnexus"}},
+            )
+            module._claude_mcp_config_paths = lambda _root=None: [config]
+            module._claude_mcp_server_names_from_config.cache_clear()
+            try:
+                self.assertEqual(
+                    module.claude_mcp_server_status("gitnexus", this_repo), "configured"
+                )
+                self.assertEqual(
+                    module.claude_mcp_server_status("other-only", this_repo), "not_configured"
+                )
+            finally:
+                module._claude_mcp_server_names_from_config.cache_clear()
+
+    def test_symlinked_repo_root_and_trailing_separator_are_tolerated(self):
+        # A distractor project ("other-only") sits alongside the symlinked
+        # entry: on the pre-fix, path-blind recursion this distractor is
+        # (wrongly) reported as configured for any root, which is what makes
+        # this test actually fail before the fix rather than passing
+        # vacuously because path matching was never exercised.
+        module = load_script_module("raven_tool_check_claude_json_symlink", TOOL_CHECK_SCRIPT)
+        with tempfile.TemporaryDirectory() as tmp:
+            real_repo = Path(tmp) / "real-repo"
+            real_repo.mkdir()
+            linked_repo = Path(tmp) / "linked-repo"
+            linked_repo.symlink_to(real_repo, target_is_directory=True)
+            other_repo = Path(tmp) / "other-repo"
+            config = self._write_claude_json(
+                tmp,
+                {
+                    # The config key is spelled through the symlink and with a
+                    # trailing separator; the lookup root below is the plain
+                    # real path with no trailing separator.
+                    str(linked_repo) + os.sep: {"mcpServers": {"semble": {"command": "uvx"}}},
+                    str(other_repo): {"mcpServers": {"other-only": {"command": "y"}}},
+                },
+            )
+            module._claude_mcp_config_paths = lambda _root=None: [config]
+            module._claude_mcp_server_names_from_config.cache_clear()
+            try:
+                self.assertEqual(module.claude_mcp_server_status("semble", real_repo), "configured")
+                self.assertEqual(
+                    module.claude_mcp_server_status("other-only", real_repo), "not_configured"
+                )
+                # And the reverse direction: the lookup root itself goes
+                # through the symlink and carries a trailing separator, while
+                # the config key is the plain real path.
+                config.write_text(
+                    json.dumps({"projects": {str(real_repo): {"mcpServers": {"semble": {}}}}}),
+                    encoding="utf-8",
+                )
+                module._claude_mcp_server_names_from_config.cache_clear()
+                trailing_symlink_root = Path(str(linked_repo) + os.sep)
+                self.assertEqual(
+                    module.claude_mcp_server_status("semble", trailing_symlink_root), "configured"
+                )
+            finally:
+                module._claude_mcp_server_names_from_config.cache_clear()
+
+    def test_malformed_claude_json_shapes_do_not_raise_or_report_configured(self):
+        # Each malformed shape below is paired with a validly-shaped, but
+        # non-matching, project entry exposing a real server ("leaked"). The
+        # pre-fix, path-blind recursion finds "leaked" no matter which
+        # project it belongs to or how mangled this project's own entry is;
+        # the fix must not, which is what makes these subtests fail before
+        # the fix instead of passing vacuously.
+        module = load_script_module("raven_tool_check_claude_json_malformed", TOOL_CHECK_SCRIPT)
+        this_repo_marker = "/this/repo"
+        other_project_marker = "/other/repo"
+        malformed_cases_with_a_leak = [
+            {
+                "projects": {
+                    this_repo_marker: "not-a-dict",
+                    other_project_marker: {"mcpServers": {"leaked": {"command": "x"}}},
+                }
+            },
+            {
+                "projects": {
+                    this_repo_marker: {"mcpServers": ["semble"]},
+                    other_project_marker: {"mcpServers": {"leaked": {"command": "x"}}},
+                }
+            },
+            {
+                "mcpServers": ["semble"],
+                "projects": {other_project_marker: {"mcpServers": {"leaked": {"command": "x"}}}},
+            },
+        ]
+        for payload in malformed_cases_with_a_leak:
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as tmp:
+                config = Path(tmp) / ".claude.json"
+                config.write_text(json.dumps(payload), encoding="utf-8")
+                module._claude_mcp_config_paths = lambda _root=None, _c=config: [_c]
+                module._claude_mcp_server_names_from_config.cache_clear()
+                try:
+                    own_status = module.claude_mcp_server_status("semble", Path(this_repo_marker))
+                    leaked_status = module.claude_mcp_server_status(
+                        "leaked", Path(this_repo_marker)
+                    )
+                finally:
+                    module._claude_mcp_server_names_from_config.cache_clear()
+                self.assertEqual(own_status, "not_configured")
+                self.assertEqual(leaked_status, "not_configured")
+
+        # Structurally invalid outer shapes -- nothing to leak, just must not
+        # raise and must not manufacture a "configured" result out of thin air.
+        structurally_invalid_cases = [{"projects": ["not", "a", "dict"]}, ["not", "a", "dict"]]
+        for payload in structurally_invalid_cases:
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as tmp:
+                config = Path(tmp) / ".claude.json"
+                config.write_text(json.dumps(payload), encoding="utf-8")
+                module._claude_mcp_config_paths = lambda _root=None, _c=config: [_c]
+                module._claude_mcp_server_names_from_config.cache_clear()
+                try:
+                    status = module.claude_mcp_server_status("semble", Path(this_repo_marker))
+                finally:
+                    module._claude_mcp_server_names_from_config.cache_clear()
+                self.assertEqual(status, "not_configured")
+
+
 class LoadMemoryRecoveryTests(RavenTestCase):
     """Structurally invalid local tool memory must recover to a clean versioned
     object instead of crashing callers that assume a dict (issue #42).

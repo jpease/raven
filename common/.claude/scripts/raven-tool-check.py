@@ -338,17 +338,77 @@ def command_works(command: list[str]) -> bool:
     return command_status(command) == "available"
 
 
-def _mcp_server_names_from_value(value: object) -> set[str]:
+def _top_level_mcp_server_names(value: object) -> set[str]:
+    """MCP server names from a flat top-level ``mcpServers`` dict.
+
+    Non-recursive on purpose (#194): this is the only shape ``.mcp.json`` and
+    ``~/.claude/settings.json`` ever use, and it is also how ``~/.claude.json``
+    names servers available to every project. It must not walk into nested
+    values -- ``~/.claude.json`` nests other, unrelated data (including every
+    other project's own ``mcpServers``) under other keys, and reporting those
+    as configured for this repo is exactly the over-reporting bug this
+    function replaces (a prior version recursed into every nested dict/list
+    looking for an ``mcpServers`` key anywhere).
+
+    Tolerant of any unrecognized shape: a non-dict ``value``, a non-dict
+    ``mcpServers``, or a non-string name all yield no names rather than
+    raising or guessing, per the project's fail-toward-under-reporting rule --
+    over-reporting an MCP server as configured is the harmful direction.
+    """
+    if not isinstance(value, dict):
+        return set()
+    servers = value.get("mcpServers")
+    if not isinstance(servers, dict):
+        return set()
+    return {name for name in servers if isinstance(name, str)}
+
+
+def _canonical_path(path: Path) -> Path:
+    """Canonicalize a path for identity comparison.
+
+    Resolves symlinks and normalizes separators/``.``/``..`` components so a
+    symlinked repo root or a trailing separator compares equal to its
+    canonical form. Used only to compare a ``~/.claude.json`` ``projects`` key
+    against a repo root -- an independent concern from
+    ``_adapter_directory_from_install_layout``'s deliberate *non*-resolution
+    of this script's own install path (see its docstring), which must keep
+    answering in terms of the path this script was invoked through, not where
+    its bytes physically live.
+    """
+    try:
+        return path.resolve()
+    except OSError:
+        return Path(os.path.normpath(str(path)))
+
+
+def _claude_json_project_mcp_server_names(value: object, root: Path) -> set[str]:
+    """MCP server names from ``projects.<this-repo-root>.mcpServers`` only.
+
+    ``~/.claude.json`` nests MCP config per project under absolute-path keys;
+    every other project's entry must be ignored, or a server configured only
+    for another repo on the machine gets reported as configured for this one
+    (#194). Keys are compared canonicalized (symlink-resolved, normalized) so
+    a symlinked repo root or a trailing path separator on either side still
+    matches. Tolerant of any unrecognized shape -- a non-dict ``value``, a
+    non-dict ``projects``, a non-dict project entry -- which all yield no
+    names rather than raising.
+    """
+    if not isinstance(value, dict):
+        return set()
+    projects = value.get("projects")
+    if not isinstance(projects, dict):
+        return set()
+    canonical_root = _canonical_path(root)
     names: set[str] = set()
-    if isinstance(value, dict):
-        servers = value.get("mcpServers")
-        if isinstance(servers, dict):
-            names.update(str(name) for name in servers if isinstance(name, str))
-        for nested in value.values():
-            names.update(_mcp_server_names_from_value(nested))
-    elif isinstance(value, list):
-        for nested in value:
-            names.update(_mcp_server_names_from_value(nested))
+    for key, entry in projects.items():
+        if not isinstance(key, str):
+            continue
+        try:
+            candidate = _canonical_path(Path(key))
+        except (OSError, ValueError):
+            continue
+        if candidate == canonical_root:
+            names.update(_top_level_mcp_server_names(entry))
     return names
 
 
@@ -469,14 +529,27 @@ def _codex_mcp_server_names_from_toml(text: str) -> set[str]:
 
 @cache
 def _claude_mcp_server_names_from_config(root: Path | None = None) -> frozenset[str]:
+    """MCP server names configured for this repo, from Claude's config files.
+
+    Each file contributes its flat top-level ``mcpServers`` (the only shape
+    ``.mcp.json`` and ``~/.claude/settings.json`` use), plus -- when present --
+    ``projects.<this-repo-root>.mcpServers`` from ``~/.claude.json``, which is
+    the only file of the three that nests configuration per project. Checking
+    for a ``projects`` key rather than special-casing a specific path lets one
+    code path serve all three files: the other two simply never have that key,
+    so the check is a no-op for them.
+    """
+    resolved_root = root if root is not None else project_root()
     names: set[str] = set()
     for path in _claude_mcp_config_paths(root):
         if not path.is_file():
             continue
         try:
-            names.update(_mcp_server_names_from_value(json.loads(path.read_text(encoding="utf-8"))))
+            parsed = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, UnicodeDecodeError):
             continue
+        names.update(_top_level_mcp_server_names(parsed))
+        names.update(_claude_json_project_mcp_server_names(parsed, resolved_root))
     return frozenset(names)
 
 
@@ -495,6 +568,21 @@ def _codex_mcp_server_names_from_config(root: Path | None = None) -> frozenset[s
 
 @lru_cache(maxsize=1)
 def _claude_mcp_server_names_from_cli() -> tuple[frozenset[str], bool]:
+    """Best-effort supplement: MCP servers ``claude mcp list`` reports.
+
+    Decision record (#194): kept, not dropped, but strictly additive. Every
+    caller (``claude_mcp_server_status``, ``_claude_mcp_server_names``) only
+    unions this result on top of the config-file names -- a parsing miss here
+    (the human-readable output format drifts, the CLI times out, ``claude``
+    is missing) can never downgrade a server the config files already proved
+    configured, only fail to add one the config files didn't mention. It is
+    also opt-in: disabled unless ``RAVEN_TOOL_CHECK_CLAUDE_CLI=1`` is set, so
+    a repo relying purely on config files never pays for its brittleness.
+    ``_configured_mcp_server_names`` parses that output with prefix
+    heuristics that are inherently version-sensitive; that fragility is
+    accepted here specifically because it can only ever add a name, never
+    remove one that the config files already established.
+    """
     if not RUN_CLAUDE_MCP_CLI or not shutil.which("claude"):
         return frozenset(), False
     try:

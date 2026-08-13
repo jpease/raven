@@ -336,6 +336,43 @@ class RepoSectionTests(RavenTestCase):
         )
         self.assertIn("template: python", text)
 
+    def test_mcp_line_excludes_another_projects_claude_json_servers(self):
+        # #194: build_roster() derives its MCP line straight from
+        # prober._claude_mcp_server_names_from_config(root). A fixture
+        # ~/.claude.json with several project entries must not leak another
+        # project's servers into this repo's roster; this repo's own
+        # project-scoped entry, and any top-level entry, must still show up.
+        prober = load_script_module(
+            "raven_tool_check_for_roster_scope",
+            REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py",
+        )
+        root = self.destination / "this-repo"
+        root.mkdir()
+        other_repo = self.destination / "other-repo"
+        config = self.destination / ".claude.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {"gitnexus": {"command": "gitnexus"}},
+                    "projects": {
+                        str(other_repo): {"mcpServers": {"other-only": {"command": "x"}}},
+                        str(root): {"mcpServers": {"semble": {"command": "uvx"}}},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        prober._claude_mcp_config_paths = lambda _root=None: [config]
+        prober._claude_mcp_server_names_from_config.cache_clear()
+        try:
+            text = self.module.build_roster(root, prober)
+        finally:
+            prober._claude_mcp_server_names_from_config.cache_clear()
+
+        self.assertIn("semble", text)
+        self.assertIn("gitnexus", text)
+        self.assertNotIn("other-only", text)
+
 
 class GatesLineTests(RavenTestCase):
     def setUp(self):
