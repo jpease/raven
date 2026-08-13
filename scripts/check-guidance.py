@@ -38,6 +38,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -71,7 +72,15 @@ def _tracked_markdown_files(repo_root: Path = REPO_ROOT) -> list[str]:
 
 # -- Category 1: local Markdown links ---------------------------------------
 
-_LINK_RE = re.compile(r"\]\(([^)]+)\)")
+# Captures the link target, tolerating one level of balanced parens inside it
+# (e.g. `file (draft).md`) -- not a full recursive parser, just enough for
+# CommonMark's own practical one-level case.
+_LINK_RE = re.compile(r"\]\(((?:[^()]|\([^()]*\))*)\)")
+# A trailing quoted Markdown title (`path "title"` / `path 'title'`).
+# Deliberately requires an actual quote, not just any whitespace, so a
+# target that legitimately contains a space (e.g. `file (draft).md`) is
+# never mistaken for `path` + a title.
+_TITLE_SUFFIX_RE = re.compile(r"""^(.*\S)\s+(?:"[^"]*"|'[^']*')\s*$""")
 
 
 def _is_relative_link(target: str) -> bool:
@@ -98,6 +107,15 @@ def find_markdown_link_findings(repo_root: Path = REPO_ROOT) -> list[Finding]:
     Markdown renderers (and GitHub) resolve relative links -- not repo root.
     A `#fragment` suffix is stripped before resolution and never validated
     (anchor resolution is out of scope; see the module docstring).
+
+    Lines inside a fenced code block are skipped entirely (design decision
+    for issue #180): a fence containing `[text](path)`-shaped text is, in
+    this repo's docs, either a real example that happens to contain
+    link-shaped text, or a block demonstrating Markdown link syntax itself
+    (teaching the format, not asserting the path exists) -- unlike a fenced
+    *command*, a fenced *link* carries no "meant to be dereferenced
+    literally" signal. This mirrors the CLI checker's own fence-state
+    tracking (`_FENCE_RE`), applied to the opposite conclusion on purpose.
     """
     findings: list[Finding] = []
     for rel in _tracked_markdown_files(repo_root):
@@ -107,18 +125,31 @@ def find_markdown_link_findings(repo_root: Path = REPO_ROOT) -> list[Finding]:
         except (OSError, UnicodeDecodeError):
             continue
         base_dir = abs_path.parent
+        in_fence = False
         for line_no, line in enumerate(text.splitlines(), start=1):
+            if _FENCE_RE.match(line):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
             for match in _LINK_RE.finditer(line):
                 raw = match.group(1).strip()
-                # Drop an optional Markdown title, e.g. `path "title"` -- the
-                # link target is always the first whitespace-delimited token.
-                target = raw.split()[0] if raw.split() else raw
+                # Drop an optional Markdown title (`path "title"` / `path
+                # 'title'`), but only when a quoted title is actually
+                # present. Splitting on the first whitespace unconditionally
+                # would wrongly truncate a target that legitimately contains
+                # a space, e.g. `file (draft).md` (#180).
+                title_match = _TITLE_SUFFIX_RE.match(raw)
+                target = title_match.group(1) if title_match else raw
                 if not _is_relative_link(target):
                     continue
                 file_part = target.split("#", 1)[0]
                 if not file_part:
                     continue
-                resolved = base_dir / file_part
+                # Percent-decode only for filesystem resolution; the finding
+                # message below keeps the original, raw target text so it
+                # stays grep-able against the source doc.
+                resolved = base_dir / unquote(file_part)
                 if resolved.exists():
                     continue
                 # A broken symlink and an outright-missing path are both
@@ -154,7 +185,7 @@ def _strip_shell_comment(line: str) -> str:
 
 
 def _iter_candidate_texts(text: str):
-    """Yield (line_no, candidate_text) for every place an invocation could live.
+    r"""Yield (line_no, candidate_text, in_fence) for every place an invocation could live.
 
     Two recognized forms, matching how this repo actually writes examples:
     fenced code blocks (```sh ... ```, scanned line by line) and inline code
@@ -163,17 +194,57 @@ def _iter_candidate_texts(text: str):
     covers that text, and re-scanning would only produce duplicate findings.
     Prose that merely *mentions* a flag or subcommand without backticks (or a
     fence) is never a candidate at all, by construction.
+
+    Within a fence, a backslash-continued line (`.rstrip()` ends with `\\`)
+    is buffered together with the line(s) that follow it, joined with a
+    single space and with each continued segment's trailing `\\` stripped,
+    until a line that does not continue -- yielded as one candidate under
+    the *first* line's number. If the fence closes while a continuation is
+    still pending, whatever is buffered is flushed as a candidate rather
+    than lost or held open forever. The inline-code-span branch has no
+    concept of continuation and is unaffected.
+
+    The third element tells the caller whether the candidate came from a
+    fence (a real, runnable command) or an inline span (which may just be
+    prose that happens to use backticks) -- callers that need to distinguish
+    a genuine invocation from incidental prose use this.
     """
     in_fence = False
+    pending_line_no: int | None = None
+    pending_parts: list[str] = []
+
     for line_no, raw_line in enumerate(text.splitlines(), start=1):
         if _FENCE_RE.match(raw_line):
+            if pending_parts:
+                assert pending_line_no is not None
+                yield pending_line_no, " ".join(pending_parts), True
+                pending_line_no = None
+                pending_parts = []
             in_fence = not in_fence
             continue
         if in_fence:
-            yield line_no, raw_line
+            stripped = raw_line.rstrip()
+            if stripped.endswith("\\"):
+                segment = stripped[:-1]
+                if not pending_parts:
+                    pending_line_no = line_no
+                pending_parts.append(segment)
+                continue
+            if pending_parts:
+                assert pending_line_no is not None
+                pending_parts.append(raw_line.strip())
+                yield pending_line_no, " ".join(pending_parts), True
+                pending_line_no = None
+                pending_parts = []
+            else:
+                yield line_no, raw_line, True
         else:
             for match in _INLINE_CODE_RE.finditer(raw_line):
-                yield line_no, match.group(1)
+                yield line_no, match.group(1), False
+
+    if pending_parts:
+        assert pending_line_no is not None
+        yield pending_line_no, " ".join(pending_parts), True
 
 
 def _extract_invocation_args(candidate: str) -> list[str] | None:
@@ -259,6 +330,45 @@ def _parser_maps(
     return subcommands, per_command_flags, global_flags, flag_nargs
 
 
+def _split_flag_token(token: str) -> tuple[str, bool]:
+    """Split a `--flag=value` token into `(flag_name, has_inline_value)`.
+
+    Any other token (bare `--flag`, a positional, `--` itself) passes
+    through unchanged with `has_inline_value=False`. Only `--long=value` is
+    special-cased -- this CLI's only short flag, `-d`/`--destination`, has no
+    `-d=value` form to worry about (verified: no combined short-flag forms
+    exist anywhere in this parser).
+    """
+    if token.startswith("--") and "=" in token:
+        name, _, _ = token.partition("=")
+        return name, True
+    return token, False
+
+
+def _first_non_flag_token(args: list[str], flag_nargs: dict[str, int]) -> str | None:
+    """Walk past leading flag tokens in `args`; return the first positional, or None.
+
+    Mirrors `_validate_invocation`'s own token walk (same `--flag=value`
+    splitting, same `flag_nargs`-driven skip of each flag's consumed
+    following token) so it never gets out of sync with what that function
+    considers a flag. A bare `--` means "no subcommand found here" -- it
+    marks the end of options, so whatever is left is positional, but there
+    is no subcommand token to return for the walk's own purposes.
+    """
+    i = 0
+    while i < len(args):
+        token = args[i]
+        if token == "--":
+            return None
+        if token.startswith("-"):
+            flag_name, has_inline_value = _split_flag_token(token)
+            consumed = 0 if has_inline_value else flag_nargs.get(flag_name, 0)
+            i += 1 + consumed
+            continue
+        return token
+    return None
+
+
 def _validate_invocation(
     args: list[str],
     subcommands: set[str],
@@ -275,6 +385,12 @@ def _validate_invocation(
     category, not this one. A flag documented against the wrong subcommand
     (e.g. `raven doctor --dry-run`, real flag, wrong subcommand) is reported
     distinctly from a flag that does not exist anywhere in the parser.
+
+    `--flag=value` is recognized via `_split_flag_token`: membership checks
+    use the flag name, and an inline value consumes zero following tokens
+    regardless of `flag_nargs`. A literal `--` stops validation entirely --
+    matching real argparse behavior, everything after it is positional
+    (unchecked), not a flag or a subcommand to look up.
     """
     all_subcommand_flags: set[str] = set()
     for flags in per_command_flags.values():
@@ -285,22 +401,26 @@ def _validate_invocation(
     i = 0
     while i < len(args):
         token = args[i]
+        if token == "--":
+            break
         if token.startswith("-"):
+            flag_name, has_inline_value = _split_flag_token(token)
+            consumed = 0 if has_inline_value else flag_nargs.get(flag_name, 0)
             if subcommand is None:
-                if token not in global_flags:
+                if flag_name not in global_flags:
                     problems.append(f"unknown global flag '{token}'")
-                i += 1 + flag_nargs.get(token, 0)
+                i += 1 + consumed
                 continue
             allowed = global_flags | per_command_flags.get(subcommand, set())
-            if token not in allowed:
-                if token in all_subcommand_flags:
+            if flag_name not in allowed:
+                if flag_name in all_subcommand_flags:
                     problems.append(
                         f"flag '{token}' is not valid for 'raven {subcommand}' "
                         "(defined for a different subcommand)"
                     )
                 else:
                     problems.append(f"unknown flag '{token}' for 'raven {subcommand}'")
-            i += 1 + flag_nargs.get(token, 0)
+            i += 1 + consumed
             continue
         if subcommand is None:
             if token not in subcommands:
@@ -317,6 +437,15 @@ def find_cli_doc_findings(repo_root: Path = REPO_ROOT) -> list[Finding]:
     Validates against the real parser returned by `raven_lib.cli.build_parser`,
     never a restated list of subcommands/flags -- see that function's
     docstring for why.
+
+    Inline code spans get one extra gate a fenced block does not: the first
+    non-flag token must be a known subcommand, or the candidate is not
+    treated as a real invocation at all (no finding, not even a suppressed
+    one). This closes the `` `raven is a bird` `` false positive -- ordinary
+    prose that happens to start with the word "raven" in backticks -- without
+    weakening fenced blocks, which this checker's own founding premise treats
+    as real, runnable commands: a genuinely wrong subcommand inside a fence
+    must still be reported.
     """
     subcommands, per_command_flags, global_flags, flag_nargs = _parser_maps(build_parser())
     findings: list[Finding] = []
@@ -326,10 +455,14 @@ def find_cli_doc_findings(repo_root: Path = REPO_ROOT) -> list[Finding]:
             text = abs_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        for line_no, candidate in _iter_candidate_texts(text):
+        for line_no, candidate, in_fence in _iter_candidate_texts(text):
             args = _extract_invocation_args(candidate)
             if not args:
                 continue
+            if not in_fence:
+                subcommand_token = _first_non_flag_token(args, flag_nargs)
+                if subcommand_token is None or subcommand_token not in subcommands:
+                    continue
             problems = _validate_invocation(
                 args, subcommands, per_command_flags, global_flags, flag_nargs
             )

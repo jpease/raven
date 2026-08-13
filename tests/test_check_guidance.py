@@ -171,6 +171,68 @@ class MarkdownLinkFindingsTests(GuidanceRepoTestCase):
         self.assertEqual(tracked.count("common/docs/guide.md"), 1)
         self.assertNotIn("lang/docs/guide.md", tracked)
 
+    # -- issue #180 -----------------------------------------------------------
+
+    def test_percent_encoded_link_target_resolves(self) -> None:
+        # The link target is percent-encoded (a real, valid Markdown link to
+        # a file whose name contains a space); resolution against the
+        # filesystem must decode it first.
+        _commit(self.repo, "README.md", "See [target](file%20name.md).\n")
+        _commit(self.repo, "file name.md", "# Target\n")
+
+        findings = self.module.find_markdown_link_findings(self.repo)
+
+        self.assertEqual(findings, [])
+
+    def test_link_target_with_balanced_parens_resolves(self) -> None:
+        # `[^)]+` stops at the first `)`, so a target containing a balanced
+        # `(...)` group was truncated mid-target and reported broken.
+        _commit(self.repo, "README.md", "See [notes](file(draft).md).\n")
+        _commit(self.repo, "file(draft).md", "# Draft\n")
+
+        findings = self.module.find_markdown_link_findings(self.repo)
+
+        self.assertEqual(findings, [])
+
+    def test_link_target_with_space_and_balanced_parens_resolves(self) -> None:
+        # The issue's exact repro: a target containing both a real space and
+        # unescaped parens. Fixing only the paren-balancing regex is not
+        # enough -- the pre-existing title heuristic (`raw.split()[0]`, "the
+        # target is the first whitespace-delimited token") would still
+        # truncate "file (draft).md" down to "file" on the space. The title
+        # heuristic must only fire for an actually-quoted title suffix.
+        _commit(self.repo, "README.md", "See [note](file (draft).md).\n")
+        _commit(self.repo, "file (draft).md", "# Draft\n")
+
+        findings = self.module.find_markdown_link_findings(self.repo)
+
+        self.assertEqual(findings, [])
+
+    def test_quoted_title_after_a_spaced_target_is_still_stripped(self) -> None:
+        # Positive control for the narrowed title heuristic: a genuine
+        # `path "title"` form must still resolve against `path` alone, not
+        # `path "title"` as a literal (nonexistent) filename.
+        _commit(self.repo, "README.md", 'See [note](real target.md "a title").\n')
+        _commit(self.repo, "real target.md", "# Real\n")
+
+        findings = self.module.find_markdown_link_findings(self.repo)
+
+        self.assertEqual(findings, [])
+
+    def test_link_shaped_text_inside_a_fence_is_not_checked(self) -> None:
+        # Per the design decision on issue #180: a fenced block demonstrating
+        # Markdown link syntax itself (teaching the format) is not asserting
+        # that the path exists, unlike the CLI checker's fenced commands.
+        _commit(
+            self.repo,
+            "README.md",
+            "Markdown links look like this:\n\n```md\n[text](does/not/exist.md)\n```\n",
+        )
+
+        findings = self.module.find_markdown_link_findings(self.repo)
+
+        self.assertEqual(findings, [])
+
 
 class CliDocFindingsTests(GuidanceRepoTestCase):
     def test_undefined_flag_reports_file_and_line(self) -> None:
@@ -304,6 +366,121 @@ class CliDocFindingsTests(GuidanceRepoTestCase):
         findings = self.module.find_cli_doc_findings(self.repo)
 
         self.assertEqual(findings, [])
+
+    # -- issue #180 -----------------------------------------------------------
+
+    def test_flag_equals_value_form_is_accepted(self) -> None:
+        # `--platform=github` is real argparse syntax (option=value), but the
+        # old hand-rolled tokenizer only recognized the bare flag string
+        # `--platform`, so this was misreported as an unknown flag.
+        _commit(
+            self.repo,
+            "README.md",
+            "```sh\nraven install python --platform=github\n```\n",
+        )
+
+        findings = self.module.find_cli_doc_findings(self.repo)
+
+        self.assertEqual(findings, [])
+
+    def test_double_dash_separator_stops_flag_checking(self) -> None:
+        # Everything after a literal `--` is positional in real argparse
+        # parsing; the old loop instead treated `--` itself, and every token
+        # following it, as flags to check -- producing two bogus findings.
+        _commit(
+            self.repo,
+            "README.md",
+            "```sh\nraven install python -- --whatever-you-want\n```\n",
+        )
+
+        findings = self.module.find_cli_doc_findings(self.repo)
+
+        self.assertEqual(findings, [])
+
+    def test_continued_invocation_across_lines_is_validated(self) -> None:
+        # A backslash-continued invocation split across two lines must still
+        # be validated as one command -- silently skipping it (the old
+        # behavior: neither line alone parses as a raven invocation) is
+        # exactly the failure mode this issue exists to close.
+        _commit(
+            self.repo,
+            "README.md",
+            "```sh\nraven doctor \\\n  --not-a-real-flag\n```\n",
+        )
+
+        findings = self.module.find_cli_doc_findings(self.repo)
+
+        self.assertEqual(len(findings), 1, findings)
+        path, line_no, message = findings[0]
+        self.assertEqual(path, "README.md")
+        self.assertEqual(line_no, 2)
+        self.assertIn("--not-a-real-flag", message)
+
+    def test_continuation_pending_when_fence_closes_is_flushed_not_lost(self) -> None:
+        # Edge case: the fence closes while a backslash continuation is still
+        # pending (no trailing non-continued line ever arrives). The buffered
+        # text must be flushed as a candidate, not dropped or hung on.
+        _commit(
+            self.repo,
+            "README.md",
+            "```sh\nraven doctor --not-a-real-flag \\\n```\n",
+        )
+
+        findings = self.module.find_cli_doc_findings(self.repo)
+
+        self.assertEqual(len(findings), 1, findings)
+        path, line_no, message = findings[0]
+        self.assertEqual(path, "README.md")
+        self.assertEqual(line_no, 2)
+        self.assertIn("--not-a-real-flag", message)
+
+    def test_inline_prose_starting_with_raven_but_not_a_subcommand_is_ignored(self) -> None:
+        # The repro: "raven is a bird" in an inline code span. "is" is not a
+        # subcommand -- a leading `raven` token alone must not be enough to
+        # treat this as a real invocation.
+        _commit(self.repo, "README.md", "Ravens are neat: `raven is a bird`.\n")
+
+        findings = self.module.find_cli_doc_findings(self.repo)
+
+        self.assertEqual(findings, [])
+
+    def test_undefined_subcommand_inside_fence_is_still_reported(self) -> None:
+        # The stricter "second token must be a known subcommand" recognizer
+        # (added for the prose false-positive above) must apply only to
+        # inline code spans, not fenced blocks -- a fence unambiguously
+        # represents a real, runnable command, so a genuinely wrong
+        # subcommand inside one must still be reported.
+        _commit(
+            self.repo,
+            "README.md",
+            "```sh\nraven frobnicate\n```\n",
+        )
+
+        findings = self.module.find_cli_doc_findings(self.repo)
+
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("frobnicate", findings[0][2])
+
+    def test_inline_span_walks_past_leading_global_flag_before_checking_subcommand(
+        self,
+    ) -> None:
+        # The stricter inline-span recognizer must not naively look at the
+        # literal first token -- it has to walk past leading flags (using
+        # flag_nargs to know how many following tokens each one consumes)
+        # to find the real subcommand, the same way `_validate_invocation`
+        # does. This also proves the walk doesn't cause the invocation to be
+        # skipped entirely: the real flag defect after `install` must still
+        # be reported.
+        _commit(
+            self.repo,
+            "README.md",
+            "Run `python scripts/raven.py --destination /tmp/x install --not-a-real-flag` first.\n",
+        )
+
+        findings = self.module.find_cli_doc_findings(self.repo)
+
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("--not-a-real-flag", findings[0][2])
 
 
 class BuildParserContractTests(unittest.TestCase):
