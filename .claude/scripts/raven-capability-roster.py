@@ -244,22 +244,29 @@ def read_index_meta(root: Path) -> dict | None:
     return raw
 
 
+#: Returned when git could not answer, so "checked and current" and "could not
+#: check" do not render identically. Reporting an unanswered check as `current`
+#: asserts freshness nothing verified, which matters because the managed
+#: guidance requires impact analysis against this index before a symbol edit.
+STALENESS_UNKNOWN = "unknown"
+
+
 def index_staleness(root: Path, meta: dict, run_git) -> str | None:
-    """Return a staleness reason, or None when the index is current.
+    """Return a staleness reason, ``STALENESS_UNKNOWN``, or None when current.
 
     Checks committed and uncommitted drift. A commit-only check reports a
     dirty tree as current -- the common case and the one that matters.
     """
     head = run_git(["rev-parse", "HEAD"])
     if head is None:
-        return None
+        return STALENESS_UNKNOWN
     indexed = sanitize_sha(meta.get("lastCommit"))
     head_sha = sanitize_sha(head)
     if indexed and head_sha and indexed != head_sha:
         return f"indexed {indexed[:7]}, HEAD {head_sha[:7]}"
     status = run_git(["status", "--porcelain"])
     if status is None:
-        return None
+        return STALENESS_UNKNOWN
     return "working tree modified" if status.strip() else None
 
 
@@ -271,7 +278,12 @@ def render_index_line(meta: dict | None, verdict: str | None) -> str | None:
     nodes, files = stats.get("nodes"), stats.get("files")
     if not isinstance(nodes, int) or not isinstance(files, int):
         return None
-    state = f"STALE ({verdict})" if verdict else "current"
+    if verdict is None:
+        state = "current"
+    elif verdict == STALENESS_UNKNOWN:
+        state = "freshness UNKNOWN (git did not answer)"
+    else:
+        state = f"STALE ({verdict})"
     return _line("Index", f"gitnexus · {nodes} nodes / {files} files · {state}")
 
 

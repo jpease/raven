@@ -418,10 +418,25 @@ class IndexFreshnessTests(RavenTestCase):
         )
         self.assertEqual(verdict, "working tree modified")
 
-    def test_git_failure_yields_no_verdict(self):
+    def test_git_failure_yields_unknown_not_current(self):
+        """A check that could not run must not render the same as a passing one.
+
+        Returning None here put "clean tree" and "git did not answer" through the
+        same branch, so an unanswered check rendered as `current` -- asserting a
+        freshness nothing verified, for an index the managed guidance requires
+        impact analysis against before a symbol edit.
+        """
         meta = self._write_meta()
         verdict = self.module.index_staleness(self.destination, meta, run_git=lambda _args: None)
-        self.assertIsNone(verdict)
+        self.assertEqual(verdict, self.module.STALENESS_UNKNOWN)
+
+    def test_unknown_freshness_renders_distinctly_from_current(self):
+        meta = self._write_meta()
+        unknown = self.module.render_index_line(meta, self.module.STALENESS_UNKNOWN)
+        current = self.module.render_index_line(meta, None)
+        self.assertIn("UNKNOWN", unknown)
+        self.assertNotIn("UNKNOWN", current)
+        self.assertNotEqual(unknown, current)
 
     def test_index_line_renders_stats_and_verdict(self):
         meta = self._write_meta()
