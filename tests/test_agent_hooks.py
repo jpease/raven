@@ -124,35 +124,32 @@ class BashGuardDestructiveOptionTests(RavenTestCase):
 
 
 class BashGuardRegexPatternTests(RavenTestCase):
-    """Regression tests for issue #155: regex-pattern matches in raw command text.
+    """Raw-text matches are denied, but only for text a shell could execute.
 
-    These tests verify that matches found by scanning raw command text (before
-    tokenization) are still denied, but the deny message correctly explains the
-    conservative, text-level nature of the check. This includes false positives
-    like a heredoc body containing "git reset --hard" text that never actually
-    executes.
+    The raw-text family matches text rather than intent, so what it is shown
+    decides its false-positive rate. A heredoc body is the stdin of the program
+    on its introducer line: fed to `python3 -` or `gh --body-file -` it is data
+    that never runs, and matching it can only misfire. Fed to `bash` it is code
+    and must still be scanned. `_strip_heredoc_bodies` draws exactly that line.
+
+    Denying the data case (as this guard originally did, per issue #155) is not
+    the conservative choice it looks like. Review prose, commit messages, SQL and
+    documentation routinely *name* destructive commands, so the block lands on
+    ordinary work -- and the obvious way out is to write the same content to a
+    file and run that, which bypasses the guard entirely and leaves a less
+    reviewable artifact behind.
     """
 
-    def test_claude_copy_denies_heredoc_with_trigger_phrase_in_body(self):
-        """A heredoc body containing a trigger phrase is still denied (false positive).
-
-        The guard scans raw command text and cannot distinguish between a trigger
-        phrase that actually executes vs. one that appears in a quoted string or
-        heredoc body. This is conservative but necessary for safety.
-        """
-        # Python heredoc: the literal text 'git reset --hard' appears in the body
-        # but never executes as a command.
-        command = "python - <<'EOF'\n# Example showing: git reset --hard\nprint('hello')\nEOF"
+    def test_claude_copy_allows_a_trigger_phrase_in_a_data_heredoc(self):
+        """`python -` consumes its heredoc as stdin; the body never executes."""
+        command = "python - <<'EOF'\n# Example showing: git reset --hard\nprint(1)\nEOF"
         payload = {"tool_input": {"command": command}}
         result = _run_bash_guard(CLAUDE_BASH_GUARD, payload)
-        self.assertEqual(result.returncode, 2, f"stdout={result.stdout!r} stderr={result.stderr!r}")
-        self.assertIn("Blocked", result.stderr)
-        # Message should explain it's a raw-text match, not a real execution threat
-        self.assertIn("raw", result.stderr.lower())
+        self.assertEqual(result.returncode, 0, f"stdout={result.stdout!r} stderr={result.stderr!r}")
 
-    def test_codex_copy_denies_heredoc_with_trigger_phrase_in_body(self):
-        """Codex version: heredoc body trigger phrase is still denied."""
-        command = "python - <<'EOF'\n# Example: git reset --hard\nprint('hello')\nEOF"
+    def test_codex_copy_allows_a_trigger_phrase_in_a_data_heredoc(self):
+        """Codex version: a data heredoc body is not a command."""
+        command = "python - <<'EOF'\n# Example: git reset --hard\nprint(1)\nEOF"
         payload = {
             "hook_event_name": "PreToolUse",
             "tool_name": "Bash",
@@ -160,11 +157,26 @@ class BashGuardRegexPatternTests(RavenTestCase):
         }
         result = _run_bash_guard(CODEX_BASH_GUARD, payload)
         self.assertEqual(result.returncode, 0, result.stderr)
-        response = json.loads(result.stdout)
-        self.assertEqual(response["hookSpecificOutput"]["permissionDecision"], "deny")
-        # Message should mention raw text
-        reason = response["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertIn("raw", reason.lower())
+        self.assertEqual(result.stdout.strip(), "", "a data heredoc must not be denied")
+
+    def test_claude_copy_still_denies_an_unterminated_heredoc(self):
+        """No terminator means no provable end, so the remainder is scanned."""
+        payload = {"tool_input": {"command": "python - <<'EOF'\nsudo rm -rf /"}}
+        result = _run_bash_guard(CLAUDE_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 2, f"stdout={result.stdout!r}")
+
+    def test_claude_copy_still_denies_a_herestring(self):
+        """`<<<` is a herestring: its operand is on the line, not in a body."""
+        payload = {"tool_input": {"command": "bash <<< 'sudo rm -rf /'"}}
+        result = _run_bash_guard(CLAUDE_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 2, f"stdout={result.stdout!r}")
+
+    def test_claude_copy_still_denies_a_command_after_a_data_heredoc(self):
+        """Stripping a body must not swallow what follows the terminator."""
+        command = "python - <<'EOF'\nprint(1)\nEOF\nsudo rm -rf /"
+        payload = {"tool_input": {"command": command}}
+        result = _run_bash_guard(CLAUDE_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 2, f"stdout={result.stdout!r}")
 
     def test_claude_copy_denies_real_git_reset_hard_command(self):
         """A real 'git reset --hard' invocation is still denied."""
@@ -187,16 +199,16 @@ class BashGuardRegexPatternTests(RavenTestCase):
         response = json.loads(result.stdout)
         self.assertEqual(response["hookSpecificOutput"]["permissionDecision"], "deny")
 
-    def test_claude_copy_denies_heredoc_with_other_trigger_phrases(self):
-        """Test other regex patterns: dropdb in heredoc body."""
+    def test_claude_copy_denies_a_trigger_phrase_in_a_shell_heredoc(self):
+        """`sh` executes its heredoc body, so that body is code and is scanned."""
         command = "sh - <<'SCRIPT'\n# Safety check: dropdb unsafe_db\nexit 0\nSCRIPT"
         payload = {"tool_input": {"command": command}}
         result = _run_bash_guard(CLAUDE_BASH_GUARD, payload)
         self.assertEqual(result.returncode, 2, f"stdout={result.stdout!r} stderr={result.stderr!r}")
         self.assertIn("raw", result.stderr.lower())
 
-    def test_codex_copy_denies_heredoc_with_other_trigger_phrases(self):
-        """Codex version: other patterns in heredoc."""
+    def test_codex_copy_denies_a_trigger_phrase_in_a_shell_heredoc(self):
+        """Codex version: a shell heredoc body is code."""
         command = "sh - <<'SCRIPT'\n# Note: sudo rm -rf /\nexit 0\nSCRIPT"
         payload = {
             "hook_event_name": "PreToolUse",
@@ -620,7 +632,45 @@ class ClaudeHookLauncherTests(unittest.TestCase):
             )
 
         self.assertEqual(result.returncode, 0)
-        self.assertIn("no Python launcher", result.stderr)
+        self.assertIn("no working Python launcher", result.stderr)
+
+    #: The launchers duplicate this resolution deliberately -- a hook must not
+    #: depend on a sibling file surviving a partial checkout -- so pin them
+    #: together rather than trusting the copies to stay in step by hand.
+    LAUNCHERS = (CLAUDE_RUN_HOOK,)
+
+    def test_launchers_verify_the_interpreter_executes(self):
+        """`command -v` finding a name is not proof it runs.
+
+        `python3` on Windows is normally the WindowsApps App Execution Alias: it
+        opens the Microsoft Store and runs nothing, while `command -v` reports it
+        present. Selecting on presence alone therefore picks a launcher that
+        silently does nothing -- and these hooks are fail-open, so nothing says
+        so. `py -3` is the reliable launcher there.
+        """
+        for launcher in self.LAUNCHERS:
+            source = launcher.read_text(encoding="utf-8")
+            with self.subTest(launcher=launcher.name):
+                self.assertIn('-c ""', source)
+                self.assertIn("MINGW*|MSYS*|CYGWIN*", source)
+                self.assertIn('py|python|python3"', source)
+
+    def test_launchers_resolve_an_interpreter_on_this_platform(self):
+        """Run the shipped resolution block verbatim rather than a copy of it."""
+        start = 'case "$(uname -s 2>/dev/null)" in'
+        end = "\ndone\n"
+        for launcher in self.LAUNCHERS:
+            source = launcher.read_text(encoding="utf-8")
+            block = start + source.split(start, 1)[1].split(end, 1)[0] + end
+            result = subprocess.run(
+                ["sh", "-c", block + 'printf "%s" "$RAVEN_PY"'],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            with self.subTest(launcher=launcher.name):
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(result.stdout.strip(), "resolved no launcher")
 
     def test_installed_claude_settings_matches_canonical(self):
         """Same manual-merge drift risk as the Codex copy above (issue #97)."""

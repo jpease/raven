@@ -74,7 +74,9 @@ def main() -> int:
         r"\.crt$",
         r"\.cer$",
         r"(^|/)\.env$",
-        r"secrets",
+        # Anchored to a path segment: a bare `secrets` substring also blocks
+        # `docs/how-we-handle-secrets.md` and any `test_secrets_helper.py`.
+        r"(^|/)secrets?(\.|/|$)",
         r"credentials",
     ]
     caution = [

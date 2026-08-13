@@ -25,6 +25,20 @@ _LONG_OPTION_LETTERS = {
     "--force": "f",
 }
 
+# Programs whose heredoc body is *executed* rather than consumed as data. A body
+# fed to one of these is shell code and must still be scanned; a body fed to
+# anything else (python3, jq, cat, a REST client) is stdin data that never runs
+# as a command. Determining which decides whether `_strip_heredoc_bodies` may
+# drop it, so an unrecognized program is treated as a shell -- err toward
+# scanning.
+_SHELL_PROGRAMS = frozenset({"sh", "bash", "dash", "ksh", "zsh", "csh", "tcsh", "fish"})
+
+# `<<WORD`, `<<-WORD`, `<<'WORD'`, `<<"WORD"`. The negative lookahead excludes
+# `<<<`, which is a herestring: its operand is on the same line, with no body.
+_HEREDOC_INTRODUCER = re.compile(
+    r"<<(?!<)-?[ \t]*(?:'([^']*)'|\"([^\"]*)\"|([A-Za-z_][A-Za-z0-9_]*))"
+)
+
 
 def _load_payload() -> dict | None:
     try:
@@ -115,6 +129,71 @@ def _command_segments(command: str) -> list[list[str]]:
         segments.append(current)
 
     return [segment for segment in segments if segment]
+
+
+def _line_program(line: str) -> str | None:
+    """The program a single command line invokes, or None if it cannot be read."""
+    for segment in _command_segments(line):
+        parsed = _program_and_args(segment)
+        if parsed is not None:
+            return parsed[0].rsplit("/", 1)[-1].lower()
+    return None
+
+
+def _strip_heredoc_bodies(command: str) -> str:
+    """Drop heredoc bodies that are data rather than code, keeping their introducer lines.
+
+    A heredoc body is the stdin of the program on its introducer line. When that
+    program is not a shell -- `python3 - <<'PY'`, `jq -f - <<EOF`, `gh pr create
+    --body-file - <<EOF` -- the body never executes, so scanning it can only
+    produce false positives. And they are not hypothetical: review prose, commit
+    messages, SQL and documentation routinely *name* destructive commands, and
+    the raw-text family matches text rather than intent. Blocking those trains
+    people to route around the guard by writing the same content to a file and
+    running that instead, which defeats it entirely while making the result less
+    reviewable.
+
+    A body fed to a shell (`bash <<EOF`) *is* code and is kept. So is a body
+    whose introducer line this cannot parse, and any text after an unterminated
+    delimiter -- both err toward scanning.
+
+    The introducer line itself is always kept: it is a real command.
+    """
+    lines = command.splitlines()
+    kept: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        kept.append(line)
+        index += 1
+
+        delimiters = [
+            quoted_single or quoted_double or bare
+            for quoted_single, quoted_double, bare in _HEREDOC_INTRODUCER.findall(line)
+        ]
+        if not delimiters:
+            continue
+
+        program = _line_program(line)
+        drop_body = program is not None and program not in _SHELL_PROGRAMS
+
+        for delimiter in delimiters:
+            body: list[str] = []
+            terminator: str | None = None
+            while index < len(lines):
+                body_line = lines[index]
+                index += 1
+                if body_line.strip() == delimiter:
+                    terminator = body_line
+                    break
+                body.append(body_line)
+            # An unterminated heredoc has no provable end, so its "body" may be
+            # ordinary commands the author expected to run. Keep it and scan.
+            if not drop_body or terminator is None:
+                kept.extend(body)
+            if terminator is not None:
+                kept.append(terminator)
+    return "\n".join(kept)
 
 
 def _program_and_args(segment: list[str]) -> tuple[str, list[str]] | None:
@@ -249,6 +328,11 @@ def main() -> int:
     if not command:
         return 0
 
+    # Both families below reason about text, so they see the command with
+    # data-only heredoc bodies removed. Deny messages still quote the original,
+    # so the user sees what they actually typed.
+    scannable = _strip_heredoc_bodies(command)
+
     # Regex checks whose intents have no option-combination bypass.
     regex_patterns = [
         r"sudo\s+rm\b",
@@ -259,12 +343,12 @@ def main() -> int:
         r"aws\b.*\bdelete\b",
     ]
     for pattern in regex_patterns:
-        if re.search(pattern, command, re.IGNORECASE):
+        if re.search(pattern, scannable, re.IGNORECASE):
             return _deny(_pattern_deny_message(command), payload)
 
     # Tokenized checks for destructive intents with option-spelling variants:
     # rm force+recursive at / or ~, and git clean force+d+x.
-    for segment in _command_segments(command):
+    for segment in _command_segments(scannable):
         parsed = _program_and_args(segment)
         if parsed is None:
             continue

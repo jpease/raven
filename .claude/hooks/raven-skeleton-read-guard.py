@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -80,6 +81,18 @@ def is_unbounded_read(tool_input: dict) -> bool:
     return not tool_input.get("offset") and not tool_input.get("limit")
 
 
+#: Backends `raven-skeleton.py` can build a symbol map with. The gate denies a
+#: read only when one of these resolves: without a backend the helper it points
+#: at returns "No skeleton available", so the denial would send the reader to a
+#: dead end instead of a cheaper path.
+SKELETON_BACKENDS = ("ast-grep", "rg")
+
+
+def skeleton_backend_available() -> bool:
+    """Whether any backend the skeleton helper uses resolves on this machine."""
+    return any(shutil.which(binary) for binary in SKELETON_BACKENDS)
+
+
 def should_gate(
     tool_input: dict,
     line_count: int,
@@ -87,14 +100,15 @@ def should_gate(
     enabled: bool,
     threshold: int,
     supported: bool,
+    backend_available: bool = True,
 ) -> bool:
     """Deny only when the gate is on, the file is a supported language, the read
-    is unbounded, and the file is at least ``threshold`` lines. Everything else
-    passes through.
+    is unbounded, the file is at least ``threshold`` lines, and the skeleton
+    helper can actually produce a map. Everything else passes through.
     """
     if not enabled:
         return False
-    if not supported:
+    if not supported or not backend_available:
         return False
     if not is_unbounded_read(tool_input):
         return False
@@ -178,6 +192,7 @@ def main() -> int:
         enabled=enabled,
         threshold=threshold,
         supported=True,
+        backend_available=skeleton_backend_available(),
     ):
         return 0
 

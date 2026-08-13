@@ -53,6 +53,20 @@ class ShouldGateTests(RavenTestCase):
     def test_gates_exactly_at_threshold(self):
         self.assertTrue(self._gate(line_count=500))
 
+    def test_does_not_gate_without_a_skeleton_backend(self):
+        """Denying is only useful when the helper it points at can answer.
+
+        With neither ast-grep nor rg installed, raven-skeleton returns
+        "No skeleton available", so a denial would send the reader to a dead end
+        rather than a cheaper path.
+        """
+        self.assertFalse(self._gate(backend_available=False))
+
+    def test_backend_detection_reflects_what_is_on_path(self):
+        module = _module()
+        self.assertEqual(module.SKELETON_BACKENDS, ("ast-grep", "rg"))
+        self.assertIsInstance(module.skeleton_backend_available(), bool)
+
 
 class ParseGateConfigTests(RavenTestCase):
     def test_default_is_disabled_with_default_threshold(self):

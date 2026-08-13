@@ -41,16 +41,39 @@ case "$script" in
         ;;
 esac
 
-if command -v python3 >/dev/null 2>&1; then
-    exec python3 "$script" "$@"
-elif command -v python >/dev/null 2>&1; then
-    exec python "$script" "$@"
-elif command -v py >/dev/null 2>&1; then
-    exec py -3 "$script" "$@"
+# Resolve a Python launcher, verifying it actually runs.
+#
+# Order matters on Windows: `python3` there is normally the WindowsApps App
+# Execution Alias, which opens the Microsoft Store instead of running anything.
+# `command -v python3` finds it, so a presence check alone selects a launcher
+# that does nothing -- and because these hooks are fail-open, nothing reports
+# it. `py -3` is the reliable launcher there, `python3` everywhere else, and
+# `-c ""` confirms whichever we picked can execute at all.
+case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*|Windows*) _candidates="py|python|python3" ;;
+    *) _candidates="python3|python|py" ;;
+esac
+
+RAVEN_PY=""
+_rest="$_candidates"
+while [ -n "$_rest" ]; do
+    _candidate=${_rest%%|*}
+    [ "$_rest" = "$_candidate" ] && _rest="" || _rest=${_rest#*|}
+    [ "$_candidate" = "py" ] && _candidate="py -3"
+    # shellcheck disable=SC2086
+    if command -v ${_candidate%% *} >/dev/null 2>&1 && $_candidate -c "" >/dev/null 2>&1; then
+        RAVEN_PY="$_candidate"
+        break
+    fi
+done
+
+if [ -n "$RAVEN_PY" ]; then
+    # shellcheck disable=SC2086
+    exec $RAVEN_PY "$script" "$@"
 fi
 
 # Fail open, but say so. Exiting non-zero would block the tool call this hook
-# was guarding, and a hook that cannot run must never be the reason work
-# stops. Staying silent is what let the original breakage go unnoticed.
-echo "raven-run-hook: no Python launcher (python3, python, py) found; skipped $script" >&2
+# was guarding, and a hook that cannot run must never be the reason work stops.
+# The message is the only signal that a guard silently stopped existing.
+echo "raven-run-hook: no working Python launcher (py, python3, python) found; skipped $script" >&2
 exit 0
