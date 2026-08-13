@@ -348,6 +348,87 @@ class DoctorDeactivatedTests(RavenTestCase):
         self.assertNotIn("doctor.deactivated.preserved", findings)
         self.assertEqual(findings["doctor.drift.modified"].severity, Severity.OK)
 
+    def test_doctor_reports_stale_baseline_deactivated_skill_distinctly(self) -> None:
+        # #179: a recorded baseline from an older template version, but
+        # pristine on-disk content matching the *current* template, must be
+        # its own WARN finding -- distinct id from doctor.deactivated.
+        # preserved, and distinct wording naming `raven accept` as the fix
+        # rather than accusing the user of modifying the file.
+        _install(self, platform="github")
+        skill_path = self.destination / ".agents" / "skills" / "raven-github-issues" / "SKILL.md"
+        self.assertTrue(skill_path.exists())
+        manifest_path = self.destination / ".raven" / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        rel = ".agents/skills/raven-github-issues/SKILL.md"
+        stale_hash = "a" * 64
+        manifest["files"][rel] = {
+            "kind": "file",
+            "installedSha256": stale_hash,
+            "sourceSha256": stale_hash,
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self._switch_platform("gitlab")
+
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertIn("doctor.deactivated.stale", findings)
+        self.assertEqual(findings["doctor.deactivated.stale"].severity, Severity.WARN)
+        self.assertIn(rel, findings["doctor.deactivated.stale"].detail)
+        assert findings["doctor.deactivated.stale"].fix is not None
+        self.assertIn("raven accept", findings["doctor.deactivated.stale"].fix)
+        self.assertNotIn("doctor.deactivated.preserved", findings)
+        self.assertNotIn("doctor.deactivated.removable", findings)
+        self.assertNotIn("doctor.deactivated.customized", findings)
+
+    def test_doctor_reports_customized_deactivated_skill_as_info_not_warn(self) -> None:
+        # #179: an accepted customization (installed != source) on a
+        # deactivated skill is a deliberate, acknowledged state -- INFO, not
+        # WARN, mirroring the doctor.drift.local precedent for accepted
+        # local customizations elsewhere in this module.
+        _install(self, platform="github")
+        skill_path = self.destination / ".agents" / "skills" / "raven-github-issues" / "SKILL.md"
+        rel = ".agents/skills/raven-github-issues/SKILL.md"
+        manifest_path = self.destination / ".raven" / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        sha = manifest["files"][rel]["installedSha256"]
+        manifest["files"][rel] = {
+            "kind": "file",
+            "installedSha256": sha,
+            "sourceSha256": "b" * 64,
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self._switch_platform("gitlab")
+
+        findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertIn("doctor.deactivated.customized", findings)
+        self.assertEqual(findings["doctor.deactivated.customized"].severity, Severity.INFO)
+        self.assertIn(rel, findings["doctor.deactivated.customized"].detail)
+        self.assertNotIn("doctor.deactivated.preserved", findings)
+        self.assertNotIn("doctor.deactivated.removable", findings)
+        self.assertNotIn("doctor.deactivated.stale", findings)
+        self.assertTrue(skill_path.exists())
+
+    def test_customized_deactivated_skill_does_not_block_matching_ok(self) -> None:
+        # An INFO-only customized finding must not itself count as an ERROR,
+        # matching the existing doctor.drift.local OK-suppression contract:
+        # OK is suppressed by anything in `deactivated.preserved` (the
+        # customized path is still part of that aggregate), but no ERROR
+        # severity should ever result from an accepted customization alone.
+        _install(self, platform="github")
+        rel = ".agents/skills/raven-github-issues/SKILL.md"
+        manifest_path = self.destination / ".raven" / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        sha = manifest["files"][rel]["installedSha256"]
+        manifest["files"][rel] = {
+            "kind": "file",
+            "installedSha256": sha,
+            "sourceSha256": "b" * 64,
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self._switch_platform("gitlab")
+
+        findings = drift_findings(self.destination)
+        self.assertFalse(any(f.severity == Severity.ERROR for f in findings))
+
 
 # ---------------------------------------------------------------------------
 # #39 -- doctor must report individually deleted managed files

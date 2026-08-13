@@ -60,10 +60,22 @@ def render_apply_summary(
     orphan_modified: list[str],
     removed_deactivated: list[str] | None = None,
     deactivated_preserved: list[str] | None = None,
+    deactivated_stale: list[str] | None = None,
+    deactivated_customized: list[str] | None = None,
 ) -> str:
-    """The post-apply summary report text: only sections with content are included."""
+    """The post-apply summary report text: only sections with content are included.
+
+    ``deactivated_preserved`` means, as of #179, only the genuinely-modified
+    subset -- callers must exclude ``deactivated_stale``/``deactivated_
+    customized`` from the raw `DeactivatedClassification.preserved` before
+    passing it in. Those two are separate, informational dispositions with
+    their own wording: a stale baseline is never described as "you modified
+    them", and an accepted customization is a deliberate, acknowledged state.
+    """
     removed_deactivated = removed_deactivated or []
     deactivated_preserved = deactivated_preserved or []
+    deactivated_stale = deactivated_stale or []
+    deactivated_customized = deactivated_customized or []
     sections = [render_section(f"Copied {len(copied)} file(s):", copied)]
 
     if upgraded:
@@ -143,6 +155,26 @@ def render_apply_summary(
             )
         )
 
+    if deactivated_stale:
+        sections.append(
+            render_section(
+                "Deactivated by config; not removed because the recorded baseline is "
+                "stale (on-disk content matches the current template exactly, so this "
+                "was never a local edit) -- run `raven accept <path>` to refresh the "
+                "baseline, then the next upgrade will remove it:",
+                deactivated_stale,
+            )
+        )
+
+    if deactivated_customized:
+        sections.append(
+            render_section(
+                "Deactivated by config; kept as an accepted customization "
+                "(recorded via `raven accept`; still shipped by the template):",
+                deactivated_customized,
+            )
+        )
+
     return "\n\n".join(sections)
 
 
@@ -158,6 +190,8 @@ def print_apply_summary(
     orphan_modified: list[str],
     removed_deactivated: list[str] | None = None,
     deactivated_preserved: list[str] | None = None,
+    deactivated_stale: list[str] | None = None,
+    deactivated_customized: list[str] | None = None,
 ) -> None:
     """Print `render_apply_summary`'s output."""
     print(
@@ -173,6 +207,8 @@ def print_apply_summary(
             orphan_modified,
             removed_deactivated,
             deactivated_preserved,
+            deactivated_stale,
+            deactivated_customized,
         )
     )
 
@@ -292,7 +328,7 @@ def render_dry_run_plan(
     section-assembly -- which sections appear, in which order, with which
     wording -- testable without building a destination tree on disk.
     """
-    deactivated = deactivated or DeactivatedClassification([], [], [])
+    deactivated = deactivated or DeactivatedClassification([], [], [], stale=[], customized=[])
     sections = []
     if plan.requested_overrides:
         sections.append(
@@ -349,12 +385,33 @@ def render_dry_run_plan(
                 deactivated.removable,
             )
         )
-    if deactivated.preserved:
+    deactivated_modified = sorted(
+        set(deactivated.preserved) - set(deactivated.stale) - set(deactivated.customized)
+    )
+    if deactivated_modified:
         sections.append(
             render_section(
                 "Deactivated by config but locally modified; left in place (still "
                 "shipped by the template — delete manually if unwanted):",
-                deactivated.preserved,
+                deactivated_modified,
+            )
+        )
+    if deactivated.stale:
+        sections.append(
+            render_section(
+                "Deactivated by config; recorded baseline is stale but on-disk content "
+                "matches the current template exactly (still shipped by the template) "
+                "-- run `raven accept <path>` to refresh it, then a future upgrade will "
+                "remove it:",
+                deactivated.stale,
+            )
+        )
+    if deactivated.customized:
+        sections.append(
+            render_section(
+                "Deactivated by config; kept as an accepted customization (recorded "
+                "via `raven accept`; still shipped by the template):",
+                deactivated.customized,
             )
         )
     return "\n\n".join(sections)

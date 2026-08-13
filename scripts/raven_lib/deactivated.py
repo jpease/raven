@@ -35,10 +35,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from .config import platform_excluded, template_excluded
-from .hashing import destination_fingerprint
+from .hashing import destination_fingerprint, same_content
 from .manifest import parse_record
 from .models import DeactivatedClassification, RavenConfig
 from .orphans import _safe_relative, shipped_relatives, unmodified_baseline
+from .template import entries_for_destination
 
 
 def _platform_gated(relative: str, config: RavenConfig) -> bool:
@@ -101,9 +102,16 @@ def classify_deactivated(
     Each candidate then goes through the same baseline-hash safety gate
     ``classify_orphans`` uses (via the shared ``unmodified_baseline``): an
     exact, non-customized match is safely removable by ``upgrade``; anything
-    else -- a local edit, a customized baseline, or a legacy record with no
-    trustworthy ``sourceSha256`` -- is reported and preserved, never deleted.
-    An absent file only needs its stale manifest record pruned.
+    else -- a local edit, a customized baseline, a legacy record with no
+    trustworthy ``sourceSha256``, or a baseline that is simply stale -- is
+    reported and preserved, never deleted. Every preserved candidate is
+    further, informationally, checked for *why* it failed the gate (#179):
+    ``DeactivatedClassification.stale`` for a baseline that no longer matches
+    disk but whose on-disk content still matches the *current* template
+    source exactly (nothing was actually edited -- the recorded hash is just
+    out of date), and ``.customized`` for a record that itself declares a
+    customization. Both are subsets of ``preserved``, not replacements for
+    it. An absent file only needs its stale manifest record pruned.
 
     Callers are trusted to have already validated ``config``: every call site
     in this codebase loads config through a path that reports and aborts on
@@ -116,13 +124,20 @@ def classify_deactivated(
     """
     tracked = manifest.get("files", {})
     if not isinstance(tracked, dict):
-        return DeactivatedClassification([], [], [])
+        return DeactivatedClassification([], [], [], stale=[], customized=[])
     shipped = shipped_relatives(template, destination)
     candidates = sorted(key for key in tracked if key in shipped and _config_gated(key, config))
+    # Policy-neutral, matching shipped_relatives' own derivation: a gated
+    # path is excluded from entries_for_destination under the real config by
+    # definition, so config=None is required here to resolve a TemplateEntry
+    # for it at all (empty excludes for the same reason).
+    entries = entries_for_destination(template, set(), None, destination)
 
     removable: list[str] = []
     preserved: list[str] = []
     absent: list[str] = []
+    stale: list[str] = []
+    customized: list[str] = []
     for relative in candidates:
         target = _safe_relative(destination, relative)
         if target is None:
@@ -135,4 +150,20 @@ def classify_deactivated(
             removable.append(relative)
         else:
             preserved.append(relative)
-    return DeactivatedClassification(removable, preserved, absent)
+            # Precedence: an explicitly-recorded customization always wins
+            # over an incidental content match -- the record's own intent is
+            # trusted over a coincidence.
+            if (
+                record is not None
+                and record.source_sha256 is not None
+                and (record.installed_sha256 != record.source_sha256)
+            ):
+                customized.append(relative)
+            else:
+                entry = entries.get(relative)
+                if entry is not None and same_content(entry, target):
+                    stale.append(relative)
+                # else: genuinely modified -- stays in `preserved` only.
+    return DeactivatedClassification(
+        removable, preserved, absent, stale=stale, customized=customized
+    )

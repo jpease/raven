@@ -165,6 +165,42 @@ class RenderApplySummaryTest(unittest.TestCase):
         self.assertNotIn("orphaned file(s) the template no longer ships", text)
         self.assertNotIn("Orphaned but left in place", text)
 
+    def test_omitted_deactivated_stale_and_customized_render_no_section(self):
+        # Backward-compat: existing callers that only pass deactivated_preserved
+        # (or nothing) must not gain a spurious empty stale/customized section.
+        text = self._summary(deactivated_preserved=["skill-b.md"])
+        self.assertNotIn("stale", text.lower())
+        self.assertNotIn("customiz", text.lower())
+
+    def test_deactivated_stale_section_has_its_own_distinct_wording(self) -> None:
+        # #179: a stale-but-pristine baseline must never be reported with the
+        # "you modified them" wording used for a genuine local edit.
+        text = self._summary(deactivated_stale=["skill-c.md"])
+        self.assertIn("skill-c.md", text)
+        self.assertIn("stale", text.lower())
+        self.assertIn("raven accept", text)
+        self.assertNotIn("you modified them", text)
+
+    def test_deactivated_customized_section_has_its_own_distinct_wording(self) -> None:
+        # #179: an accepted customization must never be reported with the
+        # "you modified them" wording either.
+        text = self._summary(deactivated_customized=["skill-d.md"])
+        self.assertIn("skill-d.md", text)
+        self.assertIn("accepted customization", text.lower())
+        self.assertNotIn("you modified them", text)
+
+    def test_deactivated_stale_and_customized_and_modified_are_all_distinct(self) -> None:
+        text = self._summary(
+            deactivated_preserved=["modified.md"],
+            deactivated_stale=["stale.md"],
+            deactivated_customized=["customized.md"],
+        )
+        for path in ("modified.md", "stale.md", "customized.md"):
+            self.assertIn(path, text)
+        self.assertIn("you modified them", text)
+        self.assertIn("stale", text.lower())
+        self.assertIn("accepted customization", text.lower())
+
 
 class RenderDryRunPlanTest(unittest.TestCase):
     def test_minimal_plan_renders_just_the_summary(self):
@@ -254,6 +290,45 @@ class RenderDryRunPlanTest(unittest.TestCase):
         # criteria: never described as the template no longer shipping it.
         self.assertNotIn("Will remove orphaned Raven files", text)
         self.assertNotIn("Orphaned but locally modified", text)
+
+    def test_deactivated_stale_and_customized_get_their_own_sections(self) -> None:
+        # #179: `preserved` (fails unmodified_baseline) is not one
+        # undifferentiated bucket -- stale-baseline and accepted-customization
+        # are informational subsets of it that must render with their own,
+        # distinct wording, never "you modified them"/"locally modified".
+        text = render_dry_run_plan(
+            apply_plan(),
+            orphan_classification(),
+            deactivated_classification(
+                preserved=["modified.md", "stale.md", "customized.md"],
+                stale=["stale.md"],
+                customized=["customized.md"],
+            ),
+            show_claude_symlink_note=False,
+        )
+        self.assertIn("modified.md", text)
+        self.assertIn("stale.md", text)
+        self.assertIn("customized.md", text)
+        self.assertIn("Deactivated by config but locally modified; left in place", text)
+        self.assertIn("raven accept", text)
+        self.assertIn("accepted customization".lower(), text.lower())
+        # The genuinely-modified section must list only the truly-modified
+        # path, not the stale or customized ones.
+        modified_section_start = text.index("Deactivated by config but locally modified")
+        modified_section = text[modified_section_start : modified_section_start + 200]
+        self.assertIn("modified.md", modified_section)
+        self.assertNotIn("stale.md", modified_section)
+        self.assertNotIn("customized.md", modified_section)
+
+    def test_omitted_deactivated_stale_and_customized_render_no_extra_section(self) -> None:
+        text = render_dry_run_plan(
+            apply_plan(),
+            orphan_classification(),
+            deactivated_classification(preserved=["modified.md"]),
+            show_claude_symlink_note=False,
+        )
+        self.assertNotIn("raven accept", text)
+        self.assertNotIn("accepted customization", text.lower())
 
 
 class PrintDelegatesToRenderTest(unittest.TestCase):

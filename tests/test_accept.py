@@ -222,6 +222,92 @@ class AcceptCommandTests(RavenTestCase):
         self.assertIn("Nothing to accept", output.getvalue())
 
 
+class AcceptGatedPathTests(RavenTestCase):
+    """#179: `raven accept` must work on config-gated (deactivated) paths.
+
+    Before this fix, `cmd_accept` looked every requested path up against
+    `entries_for_destination(..., config, ...)` built with the *real*
+    config, which excludes gated paths by definition -- so accepting a
+    deactivated-but-still-shipped skill was always refused with "not a
+    Raven-managed template file", even though the file is still on disk and
+    still shipped by the template.
+    """
+
+    def _install(self, platform):
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            raven.default_config_text("python", False, platform), encoding="utf-8"
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+    def _switch_platform(self, platform):
+        from raven_lib.config import _update_config_platform
+        from raven_lib.constants import CONFIG_PATH
+
+        _update_config_platform(self.destination / CONFIG_PATH, platform)
+
+    def _manifest(self):
+        return json.loads(
+            (self.destination / ".raven" / "manifest.json").read_text(encoding="utf-8")
+        )
+
+    def _sha(self, path):
+        fingerprint = raven.destination_fingerprint(path)
+        assert fingerprint is not None
+        return fingerprint.sha256
+
+    def test_accept_on_gated_path_records_baseline_instead_of_being_skipped(self):
+        self._install("github")
+        rel = ".agents/skills/raven-github-issues/SKILL.md"
+        self._switch_platform("gitlab")
+
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            rc = raven.cmd_accept(
+                argparse.Namespace(
+                    destination=str(self.destination),
+                    paths=[rel],
+                    dry_run=False,
+                    include_readme=False,
+                )
+            )
+        output = buf.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertNotIn("not a Raven-managed template file", output)
+        self.assertIn(rel, output)
+
+        manifest = self._manifest()
+        self.assertIn(rel, manifest["files"])
+        record = manifest["files"][rel]
+        self.assertEqual(record["installedSha256"], self._sha(self.destination / rel))
+        self.assertEqual(record["installedSha256"], record["sourceSha256"])
+
+    def test_accept_still_refuses_genuinely_unmanaged_path(self):
+        # Regression guard: the merge is narrowly scoped to gated-but-shipped
+        # paths only, never to project-owned / non-Raven files.
+        self._install("github")
+        unmanaged = self.destination / "docs" / "not-ravens.md"
+        unmanaged.parent.mkdir(parents=True, exist_ok=True)
+        unmanaged.write_text("project-owned\n", encoding="utf-8")
+
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            rc = raven.cmd_accept(
+                argparse.Namespace(
+                    destination=str(self.destination),
+                    paths=["docs/not-ravens.md"],
+                    dry_run=False,
+                    include_readme=False,
+                )
+            )
+        output = buf.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("not a Raven-managed template file", output)
+        self.assertNotIn("docs/not-ravens.md", self._manifest()["files"])
+
+
 class ClassifyAcceptRequestsTests(RavenTestCase):
     """`cmd_accept`'s per-path decision, exercised without capturing stdout."""
 

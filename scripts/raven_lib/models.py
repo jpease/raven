@@ -128,11 +128,26 @@ class DeactivatedClassification:
     upgrade reports and keeps it, same rule as `OrphanClassification.
     orphan_modified`. ``absent``: the file is already gone on disk, so only the
     stale manifest record needs pruning.
+
+    ``stale`` and ``customized`` (#179) are informational *subsets* of
+    ``preserved`` -- every path in either is also in ``preserved`` -- not a
+    replacement for it, so every existing consumer that only looks at
+    ``preserved`` keeps working unchanged. They distinguish *why* a preserved
+    candidate failed the baseline check: ``stale`` means the recorded
+    baseline is simply out of date while the on-disk content matches the
+    *current* template source exactly (safe to refresh via ``raven accept``,
+    never auto-removed); ``customized`` means the record itself declares a
+    customization (``installedSha256 != sourceSha256``, e.g. an accepted
+    manual merge). A ``preserved`` path in neither subset is a genuine local
+    edit: content differs from both the recorded baseline and the current
+    template.
     """
 
     removable: list[str]
     preserved: list[str]
     absent: list[str]
+    stale: list[str] = field(default_factory=list)
+    customized: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

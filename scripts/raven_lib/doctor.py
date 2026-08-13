@@ -462,18 +462,59 @@ def drift_findings(destination: Path) -> list[Finding]:
                 fix="run `raven upgrade` to remove them",
             )
         )
-    if deactivated.preserved:
+    # #179: `deactivated.preserved` folds three distinct dispositions
+    # together -- a genuine local edit, a stale-but-pristine baseline, and an
+    # accepted customization. `doctor.deactivated.preserved` keeps its id and
+    # WARN severity, but its id now covers only the genuinely-modified
+    # subset (a strict narrowing, not a behavior change for anything already
+    # watching this id against a real local edit). Stale and customized get
+    # their own, new ids and wording so neither is ever accused of "you
+    # modified it".
+    deactivated_modified = sorted(
+        set(deactivated.preserved) - set(deactivated.stale) - set(deactivated.customized)
+    )
+    if deactivated_modified:
         findings.append(
             Finding(
                 id="doctor.deactivated.preserved",
                 severity=Severity.WARN,
                 category=_DRIFT,
                 title=(
-                    f"{len(deactivated.preserved)} deactivated-by-config + locally "
+                    f"{len(deactivated_modified)} deactivated-by-config + locally "
                     "modified Raven skill(s)"
                 ),
-                detail=", ".join(deactivated.preserved),
+                detail=", ".join(deactivated_modified),
                 fix="no longer selected by platform/template config; review and delete manually if unwanted",
+            )
+        )
+    if deactivated.stale:
+        findings.append(
+            Finding(
+                id="doctor.deactivated.stale",
+                severity=Severity.WARN,
+                category=_DRIFT,
+                title=(
+                    f"{len(deactivated.stale)} deactivated-by-config Raven skill(s) "
+                    "with a stale recorded baseline"
+                ),
+                detail=", ".join(deactivated.stale),
+                fix="on-disk content matches the current template exactly; "
+                "run `raven accept <path>` to refresh the baseline, then "
+                "`raven upgrade` will remove it",
+            )
+        )
+    if deactivated.customized:
+        findings.append(
+            Finding(
+                id="doctor.deactivated.customized",
+                severity=Severity.INFO,
+                category=_DRIFT,
+                title=(
+                    f"{len(deactivated.customized)} deactivated-by-config Raven "
+                    "skill(s) kept as an accepted customization"
+                ),
+                detail=", ".join(deactivated.customized),
+                fix="no action needed; recorded via `raven accept`, so Raven leaves these as-is",
             )
         )
     return findings

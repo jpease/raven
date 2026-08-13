@@ -27,7 +27,14 @@ from .apply import (
 )
 from .assess import build_assess_findings
 from .blocks import pending_merge_paths, remove_merge_artifacts
-from .config import ConfigError, _update_config_platform, default_config_text, load_config
+from .config import (
+    ConfigError,
+    _update_config_platform,
+    default_config_text,
+    load_config,
+    platform_excluded,
+    template_excluded,
+)
 from .constants import (
     CLAUDE_BACKUP_PATH,
     CLAUDE_PATH,
@@ -47,7 +54,7 @@ from .findings import exit_code
 from .git_hooks import detect_hook_manager, git_hooks_dir, hook_manager_guidance, install_git_hooks
 from .manifest import load_manifest, update_manifest
 from .models import ApplyPlan, Classification, RavenConfig, TemplateEntry
-from .orphans import classify_orphans
+from .orphans import classify_orphans, shipped_relatives
 from .plan import (
     apply_plan,
     build_apply_plan,
@@ -505,6 +512,14 @@ def _run(
 
     git_hooks_installed = install_git_hooks(destination)
 
+    # #179: `deactivated.preserved` is the full aggregate (genuine edit +
+    # stale baseline + accepted customization); the apply-summary's
+    # `deactivated_preserved` section means only the genuinely-modified
+    # subset, so the stale/customized paths must be excluded here before
+    # passing it in, and reported through their own new sections instead.
+    deactivated_modified = sorted(
+        set(deactivated.preserved) - set(deactivated.stale) - set(deactivated.customized)
+    )
     print_apply_summary(
         plan.copied,
         plan.will_upgrade,
@@ -516,7 +531,9 @@ def _run(
         removed_orphans,
         orphans.orphan_modified,
         removed_deactivated,
-        deactivated.preserved,
+        deactivated_modified,
+        deactivated.stale,
+        deactivated.customized,
     )
     if merge_artifacts:
         print()
@@ -751,6 +768,13 @@ def cmd_accept(args: argparse.Namespace) -> int:
     are given explicitly. This is the only command that records a baseline
     without copying template content -- it exists so a locally, deliberately
     diverged file can stop being reported as drift.
+
+    Also accepts config-gated (deactivated) paths (#179) -- a skill the
+    template still ships but the current platform/template no longer selects
+    (see ``raven_lib.deactivated``). Accepting a pristine gated file refreshes
+    a stale recorded baseline so it becomes ordinarily removable on the next
+    upgrade; accepting a genuinely edited gated file records it as an
+    accepted customization, same as any other managed file.
     """
     destination = _resolve_destination(args)
     if destination is None:
@@ -778,6 +802,23 @@ def cmd_accept(args: argparse.Namespace) -> int:
     excludes = set() if include_readme else DEFAULT_EXCLUDES
     config = replace(config, template=config.template or template_name)
     entries = entries_for_destination(template, excludes, config, destination)
+    # #179: entries_for_destination excludes config-gated paths under the
+    # real config by definition, so a still-shipped-but-deactivated skill
+    # would otherwise always be skipped as "not a Raven-managed template
+    # file". Resolve just that narrow, already-trusted gated set (the same
+    # computation classify_deactivated uses) against a policy-neutral
+    # entries dict (config=None, mirroring shipped_relatives) and merge in
+    # only the ones not already present -- never widened to any other
+    # config-excluded path (component toggles, exclude_paths globs).
+    neutral_entries = entries_for_destination(template, excludes, None, destination)
+    for relative in shipped_relatives(template, destination):
+        if relative in entries:
+            continue
+        if not (platform_excluded(relative, config) or template_excluded(relative, config)):
+            continue
+        neutral_entry = neutral_entries.get(relative)
+        if neutral_entry is not None:
+            entries[relative] = neutral_entry
 
     requested = (
         [normalize_override(path) for path in args.paths]
