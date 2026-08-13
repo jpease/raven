@@ -50,11 +50,23 @@ Two closely related evasions are also covered:
   This is an accepted, permanent gap; what *does* get checked is the
   binary file's own *path*, per the path-scanning behavior above.
 
+Path discovery (`_iter_changed_paths`) reads `git diff --cached
+--name-status -z`, not `diff --git a/X b/Y` header text: `-z`'s
+NUL-delimited output is immune to path quoting, so a path holding a
+non-ASCII byte, an embedded `"`, or any other character git would
+otherwise quote/escape in the header form is still scanned (#193). Added
+*line* content scanning still walks the full unified diff; a hunk header
+that doesn't match the standard `@@ -a,b +c,d @@` shape (in practice: only
+a git "combined diff" `@@@ ... @@@` header, which no known real `git diff
+--cached` invocation actually produces) is never silently skipped either --
+it is reported as its own finding ("could not be scanned"), not swallowed.
+
 A line carrying the literal marker `raven-hygiene: allow` anywhere on it is
 exempt from both checks. There is no file- or directory-level suppression --
 only this single-line, diff-visible marker (see AGENTS.md's escape-hatch
-rationale). A path-level finding has no line to carry that marker; the
-offending path must be renamed instead.
+rationale). A path-level finding, and an unparseable-hunk finding, each have
+no single line to carry that marker; the former requires renaming the path,
+the latter requires manual verification before committing.
 
 This script is repo-owned, not shipped: it lives in `scripts/`, not
 `common/` or `.raven/git-hooks/`, so installing/upgrading a downstream
@@ -72,6 +84,7 @@ import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 #: Literal token that suppresses hygiene findings for the line it appears on.
@@ -132,18 +145,45 @@ _HOME_PATH_RE = re.compile(
 # "is this really a home path" heuristic -- see the module docstring.
 _KNOWN_SHARED_SEGMENTS = frozenset({"shared", "public"})
 
+#: Matches a standard unified-diff hunk header, e.g. `@@ -1,2 +1,3 @@`
+#: (an optional trailing function-context suffix like ` def foo():` is fine
+#: -- `.match` only anchors the start). Deliberately does NOT match a git
+#: "combined diff" header (`@@@ -a,b -c,d +e,f @@@`, emitted when a
+#: diff-generating command shows a merge -- see `_iter_added_lines`): no
+#: known real invocation of `git diff --cached` (what this script actually
+#: runs) produces that shape, and parsing multi-parent combined-diff line
+#: prefixes correctly is real complexity for a case this script cannot
+#: observe in practice (#193). A hunk header this pattern doesn't match is
+#: therefore treated as unscannable, not silently skipped -- see
+#: `_iter_added_lines`.
 _HUNK_HEADER_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
-
-# Matches a `diff --git a/X b/Y` header line, capturing the destination path
-# Y. This is the *same* path for a new file, a modified file, and a rename
-# (including a 100%-similarity rename with no `+++`/hunk body at all) -- see
-# `_iter_changed_paths`.
-_DIFF_HEADER_RE = re.compile(r"^diff --git a/(.+) b/(.+)$")
 
 #: One offending line or path: (path, line number in the new file, content,
 #: reason). `line_no == 0` is a sentinel meaning "the path itself, not a
-#: line" -- there is no line number for a path-level finding.
+#: line" -- there is no line number for a path-level finding. `line_no ==
+#: -1` is a second sentinel meaning "a hunk header under this path could not
+#: be parsed" -- `content` is the raw unparseable header line, not staged
+#: file content, and there is (as with a path-level finding) no line to
+#: carry the `raven-hygiene: allow` marker.
 Finding = tuple[str, int, str, str]
+
+
+@dataclass(frozen=True)
+class Denylist:
+    r"""A loaded denylist: lowercase names plus one pattern compiled from all of them.
+
+    Returned by `load_denylist`. `None` (not a `Denylist` with an empty
+    `names`) means "skip the name check entirely" -- callers must test
+    `is not None`, not truthiness: a `Denylist` instance is always truthy
+    regardless of how many names it holds, unlike the `list[str] | None`
+    this function used to return. `pattern` is `None` exactly when `names`
+    is empty (nothing to search for) and is compiled once, here, from every
+    entry at once -- see `_denylist_hit`, which used to compile a fresh
+    `\\bname\\b` regex per entry on every call (#193).
+    """
+
+    names: list[str]
+    pattern: re.Pattern[str] | None
 
 
 def _is_placeholder(segment: str) -> bool:
@@ -167,18 +207,25 @@ def _home_path_hit(line: str) -> bool:
     return False
 
 
-def _denylist_hit(line: str, denylist: list[str]) -> bool:
-    """True if `line` contains any denylisted name as a whole word, case-insensitively.
+def _denylist_hit(line: str, denylist: Denylist) -> bool:
+    r"""True if `line` contains any of `denylist`'s names as a whole word, case-insensitively.
 
-    Word-boundary matching stops a denylisted name from firing inside an
-    unrelated longer word (e.g. "core" no longer matches "hardcore"). Every
-    `denylist` entry is already at least `MIN_DENYLIST_ENTRY_LENGTH` long
-    (see `load_denylist`), which is what stops a short, common English word
-    from matching a genuine, unrelated standalone use -- boundaries alone
-    would not.
+    Matches every name in a single pass against one pattern compiled once by
+    `load_denylist` (`denylist.pattern`), rather than compiling a fresh
+    `\\bname\\b` regex per entry on every call -- this runs per added line
+    (see `find_findings`), so a per-entry-per-call compile was repeated,
+    wasted work on every line of every staged diff (#193). Purely a
+    performance fix: which lines match is unchanged. Word-boundary matching
+    still stops a denylisted name from firing inside an unrelated longer
+    word (e.g. "core" no longer matches "hardcore"); every `denylist.names`
+    entry is already at least `MIN_DENYLIST_ENTRY_LENGTH` long (see
+    `load_denylist`), which is what stops a short, common English word from
+    matching a genuine, unrelated standalone use -- boundaries alone would
+    not.
     """
-    lowered = line.lower()
-    return any(re.search(rf"\b{re.escape(name)}\b", lowered) for name in denylist)
+    if denylist.pattern is None:
+        return False
+    return denylist.pattern.search(line.lower()) is not None
 
 
 def _default_denylist_path() -> Path:
@@ -198,11 +245,12 @@ def _default_denylist_path() -> Path:
     return Path(result.stdout.strip())
 
 
-def load_denylist() -> list[str] | None:
-    """Load lowercase denylisted names, or None if the name check should be skipped.
+def load_denylist() -> Denylist | None:
+    """Load a `Denylist` of lowercase names, or None if the name check should be skipped.
 
-    None (not an empty list) means "skip" -- callers must not conflate an
-    absent denylist with a denylist that legitimately contains zero names.
+    None (not a `Denylist` with an empty `names`) means "skip" -- callers
+    must not conflate an absent denylist with a denylist that legitimately
+    contains zero names (see `Denylist`'s docstring for how that's tested).
     `RAVEN_HYGIENE_DENYLIST` overrides the default path, for tests and for
     contributors who keep it elsewhere.
 
@@ -247,7 +295,12 @@ def load_denylist() -> list[str] | None:
             )
             continue
         names.append(lowered)
-    return names
+    pattern = (
+        re.compile(r"\b(?:" + "|".join(re.escape(name) for name in names) + r")\b", re.IGNORECASE)
+        if names
+        else None
+    )
+    return Denylist(names=names, pattern=pattern)
 
 
 def _iter_added_lines(diff_text: str):
@@ -258,6 +311,15 @@ def _iter_added_lines(diff_text: str):
     keep the new-file line numbering correct -- this is what makes "a
     removed line never fails the commit that removes it" true by
     construction rather than by a special case.
+
+    A hunk header that does not match the standard unified-diff shape
+    `_HUNK_HEADER_RE` expects (in practice: only a git "combined diff"
+    header, `@@@ ... @@@`, though no known real `git diff --cached`
+    invocation produces one -- see `_HUNK_HEADER_RE`) is never silently
+    treated as "nothing to scan under it": it is yielded once as
+    `(path, None, raw_header_line)` so `find_findings` can raise an explicit
+    "could not scan" finding instead of every added line under that hunk
+    simply vanishing from the scan the way it used to (#193).
     """
     path: str | None = None
     line_no: int | None = None
@@ -275,7 +337,12 @@ def _iter_added_lines(diff_text: str):
                 path = target
         elif raw.startswith("@@"):
             match = _HUNK_HEADER_RE.match(raw)
-            line_no = int(match.group(1)) if match else None
+            if match:
+                line_no = int(match.group(1))
+            else:
+                line_no = None
+                if path is not None:
+                    yield path, None, raw
         elif path is None or line_no is None:
             continue
         elif raw.startswith("+"):
@@ -289,30 +356,66 @@ def _iter_added_lines(diff_text: str):
             line_no += 1  # context line (present if diff.context != 0)
 
 
-def _iter_changed_paths(diff_text: str):
-    """Yield the destination path of every diff entry that is not a pure deletion.
+def _changed_paths_raw() -> bytes:
+    """Raw NUL-delimited output of `git diff --cached --name-status -z`.
 
-    `diff --git a/X b/Y`'s Y names the destination uniformly for a new file,
-    a modified file, and a rename -- including a 100%-similarity rename,
-    which has no `+++`/`---`/hunk lines at all and would otherwise be
-    invisible to `_iter_added_lines`. A deletion's destination is nothing to
-    scan -- detected via a `deleted file mode` line in the entry's body --
-    and is never yielded, matching "removing something is never a reason to
-    block" (see `_iter_added_lines`, #181).
+    `-z` disables path quoting entirely, unlike the default `diff --git a/X
+    b/Y` header this module used to parse for path discovery: that header
+    quotes X/Y (as a C-style backslash-escaped string wrapped in `"..."`)
+    whenever a path holds a byte >= 0x80 (subject to `core.quotePath`;
+    true is the default) or a literal `"`/backslash/control character
+    (always, regardless of `core.quotePath` -- the header syntax needs it
+    to stay unambiguous). A path holding only a plain space is never
+    quoted either way, but was already handled correctly by the old
+    parsing; the quoted forms were not (#193) -- `-z` sidesteps the whole
+    class of gap by never quoting anything. `--name-status` also reports a
+    status letter (`A`/`M`/`D`/`R100`/`C100`/...) directly, which is what
+    lets `_iter_changed_paths` drop a pure deletion without a second pass
+    scanning the diff body for a `deleted file mode` line.
     """
-    pending: str | None = None
-    is_deletion = False
-    for raw in diff_text.splitlines():
-        if raw.startswith("diff --git "):
-            if pending is not None and not is_deletion:
-                yield pending
-            match = _DIFF_HEADER_RE.match(raw)
-            pending = match.group(2) if match else None
-            is_deletion = False
-        elif raw.startswith("deleted file mode"):
-            is_deletion = True
-    if pending is not None and not is_deletion:
-        yield pending
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--no-color", "--name-status", "-z"],
+        capture_output=True,
+        check=True,
+    )
+    return result.stdout
+
+
+def _iter_changed_paths():
+    r"""Yield the destination path of every staged entry that is not a pure deletion.
+
+    Parses `git diff --cached --name-status -z` (see `_changed_paths_raw`
+    for why) rather than `diff --git a/X b/Y` headers out of the full diff
+    text. Each record is NUL-delimited: `status\\0path\\0` for an add,
+    modify, or delete; `status\\0old_path\\0new_path\\0` for a rename or
+    copy (status `R.../C...`), from which only `new_path` is yielded --
+    this is the *same* path a rename/copy header's `b/Y` used to give,
+    including a 100%-similarity rename, which has no `+++`/hunk body at
+    all and would otherwise be invisible to `_iter_added_lines`. A
+    deletion (status `D`) is never yielded, matching "removing something
+    is never a reason to block" (see `_iter_added_lines`, #181).
+    """
+    fields = _changed_paths_raw().decode("utf-8", errors="replace").split("\0")
+    i = 0
+    n = len(fields)
+    while i < n:
+        status = fields[i]
+        if not status:
+            i += 1
+            continue
+        code = status[0]
+        if code in ("R", "C"):
+            if i + 2 >= n:
+                break
+            path = fields[i + 2]
+            i += 3
+        else:
+            if i + 1 >= n:
+                break
+            path = fields[i + 1]
+            i += 2
+        if code != "D":
+            yield path
 
 
 def _staged_diff() -> str:
@@ -331,34 +434,57 @@ def _staged_diff() -> str:
     return result.stdout.decode("utf-8", errors="replace")
 
 
-def find_findings(diff_text: str, denylist: list[str] | None) -> list[Finding]:
+def find_findings(diff_text: str, denylist: Denylist | None) -> list[Finding]:
     """Return every offending added line or changed path in `diff_text`.
 
     `denylist` is the return of `load_denylist`: None skips the name check
-    entirely; an empty list is a denylist that legitimately matches nothing.
+    entirely; a `Denylist` with an empty `names` legitimately matches
+    nothing -- callers must test `is not None`, not truthiness (see
+    `Denylist`).
 
-    Two passes: changed *paths* (new files, modified files, renames -- see
-    `_iter_changed_paths`), reported with the `line_no == 0` sentinel; then
-    added *lines*, each checked alone and, when it is immediately adjacent
-    to the previous added line in the same file (no context/removed line
-    between them), also checked jointly with it -- closing a name or path
-    split across exactly two consecutive added lines (#181). A line that
-    already fired on its own is not also reported via a join, to avoid a
-    triplicate finding for the same leak.
+    Three passes: changed *paths* (new files, modified files, renames --
+    see `_iter_changed_paths`), reported with the `line_no == 0` sentinel;
+    a hunk header `_iter_added_lines` could not parse, reported once per
+    path with the `line_no == -1` sentinel rather than silently dropping
+    every added line under it (#193); then added *lines*, each checked
+    alone and, when it is immediately adjacent to the previous added line
+    in the same file (no context/removed line between them), also checked
+    jointly with it -- closing a name or path split across exactly two
+    consecutive added lines (#181). A line that already fired on its own is
+    not also reported via a join, to avoid a triplicate finding for the
+    same leak.
     """
     findings: list[Finding] = []
 
-    for path in _iter_changed_paths(diff_text):
+    for path in _iter_changed_paths():
         if path in EXCLUDED_PATHS:
             continue
         if _home_path_hit(path):
             findings.append((path, 0, path, "a home-directory absolute path"))
             continue
-        if denylist and _denylist_hit(path, denylist):
+        if denylist is not None and _denylist_hit(path, denylist):
             findings.append((path, 0, path, "a denylisted private repository name"))
 
     prev: tuple[str, int, str, bool] | None = None
+    unscannable_hunk_paths: set[str] = set()
     for path, line_no, content in _iter_added_lines(diff_text):
+        if line_no is None:
+            prev = None
+            if path not in EXCLUDED_PATHS and path not in unscannable_hunk_paths:
+                unscannable_hunk_paths.add(path)
+                findings.append(
+                    (
+                        path,
+                        -1,
+                        content,
+                        (
+                            "a hunk header this checker could not parse (e.g. a combined "
+                            "diff from a merge) -- its content could not be scanned"
+                        ),
+                    )
+                )
+            continue
+
         if path in EXCLUDED_PATHS or ALLOW_MARKER in content:
             prev = None
             continue
@@ -367,7 +493,7 @@ def find_findings(diff_text: str, denylist: list[str] | None) -> list[Finding]:
         if _home_path_hit(content):
             findings.append((path, line_no, content, "a home-directory absolute path"))
             fired_alone = True
-        elif denylist and _denylist_hit(content, denylist):
+        elif denylist is not None and _denylist_hit(content, denylist):
             findings.append((path, line_no, content, "a denylisted private repository name"))
             fired_alone = True
 
@@ -384,7 +510,7 @@ def find_findings(diff_text: str, denylist: list[str] | None) -> list[Finding]:
             reason = None
             if _home_path_hit(joined_no_sep) or _home_path_hit(joined_spaced):
                 reason = "a home-directory absolute path"
-            elif denylist and (
+            elif denylist is not None and (
                 _denylist_hit(joined_no_sep, denylist) or _denylist_hit(joined_spaced, denylist)
             ):
                 reason = "a denylisted private repository name"
@@ -409,6 +535,10 @@ def _report(findings: list[Finding]) -> None:
     a denylist name (or any other private detail) reproduced a second time
     outside it. `line_no == 0` marks a path-level finding, which has no
     line to show and no line to carry the `raven-hygiene: allow` marker.
+    `line_no == -1` marks an unparseable-hunk finding (#193): `content` is
+    the raw hunk header git emitted, not staged file content, and -- same
+    reasoning as the path-level case -- there is no single line to carry
+    the marker either.
     """
     for path, line_no, content, reason in findings:
         if line_no == 0:
@@ -416,6 +546,15 @@ def _report(findings: list[Finding]) -> None:
             print(
                 "  Rename the path before staging -- a path-level finding has no "
                 f"line to carry a `{ALLOW_MARKER}` comment.",
+                file=sys.stderr,
+            )
+            continue
+        if line_no == -1:
+            print(f"{path}: staged content could not be scanned: {reason}", file=sys.stderr)
+            print(f"    {content}", file=sys.stderr)
+            print(
+                "  Verify this staged change manually before committing -- there is no "
+                "line-level escape hatch for a hunk this checker could not parse.",
                 file=sys.stderr,
             )
             continue

@@ -42,7 +42,7 @@ class CheckStagedHygieneTests(unittest.TestCase):
         self.repo = Path(self.tmp.name)
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
 
-    def _git(self, *args: str) -> str:
+    def _git(self, *args: str, check: bool = True) -> str:
         result = subprocess.run(
             [
                 "git",
@@ -56,7 +56,7 @@ class CheckStagedHygieneTests(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            check=True,
+            check=check,
         )
         return result.stdout
 
@@ -478,6 +478,86 @@ class CheckStagedHygieneTests(unittest.TestCase):
         result = self._run_checker(self._denylist_env(_SYNTHETIC_NAME))
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    # -- quoted `diff --git` headers must not hide the path scan (#193) -----
+    #
+    # git quotes a `diff --git a/X b/Y` header path (and the `+++`/`---`
+    # lines) whenever it holds a byte >= 0x80 (subject to `core.quotePath`;
+    # true is the default) or a literal `"` (always, regardless of
+    # `core.quotePath` -- the header syntax needs it to stay parseable
+    # either way). A path holding only a plain space is never quoted by
+    # either setting. Verified directly against git 2.55 before writing
+    # these two tests: an embedded `"` forces quoting under both settings,
+    # which is what makes both of the tests below exercise the same real
+    # gap -- the old header parsing only understood the unquoted form, so a
+    # path like these was silently dropped from the path-level scan
+    # entirely.
+
+    def test_quoted_diff_header_path_with_home_path_hit_is_scanned_quote_path_true(
+        self,
+    ):
+        self._git("config", "core.quotePath", "true")
+        self._stage(
+            'archive/Users/exampleuser/pärt "notes" plan.md',  # raven-hygiene: allow
+            "hello\n",
+        )
+
+        result = self._run_checker()
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("staged path contains", result.stderr)
+        self.assertIn("home-directory absolute path", result.stderr)
+
+    def test_quoted_diff_header_path_with_denylist_hit_is_scanned_quote_path_false(
+        self,
+    ):
+        self._git("config", "core.quotePath", "false")
+        self._stage(f'docs/{_SYNTHETIC_NAME} pärt "notes".md', "hello\n")
+
+        result = self._run_checker(self._denylist_env(_SYNTHETIC_NAME))
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("staged path contains", result.stderr)
+        self.assertIn("denylisted private repository name", result.stderr)
+
+    # -- staged combined diff (merge-conflict resolution) is never silently
+    # skipped (#193) ---------------------------------------------------------
+    #
+    # #193's root-cause report assumed `git diff --cached` can show a git
+    # "combined diff" (`@@@ ... @@@`) hunk header for a staged
+    # merge-conflict resolution. Verified directly against real git (2.55)
+    # for the exact scenario the issue describes (two branches modifying
+    # the same lines of the same file, merge, resolve the conflict, stage
+    # the resolution): it never does, with or without `-c`/`--cc` forced
+    # explicitly. `--cached` always diffs the index against a single tree
+    # (HEAD); git's own docs describe combined format as "the default
+    # format when showing merges with git-diff(1) or git-show(1)" -- i.e.
+    # displaying an *existing merge commit* (`git show`/`git log -p`),
+    # never `--cached`'s index-vs-HEAD comparison. This test pins that
+    # verified fact (so a future git behavior change would fail it loudly,
+    # not silently) and guards what the acceptance criterion actually cares
+    # about: a real staged merge-conflict resolution's content is fully
+    # scanned, never silently dropped.
+    def test_staged_merge_conflict_resolution_is_fully_scanned(self):
+        self._commit("f.txt", "line1\nline2\n", "base")
+        default_branch = self._git("branch", "--show-current").strip()
+        self._git("checkout", "-q", "-b", "branch-a")
+        self._commit("f.txt", "line1-a\nline2\n", "change on branch-a")
+        self._git("checkout", "-q", default_branch)
+        self._commit("f.txt", "line1-b\nline2\n", "change on original branch")
+        self._git("merge", "-q", "branch-a", check=False)  # expected to conflict
+
+        (self.repo / "f.txt").write_text(f"line1-{_SYNTHETIC_NAME}\nline2\n", encoding="utf-8")
+        self._git("add", "--", "f.txt")
+
+        raw_diff = self._git("diff", "--cached")
+        self.assertNotIn("@@@", raw_diff)  # verified real behavior, see comment above
+
+        result = self._run_checker(self._denylist_env(_SYNTHETIC_NAME))
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("f.txt:1:", result.stderr)
+        self.assertIn("denylisted private repository name", result.stderr)
 
     # -- adjacent-added-line join closes the line-split gap (decision 3) ----
 
