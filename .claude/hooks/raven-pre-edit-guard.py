@@ -9,6 +9,7 @@ Denial output is shaped differently for Claude (stderr + exit 2) vs Codex (a
 from __future__ import annotations
 
 import json
+import os.path
 import re
 import sys
 
@@ -64,7 +65,14 @@ def main() -> int:
     if not path:
         return 0
 
-    normalized = path.replace("\\", "/")
+    # Collapse `..` traversal lexically (no filesystem access -- this must stay
+    # fast and side-effect-free, unlike Path.resolve()) *after* the backslash
+    # swap, so Windows-style input (`src\..\.env`) normalizes the same as
+    # POSIX input. os.path.normpath never introduces a leading "./" for a
+    # plain relative path on a POSIX host, so it does not break the `(^|/)`
+    # anchors below (verified: normpath("docs/credentials-design.md") ==
+    # "docs/credentials-design.md", normpath(".env") == ".env").
+    normalized = os.path.normpath(path.replace("\\", "/"))
 
     blocked = [
         r"\.pem$",
@@ -77,7 +85,11 @@ def main() -> int:
         # Anchored to a path segment: a bare `secrets` substring also blocks
         # `docs/how-we-handle-secrets.md` and any `test_secrets_helper.py`.
         r"(^|/)secrets?(\.|/|$)",
-        r"credentials",
+        # Anchored to a path segment, same shape as `secrets` above: a bare
+        # `credentials` substring also blocked `docs/credentials-design.md`,
+        # `tests/test_credentials_helper.py`, and `src/credentialsProvider.ts`
+        # (issue #197).
+        r"(^|/)credentials?(\.|/|$)",
     ]
     caution = [
         r"/migrations/",

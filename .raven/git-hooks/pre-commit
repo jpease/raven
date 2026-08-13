@@ -30,15 +30,46 @@ fi
 
 # Optional secret scan for staged changes; a detected leak blocks the commit.
 if command -v gitleaks >/dev/null 2>&1; then
-    gitleaks_output=$(gitleaks git --staged --redact 2>&1)
-    gitleaks_status=$?
-    if [ "$gitleaks_status" -ne 0 ] && printf '%s' "$gitleaks_output" | grep -qi 'unknown command'; then
-        # gitleaks < 8.19 does not have the `git` subcommand (added in 8.19);
-        # that failure looks identical to a detected leak, so fall back to the
-        # older `protect` subcommand instead of blocking every commit.
-        gitleaks_output=$(gitleaks protect --staged --redact 2>&1)
-        gitleaks_status=$?
+    # gitleaks added the `git` subcommand in 8.19 and deprecated `protect`;
+    # a pre-8.19 gitleaks has no `git` subcommand at all. Decide the
+    # subcommand up front from `gitleaks version` rather than sniffing the
+    # `git` subcommand's error text for "unknown command" -- that text is
+    # not a stable contract, and a reword or locale change would silently
+    # stop the old fallback from ever firing, blocking every commit on an
+    # old gitleaks (issue #198). Tolerate an optional leading v/V in case a
+    # repackaged build prefixes the version. An unparseable version fails
+    # closed to the modern `git` subcommand and surfaces its output: an
+    # unrecognized gitleaks is more likely to be newer than 8.19 -- which
+    # shipped a long time ago -- than older.
+    gitleaks_version=$(gitleaks version 2>/dev/null)
+    gitleaks_version=${gitleaks_version#[vV]}
+    case "$gitleaks_version" in
+        *.*)
+            gitleaks_major=$(printf '%s' "$gitleaks_version" | cut -d. -f1)
+            gitleaks_minor=$(printf '%s' "$gitleaks_version" | cut -d. -f2)
+            ;;
+        *)
+            gitleaks_major=""
+            gitleaks_minor=""
+            ;;
+    esac
+    gitleaks_version_ok=1
+    case "$gitleaks_major" in
+        ''|*[!0-9]*) gitleaks_version_ok=0 ;;
+    esac
+    case "$gitleaks_minor" in
+        ''|*[!0-9]*) gitleaks_version_ok=0 ;;
+    esac
+    gitleaks_subcommand=git
+    if [ "$gitleaks_version_ok" -eq 1 ]; then
+        if [ "$gitleaks_major" -lt 8 ]; then
+            gitleaks_subcommand=protect
+        elif [ "$gitleaks_major" -eq 8 ] && [ "$gitleaks_minor" -lt 19 ]; then
+            gitleaks_subcommand=protect
+        fi
     fi
+    gitleaks_output=$(gitleaks "$gitleaks_subcommand" --staged --redact 2>&1)
+    gitleaks_status=$?
     if [ "$gitleaks_status" -ne 0 ]; then
         printf '%s\n' "$gitleaks_output" >&2
         exit 1
