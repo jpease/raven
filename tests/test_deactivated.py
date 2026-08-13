@@ -366,13 +366,16 @@ def _install_ns(destination: Path, *, language: str, platform: str | None) -> ar
     )
 
 
-def _upgrade_ns(destination: Path, *, dry_run: bool = False) -> argparse.Namespace:
+def _upgrade_ns(
+    destination: Path, *, dry_run: bool = False, confirm_template_switch: bool = False
+) -> argparse.Namespace:
     return argparse.Namespace(
         destination=str(destination),
         overrides=[],
         dry_run=dry_run,
         include_readme=False,
         adopt_claude_symlink=False,
+        confirm_template_switch=confirm_template_switch,
     )
 
 
@@ -618,16 +621,23 @@ class TemplateTransitionEndToEndTests(RavenTestCase):
         self.assertNotEqual(text, new_text)  # confirms the substitution actually matched
         config_path.write_text(new_text, encoding="utf-8")
 
+    # Every upgrade in this class deliberately crosses a template boundary,
+    # which `raven upgrade` now refuses unless the switch is confirmed (#175).
+    # These tests are about what happens *after* that decision, so they
+    # pre-authorize it; the refusal itself is covered by
+    # tests/test_upgrade_orphans.py::TemplateSwitchTests.
     def _dry_run_upgrade(self) -> tuple[int, str]:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
-            rc = raven.cmd_upgrade(_upgrade_ns(self.destination, dry_run=True))
+            rc = raven.cmd_upgrade(
+                _upgrade_ns(self.destination, dry_run=True, confirm_template_switch=True)
+            )
         return rc, buf.getvalue()
 
     def _upgrade(self) -> tuple[int, str]:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
-            rc = raven.cmd_upgrade(_upgrade_ns(self.destination))
+            rc = raven.cmd_upgrade(_upgrade_ns(self.destination, confirm_template_switch=True))
         return rc, buf.getvalue()
 
     def test_dotfiles_to_other_template_deactivates_raven_dotfiles(self) -> None:

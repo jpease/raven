@@ -16,6 +16,7 @@ from .apply import (
     find_path_collisions,
     find_state_symlink_collisions,
     prompt_for_claude_symlink_adoption,
+    prompt_for_template_switch,
     reconcile_state,
 )
 from .assess import build_assess_findings
@@ -212,6 +213,7 @@ __all__ = [
     "claude_symlink_adoption_needed",
     "adopt_claude_symlink",
     "prompt_for_claude_symlink_adoption",
+    "prompt_for_template_switch",
     # plan
     "print_section",
     "print_apply_summary",

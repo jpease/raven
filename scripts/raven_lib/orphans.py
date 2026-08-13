@@ -13,7 +13,7 @@ from .constants import KIND_SYMLINK, STARTER_TOOL_CONFIG_PATHS
 from .hashing import destination_fingerprint
 from .manifest import parse_record
 from .models import Fingerprint, ManifestRecord, OrphanClassification
-from .template import entries_for_destination, iter_template_entries
+from .template import entries_for_destination
 
 
 def shipped_relatives(template: Path, destination: Path) -> set[str]:
@@ -22,12 +22,20 @@ def shipped_relatives(template: Path, destination: Path) -> set[str]:
     Computed policy-neutral (empty excludes, no config) so a file the template
     still ships is never treated as an orphan just because config gating or a
     starter-config existence check would skip re-copying it. ``entries_for_
-    destination`` still pops existing starter configs, so add those back from the
-    raw shipped set: their presence on disk must not make them deletion targets.
+    destination`` still pops existing starter configs, so every starter-config
+    path is added back unconditionally: their presence on disk must not make
+    them deletion targets.
+
+    Unconditionally, not intersected with what *this* template ships (#175):
+    switching ``template`` in the config is a supported workflow, and after a
+    python -> dotfiles switch the new template ships no ``pyproject.toml``, so
+    an intersection dropped the user's starter config out of the shipped set
+    and -- because an untouched starter config still matches its recorded
+    baseline exactly -- made it a removable orphan. A starter tool config is
+    project-owned once created; it is only ever removed on explicit request.
     """
     resolved = set(entries_for_destination(template, set(), None, destination))
-    raw = {entry.relative for entry in iter_template_entries(template, set(), None)}
-    resolved |= raw & set(STARTER_TOOL_CONFIG_PATHS)
+    resolved |= set(STARTER_TOOL_CONFIG_PATHS)
     return resolved
 
 

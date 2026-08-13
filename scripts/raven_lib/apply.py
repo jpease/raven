@@ -338,3 +338,38 @@ def prompt_for_claude_symlink_adoption(destination: Path) -> bool:
         if answer in {"y", "yes"}:
             return True
         print("  Enter y or n.")
+
+
+def prompt_for_template_switch(prior_template: str, new_template: str) -> bool:
+    """Interactively confirm a language-template switch; False in any non-interactive context.
+
+    Mirrors ``prompt_for_claude_symlink_adoption``: ``stdin.isatty()`` is
+    checked up front so a non-interactive run (CI, a script, piped input)
+    declines instead of hanging on `input()` or reading unrelated piped data
+    as an answer. Declining is safe here -- the caller refuses the run and
+    nothing on disk changes.
+    """
+    if not sys.stdin.isatty():
+        return False
+    print(
+        f"Raven last applied the '{prior_template}' template here, but the configuration "
+        f"now selects '{new_template}'."
+    )
+    print(
+        "Switching templates can remove Raven-managed files that the new template does not "
+        "ship (starter tool configs such as pyproject.toml are always kept)."
+    )
+    while True:
+        try:
+            answer = (
+                input(f"Switch from '{prior_template}' to '{new_template}'? [y/N]: ")
+                .strip()
+                .lower()
+            )
+        except EOFError:
+            return False
+        if answer in {"", "n", "no"}:
+            return False
+        if answer in {"y", "yes"}:
+            return True
+        print("  Enter y or n.")

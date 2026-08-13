@@ -39,6 +39,25 @@ class ShippedRelativesTests(unittest.TestCase):
         _write(dest / starter, "user copy\n")
         self.assertIn(starter, shipped_relatives(template, dest))
 
+    def test_includes_starter_config_the_template_does_not_ship(self) -> None:
+        # #175: switching templates (python -> dotfiles) leaves a starter config
+        # behind that the *new* template never ships, so intersecting with the
+        # new template's raw entries dropped it out of the shipped set and made
+        # a user's pyproject.toml a deletion target. Every starter-config path
+        # counts as shipped regardless of what this template ships.
+        tmp = TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        template = Path(tmp.name) / "template"
+        dest = Path(tmp.name) / "dest"
+        from raven_lib.constants import STARTER_TOOL_CONFIG_PATHS
+
+        starter = sorted(STARTER_TOOL_CONFIG_PATHS)[0]
+        _write(template / "AGENTS.md", "root instructions\n")  # ships no starter config
+        _write(dest / starter, "left over from the previous template\n")
+        shipped = shipped_relatives(template, dest)
+        self.assertIn(starter, shipped)
+        self.assertTrue(shipped >= STARTER_TOOL_CONFIG_PATHS)
+
 
 class ClassifyOrphansTests(unittest.TestCase):
     def _setup(self) -> tuple[Path, Path]:
@@ -227,6 +246,28 @@ class ClassifyOrphansTests(unittest.TestCase):
         self.assertEqual(result.will_remove, [])
         self.assertEqual(result.orphan_modified, [])
         self.assertEqual(result.already_gone, [])
+
+    def test_starter_config_is_never_an_orphan_after_a_template_switch(self) -> None:
+        # #175: the destination's pyproject.toml matches its recorded baseline
+        # exactly (nobody edited the starter config Raven created), so before
+        # the fix a template that no longer ships it classified it as removable.
+        template, dest = self._setup()
+        from raven_lib.constants import STARTER_TOOL_CONFIG_PATHS
+        from raven_lib.hashing import file_sha256
+
+        starter = sorted(STARTER_TOOL_CONFIG_PATHS)[0]
+        target = dest / starter
+        _write(target, "starter content\n")  # the new template ships nothing
+        sha = file_sha256(target)
+        manifest = {
+            "schema": 1,
+            "files": {starter: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        result = classify_orphans(template, dest, manifest)
+        self.assertEqual(result.will_remove, [])
+        self.assertEqual(result.orphan_modified, [])
+        self.assertEqual(result.already_gone, [])
+        self.assertTrue(target.exists())
 
     def test_legacy_record_without_source_sha_is_not_removed(self) -> None:
         template, dest = self._setup()

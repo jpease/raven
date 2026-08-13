@@ -23,6 +23,7 @@ from .apply import (
     find_path_collisions,
     find_state_symlink_collisions,
     prompt_for_claude_symlink_adoption,
+    prompt_for_template_switch,
 )
 from .assess import build_assess_findings
 from .blocks import pending_merge_paths, remove_merge_artifacts
@@ -220,6 +221,28 @@ def _symlink_adoption_decision(
     return "auto" if requested else "prompt"
 
 
+def _template_switch_decision(
+    *, prior_template: object, template_name: str, requested: bool
+) -> Literal["skip", "auto", "prompt"]:
+    """Whether this run switches language templates, and if so how it was authorized.
+
+    ``prior_template`` is ``manifest["template"]`` -- the template the last
+    successful apply used -- so it is typed ``object``: the manifest is
+    untrusted JSON and may hold anything, or (fresh install, missing manifest,
+    a manifest predating the field) nothing at all. A missing, empty, or
+    non-string prior template is never a switch: there is no earlier template
+    to differ from.
+
+    "auto" when --confirm-template-switch pre-authorized it; "prompt" when a
+    real switch was detected but not authorized; "skip" otherwise (#175).
+    """
+    if not isinstance(prior_template, str) or not prior_template:
+        return "skip"
+    if prior_template == template_name:
+        return "skip"
+    return "auto" if requested else "prompt"
+
+
 @dataclass
 class RunPlan:
     """A computed `ApplyPlan` plus every precondition `_run` must check before writing."""
@@ -265,6 +288,8 @@ def _run(
     requested_overrides: list[str],
     adopt_claude_symlink_requested: bool = False,
     prompt_claude_symlink: bool = True,
+    confirm_template_switch_requested: bool = False,
+    prompt_template_switch: bool = True,
     platform_override: str | None = None,
     write_config: Callable[[], int] | None = None,
 ) -> int:
@@ -315,6 +340,33 @@ def _run(
         return 2
 
     manifest = load_manifest(destination)
+
+    # A template switch turns every file the new template does not ship into an
+    # orphan, so the orphan set is a language-switch artifact rather than a
+    # template removal -- a different decision with a different safe default
+    # (#175). Refuse before classifying or printing anything, the same way the
+    # preflight checks above refuse, so dry-run and live behave identically and
+    # a dry run never blocks on stdin.
+    prior_template = manifest.get("template")
+    switch_decision = _template_switch_decision(
+        prior_template=prior_template,
+        template_name=template_name,
+        requested=confirm_template_switch_requested,
+    )
+    if switch_decision == "prompt":
+        confirmed = False
+        if not dry_run and prompt_template_switch:
+            confirmed = prompt_for_template_switch(str(prior_template), template_name)
+        if not confirmed:
+            print(
+                f"error: {destination / CONFIG_PATH} selects template '{template_name}', but "
+                f"'{prior_template}' was applied here last. Switching templates can remove "
+                "Raven-managed files the new template no longer ships. Nothing was written; "
+                "re-run with --confirm-template-switch to proceed.",
+                file=sys.stderr,
+            )
+            return 2
+
     classification = classify(
         template, destination, excludes, config, manifest=manifest, entries=entries
     )
@@ -588,6 +640,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         args.dry_run,
         overrides,
         adopt_claude_symlink_requested=args.adopt_claude_symlink,
+        confirm_template_switch_requested=getattr(args, "confirm_template_switch", False),
         platform_override=platform,
         write_config=write_config,
     )
@@ -620,6 +673,7 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
         args.dry_run,
         args.overrides,
         adopt_claude_symlink_requested=args.adopt_claude_symlink,
+        confirm_template_switch_requested=getattr(args, "confirm_template_switch", False),
     )
 
 
@@ -835,6 +889,12 @@ File safety:
   - Explicit override paths force-copy Raven-owned files.
   - Unchanged Raven-managed files can be upgraded automatically.
   - Locally changed Raven-managed files are reported for manual merge.
+  - Upgrade removes Raven-managed files the template no longer ships, but only
+    when they still match their recorded baseline exactly; locally changed ones
+    are reported and kept, and starter tool configs are never removed.
+  - Changing `template` in .raven/config.toml is refused unless you confirm it
+    with --confirm-template-switch, because the new template ships a different
+    file set.
 """,
     )
     parser.add_argument(
@@ -930,6 +990,14 @@ AGENTS.md and CLAUDE.md:
         ),
     )
     install_parser.add_argument(
+        "--confirm-template-switch",
+        action="store_true",
+        help=(
+            "proceed even though .raven/config.toml now selects a different template than the "
+            "one last applied; this can remove files the new template no longer ships"
+        ),
+    )
+    install_parser.add_argument(
         "--platform",
         choices=list(VALID_PLATFORMS),
         default=None,
@@ -982,6 +1050,14 @@ AGENTS.md and CLAUDE.md:
         help=(
             "if CLAUDE.md exists, move it to CLAUDE.md.bak and create the CLAUDE.md -> "
             "AGENTS.md symlink; fails if backup exists"
+        ),
+    )
+    upgrade_parser.add_argument(
+        "--confirm-template-switch",
+        action="store_true",
+        help=(
+            "proceed even though .raven/config.toml now selects a different template than the "
+            "one last applied; this can remove files the new template no longer ships"
         ),
     )
 
