@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import itertools
 import json
+import random
 import sys
 import tempfile
 import unittest
@@ -608,6 +610,275 @@ class MultiWordUnitNameTests(unittest.TestCase):
         unit = data["units"][0]
         self.assertEqual(unit["name"], "migrate A → B")
         self.assertIsNone(unit["issue"])
+
+
+class UnitNameValidationRegressionTests(unittest.TestCase):
+    """Regression for #178: --init must reject unit names that would be
+
+    indistinguishable from _format_unit_entry's own appended render metadata
+    on the next parse, rather than silently corrupting the round trip. Each
+    of these mirrors one of the four bug categories closed by this issue.
+    Uses a fresh temp root with no pre-existing .raven so we can assert that
+    a rejected --init creates nothing at all, per the acceptance criteria.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.raven_dir = self.root / ".raven"
+        self.session_file = self.raven_dir / "session.md"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run(self, args: list[str]) -> int:
+        mod = load_session()
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            return mod.main(args)
+        finally:
+            os.chdir(orig)
+
+    def test_init_rejects_name_ending_in_bare_arrow_issue_shape(self):
+        rc = self._run(["--init", "brownfield", "notes → #5"])
+        self.assertNotEqual(rc, 0)
+        self.assertFalse(self.raven_dir.exists())
+
+    def test_init_rejects_name_ending_in_current_suffix(self):
+        rc = self._run(["--init", "brownfield", "Refactor (current)"])
+        self.assertNotEqual(rc, 0)
+        self.assertFalse(self.raven_dir.exists())
+
+    def test_init_rejects_name_ending_in_completed_suffix(self):
+        rc = self._run(["--init", "brownfield", "Ship (completed 2026-01-01)"])
+        self.assertNotEqual(rc, 0)
+        self.assertFalse(self.raven_dir.exists())
+
+    def test_init_rejects_empty_unit_name_among_others(self):
+        rc = self._run(["--init", "brownfield", "unit-a", ""])
+        self.assertNotEqual(rc, 0)
+        self.assertFalse(self.raven_dir.exists())
+
+    def test_init_rejects_name_containing_newline(self):
+        rc = self._run(["--init", "brownfield", "bad\nname"])
+        self.assertNotEqual(rc, 0)
+        self.assertFalse(self.raven_dir.exists())
+
+    def test_init_rejects_name_containing_carriage_return(self):
+        rc = self._run(["--init", "brownfield", "bad\rname"])
+        self.assertNotEqual(rc, 0)
+        self.assertFalse(self.raven_dir.exists())
+
+    def test_init_still_accepts_name_ending_in_bare_issue_number(self):
+        # A name ending in a literal "#digits" with no preceding "→" never
+        # matches the parser's issue-capture regex (it requires "→ "
+        # immediately before the digits), so it round-trips today and must
+        # keep working once "→" itself is banned.
+        rc = self._run(["--init", "brownfield", "notes#5"])
+        self.assertEqual(rc, 0)
+        mod = load_session()
+        data = mod._parse_session(self.session_file.read_text(encoding="utf-8"))
+        self.assertEqual(data["units"][0]["name"], "notes#5")
+        self.assertIsNone(data["units"][0]["issue"])
+
+
+class LinkInputValidationRegressionTests(unittest.TestCase):
+    """Regression for #178 part 2: --link must reject issue references that
+
+    inject new physical lines into session.md or defeat the parser's
+    issue-capture shape, rather than storing them verbatim.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.raven_dir = self.root / ".raven"
+        self.raven_dir.mkdir()
+        self.session_file = self.raven_dir / "session.md"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run(self, args: list[str]) -> int:
+        mod = load_session()
+        import os
+
+        orig = os.getcwd()
+        os.chdir(self.root)
+        try:
+            return mod.main(args)
+        finally:
+            os.chdir(orig)
+
+    def _init(self, *units: str) -> None:
+        self._run(["--init", "greenfield", *list(units)])
+
+    def test_link_rejects_the_exact_reported_newline_injection(self):
+        self._init("unitA", "unitB")
+        before = self.session_file.read_text(encoding="utf-8")
+        rc = self._run(["--link", "unitA", "#1\n- [x] fakeunit (completed 2000-01-01T00:00:00Z)"])
+        self.assertNotEqual(rc, 0)
+        after = self.session_file.read_text(encoding="utf-8")
+        self.assertEqual(before, after)
+
+        from contextlib import redirect_stdout
+
+        f = io.StringIO()
+        with redirect_stdout(f):
+            self._run(["--status"])
+        out = f.getvalue()
+        self.assertIn("Completed    : 0/2 unit(s)", out)
+        self.assertNotIn("fakeunit", out)
+
+    def test_link_rejects_issue_ref_with_internal_space(self):
+        self._init("unit-a")
+        before = self.session_file.read_text(encoding="utf-8")
+        rc = self._run(["--link", "unit-a", "my issue#1"])
+        self.assertNotEqual(rc, 0)
+        after = self.session_file.read_text(encoding="utf-8")
+        self.assertEqual(before, after)
+
+    def test_link_rejects_issue_ref_containing_arrow(self):
+        self._init("unit-a")
+        rc = self._run(["--link", "unit-a", "issue→#1"])
+        self.assertNotEqual(rc, 0)
+
+    def test_link_rejects_issue_ref_not_ending_in_digits(self):
+        self._init("unit-a")
+        rc = self._run(["--link", "unit-a", "#12x"])
+        self.assertNotEqual(rc, 0)
+
+    def test_link_accepts_hash_issue(self):
+        self._init("unit-a")
+        rc = self._run(["--link", "unit-a", "#123"])
+        self.assertEqual(rc, 0)
+        self.assertIn("unit-a → #123", self.session_file.read_text(encoding="utf-8"))
+
+    def test_link_accepts_gitlab_style_issue(self):
+        self._init("unit-a")
+        rc = self._run(["--link", "unit-a", "group/project#123"])
+        self.assertEqual(rc, 0)
+        self.assertIn("unit-a → group/project#123", self.session_file.read_text(encoding="utf-8"))
+
+    def test_link_accepts_nested_group_issue(self):
+        self._init("unit-a")
+        rc = self._run(["--link", "unit-a", "group/sub/project#7"])
+        self.assertEqual(rc, 0)
+        self.assertIn("unit-a → group/sub/project#7", self.session_file.read_text(encoding="utf-8"))
+
+
+class SessionInputRoundTripPropertyTests(unittest.TestCase):
+    """Property test for #178, bullet 4: for every generated (unit name,
+
+    issue reference) candidate the CLI is asked to store, either --init /
+    --link rejects it with a non-zero exit code and writes nothing, or the
+    value is accepted and a render->parse round trip through the real CLI
+    recovers it exactly. This subsumes the hand-picked bug cases above with
+    combinatorial coverage instead of relying on another enumerated list.
+
+    Standard-library only: no `hypothesis` dependency exists in this project
+    (AGENTS.md: prefer the standard library, don't add packages without
+    justification), so candidates are generated via itertools.product over a
+    pool of "safe" and "dangerous" fragments plus a handful of seeded
+    random.Random mutations for extra variety.
+    """
+
+    _SAFE_NAME_FRAGMENTS = (
+        "unit-a",
+        "multi word unit",
+        "trailing space ",
+        "unit: with punctuation!",
+        "notes#5",  # bare trailing "#digits", no arrow: must round-trip
+    )
+    _DANGEROUS_NAME_FRAGMENTS = (
+        "notes → #5",  # bug 1: bare-arrow-issue-shape suffix
+        "Refactor (current)",  # bug 2: current suffix
+        "Ship (completed 2026-01-01)",  # bug 3: completed suffix
+        "",  # bug 4: empty name
+        "has\nnewline",
+        "has\rcarriage",
+    )
+
+    _SAFE_ISSUE_FRAGMENTS = ("#123", "group/project#123", "group/sub/project#7", "#1")
+    _DANGEROUS_ISSUE_FRAGMENTS = (
+        "my issue#1",  # internal whitespace
+        "#1\n- [x] fakeunit (completed 2000-01-01T00:00:00Z)",  # newline injection
+        "#1\rcarriage#2",
+        "issue→#1",
+        "#12x",  # does not end in digits
+        "no-hash-digits",
+    )
+
+    def _run(self, root: Path, args: list[str]) -> int:
+        import os
+
+        mod = load_session()
+        orig = os.getcwd()
+        os.chdir(root)
+        try:
+            return mod.main(args)
+        finally:
+            os.chdir(orig)
+
+    @classmethod
+    def _generate_name_candidates(cls) -> set[str]:
+        pool = cls._SAFE_NAME_FRAGMENTS + cls._DANGEROUS_NAME_FRAGMENTS
+        candidates: set[str] = set(pool)
+        for a, b in itertools.product(pool, repeat=2):
+            candidates.add(f"{a} {b}")
+        rng = random.Random(178)
+        mutations = ["→ #9", " (current)", " (completed 2026-02-02)", "\n", "\r", ""]
+        for _ in range(30):
+            candidates.add(rng.choice(pool) + rng.choice(mutations))
+        return candidates
+
+    @classmethod
+    def _generate_issue_candidates(cls) -> set[str]:
+        pool = cls._SAFE_ISSUE_FRAGMENTS + cls._DANGEROUS_ISSUE_FRAGMENTS
+        candidates: set[str] = set(pool)
+        for a, b in itertools.product(pool, repeat=2):
+            candidates.add(f"{a} {b}")
+        rng = random.Random(178)
+        prefixes = ["", "pre ", "pre\n", "pre→"]
+        for _ in range(20):
+            candidates.add(rng.choice(prefixes) + rng.choice(pool))
+        return candidates
+
+    def test_init_name_round_trips_or_is_rejected(self):
+        mod = load_session()
+        for name in self._generate_name_candidates():
+            with self.subTest(name=repr(name)), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                rc = self._run(root, ["--init", "brownfield", name])
+                session_file = root / ".raven" / "session.md"
+                if rc != 0:
+                    self.assertFalse(session_file.exists())
+                    self.assertFalse((root / ".raven").exists())
+                else:
+                    self.assertTrue(session_file.exists())
+                    data = mod._parse_session(session_file.read_text(encoding="utf-8"))
+                    self.assertEqual(len(data["units"]), 1)
+                    self.assertEqual(data["units"][0]["name"], name)
+
+    def test_link_issue_round_trips_or_is_rejected(self):
+        mod = load_session()
+        for issue in self._generate_issue_candidates():
+            with self.subTest(issue=repr(issue)), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                self._run(root, ["--init", "brownfield", "unit-a"])
+                session_file = root / ".raven" / "session.md"
+                before = session_file.read_text(encoding="utf-8")
+                rc = self._run(root, ["--link", "unit-a", issue])
+                after = session_file.read_text(encoding="utf-8")
+                if rc != 0:
+                    self.assertEqual(before, after)
+                else:
+                    data = mod._parse_session(after)
+                    self.assertEqual(data["units"][0]["name"], "unit-a")
+                    self.assertEqual(data["units"][0]["issue"], issue)
 
 
 def load_hook():
