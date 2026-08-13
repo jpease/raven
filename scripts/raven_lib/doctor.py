@@ -43,6 +43,16 @@ _HOOKS = "Git hooks"
 _NO_VERSION_FLAG = {"gofmt"}
 
 
+def _is_known_template(name: str) -> bool:
+    """Whether `name` is a real Raven template directory, independent of whether
+    it ships gate tooling. `gate_spec_for(name) is None` means only "no GATE_DATA
+    entry" -- see cli.list_language_templates() for the actual template roster.
+    """
+    from .cli import list_language_templates  # local: cli.py imports doctor.py at module level
+
+    return name in list_language_templates()
+
+
 def _checkout_symlink_findings() -> list[Finding]:
     """ERROR if the Raven checkout doctor runs from flattened its template symlinks.
 
@@ -141,7 +151,7 @@ def integrity_findings(destination: Path) -> list[Finding]:
         )
     )
 
-    if config.template is not None and gate_spec_for(config.template) is None:
+    if config.template is not None and not _is_known_template(config.template):
         findings.append(
             Finding(
                 id="doctor.install.template",
@@ -301,7 +311,7 @@ def drift_findings(destination: Path) -> list[Finding]:
             )
         ]
 
-    if gate_spec_for(config.template) is None:
+    if not _is_known_template(config.template):
         return [
             Finding(
                 id="doctor.drift.template",

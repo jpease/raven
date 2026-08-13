@@ -144,6 +144,18 @@ class DoctorIntegrityTests(RavenTestCase):
         self.assertIn("doctor.install.template", ids)
         self.assertEqual(ids["doctor.install.template"].severity, Severity.ERROR)
 
+    def test_dotfiles_template_is_not_unsupported_error(self):
+        # Issue #187 -- dotfiles is a real template directory (per
+        # list_language_templates()) that just ships no gate tooling. It must
+        # not be reported as an unsupported/unknown template name.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "dotfiles"\n', encoding="utf-8"
+        )
+        ids = self._ids(integrity_findings(self.destination))
+        template_finding = ids.get("doctor.install.template")
+        self.assertTrue(template_finding is None or template_finding.severity != Severity.ERROR)
+
 
 class DoctorDriftTests(RavenTestCase):
     def _config(self):
@@ -231,6 +243,24 @@ class DoctorDriftTests(RavenTestCase):
         self.assertFalse(ok_modified and ok_modified.severity == Severity.OK)
         # Must surface an ERROR that explains the unusable template
         self.assertTrue(any(f.severity == Severity.ERROR for f in findings.values()))
+
+    def test_dotfiles_template_drift_is_not_error(self):
+        # Issue #187 -- same conflation bug in drift_findings: dotfiles has no
+        # gate spec but is a real template, so drift must still be evaluated
+        # rather than short-circuiting with an "unsupported template" ERROR.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "dotfiles"\n', encoding="utf-8"
+        )
+        with (
+            mock.patch(
+                "raven_lib.doctor.classify",
+                return_value=_classification([], local_only=[], will_copy=[]),
+            ),
+            mock.patch("raven_lib.doctor.pending_merge_paths", return_value=[]),
+        ):
+            findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertFalse(any(f.severity == Severity.ERROR for f in findings.values()))
 
     def _add_orphan_record(self, *, installed_sha256, source_sha256):
         # docs/dropped.md is not shipped anywhere in the python template, so
