@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 from helpers import REPO_ROOT, RavenTestCase
 
@@ -159,6 +160,17 @@ class BashGuardRegexPatternTests(RavenTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "", "a data heredoc must not be denied")
 
+    def test_claude_copy_allows_a_commented_command_in_a_shell_heredoc(self):
+        """A `#` comment is kept by the strip (the body is code) but never runs.
+
+        Tokenizing is what tells these apart: the body of a `sh` heredoc is
+        scanned, and within it a comment still resolves to no program.
+        """
+        command = "sh - <<'SCRIPT'\n# Safety check: dropdb unsafe_db\nexit 0\nSCRIPT"
+        payload = {"tool_input": {"command": command}}
+        result = _run_bash_guard(CLAUDE_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 0, f"stdout={result.stdout!r}")
+
     def test_claude_copy_still_denies_an_unterminated_heredoc(self):
         """No terminator means no provable end, so the remainder is scanned."""
         payload = {"tool_input": {"command": "python - <<'EOF'\nsudo rm -rf /"}}
@@ -201,15 +213,14 @@ class BashGuardRegexPatternTests(RavenTestCase):
 
     def test_claude_copy_denies_a_trigger_phrase_in_a_shell_heredoc(self):
         """`sh` executes its heredoc body, so that body is code and is scanned."""
-        command = "sh - <<'SCRIPT'\n# Safety check: dropdb unsafe_db\nexit 0\nSCRIPT"
+        command = "sh - <<'SCRIPT'\ndropdb unsafe_db\nexit 0\nSCRIPT"
         payload = {"tool_input": {"command": command}}
         result = _run_bash_guard(CLAUDE_BASH_GUARD, payload)
         self.assertEqual(result.returncode, 2, f"stdout={result.stdout!r} stderr={result.stderr!r}")
-        self.assertIn("raw", result.stderr.lower())
 
     def test_codex_copy_denies_a_trigger_phrase_in_a_shell_heredoc(self):
         """Codex version: a shell heredoc body is code."""
-        command = "sh - <<'SCRIPT'\n# Note: sudo rm -rf /\nexit 0\nSCRIPT"
+        command = "sh - <<'SCRIPT'\nsudo rm -rf /\nexit 0\nSCRIPT"
         payload = {
             "hook_event_name": "PreToolUse",
             "tool_name": "Bash",
@@ -220,7 +231,69 @@ class BashGuardRegexPatternTests(RavenTestCase):
         response = json.loads(result.stdout)
         self.assertEqual(response["hookSpecificOutput"]["permissionDecision"], "deny")
         reason = response["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertIn("raw", reason.lower())
+        self.assertIn("destructive", reason.lower())
+
+
+class BashGuardTokenizedIntentTests(RavenTestCase):
+    """Destructive intents are matched at the program position, not in the text.
+
+    A regex over raw command text is noisy *and* leaky. It fires on any mention
+    -- a search pattern, a commit message, a line of documentation -- and it
+    misses the ordinary spellings that put an option between a verb and its
+    object. Claude Code documents the same fragility for its own Bash permission
+    patterns, and a live check confirms it: a `Bash(git tag *)` deny rule blocks
+    `git tag --list` but not `git -c core.pager=cat tag --list`.
+    """
+
+    #: Harmless: the words appear only inside an argument.
+    MENTIONS: ClassVar[list[str]] = [
+        'rg -n "dropdb|kubectl" guard.py',
+        'git commit -m "note: never kubectl delete prod"',
+        'echo "the runbook says dropdb staging"',
+        'gh issue create --title "aws cleanup should delete stale keys"',
+    ]
+
+    #: Real invocations with an option between the program and its verb. A
+    #: prefix regex requires adjacency and misses every one of these.
+    NON_ADJACENT: ClassVar[list[str]] = [
+        "git reset --hard HEAD".replace("reset --hard", "reset --hard"),
+        "kubectl --context=prod delete pod web",
+        "kubectl -n default delete deployment api",
+    ]
+
+    #: A payload handed to another interpreter still runs.
+    NESTED: ClassVar[list[str]] = [
+        'bash -c "kubectl delete pod web"',
+        "ssh host 'dropdb prod'",
+        "xargs -I{} kubectl delete pod {}",
+        "timeout 30 kubectl delete pod web",
+    ]
+
+    def _claude(self, command):
+        return _run_bash_guard(CLAUDE_BASH_GUARD, {"tool_input": {"command": command}})
+
+    def test_a_mention_in_an_argument_is_allowed(self):
+        for command in self.MENTIONS:
+            with self.subTest(command=command):
+                self.assertEqual(self._claude(command).returncode, 0)
+
+    def test_an_option_between_verb_and_object_is_still_denied(self):
+        for command in self.NON_ADJACENT:
+            with self.subTest(command=command):
+                self.assertEqual(self._claude(command).returncode, 2, command)
+
+    def test_a_nested_payload_is_followed(self):
+        for command in self.NESTED:
+            with self.subTest(command=command):
+                self.assertEqual(self._claude(command).returncode, 2, command)
+
+    def test_a_herestring_fed_to_a_shell_is_followed(self):
+        self.assertEqual(self._claude("bash <<< 'sudo rm -rf /'").returncode, 2)
+
+    def test_sql_is_scoped_to_a_database_client(self):
+        """DROP DATABASE has no program position, so it is matched per client."""
+        self.assertEqual(self._claude('psql -c "DROP DATABASE prod"').returncode, 2)
+        self.assertEqual(self._claude('grep -c "DROP DATABASE" schema.sql').returncode, 0)
 
 
 class BashGuardRipgrepReplaceFlagTests(RavenTestCase):

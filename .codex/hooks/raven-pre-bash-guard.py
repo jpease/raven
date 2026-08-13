@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """PreToolUse hook: deny destructive bash commands (rm -rf /, git reset --hard, dropdb, ...).
 
-Destructive `rm`/`git clean` intents are caught by tokenizing and normalizing
-options rather than a single regex, so `-rf`, `-fr`, and `--recursive --force`
-are all recognized as the same intent instead of only the one spelling a regex
-happened to match.
+Every rule reasons about a tokenized command rather than its raw text: the
+program is resolved past wrappers and environment assignments, options are
+normalized so `-rf`, `-fr` and `--recursive --force` are one intent, payloads
+handed to a nested interpreter are followed, and heredoc bodies that are data
+rather than code are dropped.
+
+Matching raw text instead is both noisier and leakier. It fires on any mention
+-- a search pattern, a commit message, a line of documentation -- while missing
+the ordinary spellings that put an option between a verb and its object, so
+`kubectl -n default delete deployment` reads as harmless. Claude Code documents
+the same fragility for its own Bash permission patterns.
 """
 
 from __future__ import annotations
@@ -86,18 +93,6 @@ def _deny_message(command: str) -> str:
     return (
         "Blocked potentially destructive command."
         f" Ask for explicit approval before running: {command}"
-    )
-
-
-def _pattern_deny_message(command: str) -> str:
-    """Message for raw-text regex pattern matches, which cannot distinguish
-    between code that executes and inert text (comments, quoted strings, heredoc
-    bodies, etc.). This is conservative but necessary for safety.
-    """
-    return (
-        "Blocked: Pattern matched in raw command text (before tokenization)."
-        " This check cannot distinguish from quoted strings or heredoc bodies."
-        f" Ask for explicit approval: {command}"
     )
 
 
@@ -196,16 +191,52 @@ def _strip_heredoc_bodies(command: str) -> str:
     return "\n".join(kept)
 
 
+# A wrapper's own operand, such as the duration in `timeout 30 cmd`. Skipping
+# only the wrapper name leaves that operand in the program position, so
+# `timeout 30 kubectl delete pod` resolves to a program called "30" and every
+# rule below misses it.
+_WRAPPER_OPERAND = re.compile(r"\A\d+(\.\d+)?[smhd]?\Z")
+
+# Programs that run their argument as the real command, so a rule written for
+# the inner command should still see it. This mirrors the wrapper set Claude
+# Code strips before matching its own Bash permission rules -- adopted rather
+# than invented so the guard and the harness agree on what "the command" means.
+# `command -v` is deliberately absent: it looks a command up instead of running
+# it.
+_TRANSPARENT_WRAPPERS = frozenset(
+    {
+        "sudo",
+        "timeout",
+        "time",
+        "nice",
+        "nohup",
+        "stdbuf",
+        "command",
+        "builtin",
+        "noglob",
+    }
+)
+
+
 def _program_and_args(segment: list[str]) -> tuple[str, list[str]] | None:
-    """Return (program, remaining tokens), skipping leading env-assignments, sudo,
-    and an ``rtk proxy`` wrapper prefix so the checks below reason about the
-    real command being run.
+    """Return (program, remaining tokens), skipping leading env-assignments and
+    wrappers that run their argument as the real command, so the checks below
+    reason about what actually executes.
     """
     index = 0
     while index < len(segment):
         token = segment[index]
-        if token == "sudo":
+        if token.rsplit("/", 1)[-1] in _TRANSPARENT_WRAPPERS:
+            # `command -v foo` queries rather than runs; do not step over it.
+            if token == "command" and segment[index + 1 : index + 2] == ["-v"]:
+                break
             index += 1
+            # Step over the wrapper's own options and duration operand so the
+            # next token really is the command it runs.
+            while index < len(segment) and segment[index].startswith("-"):
+                index += 1
+            if index < len(segment) and _WRAPPER_OPERAND.match(segment[index]):
+                index += 1
             continue
         if re.match(r"[A-Za-z_][A-Za-z0-9_]*=", token):
             index += 1
@@ -247,6 +278,114 @@ def _normalize_options(args: list[str]) -> tuple[set[str], list[str]]:
         else:
             positionals.append(token)
     return flags, positionals
+
+
+# Programs that execute a payload argument as a fresh command. Without stepping
+# into these, `bash -c "kubectl delete pod"` reads as a single `bash` call whose
+# arguments happen to contain words, and the destructive command inside it is
+# invisible to every rule below.
+_NESTED_PAYLOAD_FLAG = {"bash": "-c", "sh": "-c", "zsh": "-c", "dash": "-c", "ksh": "-c"}
+
+#: Database clients whose arguments can carry SQL. `DROP DATABASE` has no
+#: program position of its own -- it is always an argument -- so it is scoped to
+#: the clients that would run it rather than matched anywhere in the text.
+_SQL_CLIENTS = frozenset({"psql", "mysql", "mariadb", "sqlite3"})
+
+#: `<<<` feeds its operand to the program's stdin. When that program is a shell,
+#: the operand is executed, so it is a nested payload like `-c` is -- unlike a
+#: heredoc, which `_strip_heredoc_bodies` handles separately because its body
+#: spans lines.
+_HERESTRING = re.compile(r"<<<\s*(.+)$")
+
+#: How deep to follow nested payloads. Two levels covers `ssh host "bash -c ..."`
+#: without letting a crafted payload spin the guard.
+_MAX_NESTING_DEPTH = 2
+
+
+def _nested_payloads(program: str, args: list[str]) -> list[str]:
+    """Command strings this invocation hands to another interpreter."""
+    flag = _NESTED_PAYLOAD_FLAG.get(program)
+    if flag is not None and flag in args:
+        index = args.index(flag)
+        return args[index + 1 : index + 2]
+    if program == "ssh":
+        _flags, positionals = _normalize_options(args)
+        # The first positional is the destination; the rest is the remote command.
+        return [" ".join(positionals[1:])] if len(positionals) > 1 else []
+    if program == "xargs":
+        # Followed whatever flags are present. Claude Code treats only a flagless
+        # `xargs` as transparent, which is right for an *allow* rule -- granting
+        # through a wrapper you have not fully parsed over-grants. A deny rule
+        # wants the opposite: `xargs -I{} kubectl delete pod {}` still runs
+        # `kubectl delete`, so not looking is the unsafe direction.
+        _flags, positionals = _normalize_options(args)
+        return [" ".join(positionals)] if positionals else []
+    return []
+
+
+def _is_destructive_intent(program: str, args: list[str], segment: list[str]) -> bool:
+    """Whether this invocation is one of the intents with no option-spelling bypass.
+
+    Matched on the *program position* rather than anywhere in the command text.
+    A regex over raw text is both noisier and leakier: it fires on any mention --
+    a search pattern, a commit message, documentation -- while missing the
+    ordinary spellings that put an option between the verb and its object, so
+    `kubectl -n default delete deployment` slips straight through.
+    """
+    _flags, positionals = _normalize_options(args)
+    if program == "rm" and any(token == "sudo" for token in segment):
+        return True
+    if program == "git" and positionals[:1] == ["reset"] and "--hard" in args:
+        return True
+    if program == "dropdb":
+        return True
+    if program == "kubectl" and "delete" in positionals:
+        return True
+    if program == "aws" and any(token.startswith("delete") for token in positionals):
+        return True
+    if program in _SQL_CLIENTS:
+        return any("drop database" in token.lower() for token in args)
+    return False
+
+
+def _herestring_payloads(command: str) -> list[str]:
+    """Operands of `<<<` on a line whose program is a shell, which executes them."""
+    payloads: list[str] = []
+    for line in command.splitlines():
+        match = _HERESTRING.search(line)
+        if match is None:
+            continue
+        program = _line_program(line)
+        if program is None or program not in _SHELL_PROGRAMS:
+            continue
+        try:
+            tokens = shlex.split(match.group(1))
+        except ValueError:
+            tokens = [match.group(1)]
+        if tokens:
+            payloads.append(tokens[0])
+    return payloads
+
+
+def _has_destructive_intent(command: str, depth: int = 0) -> bool:
+    """Scan a command, following payloads handed to a nested interpreter."""
+    if depth > _MAX_NESTING_DEPTH:
+        return False
+    for payload in _herestring_payloads(command):
+        if _has_destructive_intent(payload, depth + 1):
+            return True
+    for segment in _command_segments(command):
+        parsed = _program_and_args(segment)
+        if parsed is None:
+            continue
+        program, args = parsed
+        program = program.rsplit("/", 1)[-1].lower()
+        if _is_destructive_intent(program, args, segment):
+            return True
+        for payload in _nested_payloads(program, args):
+            if payload and _has_destructive_intent(payload, depth + 1):
+                return True
+    return False
 
 
 # Targets that make a recursive force-delete catastrophic rather than routine.
@@ -328,23 +467,12 @@ def main() -> int:
     if not command:
         return 0
 
-    # Both families below reason about text, so they see the command with
-    # data-only heredoc bodies removed. Deny messages still quote the original,
-    # so the user sees what they actually typed.
+    # Every rule reasons about the command with data-only heredoc bodies removed.
+    # Deny messages still quote the original, so the user sees what they typed.
     scannable = _strip_heredoc_bodies(command)
 
-    # Regex checks whose intents have no option-combination bypass.
-    regex_patterns = [
-        r"sudo\s+rm\b",
-        r"git\s+reset\s+--hard",
-        r"\bdropdb\b",
-        r"\bDROP\s+DATABASE\b",
-        r"kubectl\s+delete\b",
-        r"aws\b.*\bdelete\b",
-    ]
-    for pattern in regex_patterns:
-        if re.search(pattern, scannable, re.IGNORECASE):
-            return _deny(_pattern_deny_message(command), payload)
+    if _has_destructive_intent(scannable):
+        return _deny(_deny_message(command), payload)
 
     # Tokenized checks for destructive intents with option-spelling variants:
     # rm force+recursive at / or ~, and git clean force+d+x.
