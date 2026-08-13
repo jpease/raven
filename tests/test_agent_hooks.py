@@ -449,6 +449,103 @@ class AgentHooksTests(RavenTestCase):
                 self.assertEqual(decision["permissionDecision"], "deny")
 
 
+# --- Edit guard: anchored `credentials` + `..` traversal normalization
+# (issue #197) -----------------------------------------------------------
+#
+# The `blocked` list's bare `r"credentials"` pattern was an unanchored,
+# case-insensitive substring match: it denied edits to
+# docs/credentials-design.md, tests/test_credentials_helper.py, and
+# src/credentialsProvider.ts, none of which hold actual credential material.
+# Separately, the hook only did a backslash-to-forward-slash swap before
+# matching -- no `..` collapsing -- so `src/../.env` and
+# `a/b/../../secrets/prod.json` slipped past the anchored `.env`/`secrets`
+# patterns. Both directions, driven through real subprocess invocations with
+# real stdin JSON, for both denial protocols (Claude: stderr + exit 2; Codex:
+# `hookSpecificOutput` JSON on stdout + exit 0).
+EDIT_GUARD_CLAUDE = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-pre-edit-guard.py"
+EDIT_GUARD_CODEX = REPO_ROOT / "common" / ".codex" / "hooks" / "raven-pre-edit-guard.py"
+
+# MUST be denied: real credential paths, plus `..`-traversal that resolves
+# onto an already-blocked segment, in both forward-slash and Windows-style
+# backslash spellings.
+CREDENTIALS_TRAVERSAL_BLOCKED_PATHS = [
+    ".aws/credentials",
+    "~/.aws/credentials",
+    "config/credentials.yml",
+    "credentials/prod.json",
+    "src/../.env",
+    "a/b/../../secrets/prod.json",
+    "src\\..\\.env",
+]
+
+# MUST stay allowed: the old unanchored `credentials` substring match used to
+# deny all three of these.
+CREDENTIALS_FALSE_POSITIVE_PATHS = [
+    "docs/credentials-design.md",
+    "tests/test_credentials_helper.py",
+    "src/credentialsProvider.ts",
+]
+
+
+def _claude_edit_payload(path: str) -> str:
+    return json.dumps({"tool_input": {"file_path": path}})
+
+
+def _codex_edit_payload(path: str) -> str:
+    return json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "apply_patch",
+            "tool_input": {"file_path": path},
+        }
+    )
+
+
+def _run_edit_guard(hook: Path, payload: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(hook)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+class CredentialsPathGuardTests(unittest.TestCase):
+    def test_claude_denies_blocked_paths(self):
+        for path in CREDENTIALS_TRAVERSAL_BLOCKED_PATHS:
+            with self.subTest(path=path):
+                result = _run_edit_guard(EDIT_GUARD_CLAUDE, _claude_edit_payload(path))
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn(path, result.stderr)
+                self.assertEqual(result.stdout, "")
+
+    def test_claude_allows_false_positive_paths(self):
+        for path in CREDENTIALS_FALSE_POSITIVE_PATHS:
+            with self.subTest(path=path):
+                result = _run_edit_guard(EDIT_GUARD_CLAUDE, _claude_edit_payload(path))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+
+    def test_codex_denies_blocked_paths(self):
+        for path in CREDENTIALS_TRAVERSAL_BLOCKED_PATHS:
+            with self.subTest(path=path):
+                result = _run_edit_guard(EDIT_GUARD_CODEX, _codex_edit_payload(path))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                response = json.loads(result.stdout)
+                decision = response["hookSpecificOutput"]
+                self.assertEqual(decision["hookEventName"], "PreToolUse")
+                self.assertEqual(decision["permissionDecision"], "deny")
+                self.assertIn(path, decision["permissionDecisionReason"])
+
+    def test_codex_allows_false_positive_paths(self):
+        for path in CREDENTIALS_FALSE_POSITIVE_PATHS:
+            with self.subTest(path=path):
+                result = _run_edit_guard(EDIT_GUARD_CODEX, _codex_edit_payload(path))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+
+
 # --- Codex hook launcher drift guard (issue #129) ------------------------
 #
 # common/.codex/hooks.json hand-maintains six byte-identical copies of the
