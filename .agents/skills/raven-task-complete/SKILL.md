@@ -1,7 +1,6 @@
 ---
 name: raven-task-complete
 description: Use before declaring a unit of work done to verify correctness, diff scope, and cleanliness.
-model: haiku
 ---
 
 # Task Complete
