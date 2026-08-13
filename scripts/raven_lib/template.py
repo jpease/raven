@@ -12,8 +12,18 @@ import re
 from pathlib import Path
 
 from .config import config_excluded
-from .constants import EXCLUDED_NAMES, STARTER_TOOL_CONFIG_PATHS, _any_exists
+from .constants import (
+    EXCLUDED_NAMES,
+    EXPECTED_TEMPLATE_SYMLINKS,
+    REPO_ROOT,
+    STARTER_TOOL_CONFIG_PATHS,
+    _any_exists,
+)
 from .models import RavenConfig, TemplateEntry
+
+#: A relative symlink target that climbs out of its tree and back in through
+#: ``common/`` -- the shape of the template's own internal cross-links.
+_COMMON_CROSS_LINK = re.compile(r"(\.\./)+common/")
 
 
 def is_excluded(
@@ -27,17 +37,70 @@ def is_excluded(
     return any(part in EXCLUDED_NAMES for part in path.parts)
 
 
-def should_preserve_symlink(path: Path) -> bool:
+def _resolves_within(resolved: Path, root: Path) -> bool:
+    """Whether ``resolved`` is ``root`` or lives under it, both fully resolved.
+
+    ``os.path.commonpath`` raises for inputs it cannot compare -- most notably
+    two different drives on Windows. That is precisely the "not contained" case,
+    so it is answered False rather than propagated.
+    """
+    try:
+        return os.path.commonpath([str(resolved), str(root)]) == str(root)
+    except ValueError:
+        return False
+
+
+def should_preserve_symlink(path: Path, common_root: Path | None = None) -> bool:
     """Whether ``path`` is a symlink that should be copied as a symlink, not resolved.
 
-    False for a symlink whose relative target climbs back into ``common/``: that
-    is an internal template cross-link, not something the destination should
-    depend on ``common/`` still existing to follow.
+    False for a symlink whose relative target climbs back into ``common/`` *and*
+    genuinely lands inside it: that is an internal template cross-link, not
+    something the destination should depend on ``common/`` still existing to
+    follow. Everything else is preserved as a symlink.
+
+    Both halves of that test are load-bearing:
+
+    * The ``../common/`` spelling identifies the cross-link. Links that stay
+      inside their own tree -- ``CLAUDE.md -> AGENTS.md``, ``.claude/skills ->
+      ../.agents/skills`` -- also resolve inside ``common/`` but are meant to be
+      installed *as symlinks*, so containment alone would wrongly flatten them.
+    * Resolving the target and containing it with ``os.path.commonpath``
+      identifies whether the climb really lands in ``common/``. The former
+      prefix-match on the target *string* accepted
+      ``../../../common/../../victim/secret.txt``, which starts with a climb
+      into ``common/`` but escapes it entirely -- so the installer dereferenced
+      it and copied an arbitrary file from outside the template into the
+      destination (#177).
+
+    ``common_root`` defaults to this checkout's ``common/`` and exists so tests
+    can point the containment check at an isolated tree; every production caller
+    uses the default.
     """
     if not path.is_symlink():
         return False
     target = os.readlink(path).replace("\\", "/")
-    return not re.match(r"(\.\./)+common/", target)
+    if not _COMMON_CROSS_LINK.match(target):
+        return True
+    root = (common_root if common_root is not None else REPO_ROOT / "common").resolve()
+    resolved = (path.parent / target).resolve()
+    return not _resolves_within(resolved, root)
+
+
+def broken_template_symlinks(common_root: Path) -> list[str]:
+    """`EXPECTED_TEMPLATE_SYMLINKS` entries that exist under ``common_root`` but are not symlinks.
+
+    Sorted, and empty for a healthy checkout. A path that is simply *absent* is
+    not reported: that is a different condition (a partial or throwaway tree),
+    whereas a path that exists as a regular file is the signature of a checkout
+    that could not create symlinks and wrote the target text as content instead.
+    A dangling symlink is likewise not this check's business -- it is still a
+    symlink, and `test_templates_have_no_broken_symlinks` already covers it.
+    """
+    return sorted(
+        relative
+        for relative in EXPECTED_TEMPLATE_SYMLINKS
+        if (path := common_root / relative).exists() and not path.is_symlink()
+    )
 
 
 def iter_template_entries(

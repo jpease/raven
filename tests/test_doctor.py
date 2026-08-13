@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -637,6 +638,94 @@ class DoctorHookManagerTests(RavenTestCase):
         self.assertEqual(findings[0].id, "doctor.hooks.manager")
         self.assertEqual(findings[0].severity, Severity.INFO)
         self.assertIn("external-hooks-path", findings[0].title)
+
+
+# ---------------------------------------------------------------------------
+# #177 -- doctor reported "0 errors" against a .codex tree whose hooks and
+# scripts were placeholder text, because nothing checked symlink-ness. Two
+# checks: the Raven checkout doctor is running from, and the destination.
+# ---------------------------------------------------------------------------
+class DoctorFlattenedSymlinkTests(RavenTestCase):
+    def _ids(self, findings):
+        return {f.id: f for f in findings}
+
+    def test_healthy_checkout_and_install_report_no_symlink_errors(self):
+        _install(self)
+        ids = self._ids(build_doctor_findings(self.destination, _fake_toolcheck_runner([])))
+        self.assertNotIn("doctor.checkout.symlinks", ids)
+        self.assertNotIn("doctor.install.flattened", ids)
+        self.assertEqual(exit_code(list(ids.values())), 0)
+
+    def test_flattened_symlink_in_the_checkout_is_an_error(self):
+        _install(self)
+        before = self._ids(integrity_findings(self.destination))
+        self.assertNotIn("doctor.checkout.symlinks", before)
+
+        # A stand-in Raven checkout whose common/CLAUDE.md is a regular file
+        # holding its target text -- exactly what git writes when the checkout
+        # cannot create symlinks.
+        fake_root = self.destination.parent / "fake-raven-checkout"
+        (fake_root / "common").mkdir(parents=True)
+        (fake_root / "common" / "CLAUDE.md").write_text("AGENTS.md\n", encoding="utf-8")
+        self.addCleanup(shutil.rmtree, fake_root, True)
+
+        with mock.patch("raven_lib.doctor.REPO_ROOT", fake_root):
+            findings = integrity_findings(self.destination)
+
+        ids = self._ids(findings)
+        self.assertIn("doctor.checkout.symlinks", ids)
+        finding = ids["doctor.checkout.symlinks"]
+        self.assertEqual(finding.severity, Severity.ERROR)
+        self.assertIn("CLAUDE.md", finding.detail)
+        self.assertIn("core.symlinks", finding.fix)
+
+    def test_flattened_installed_symlink_is_an_error(self):
+        _install(self)
+        before = self._ids(build_doctor_findings(self.destination, _fake_toolcheck_runner([])))
+        self.assertNotIn("doctor.install.flattened", before)
+        self.assertEqual(exit_code(list(before.values())), 0)
+
+        manifest = json.loads(
+            (self.destination / ".raven" / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["files"]["CLAUDE.md"]["kind"], "symlink")
+
+        # Corrupt the destination the way a symlink-unaware copy would: replace
+        # the installed symlink with a regular file holding its target text.
+        # The manifest still records it as a symlink.
+        claude = self.destination / "CLAUDE.md"
+        target = os.readlink(claude)
+        claude.unlink()
+        claude.write_text(target + "\n", encoding="utf-8")
+
+        findings = build_doctor_findings(self.destination, _fake_toolcheck_runner([]))
+        ids = self._ids(findings)
+        self.assertIn("doctor.install.flattened", ids)
+        self.assertEqual(ids["doctor.install.flattened"].severity, Severity.ERROR)
+        self.assertIn("CLAUDE.md", ids["doctor.install.flattened"].detail)
+        self.assertEqual(exit_code(findings), 1)
+
+    def test_flattened_installed_directory_symlink_is_an_error(self):
+        _install(self)
+        skills = self.destination / ".claude" / "skills"
+        self.assertTrue(skills.is_symlink())
+        target = os.readlink(skills)
+        skills.unlink()
+        skills.write_text(target + "\n", encoding="utf-8")
+
+        ids = self._ids(build_doctor_findings(self.destination, _fake_toolcheck_runner([])))
+        self.assertIn("doctor.install.flattened", ids)
+        self.assertIn(".claude/skills", ids["doctor.install.flattened"].detail)
+
+    def test_deleted_symlink_is_missing_drift_not_a_flattening_error(self):
+        # An absent path is already reported as missing drift; reporting it as
+        # corruption too would double-count and offer the wrong fix.
+        _install(self)
+        (self.destination / "CLAUDE.md").unlink()
+
+        ids = self._ids(build_doctor_findings(self.destination, _fake_toolcheck_runner([])))
+        self.assertNotIn("doctor.install.flattened", ids)
+        self.assertIn("doctor.drift.missing", ids)
 
 
 if __name__ == "__main__":

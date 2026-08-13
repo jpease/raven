@@ -48,6 +48,8 @@ Clone, download, or otherwise get a copy of this repo on your local machine and 
 RAVEN_PATH=/path/to/raven
 ```
 
+Your checkout must preserve symlinks. Raven's templates share files through symlinks, and a checkout that cannot create them stores each one as a regular file containing the target path instead — including two Codex security hooks, which would then do nothing. Raven does not support that shape: `install`, `upgrade`, and `accept` refuse outright, and `raven doctor` reports it as an error. If you hit it, run `git config --global core.symlinks true` and clone again; an existing flattened checkout cannot be repaired in place. On Windows, first enable Developer Mode or run git from an elevated shell so it is permitted to create symbolic links.
+
 For the cleanest command, add Raven's scripts directory to your PATH:
 
 ```sh

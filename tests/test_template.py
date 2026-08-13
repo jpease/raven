@@ -8,16 +8,20 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from helpers import (
     LSP_DEFAULTS,
     REPO_ROOT,
     RavenTestCase,
+    install_ns,
     lsp_doc_command,
     lsp_mcp_args,
     raven,
+    upgrade_ns,
 )
-from raven_lib.constants import STARTER_TOOL_CONFIG_PATHS
+from raven_lib.constants import EXPECTED_TEMPLATE_SYMLINKS, STARTER_TOOL_CONFIG_PATHS
+from raven_lib.template import broken_template_symlinks, should_preserve_symlink
 
 
 class TemplateTests(RavenTestCase):
@@ -439,6 +443,241 @@ paths = [".claude/skills/raven-plan/**"]
         # v1 intentionally ships no justfile and no quality doc for this stack.
         self.assertFalse((stack / "justfile").exists())
         self.assertFalse((stack / ".claude" / "docs" / "raven-dotfiles-quality.md").exists())
+
+
+# ---------------------------------------------------------------------------
+# #177 -- a checkout made without symlink support materializes every template
+# symlink as a regular file whose content is the target path string. Raven does
+# not support such a checkout: it refuses up front rather than copying that
+# placeholder text into a destination as if it were real content.
+# ---------------------------------------------------------------------------
+class ExpectedTemplateSymlinkRegistryTests(unittest.TestCase):
+    def test_registry_matches_the_symlinks_common_actually_ships(self):
+        # Canary: adding (or removing) a symlink under common/ without updating
+        # EXPECTED_TEMPLATE_SYMLINKS silently shrinks the preflight's coverage.
+        # followlinks=False so a directory symlink (.claude/skills) is detected
+        # as an entry rather than recursed through.
+        common = REPO_ROOT / "common"
+        found = set()
+        for current, dirnames, filenames in os.walk(common, followlinks=False):
+            for name in dirnames + filenames:
+                candidate = Path(current) / name
+                if candidate.is_symlink():
+                    found.add(candidate.relative_to(common).as_posix())
+
+        self.assertEqual(found, set(EXPECTED_TEMPLATE_SYMLINKS))
+
+    def test_healthy_checkout_reports_nothing_broken(self):
+        self.assertEqual(broken_template_symlinks(REPO_ROOT / "common"), [])
+
+
+class BrokenTemplateSymlinkDetectionTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.common = Path(self._tmp.name) / "common"
+
+    def _flatten(self, relative: str) -> None:
+        """Write ``relative`` the way a no-symlink git checkout would: as a
+        regular file whose entire content is the symlink target string.
+        """
+        path = self.common / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("../../../common/.claude/whatever\n", encoding="utf-8")
+
+    def _link(self, relative: str) -> None:
+        path = self.common / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        real = path.parent / f"real-{path.name}"
+        real.write_text("real content\n", encoding="utf-8")
+        path.symlink_to(real.name)
+
+    def test_flattened_entries_are_reported_and_healthy_ones_are_not(self):
+        self._flatten(".codex/scripts/raven-tool-check.py")
+        self._flatten(".codex/hooks/raven-pre-bash-guard.py")
+        self._link("CLAUDE.md")
+
+        self.assertEqual(
+            broken_template_symlinks(self.common),
+            [".codex/hooks/raven-pre-bash-guard.py", ".codex/scripts/raven-tool-check.py"],
+        )
+
+    def test_absent_entries_are_not_reported_as_flattened(self):
+        # A path that is simply missing is a different (and, for the throwaway
+        # template trees the tests build, entirely normal) condition. Only a
+        # path that exists *and is not a symlink* is evidence of a checkout that
+        # dropped symlink support.
+        self.assertEqual(broken_template_symlinks(self.common), [])
+
+    def test_flattened_directory_symlink_is_reported(self):
+        path = self.common / ".claude" / "skills"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("../.agents/skills\n", encoding="utf-8")
+
+        self.assertEqual(broken_template_symlinks(self.common), [".claude/skills"])
+
+
+class SymlinkContainmentTests(unittest.TestCase):
+    """`should_preserve_symlink` must resolve the target, not prefix-match it."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.common = self.root / "root" / "common"
+        (self.common / ".codex" / "hooks").mkdir(parents=True)
+        (self.common / ".claude" / "hooks").mkdir(parents=True)
+
+    def test_target_escaping_common_is_preserved_not_dereferenced(self):
+        # `../../../common/../../victim/secret.txt` textually starts with a
+        # climb back into common/, which the old prefix regex accepted -- so the
+        # installer would have dereferenced it and copied an arbitrary file from
+        # outside the template tree into the destination as real content.
+        victim = self.root / "victim"
+        victim.mkdir()
+        (victim / "secret.txt").write_text("top secret\n", encoding="utf-8")
+
+        evil = self.common / ".codex" / "hooks" / "evil.py"
+        evil.symlink_to("../../../common/../../victim/secret.txt")
+        # Precondition: the crafted target really does escape and really does
+        # resolve to the victim file, so the assertion below is about
+        # containment rather than a dangling link.
+        self.assertEqual(evil.resolve().read_text(encoding="utf-8"), "top secret\n")
+
+        self.assertTrue(should_preserve_symlink(evil, common_root=self.common))
+
+    def test_genuine_internal_cross_link_is_still_dereferenced(self):
+        # The positive control: an honest climb back into common/ must keep its
+        # existing classification (copied as a real file at the destination).
+        (self.common / ".claude" / "hooks" / "guard.py").write_text("real\n", encoding="utf-8")
+        link = self.common / ".codex" / "hooks" / "guard.py"
+        link.symlink_to("../../../common/.claude/hooks/guard.py")
+
+        self.assertFalse(should_preserve_symlink(link, common_root=self.common))
+
+    def test_sibling_target_inside_common_is_still_preserved(self):
+        # common/.claude/skills -> ../.agents/skills and common/CLAUDE.md ->
+        # AGENTS.md both *resolve* inside common/ but are not `../common/`
+        # cross-links: they are the destination-relative links Raven installs as
+        # symlinks. Resolving-and-containing alone would wrongly flatten them.
+        (self.common / ".agents").mkdir()
+        (self.common / ".agents" / "skills").mkdir()
+        skills = self.common / ".claude" / "skills"
+        skills.symlink_to("../.agents/skills")
+        (self.common / "AGENTS.md").write_text("# A\n", encoding="utf-8")
+        claude = self.common / "CLAUDE.md"
+        claude.symlink_to("AGENTS.md")
+
+        self.assertTrue(should_preserve_symlink(skills, common_root=self.common))
+        self.assertTrue(should_preserve_symlink(claude, common_root=self.common))
+
+    def test_default_common_root_is_the_repo_checkout(self):
+        # The single-argument form every production call site uses keeps
+        # working, resolving against REPO_ROOT / "common".
+        link = REPO_ROOT / "common" / ".codex" / "scripts" / "raven-tool-check.py"
+        self.assertFalse(should_preserve_symlink(link))
+
+    def test_non_symlink_is_never_preserved(self):
+        plain = self.common / ".codex" / "hooks" / "plain.py"
+        plain.write_text("x\n", encoding="utf-8")
+        self.assertFalse(should_preserve_symlink(plain, common_root=self.common))
+
+
+class NoSymlinkCheckoutPreflightTests(RavenTestCase):
+    """install/upgrade/accept refuse outright against a flattened checkout."""
+
+    #: What git writes in place of the symlink when the checkout cannot create
+    #: one: the target path, as the file's entire content.
+    PLACEHOLDER = "../../../common/.claude/scripts/raven-tool-check.py"
+
+    def setUp(self):
+        super().setUp()
+        self._fake_repo_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._fake_repo_tmp.cleanup)
+        self.fake_repo_root = Path(self._fake_repo_tmp.name)
+
+        template_dir = self.fake_repo_root / "lang"
+        template_dir.mkdir(parents=True)
+        (template_dir / "AGENTS.md").write_text("root instructions\n", encoding="utf-8")
+
+        flattened = self.fake_repo_root / "common" / ".codex" / "scripts" / "raven-tool-check.py"
+        flattened.parent.mkdir(parents=True)
+        flattened.write_text(self.PLACEHOLDER, encoding="utf-8")
+
+        patcher = mock.patch("raven_lib.cli.REPO_ROOT", self.fake_repo_root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _config(self):
+        (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "lang"\n', encoding="utf-8"
+        )
+
+    def _run(self, command, namespace):
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = command(namespace)
+        return rc, err.getvalue()
+
+    def _assert_refused(self, rc, err):
+        self.assertEqual(rc, 2, err)
+        self.assertIn(".codex/scripts/raven-tool-check.py", err)
+        self.assertIn("core.symlinks", err)
+        self.assertIn("Developer Mode", err)
+
+    def test_install_refuses_and_writes_nothing(self):
+        rc, err = self._run(raven.cmd_install, install_ns(self.destination, language="lang"))
+        self._assert_refused(rc, err)
+        self.assertFalse((self.destination / "AGENTS.md").exists())
+        self.assertFalse((self.destination / ".raven").exists())
+
+    def test_install_dry_run_refuses_identically(self):
+        rc, err = self._run(
+            raven.cmd_install, install_ns(self.destination, language="lang", dry_run=True)
+        )
+        self._assert_refused(rc, err)
+
+    def test_upgrade_refuses(self):
+        self._config()
+        rc, err = self._run(raven.cmd_upgrade, upgrade_ns(self.destination))
+        self._assert_refused(rc, err)
+        self.assertFalse((self.destination / "AGENTS.md").exists())
+
+    def test_upgrade_dry_run_refuses(self):
+        self._config()
+        rc, err = self._run(raven.cmd_upgrade, upgrade_ns(self.destination, dry_run=True))
+        self._assert_refused(rc, err)
+
+    def test_accept_refuses_before_recording_a_bogus_baseline(self):
+        # accept copies nothing, but it *hashes* template content into the
+        # manifest baseline -- recording the placeholder text's hash as the
+        # accepted source would make the corruption look like the truth.
+        self._config()
+        rc, err = self._run(
+            raven.cmd_accept,
+            argparse.Namespace(
+                destination=str(self.destination),
+                paths=[],
+                dry_run=False,
+                include_readme=False,
+            ),
+        )
+        self._assert_refused(rc, err)
+        self.assertFalse((self.destination / ".raven" / "manifest.json").exists())
+
+    def test_healthy_checkout_still_installs(self):
+        # Proves the preflight is a real gate rather than an unconditional
+        # refusal: repair the flattened entry and the same install succeeds.
+        flattened = self.fake_repo_root / "common" / ".codex" / "scripts" / "raven-tool-check.py"
+        flattened.unlink()
+        real = flattened.parent / "real.py"
+        real.write_text("print('real')\n", encoding="utf-8")
+        flattened.symlink_to("real.py")
+
+        rc, err = self._run(raven.cmd_install, install_ns(self.destination, language="lang"))
+        self.assertEqual(rc, 0, err)
+        self.assertTrue((self.destination / "AGENTS.md").is_file())
 
 
 if __name__ == "__main__":

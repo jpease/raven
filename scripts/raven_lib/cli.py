@@ -37,6 +37,7 @@ from .constants import (
     MERGE_DIR,
     NON_TEMPLATE_DIRS,
     REPO_ROOT,
+    SYMLINK_CHECKOUT_FIX,
     VALID_PLATFORMS,
     _any_exists,
 )
@@ -57,7 +58,7 @@ from .plan import (
     print_section,
 )
 from .report import render_human, render_json, supports_unicode_marks
-from .template import entries_for_destination
+from .template import broken_template_symlinks, entries_for_destination
 
 
 def list_language_templates() -> list[str]:
@@ -279,6 +280,31 @@ def _build_run_plan(
     return RunPlan(plan, collisions, state_symlinks, backup_conflict)
 
 
+def _symlink_checkout_refusal() -> int | None:
+    """Exit code 2 if this Raven checkout flattened its template symlinks, else None.
+
+    Raven does not support a checkout made without symlink support: every
+    affected path is a regular file whose content is the symlink target text, so
+    reading template content at all would install placeholder strings in place
+    of real files -- including two Codex security hooks, which would then fail
+    open (#177). Every command that reads template content calls this first, and
+    refuses identically for dry runs and live runs.
+    """
+    broken = broken_template_symlinks(REPO_ROOT / "common")
+    if not broken:
+        return None
+    print(
+        "error: this Raven checkout did not preserve symlinks. The paths below are "
+        "regular files containing their symlink target text, not the files Raven "
+        "installs. Nothing was written:",
+        file=sys.stderr,
+    )
+    for relative in broken:
+        print(f"  common/{relative}", file=sys.stderr)
+    print(f"Fix: {SYMLINK_CHECKOUT_FIX}", file=sys.stderr)
+    return 2
+
+
 def _run(
     destination: Path,
     config: RavenConfig,
@@ -324,6 +350,12 @@ def _run(
     if template_name not in list_language_templates():
         print(f"Unknown language template: {template_name}", file=sys.stderr)
         return 2
+
+    # Before the first read of template content: a flattened checkout would
+    # otherwise be copied through as placeholder text (#177).
+    rc = _symlink_checkout_refusal()
+    if rc is not None:
+        return rc
 
     requested_overrides_norm = sorted(
         {n for path in requested_overrides if (n := normalize_override(path))}
@@ -736,6 +768,12 @@ def cmd_accept(args: argparse.Namespace) -> int:
     if template_name is None:
         return 2
     template = REPO_ROOT / template_name
+    # accept copies nothing, but it hashes template content into the manifest
+    # baseline; from a flattened checkout that would record the placeholder
+    # text's hash as the accepted source of truth (#177).
+    rc = _symlink_checkout_refusal()
+    if rc is not None:
+        return rc
     include_readme = getattr(args, "include_readme", False) or config.include_readme
     excludes = set() if include_readme else DEFAULT_EXCLUDES
     config = replace(config, template=config.template or template_name)
@@ -895,6 +933,10 @@ File safety:
   - Changing `template` in .raven/config.toml is refused unless you confirm it
     with --confirm-template-switch, because the new template ships a different
     file set.
+  - The Raven checkout must preserve symlinks. If it does not (git without
+    core.symlinks, or Windows without Developer Mode), install/upgrade/accept
+    refuse outright and `raven doctor` reports it, rather than installing the
+    symlink target text as file content.
 """,
     )
     parser.add_argument(

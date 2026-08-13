@@ -18,7 +18,9 @@ from .constants import (
     CLAUDE_PATH,
     COMPONENT_PATHS,
     DEFAULT_EXCLUDES,
+    KIND_SYMLINK,
     REPO_ROOT,
+    SYMLINK_CHECKOUT_FIX,
     _any_exists,
 )
 from .deactivated import classify_deactivated
@@ -28,6 +30,7 @@ from .git_hooks import detect_hook_manager, hook_manager_guidance
 from .manifest import ManifestStatus, git_ref, validate_manifest
 from .orphans import classify_orphans
 from .runner import Runner, probe_runner
+from .template import broken_template_symlinks
 
 _INTEGRITY = "Install integrity"
 _DRIFT = "Drift & freshness"
@@ -40,11 +43,83 @@ _HOOKS = "Git hooks"
 _NO_VERSION_FLAG = {"gofmt"}
 
 
+def _checkout_symlink_findings() -> list[Finding]:
+    """ERROR if the Raven checkout doctor runs from flattened its template symlinks.
+
+    This is about `REPO_ROOT`, not the destination: a checkout made without
+    symlink support holds placeholder text where `common/`'s hooks and scripts
+    should be, so every install or upgrade from it produces a broken
+    destination. Empty (not an OK finding) for a healthy checkout, which is the
+    overwhelmingly common case and needs no line in the report.
+    """
+    broken = broken_template_symlinks(REPO_ROOT / "common")
+    if not broken:
+        return []
+    return [
+        Finding(
+            id="doctor.checkout.symlinks",
+            severity=Severity.ERROR,
+            category=_INTEGRITY,
+            title=f"Raven checkout flattened {len(broken)} template symlink(s)",
+            detail=(
+                f"under {REPO_ROOT / 'common'}: {', '.join(broken)} -- each is a regular "
+                "file holding its symlink target text, so installing or upgrading from "
+                "this checkout copies placeholder text in place of real content"
+            ),
+            fix=SYMLINK_CHECKOUT_FIX,
+        )
+    ]
+
+
+def _flattened_install_findings(destination: Path, manifest: dict) -> list[Finding]:
+    """ERROR for installed files the manifest records as symlinks but that are now regular files.
+
+    Generalizes `_symlink_finding`'s CLAUDE.md-only check to every symlink-kind
+    manifest entry, so an already-corrupted destination cannot report `0 errors`
+    (#177). A manifest ``kind`` is recorded from what was actually written to the
+    destination, so "manifest says symlink, disk says regular file" is always a
+    change made after the install, never the install's own doing.
+
+    An *absent* path is deliberately not reported here: `drift_findings` already
+    reports it as missing, and the fix differs.
+    """
+    files = manifest.get("files")
+    if not isinstance(files, dict):
+        return []
+    flattened = sorted(
+        relative
+        for relative, record in files.items()
+        if isinstance(record, dict)
+        and record.get("kind") == KIND_SYMLINK
+        and _any_exists(destination / relative)
+        and not (destination / relative).is_symlink()
+    )
+    if not flattened:
+        return []
+    return [
+        Finding(
+            id="doctor.install.flattened",
+            severity=Severity.ERROR,
+            category=_INTEGRITY,
+            title=f"{len(flattened)} installed symlink(s) are now regular files",
+            detail=(
+                f"{', '.join(flattened)} -- the manifest records these as symlinks, so "
+                "their current contents are almost certainly the symlink target text "
+                "rather than the file Raven installed"
+            ),
+            fix="restore them with `raven upgrade <path>` from a checkout that preserves symlinks",
+        )
+    ]
+
+
 def integrity_findings(destination: Path) -> list[Finding]:
     """Check that a Raven install's own bookkeeping (config, template) is coherent."""
+    # Checked before the config gate: a flattened Raven checkout is broken
+    # whether or not the destination has been installed into yet.
+    findings: list[Finding] = _checkout_symlink_findings()
     config = load_config(destination)
     if not config.exists:
-        return [
+        findings.append(
             Finding(
                 id="doctor.install.config",
                 severity=Severity.ERROR,
@@ -53,9 +128,10 @@ def integrity_findings(destination: Path) -> list[Finding]:
                 detail=f"No usable .raven/config.toml under {destination}.",
                 fix="run `raven install <language>` to set up Raven",
             )
-        ]
+        )
+        return findings
 
-    findings: list[Finding] = [
+    findings.append(
         Finding(
             id="doctor.install.config",
             severity=Severity.OK,
@@ -63,7 +139,7 @@ def integrity_findings(destination: Path) -> list[Finding]:
             title="Raven config present",
             detail=f"template = {config.template!r}",
         )
-    ]
+    )
 
     if config.template is not None and gate_spec_for(config.template) is None:
         findings.append(
@@ -78,7 +154,9 @@ def integrity_findings(destination: Path) -> list[Finding]:
         )
         return findings
 
-    findings.append(_manifest_finding(validate_manifest(destination)))
+    manifest_status = validate_manifest(destination)
+    findings.append(_manifest_finding(manifest_status))
+    findings.extend(_flattened_install_findings(destination, manifest_status.manifest))
 
     for name, enabled in config.components.items():
         if not enabled:
