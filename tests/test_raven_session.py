@@ -1028,6 +1028,81 @@ class CheckpointHookTests(unittest.TestCase):
         )
         self.assertEqual(rc, 0)
 
+    def test_completion_unit_ignores_prose_mentioning_script_and_flag(self):
+        # Regression for #185: a command that merely mentions the script name
+        # and --complete in prose (e.g. in a comment or echo string) must not
+        # be treated as a real invocation.
+        mod = load_hook()
+        # This is the exact example from the issue: prose mentioning both tokens
+        # but not actually invoking the script.
+        self.assertIsNone(
+            mod._completion_unit('echo "To use raven-session.py --complete unit-a, ..."')
+        )
+
+    def test_completion_unit_ignores_multi_statement_prose_mention(self):
+        # Regression for #185: in a multi-statement command, the script name
+        # and flag word appearing in later statements (not as a real invocation)
+        # must not trigger a false positive.
+        mod = load_hook()
+        self.assertIsNone(mod._completion_unit('echo hi; echo "raven-session.py --complete"'))
+
+    def test_completion_unit_allows_multi_statement_with_real_invocation(self):
+        # Regression for #185: a multi-statement command where a real
+        # invocation follows an unrelated statement must still be detected.
+        mod = load_hook()
+        # This MUST match because the second statement is a real invocation.
+        result = mod._completion_unit(
+            'echo hi; python .claude/scripts/raven-session.py --complete unit-a'
+        )
+        self.assertEqual(result, "unit-a")
+
+    def test_completion_unit_ignores_heredoc_body_mention(self):
+        # Regression for #185: a heredoc whose body mentions the script name
+        # and flag as literal text must not trigger a false positive.
+        mod = load_hook()
+        heredoc = 'cat <<EOF\nUsage: raven-session.py --complete unit-a\nEOF'
+        self.assertIsNone(mod._completion_unit(heredoc))
+
+    def test_completion_unit_ignores_quoted_heredoc_body_mention(self):
+        # Regression for #185: heredoc with quoted delimiter.
+        mod = load_hook()
+        heredoc = "cat <<'EOF'\nUsage: raven-session.py --complete\nEOF"
+        self.assertIsNone(mod._completion_unit(heredoc))
+
+    def test_completion_unit_allows_env_prefix_invocation(self):
+        # The completion function must recognize invocations prefixed by
+        # environment variable assignments.
+        mod = load_hook()
+        result = mod._completion_unit(
+            'PYTHONPATH=/tmp python .claude/scripts/raven-session.py --complete unit-a'
+        )
+        self.assertEqual(result, "unit-a")
+
+    def test_completion_unit_allows_bare_path_invocation(self):
+        # The completion function must recognize invocations with a bare path
+        # (no interpreter prefix).
+        mod = load_hook()
+        result = mod._completion_unit('.claude/scripts/raven-session.py --complete unit-a')
+        self.assertEqual(result, "unit-a")
+
+    def test_completion_unit_ignores_commented_out_invocation(self):
+        # A line commented out with a leading # must not trigger a false positive.
+        mod = load_hook()
+        self.assertIsNone(
+            mod._completion_unit('# python .claude/scripts/raven-session.py --complete unit-a')
+        )
+
+    def test_completion_unit_ignores_echo_with_script_path_and_flag(self):
+        # Regression for #185: the exact bug case. An echo command that mentions
+        # the script path and --complete flag must not be treated as a real
+        # invocation just because both tokens appear somewhere in the flat list.
+        mod = load_hook()
+        # This is the critical regression case: the script path is mentioned but
+        # only as an argument to echo, not as the actual command being executed.
+        self.assertIsNone(
+            mod._completion_unit('echo .claude/scripts/raven-session.py --complete unit-a')
+        )
+
 
 def load_codex_hook():
     spec = importlib.util.spec_from_file_location("raven_session_checkpoint_codex", CODEX_HOOK_PATH)
