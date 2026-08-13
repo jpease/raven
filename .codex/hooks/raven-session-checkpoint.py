@@ -4,18 +4,73 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
 import sys
 from pathlib import Path
 
+# This file is shared byte-for-byte between the Claude and Codex adapters (the
+# `.codex/hooks/raven-session-checkpoint.py` copy is a template-internal symlink
+# to this one, issue #195). It used to be two near-identical real files that
+# each hardcoded their own adapter's scripts directory in the subprocess.run
+# call below; that let the Claude copy gain a bugfix (the isinstance guard in
+# _load_payload) without the Codex copy ever being touched. Computing the
+# adapter directory from this script's own install path -- the same pattern
+# `raven-tool-check.py` already uses for the identical problem -- makes that
+# drift structurally impossible instead of relying on a reviewer to catch it.
+_ADAPTER_DIRECTORY_NAMES = frozenset({".claude", ".codex"})
+_DEFAULT_ADAPTER_DIRECTORY_NAME = ".claude"
+
+
+def _adapter_directory_from_install_layout() -> Path | None:
+    """The ``.claude``/``.codex`` directory this script was installed under.
+
+    Raven installs this hook at ``<root>/.claude/hooks/`` or
+    ``<root>/.codex/hooks/``, so the adapter directory is the second parent and
+    the project root is its parent. Returns ``None`` when the script runs from
+    a location that does not match that layout.
+
+    The path is made absolute *without* resolving symlinks. Adapter identity is
+    a property of the path this script was invoked through, not of where its
+    bytes physically live -- in the template, ``.codex/hooks/`` entries are
+    symlinks into the ``.claude/hooks/`` copies. Following the link before
+    inspecting `parents` would make the Codex copy answer ``.claude`` too.
+    Installed destinations hold real files, where the two spellings agree.
+    """
+    try:
+        script = Path(os.path.abspath(__file__))
+    except (NameError, OSError):
+        return None
+    parents = script.parents
+    if len(parents) >= 3 and parents[1].name in _ADAPTER_DIRECTORY_NAMES:
+        return parents[1]
+    return None
+
+
+def adapter_directory_name() -> str:
+    """Adapter directory this hook's own ``raven-session.py`` sibling lives under.
+
+    Falls back to ``.claude`` when the install layout gives no answer: no
+    adapter can be inferred at that point, and the Claude tree is both the
+    canonical copy and the more common install, so it is the least-wrong guess
+    for a path this function's only caller is about to invoke.
+    """
+    adapter = _adapter_directory_from_install_layout()
+    return adapter.name if adapter is not None else _DEFAULT_ADAPTER_DIRECTORY_NAME
+
 
 def _load_payload() -> dict | None:  # type: ignore[type-arg]
     try:
-        return json.load(sys.stdin)
+        payload = json.load(sys.stdin)
     except (ValueError, OSError):
         return None
+    # Valid JSON of the wrong shape (a list, a bare string, a number) is still
+    # unusable: returning it would break the `dict` contract below and raise on
+    # `.get`. That is the one parseable input that would traceback instead of
+    # failing open, on every tool call.
+    return payload if isinstance(payload, dict) else None
 
 
 def _extract_command(payload: dict) -> str:  # type: ignore[type-arg]
@@ -233,7 +288,12 @@ def main() -> int:
         return _deny("No active session. Run raven-session.py --init first.", payload)
 
     result = subprocess.run(
-        [sys.executable, ".codex/scripts/raven-session.py", "--validate", unit],
+        [
+            sys.executable,
+            f"{adapter_directory_name()}/scripts/raven-session.py",
+            "--validate",
+            unit,
+        ],
         capture_output=True,
         text=True,
     )

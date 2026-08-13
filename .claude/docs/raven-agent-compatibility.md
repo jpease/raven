@@ -49,14 +49,13 @@ invoke `raven-*` skills.
 
 ## Adapter File Classification
 
-Every file that exists under both `.claude/` and `.codex/` falls into one of four
+Every file that exists under both `.claude/` and `.codex/` falls into one of three
 categories. Check this table before "fixing" an apparent inconsistency between the two
-trees — three of the four categories are deliberate.
+trees — all three are deliberate.
 
 | Category | Meaning | Files |
 |---|---|---|
-| **Byte-identical (unified)** | One real file under `common/.claude/`; the `.codex/` path is a template-internal symlink to it. Nothing to keep in sync. | `scripts/raven-capability-roster.py`, `scripts/raven-session.py`, `scripts/raven-skeleton.py`, `scripts/raven-tool-check.py`, `hooks/raven-post-bash-summarize.py`, `hooks/raven-post-edit-format.py`, `hooks/raven-pre-bash-guard.py`, `hooks/raven-pre-edit-guard.py` |
-| **Path-transformed** | Two real files differing only in an embedded adapter path. Both copies must be edited together. | `hooks/raven-session-checkpoint.py` (invokes its own adapter's `raven-session.py` by relative path) |
+| **Byte-identical (unified)** | One real file under `common/.claude/`; the `.codex/` path is a template-internal symlink to it. Nothing to keep in sync. | `scripts/raven-capability-roster.py`, `scripts/raven-session.py`, `scripts/raven-skeleton.py`, `scripts/raven-tool-check.py`, `hooks/raven-post-bash-summarize.py`, `hooks/raven-post-edit-format.py`, `hooks/raven-pre-bash-guard.py`, `hooks/raven-pre-edit-guard.py`, `hooks/raven-session-checkpoint.py` (computes its own adapter directory at runtime, same pattern as `raven-tool-check.py`, instead of hardcoding one — issue #195) |
 | **Schema-translated** | Same role, different file format required by the harness. Not comparable line-by-line. | `.claude/agents/raven-*.md` ↔ `.codex/agents/raven-*.toml`; `.claude/settings.json` ↔ `.codex/hooks.json`; `.claude/rules/raven-security.md` ↔ `.codex/rules/raven.rules`; `.claude/skills` symlink ↔ Codex reading `.agents/skills` directly |
 | **Intentionally asymmetric** | Exists for one harness only, because the underlying capability does not exist in the other. See Known Asymmetries below. | `.claude/hooks/raven-skeleton-read-guard.py` (Claude-only); `.codex/config.toml` (Codex-only) |
 
