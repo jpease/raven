@@ -1,6 +1,8 @@
 import json
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -547,6 +549,239 @@ class CodexHookLauncherRealFileTests(unittest.TestCase):
         canonical = (REPO_ROOT / "common" / ".codex" / "hooks.json").read_text(encoding="utf-8")
         installed = (REPO_ROOT / ".codex" / "hooks.json").read_text(encoding="utf-8")
         self.assertEqual(installed, canonical)
+
+
+# --- Claude hook interpreter resolution ----------------------------------
+#
+# .claude/settings.json launched every hook with a bare `python`. On a machine
+# that ships only `python3` -- the default on macOS and most Linux
+# distributions -- that name resolves to nothing and every hook silently stops
+# running. The hooks are deliberately fail-open, so there is no signal at all
+# when it happens.
+#
+# The Codex side cannot use this shim: per CANONICAL_CODEX_LAUNCHER above, a
+# Codex hook may run with a cwd outside the project, so nothing repo-relative
+# can be located until the payload has been parsed. The Claude side has
+# $CLAUDE_PROJECT_DIR, which is why a shim works here and not there.
+CLAUDE_RUN_HOOK = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-run-hook.sh"
+
+
+class ClaudeHookLauncherTests(unittest.TestCase):
+    def _commands(self) -> list[str]:
+        config = json.loads(
+            (REPO_ROOT / "common" / ".claude" / "settings.json").read_text(encoding="utf-8")
+        )
+        return list(_iter_command_strings(config))
+
+    def test_the_shim_ships_in_the_template(self):
+        self.assertTrue(CLAUDE_RUN_HOOK.is_file())
+
+    def test_every_hook_command_goes_through_the_shim(self):
+        commands = self._commands()
+
+        self.assertTrue(commands)
+        for command in commands:
+            self.assertIn("raven-run-hook.sh", command, command)
+
+    def test_no_hook_command_invokes_a_bare_interpreter(self):
+        """The defect this guards is a command that starts with `python `."""
+        for command in self._commands():
+            self.assertFalse(command.startswith("python "), command)
+
+    def test_every_referenced_script_exists(self):
+        for command in self._commands():
+            relative = command.rsplit(" ", 1)[-1].strip('"')
+            self.assertTrue((REPO_ROOT / "common" / relative).is_file(), relative)
+
+    def test_shim_resolves_a_relative_script_from_an_unrelated_cwd(self):
+        """A hook's process cwd is not reliably the project."""
+        with tempfile.TemporaryDirectory() as outside:
+            result = subprocess.run(
+                ["sh", str(CLAUDE_RUN_HOOK), ".claude/scripts/raven-skeleton.py"],
+                cwd=outside,
+                capture_output=True,
+                text=True,
+            )
+
+        # raven-skeleton.py with no file argument is a usage error, which is
+        # proof it was found and executed rather than silently skipped.
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("usage", result.stderr.lower())
+
+    def test_shim_fails_open_but_reports_a_missing_interpreter(self):
+        with tempfile.TemporaryDirectory() as empty_bin:
+            shell = shutil.which("sh")
+            self.assertIsNotNone(shell)
+            result = subprocess.run(
+                [str(shell), str(CLAUDE_RUN_HOOK), ".claude/hooks/raven-pre-bash-guard.py"],
+                capture_output=True,
+                text=True,
+                env={"PATH": empty_bin},
+            )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("no Python launcher", result.stderr)
+
+    def test_installed_claude_settings_matches_canonical(self):
+        """Same manual-merge drift risk as the Codex copy above (issue #97)."""
+        canonical = (REPO_ROOT / "common" / ".claude" / "settings.json").read_text(encoding="utf-8")
+        installed = (REPO_ROOT / ".claude" / "settings.json").read_text(encoding="utf-8")
+        self.assertEqual(installed, canonical)
+
+
+# Every hook that reads a JSON payload from stdin. Each is fail-open by
+# design, so anything it cannot evaluate must be waved through *quietly* --
+# a traceback on every tool call is its own kind of breakage.
+PAYLOAD_READING_HOOKS = (
+    "raven-pre-bash-guard.py",
+    "raven-pre-edit-guard.py",
+    "raven-skeleton-read-guard.py",
+    "raven-post-bash-summarize.py",
+    "raven-post-edit-format.py",
+    "raven-session-checkpoint.py",
+)
+
+# Valid JSON that is not an object. `json.load` returns each of these happily,
+# and every hook then calls `.get` on it. Malformed *text* was already handled;
+# well-formed JSON of the wrong shape is the one parseable input that raised
+# instead of failing open.
+NON_OBJECT_PAYLOADS = ('["a", "list"]', '"a bare string"', "42", "null", "true")
+
+
+class HookPayloadFailOpenTests(unittest.TestCase):
+    def _run(self, hook: str, payload: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(REPO_ROOT / "common" / ".claude" / "hooks" / hook)],
+            input=payload,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_every_hook_survives_a_non_object_payload(self):
+        for hook in PAYLOAD_READING_HOOKS:
+            for payload in NON_OBJECT_PAYLOADS:
+                with self.subTest(hook=hook, payload=payload):
+                    result = self._run(hook, payload)
+
+                    self.assertNotIn("Traceback", result.stderr)
+                    self.assertNotEqual(result.returncode, 2, "must not deny on unusable input")
+                    self.assertEqual(result.returncode, 0)
+
+    def test_every_hook_still_survives_malformed_text(self):
+        """The case that was already handled, kept so a fix cannot regress it."""
+        for hook in PAYLOAD_READING_HOOKS:
+            with self.subTest(hook=hook):
+                result = self._run(hook, "{not json at all")
+
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(result.returncode, 0)
+
+
+class CatastrophicRmTargetTests(unittest.TestCase):
+    """The guard has to see the spellings a shell would have expanded.
+
+    Nothing expands them before it runs -- shlex does not glob and no shell is
+    involved -- so `rm -rf /*` and `rm -rf $HOME` arrive as those literal
+    tokens. Comparing operands to "/" and "~" by equality let both straight
+    through.
+    """
+
+    GUARD = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-pre-bash-guard.py"
+
+    def _run(self, command: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(self.GUARD)],
+            input=json.dumps(
+                {
+                    "hook_event_name": "PreToolUse",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": command},
+                }
+            ),
+            capture_output=True,
+            text=True,
+        )
+
+    def test_catastrophic_deletes_are_denied(self):
+        for command in (
+            "rm -rf /",
+            "rm -rf ~",
+            "rm -rf /*",
+            "rm -rf ~/*",
+            "rm -rf $HOME",
+            "rm -fr ${HOME}",
+            "rm -rf $HOME/work",  # raven-hygiene: allow (unexpanded token under test)
+        ):
+            with self.subTest(command=command):
+                result = self._run(command)
+                decision = json.loads(result.stdout)["hookSpecificOutput"]
+
+                self.assertEqual(decision["permissionDecision"], "deny")
+
+    def test_scoped_deletes_are_still_allowed(self):
+        """A guard that fires on routine paths gets switched off, which helps nobody."""
+        for command in (
+            "rm -rf build/",
+            "rm -rf ./dist",
+            "rm -rf /tmp/scratch",
+            "rm -rf $HOMEBREW_PREFIX/var",
+        ):
+            with self.subTest(command=command):
+                result = self._run(command)
+
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stdout.strip(), "")
+
+
+class NoisyCommandMatchingTests(unittest.TestCase):
+    """The RTK nudge matched by plain substring, so an entry fired on any command
+    merely containing its letters -- `aws` inside "draws", `go test` never, but
+    `docker` inside a path. The hint is advisory, which is exactly why a false
+    positive is corrosive: it trains people to ignore hook output.
+    """
+
+    HOOK = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-post-bash-summarize.py"
+
+    def _hint(self, command: str) -> str:
+        result = subprocess.run(
+            [sys.executable, str(self.HOOK)],
+            input=json.dumps(
+                {
+                    "hook_event_name": "PostToolUse",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": command},
+                }
+            ),
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        return result.stdout
+
+    def test_a_word_inside_another_word_is_not_a_tool(self):
+        """Word-boundary matching fixes substring collisions, and only those.
+
+        A command that mentions a tool as a genuine word -- `git commit -m
+        "switch to kubectl"` -- still nudges, and deliberately so: nothing at
+        this level can tell that apart from running it, and the hint is
+        advisory. The bug worth fixing was `aws` matching inside "draws".
+        """
+        for command in (
+            'git commit -m "fix draws bug"',
+            "echo pytestable",
+            "ls ./dockerfiles",
+            "cd swift-testing-notes",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self._hint(command), "")
+
+    def test_real_invocations_are_still_nudged(self):
+        for command in ("pytest -q", "cargo test", "kubectl get pods", "aws s3 ls"):
+            with self.subTest(command=command):
+                self.assertIn("RTK", self._hint(command))
+
+    def test_a_command_already_using_rtk_is_left_alone(self):
+        self.assertEqual(self._hint("rtk pytest -q"), "")
 
 
 if __name__ == "__main__":

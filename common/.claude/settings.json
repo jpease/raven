@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/scripts/raven-capability-roster.py\""
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-run-hook.sh\" .claude/scripts/raven-capability-roster.py"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-pre-bash-guard.py\""
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-run-hook.sh\" .claude/hooks/raven-pre-bash-guard.py"
           }
         ]
       },
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-pre-edit-guard.py\""
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-run-hook.sh\" .claude/hooks/raven-pre-edit-guard.py"
           }
         ]
       },
@@ -34,7 +34,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-session-checkpoint.py\""
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-run-hook.sh\" .claude/hooks/raven-session-checkpoint.py"
           }
         ]
       },
@@ -43,7 +43,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-skeleton-read-guard.py\""
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-run-hook.sh\" .claude/hooks/raven-skeleton-read-guard.py"
           }
         ]
       }
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-post-bash-summarize.py\""
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-run-hook.sh\" .claude/hooks/raven-post-bash-summarize.py"
           }
         ]
       },
@@ -63,7 +63,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-post-edit-format.py\""
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-run-hook.sh\" .claude/hooks/raven-post-edit-format.py"
           }
         ]
       }

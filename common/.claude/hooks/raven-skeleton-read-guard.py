@@ -121,9 +121,14 @@ def _gate_config() -> tuple[bool, int]:
 
 def _load_payload() -> dict | None:
     try:
-        return json.load(sys.stdin)
+        payload = json.load(sys.stdin)
     except (ValueError, OSError):
         return None
+    # Valid JSON of the wrong shape (a list, a bare string, a number) is still
+    # unusable: returning it would break the `dict` contract below and raise on
+    # `.get`. That is the one parseable input that would traceback instead of
+    # failing open, on every tool call.
+    return payload if isinstance(payload, dict) else None
 
 
 def _is_codex_hook(payload: dict) -> bool:

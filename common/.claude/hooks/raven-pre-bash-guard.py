@@ -28,9 +28,14 @@ _LONG_OPTION_LETTERS = {
 
 def _load_payload() -> dict | None:
     try:
-        return json.load(sys.stdin)
+        payload = json.load(sys.stdin)
     except (ValueError, OSError):
         return None
+    # Valid JSON of the wrong shape (a list, a bare string, a number) is still
+    # unusable: returning it would break the `dict` contract below and raise on
+    # `.get`. That is the one parseable input that would traceback instead of
+    # failing open, on every tool call.
+    return payload if isinstance(payload, dict) else None
 
 
 def _extract_command(payload: dict) -> str:
@@ -165,6 +170,24 @@ def _normalize_options(args: list[str]) -> tuple[set[str], list[str]]:
     return flags, positionals
 
 
+# Targets that make a recursive force-delete catastrophic rather than routine.
+# Exact matches; `_is_catastrophic_target` also handles the prefixed forms.
+_CATASTROPHIC_TARGETS = frozenset({"/", "~", "/*", "~/*", "$HOME", "${HOME}", "$HOME/*"})
+
+
+def _is_catastrophic_target(arg: str) -> bool:
+    """Whether an `rm` operand names the filesystem root or the user's home.
+
+    Covers the glob and variable spellings as well as the bare paths. Neither
+    is expanded before this point -- shlex does not glob, and nothing here runs
+    a shell -- so `rm -rf /*` and `rm -rf $HOME` arrive as those literal tokens
+    and would otherwise sail past an equality check against "/" and "~".
+    """
+    if arg in _CATASTROPHIC_TARGETS:
+        return True
+    return arg.startswith(("~/", "$HOME/", "${HOME}/"))
+
+
 def _is_destructive_rm(program: str, flags: set[str], positionals: list[str]) -> bool:
     if program.lower() != "rm":
         return False
@@ -172,7 +195,7 @@ def _is_destructive_rm(program: str, flags: set[str], positionals: list[str]) ->
     force = "f" in flags
     if not (recursive and force):
         return False
-    return any(arg == "/" or arg == "~" or arg.startswith("~/") for arg in positionals)
+    return any(_is_catastrophic_target(arg) for arg in positionals)
 
 
 def _is_destructive_git_clean(program: str, flags: set[str], positionals: list[str]) -> bool:
