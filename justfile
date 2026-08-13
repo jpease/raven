@@ -7,13 +7,30 @@
 #   RAVEN_PYTHON=python just test
 # An override interpreter must have the dev group installed itself, e.g.
 # `python -m pip install --group dev`.
+#
+# PYTHON is passed to `_test` as a positional argument ($1), never
+# interpolated into the recipe body's shell text (#182): `just`'s {{...}}
+# substitution happens before the shell parses the script, so a value
+# containing shell metacharacters (`;`, an embedded `"`, ...) would
+# otherwise become live shell syntax instead of opaque data --
+# `RAVEN_PYTHON='x ; touch INJECTED ; true' just test` used to run the
+# injected command. `set positional-arguments` (below) makes the value
+# available as $1 in `_test`; unquoted `$1` expansion still splits the
+# multi-word default into separate argv words (word-splitting, not
+# shell-metacharacter re-parsing), so both are preserved: an attacker's
+# `;`/`"` land as inert literal argv text, and the legitimate multi-word
+# default still execs correctly.
 PYTHON := env_var_or_default("RAVEN_PYTHON", "uv run --group dev python")
 
+set positional-arguments
+
 # Run the test suite
-test:
+test: (_test PYTHON)
+
+_test python:
     #!/usr/bin/env sh
-    if ! {{PYTHON}} -c 'import pytest' >/dev/null 2>&1; then
-        echo "error: no pytest available via '{{PYTHON}}'." >&2
+    if ! $1 -c 'import pytest' >/dev/null 2>&1; then
+        echo "error: no pytest available via '$1'." >&2
         if command -v uv >/dev/null 2>&1; then
             echo "Bootstrap the default dev environment and rerun: uv sync --group dev && just test" >&2
         else
@@ -27,7 +44,7 @@ test:
         echo "  then: just PYTHON='python' test   (or RAVEN_PYTHON=python just test)" >&2
         exit 1
     fi
-    {{PYTHON}} -m pytest
+    $1 -m pytest
 
 # Run lint checks
 lint:

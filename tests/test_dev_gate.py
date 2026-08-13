@@ -170,5 +170,86 @@ class DefaultLauncherTest(_IsolatedJustfileCase):
         self.assertEqual(result.stdout.strip(), "uv run --group dev python")
 
 
+@unittest.skipUnless(HAVE_JUST, "just not installed")
+class ArgvIndirectionSecurityTest(_IsolatedJustfileCase):
+    """Regression test for #182.
+
+    `{{PYTHON}}` interpolation happens before the shell ever parses the
+    recipe body's text, so a `PYTHON`/`RAVEN_PYTHON` value containing shell
+    metacharacters (`;`, an embedded `"`, ...) used to become live shell
+    syntax instead of inert data. The fix routes the value through `just`'s
+    `set positional-arguments` plus a recipe-dependency parameter (`test:
+    (_test PYTHON)`), so it reaches the shell only as an opaque argv string
+    ($1), never as re-parsed shell text -- while unquoted `$1` expansion
+    still word-splits a legitimate multi-word value (like the default `uv
+    run --group dev python`) into separate argv entries.
+    """
+
+    def test_shell_metacharacters_in_raven_python_are_not_executed(self) -> None:
+        # The issue's own repro: if this value were ever re-parsed as shell
+        # text, `touch INJECTED` would run as a separate command after the
+        # (deliberately empty) `python3 -c ""`.
+        env = dict(os.environ)
+        env["RAVEN_PYTHON"] = 'python3 -c "" ; touch INJECTED ; true'
+        result = subprocess.run(
+            ["just", "test"],
+            cwd=self.workdir,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        combined = result.stdout + result.stderr
+        # The load-bearing assertion: no injected command ever ran.
+        self.assertFalse((self.workdir / "INJECTED").exists(), combined)
+        self.assertNotIn("Traceback", combined)
+        # Note: the exit code itself is deliberately NOT asserted here.
+        # Word-splitting this value gives `python3 -c "" ; touch INJECTED ;
+        # true -c 'import pytest'`: real `python3`'s own `-c` option
+        # consumes the very next token (the literal two-character string
+        # `""`) as its program and exits 0, treating everything after
+        # (including the later literal `-c 'import pytest'`) as inert
+        # `sys.argv` -- never re-invoked as more flags. So this particular
+        # payload happens to make both the probe and the real run exit 0
+        # without ever executing `import pytest` or `-m pytest` for real.
+        # That is a quirk of `python3 -c ""` being a trivially valid no-op,
+        # not a sign that shell metacharacters were reinterpreted -- the
+        # security property under test is `;`/`touch INJECTED` never
+        # running as shell syntax, which the assertion above covers.
+
+    def test_multiword_launcher_value_still_splits_into_argv(self) -> None:
+        # Positive control: the fix must not break the legitimate
+        # multi-word case it exists to preserve. A shim invoked as
+        # "<shim> extra-word" must receive "extra-word" as its own argv
+        # entry ($1 inside the shim), proving word-splitting still works
+        # end-to-end after routing PYTHON through positional-arguments.
+        shim = self.workdir / "fake-python"
+        shim.write_text(
+            "#!/usr/bin/env sh\n"
+            "if [ \"$1\" = 'extra-word' ] && [ \"$2\" = '-c' ]; then\n"
+            "    exit 0\n"
+            "fi\n"
+            "if [ \"$1\" = 'extra-word' ] && [ \"$2\" = '-m' ] && [ \"$3\" = 'pytest' ]; then\n"
+            "    echo FAKE_PYTEST_RAN\n"
+            "    exit 0\n"
+            "fi\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        shim.chmod(shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        env = dict(os.environ)
+        env["RAVEN_PYTHON"] = f"{shim} extra-word"
+        result = subprocess.run(
+            ["just", "test"],
+            cwd=self.workdir,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("FAKE_PYTEST_RAN", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
