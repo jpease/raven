@@ -14,7 +14,9 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import os
 import re
+import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -171,6 +173,52 @@ class UpgradeOrphanTests(RavenTestCase):
         self.assertEqual(rc, 0)
         self.assertTrue(outside.exists(), "live upgrade deleted a file outside the destination")
         self.assertNotIn(str(outside), output)
+
+    @unittest.skipIf(
+        sys.platform.startswith("win"),
+        "read-only directories behave differently on Windows",
+    )
+    @unittest.skipIf(
+        hasattr(os, "geteuid") and os.geteuid() == 0,
+        "running as root bypasses permission checks",
+    )
+    def test_read_only_parent_reports_error_and_retains_manifest_record(self) -> None:
+        # When a file's parent directory is read-only, raven upgrade must report
+        # a clean error and non-zero exit rather than a traceback. The file
+        # remains on disk, its manifest record is retained (so the next run can
+        # retry), and copies/upgrades that succeeded still land and update the
+        # manifest for everything that worked (#183).
+        self._install()
+        dropped = self.destination / "docs" / "dropped.md"
+        self.assertTrue(dropped.exists())
+        self.assertIn("docs/dropped.md", load_manifest(self.destination)["files"])
+
+        # Template stops shipping docs/dropped.md.
+        (self.template_dir / "docs" / "dropped.md").unlink()
+        # Make the parent directory read-only to block orphan removal.
+        locked_dir = dropped.parent
+        locked_dir.chmod(0o555)
+
+        try:
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                rc = raven.cmd_upgrade(_upgrade_ns(self.destination))
+            err_output = err.getvalue()
+
+            # Non-zero exit code signals the error.
+            self.assertEqual(rc, 1)
+            # File still exists because unlink was blocked.
+            self.assertTrue(dropped.exists())
+            # Manifest record is retained because the file was not removed.
+            self.assertIn("docs/dropped.md", load_manifest(self.destination)["files"])
+            # Error is reported to stderr with the path and reason.
+            self.assertIn("error:", err_output)
+            self.assertIn("docs/dropped.md", err_output)
+            # No traceback should appear (just the error message).
+            self.assertNotIn("Traceback", err_output)
+        finally:
+            # Restore permissions so TemporaryDirectory can clean up.
+            locked_dir.chmod(0o755)
 
 
 # ---------------------------------------------------------------------------

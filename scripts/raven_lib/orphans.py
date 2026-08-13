@@ -156,11 +156,20 @@ def classify_orphans(template: Path, destination: Path, manifest: dict) -> Orpha
     return OrphanClassification(will_remove, orphan_modified, already_gone)
 
 
-def remove_orphans(destination: Path, relatives: list[str]) -> list[str]:
+def remove_orphans(
+    destination: Path, relatives: list[str], failed: list[str] | None = None
+) -> list[str]:
     """Delete each managed orphan file/symlink and prune now-empty parents.
 
     Only the exact paths passed in are removed; parent directories are removed
     only when they become empty, and the destination root is never touched.
+
+    A path that raises `OSError` on unlink (e.g. a read-only parent directory)
+    is reported to stderr and skipped rather than propagating the exception
+    (#183): it is omitted from the returned `removed` list, which already
+    means its manifest record is correctly retained for the caller's next run
+    to retry, with no separate "undo" logic needed. If `failed` is given, the
+    path is also appended there so the caller can report a non-zero exit.
     """
     removed: list[str] = []
     for relative in relatives:
@@ -168,7 +177,13 @@ def remove_orphans(destination: Path, relatives: list[str]) -> list[str]:
         if target is None:
             continue
         if target.is_symlink() or target.exists():
-            target.unlink()
+            try:
+                target.unlink()
+            except OSError as exc:
+                print(f"error: could not remove {relative}: {exc}", file=sys.stderr)
+                if failed is not None:
+                    failed.append(relative)
+                continue
         else:
             continue
         removed.append(relative)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -457,6 +458,40 @@ class RemoveOrphansTests(unittest.TestCase):
                 removed = remove_orphans(dest, [key])
                 self.assertEqual(removed, [], f"non-canonical key not rejected: {key!r}")
             self.assertTrue((dest / "a.md").exists())
+
+    @unittest.skipIf(
+        sys.platform.startswith("win"),
+        "read-only directories behave differently on Windows",
+    )
+    @unittest.skipIf(
+        hasattr(os, "geteuid") and os.geteuid() == 0,
+        "running as root bypasses permission checks",
+    )
+    def test_read_only_parent_directory_reports_error_and_preserves_file(self) -> None:
+        # When a file's parent directory is read-only, remove_orphans must catch
+        # the PermissionError, report it to stderr, append to the failed list if
+        # provided, and omit the path from removed so the manifest record is
+        # retained for the next run to retry (#183).
+        with TemporaryDirectory() as tmp:
+            dest = Path(tmp)
+            target = dest / "docs" / "locked" / "orphan.md"
+            _write(target, "content\n")
+            locked_dir = target.parent
+            # Remove write permission from parent directory
+            locked_dir.chmod(0o555)
+
+            try:
+                failed: list[str] = []
+                removed = remove_orphans(dest, ["docs/locked/orphan.md"], failed)
+
+                # File still exists because unlink failed
+                self.assertTrue(target.exists())
+                # Path is in failed list, not removed list
+                self.assertEqual(removed, [])
+                self.assertEqual(failed, ["docs/locked/orphan.md"])
+            finally:
+                # Restore permissions in cleanup so TemporaryDirectory can delete
+                locked_dir.chmod(0o755)
 
 
 class UpdateManifestRemoveTests(unittest.TestCase):

@@ -467,7 +467,11 @@ def apply_plan(
     removed_deactivated)``. Exit code 2 on a CLAUDE.md-backup collision or a
     `ValueError` from `copy_paths` (an unsafe managed-block state) aborts
     before the manifest is touched, so a failed apply never records paths it
-    did not actually write.
+    did not actually write. Exit code 1 on an OSError during orphan/deactivated
+    removal (e.g. a read-only parent directory) reports the failure without
+    aborting: copies and upgrades land, the manifest is updated for everything
+    that succeeded, failed paths are reported to stderr and omitted from removal,
+    so their manifest records are retained for the next run to retry (#183).
     """
     adopted_claude: list[str] = []
     if plan.adopt_claude_symlink:
@@ -495,13 +499,15 @@ def apply_plan(
         print(f"error: {exc}", file=sys.stderr)
         return 2, adopted_claude, [], [], []
 
-    removed_orphans = remove_orphans(destination, orphans.will_remove)
+    failed_orphans: list[str] = []
+    removed_orphans = remove_orphans(destination, orphans.will_remove, failed_orphans)
     # Deactivated-by-config skills reuse remove_orphans as-is: it is a pure
     # delete-and-prune-empty-parents filesystem primitive that does not care
     # *why* a path is being removed, only that the baseline safety gate
     # already cleared it (deactivated.removable, like orphans.will_remove, is
     # only ever populated by classify_deactivated's unmodified_baseline check).
-    removed_deactivated = remove_orphans(destination, deactivated.removable)
+    failed_deactivated: list[str] = []
+    removed_deactivated = remove_orphans(destination, deactivated.removable, failed_deactivated)
 
     managed_paths = (
         plan.copied
@@ -528,7 +534,9 @@ def apply_plan(
         )
 
     merge_artifacts = write_guided_merge_artifacts(destination, entries, plan.guided_merge_paths)
-    return 0, adopted_claude, merge_artifacts, removed_orphans, removed_deactivated
+    # Return exit code 1 if any removals failed, otherwise 0.
+    exit_code = 1 if (failed_orphans or failed_deactivated) else 0
+    return exit_code, adopted_claude, merge_artifacts, removed_orphans, removed_deactivated
 
 
 def normalize_override(path: str) -> str:
