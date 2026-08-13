@@ -1186,14 +1186,18 @@ class CodexCheckpointHookTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertNotIn("deny", output, output)
 
-    def test_claude_hook_source_references_claude_scripts_path(self):
-        source = HOOK_PATH.read_text(encoding="utf-8")
-        self.assertIn(".claude/scripts/raven-session.py", source)
+    def test_claude_hook_resolves_claude_scripts_path(self):
+        # #195: CODEX_HOOK_PATH is now a symlink to HOOK_PATH -- both
+        # adapters share one file, which computes its script path from its
+        # own install location at runtime (adapter_directory_name()) rather
+        # than hardcoding it in source. Loading the module through each
+        # path must still resolve to that adapter's own script path.
+        mod = load_hook()
+        self.assertEqual(mod.adapter_directory_name(), ".claude")
 
-    def test_codex_hook_source_references_codex_scripts_path(self):
-        source = CODEX_HOOK_PATH.read_text(encoding="utf-8")
-        self.assertIn(".codex/scripts/raven-session.py", source)
-        self.assertNotIn(".claude/scripts/raven-session.py", source)
+    def test_codex_hook_resolves_codex_scripts_path(self):
+        mod = load_codex_hook()
+        self.assertEqual(mod.adapter_directory_name(), ".codex")
 
 
 def _find_checkpoint_entry(config: dict) -> dict:

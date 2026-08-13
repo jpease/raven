@@ -800,6 +800,43 @@ class HookPayloadFailOpenTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0)
 
 
+class CodexSessionCheckpointPayloadFailOpenTests(unittest.TestCase):
+    """Same guarantee as HookPayloadFailOpenTests, proved against the Codex-side
+    path too (issue #195). `raven-session-checkpoint.py` used to be a second, real
+    file under `.codex/hooks/` that had fallen behind the Claude copy's
+    `isinstance(payload, dict)` guard and tracebacked on well-formed non-dict JSON.
+    It is now a template-internal symlink to the Claude copy (like its unified
+    siblings), so this is also a regression test against that class of drift: if
+    the symlink or the underlying guard is ever removed, this fails again.
+    """
+
+    def _run(self, payload: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "common" / ".codex" / "hooks" / "raven-session-checkpoint.py"),
+            ],
+            input=payload,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_survives_a_non_object_payload(self):
+        for payload in NON_OBJECT_PAYLOADS:
+            with self.subTest(payload=payload):
+                result = self._run(payload)
+
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertNotEqual(result.returncode, 2, "must not deny on unusable input")
+                self.assertEqual(result.returncode, 0)
+
+    def test_still_survives_malformed_text(self):
+        result = self._run("{not json at all")
+
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(result.returncode, 0)
+
+
 class CatastrophicRmTargetTests(unittest.TestCase):
     """The guard has to see the spellings a shell would have expanded.
 

@@ -108,11 +108,12 @@ class CodexScriptUnificationTests(RavenTestCase):
                 )
 
     def test_byte_identical_codex_hooks_are_unified_too(self):
-        # Same duplication, same fix: these four hook scripts were byte-identical
-        # copies. `raven-session-checkpoint.py` is excluded because it embeds an
-        # adapter-specific path, and `raven-skeleton-read-guard.py` because it is
-        # deliberately Claude-only -- both are recorded in the classification
-        # table in `.claude/docs/raven-agent-compatibility.md`.
+        # Same duplication, same fix: these hook scripts were byte-identical
+        # copies (or, for `raven-session-checkpoint.py`, became byte-identical
+        # once it learned to compute its own adapter directory at runtime
+        # instead of hardcoding one -- issue #195). `raven-skeleton-read-guard.py`
+        # is excluded because it is deliberately Claude-only, recorded in the
+        # classification table in `.claude/docs/raven-agent-compatibility.md`.
         for name in UNIFIED_ADAPTER_HOOKS:
             with self.subTest(hook=name):
                 link = REPO_ROOT / "common" / ".codex" / "hooks" / name
@@ -123,15 +124,12 @@ class CodexScriptUnificationTests(RavenTestCase):
                 )
                 self.assertFalse(should_preserve_symlink(link))
 
-    def test_deliberately_unlinked_codex_hooks_stay_real_files(self):
+    def test_read_guard_has_no_codex_counterpart(self):
         # The classification is only useful if it is enforced in both
-        # directions: unifying either of these would be a behavior change, not a
-        # cleanup. The checkpoint hook shells out to its own adapter's
-        # raven-session.py, and the read guard has no Codex counterpart at all.
-        checkpoint = REPO_ROOT / "common" / ".codex" / "hooks" / "raven-session-checkpoint.py"
-        self.assertTrue(checkpoint.is_file())
-        self.assertFalse(checkpoint.is_symlink())
-
+        # directions: unifying this would be a behavior change, not a cleanup --
+        # the read guard has no Codex counterpart at all (it is deliberately
+        # Claude-only, per `.claude/docs/raven-agent-compatibility.md`'s
+        # "Intentionally asymmetric" row).
         read_guard = REPO_ROOT / "common" / ".codex" / "hooks" / "raven-skeleton-read-guard.py"
         self.assertFalse(
             read_guard.exists() or read_guard.is_symlink(),
