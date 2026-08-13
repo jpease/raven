@@ -37,6 +37,36 @@ def _is_codex_hook(payload: dict) -> bool:
     return "hook_event_name" in payload or "tool_name" in payload
 
 
+# Hoisted to module level (rather than a local inside `main()`) so tests --
+# and the native `permissions.deny` drift check in particular -- can read the
+# real deny/warn tiers instead of restating them. Zero behavior change: same
+# lists, same order, just reachable from outside `main()`.
+BLOCKED = [
+    r"\.pem$",
+    r"\.key$",
+    r"\.p12$",
+    r"\.pfx$",
+    r"\.crt$",
+    r"\.cer$",
+    r"(^|/)\.env$",
+    # Anchored to a path segment: a bare `secrets` substring also blocks
+    # `docs/how-we-handle-secrets.md` and any `test_secrets_helper.py`.
+    r"(^|/)secrets?(\.|/|$)",
+    # Anchored to a path segment, same shape as `secrets` above: a bare
+    # `credentials` substring also blocked `docs/credentials-design.md`,
+    # `tests/test_credentials_helper.py`, and `src/credentialsProvider.ts`
+    # (issue #197).
+    r"(^|/)credentials?(\.|/|$)",
+]
+CAUTION = [
+    r"/migrations/",
+    r"/generated/",
+    r"package-lock\.json$",
+    r"Cargo\.lock$",
+    r"pnpm-lock\.yaml$",
+]
+
+
 def _deny(message: str, payload: dict) -> int:
     if _is_codex_hook(payload):
         print(
@@ -74,35 +104,10 @@ def main() -> int:
     # "docs/credentials-design.md", normpath(".env") == ".env").
     normalized = os.path.normpath(path.replace("\\", "/"))
 
-    blocked = [
-        r"\.pem$",
-        r"\.key$",
-        r"\.p12$",
-        r"\.pfx$",
-        r"\.crt$",
-        r"\.cer$",
-        r"(^|/)\.env$",
-        # Anchored to a path segment: a bare `secrets` substring also blocks
-        # `docs/how-we-handle-secrets.md` and any `test_secrets_helper.py`.
-        r"(^|/)secrets?(\.|/|$)",
-        # Anchored to a path segment, same shape as `secrets` above: a bare
-        # `credentials` substring also blocked `docs/credentials-design.md`,
-        # `tests/test_credentials_helper.py`, and `src/credentialsProvider.ts`
-        # (issue #197).
-        r"(^|/)credentials?(\.|/|$)",
-    ]
-    caution = [
-        r"/migrations/",
-        r"/generated/",
-        r"package-lock\.json$",
-        r"Cargo\.lock$",
-        r"pnpm-lock\.yaml$",
-    ]
-
-    if any(re.search(pattern, normalized, re.IGNORECASE) for pattern in blocked):
+    if any(re.search(pattern, normalized, re.IGNORECASE) for pattern in BLOCKED):
         return _deny(f"Protected file path. Confirm intent before editing: {path}", payload)
 
-    if any(re.search(pattern, normalized, re.IGNORECASE) for pattern in caution):
+    if any(re.search(pattern, normalized, re.IGNORECASE) for pattern in CAUTION):
         print(
             f"High-churn or generated/protected path. Edit only when required: {path}",
             file=sys.stderr,

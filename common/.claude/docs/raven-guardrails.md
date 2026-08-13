@@ -19,6 +19,33 @@ Guardrails are checks and procedures that make agent work more reliable. Prefer 
 - `.claude/hooks/raven-pre-edit-guard.py` blocks edits to protected secret-like files and warns on high-churn paths.
 - `.claude/hooks/raven-post-bash-summarize.py` nudges noisy commands toward RTK when exact raw output is not required.
 - `.claude/hooks/raven-post-edit-format.py` runs cheap formatters when available.
+- `.claude/settings.json`'s `permissions.deny` block adds a native, host-enforced layer over the same blocked-tier surface as the two guard hooks above (issue #199) — see "Two-Layer Enforcement" below.
+
+## Two-Layer Enforcement: Native `permissions.deny` + Guard Hooks
+
+`common/.claude/settings.json` ships a `permissions.deny` block that mirrors the **blocked** tier of `raven-pre-bash-guard.py` and `raven-pre-edit-guard.py` — never the **caution** tier, which is warn-only in the hooks and would misrepresent a deny as a warning. The two layers are additive, not redundant:
+
+| Layer | Enforced by | Precision | Coverage |
+| --- | --- | --- | --- |
+| Native (`permissions.deny`) | Claude Code host, before the tool call is even dispatched | Glob/prefix matching only | Claude only — Codex has no `permissions` equivalent |
+| Hook (`raven-pre-bash-guard.py`, `raven-pre-edit-guard.py`) | A Python process Claude Code and Codex both spawn per tool call | Tokenizes the command: normalizes option clusters, resolves wrappers, follows nested payloads | Both hosts |
+
+**Do not remove or weaken the hooks in favor of the native rules.** Two reasons:
+
+1. **Codex has no `permissions` equivalent.** Its hook coverage (Bash, `apply_patch`, MCP calls) is the *only* enforcement it gets; `permissions.deny` is Claude-only.
+2. **The hooks are more precise than a glob can be.** `raven-pre-bash-guard.py` tokenizes a command, normalizes option clusters (`-rf`, `-fr`, `--recursive --force` all reduce to the same intent), and matches at the program position rather than anywhere in the text. A `Bash(...)` glob rule cannot do any of that.
+
+### What the native layer cannot catch
+
+These are real, current gaps in `permissions.deny` relative to the hooks — not oversights, but properties of glob/prefix matching that a tokenizing hook does not share. Each is exercised by `tests/test_permissions_deny.py::ProgramOptionBearingCoverageTests`, so a change that silently "fixes" one of these by over-broadening a rule will be caught by that test's `expect_covered=False` assertion, which then needs a deliberate update.
+
+- **Arbitrary flag reordering/clustering.** `git clean -fdx` has 6 possible letter orderings for the clustered form alone, plus split (`-f -d -x`) and long-option (`--force -d -x`) spellings. `permissions.deny` ships literal rules only for the 4 spellings this repo's own hook test fixture (`DENIED_BASH_COMMANDS` in `tests/test_agent_hooks.py`) already asserts; anything else — e.g. `git clean -fxd` — is hook-only. The same applies to `rm`'s recursive+force flags: the shipped `rm` rules are exact literal spellings mirroring that same fixture, so an extra/reordered flag the hook still normalizes past (e.g. `rm -v -rf /`) is not natively covered.
+- **Substring-anywhere-in-argument matching.** The SQL "drop database" check (`psql`, `mysql`, `mariadb`, `sqlite3`) has no program-position or subcommand shape at all — the hook lowercases every argument and checks for a `"drop database"` substring anywhere. `permissions.deny` ships the literal upper- and lower-case spellings only (`Bash(psql *DROP DATABASE*)`, `Bash(psql *drop database*)`); mixed case (`Drop Database`) is not covered natively.
+- **Compound commands ARE covered, contrary to older assumptions.** Claude Code's Bash matching engine natively splits on `&&`, `||`, `;`, `|`, `|&`, `&`, and newlines, and requires each resulting subcommand to match independently. A rule like `Bash(rm -rf /)` is not bypassed by `safe-cmd && rm -rf /`. Wrapper-stripping is also built in for a fixed set (`timeout`, `time`, `nice`, `nohup`, `stdbuf`, `command`/`builtin`, `noglob`, flagless `xargs`) — but NOT for `direnv exec`, `devbox run`, `mise exec`, `npx`, `docker exec`, `watch`, `setsid`, `ionice`, `flock`, or `find -exec`/`-delete`. A rule like `Bash(rm *)` does not cover `docker exec ctr rm -rf /`; the hook, which follows nested interpreter payloads explicitly, still does.
+- **Read-only secret protection is new, not a restatement.** The `Read(...)` deny rules (e.g. `Read(*.pem)`, `Read(secrets/**)`) cover a gap the edit guard never had: `raven-pre-edit-guard.py` only fires on `Write`/`Edit`/`MultiEdit`, so nothing previously stopped a plain `Read` of a secret-bearing path. Per Claude Code's documented behavior, a `Read(...)` deny rule also blocks `Edit`/`Write` on the same path, so a parallel `Edit(...)` rule is intentionally not shipped alongside each `Read(...)` rule — see `tests/test_permissions_deny.py::NoCautionOrEditRuleAdditionsSlippedIntoDenyTests`.
+- **Claude Code also has an independent, non-configurable circuit breaker** for `rm -rf /` and `rm -rf ~` (including through `$(...)`/backtick/`<(...)` substitution), active even in `bypassPermissions` mode. This is separate from, and does not substitute for, the explicit `permissions.deny` rules shipped here — the other destructive intents (`git reset --hard`, `git clean -fdx`, `dropdb`, `kubectl delete`) have no such built-in breaker, and an explicit project-level rule is portable documentation of intent regardless of how the breaker's exact scope evolves.
+
+`tests/test_permissions_deny.py` is the enforcement point for keeping `permissions.deny` from drifting out of sync with the hooks: it reads the edit guard's real `BLOCKED`/`CAUTION` module-level lists and the bash guard's own `DENIED_BASH_COMMANDS` test fixture, cross-checks them against the real, parsed `permissions.deny` array, and asserts no caution-tier pattern ever appears there.
 
 ## Required Verification Pattern
 
