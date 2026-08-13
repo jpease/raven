@@ -13,7 +13,13 @@ cd "$repo_root" || exit 0
 # HEAD is resolved up front: the delete-only/no-op check below only cares
 # whether any ref update is real, but the stamp check further down needs it to
 # confirm the pushed ref actually is this worktree's HEAD (see refs_match_head).
-head_sha=$(git rev-parse HEAD 2>/dev/null)
+#
+# On an unborn HEAD (no commits yet), `git rev-parse HEAD` exits non-zero but
+# still echoes the literal unresolved arg "HEAD" to stdout -- its
+# pathspec-passthrough fallback. Checking the exit status, not just whether
+# stdout came back non-empty, is what keeps that string out of head_sha, the
+# same way lib/with-verified-cache.sh does it.
+head_sha=$(git rev-parse HEAD 2>/dev/null) || head_sha=""
 
 # Git feeds the push plan on stdin as "<local-ref> <local-sha> <remote-ref>
 # <remote-sha>" lines; a deletion has an all-zero local-sha. If every line is a

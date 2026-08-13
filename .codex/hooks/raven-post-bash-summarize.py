@@ -4,14 +4,40 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
+
+# Commands noisy enough to be worth compressing. Every entry is matched as a
+# whole word (see _NOISY_COMMAND): plain substring matching flagged any command
+# merely containing an entry's letters, so `aws` fired on
+# `git commit -m "fix draws bug"`. The hint is advisory, which is exactly why a
+# false positive is corrosive -- it teaches people to ignore hook output.
+_NOISY_COMMANDS = (
+    r"cargo\s+test",
+    r"pytest",
+    r"npm\s+test",
+    r"pnpm\s+test",
+    r"go\s+test",
+    r"swift\s+test",
+    r"xcodebuild",
+    r"docker",
+    r"kubectl",
+    r"aws",
+)
+
+_NOISY_COMMAND = re.compile(r"\b(?:" + "|".join(_NOISY_COMMANDS) + r")\b")
 
 
 def _load_payload() -> dict | None:
     try:
-        return json.load(sys.stdin)
+        payload = json.load(sys.stdin)
     except (ValueError, OSError):
         return None
+    # Valid JSON of the wrong shape (a list, a bare string, a number) is still
+    # unusable: returning it would break the `dict` contract below and raise on
+    # `.get`. That is the one parseable input that would traceback instead of
+    # failing open, on every tool call.
+    return payload if isinstance(payload, dict) else None
 
 
 def _extract_command(payload: dict) -> str:
@@ -31,22 +57,7 @@ def main() -> int:
     if not command:
         return 0
 
-    noisy_commands = [
-        "cargo test",
-        "pytest",
-        "npm test",
-        "pnpm test",
-        "go test",
-        "swift test",
-        "xcodebuild",
-        "docker",
-        "kubectl",
-        "aws",
-    ]
-
-    if not command.lstrip().startswith("rtk ") and any(
-        candidate in command for candidate in noisy_commands
-    ):
+    if not command.lstrip().startswith("rtk ") and _NOISY_COMMAND.search(command):
         hint = (
             f"Consider running noisy commands through RTK when exact raw output"
             f" is not required: {command}"

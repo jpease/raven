@@ -146,20 +146,50 @@ def _scan_staged() -> int:
     return _scan(_added_lines(diff.stdout), "staged diff")
 
 
+#: Conventional default-branch names, tried in order when the clone has no
+#: `origin/HEAD` to ask. Raven is a template: it cannot know which name a
+#: consumer picked, and assuming one turns the whole outbound scan into a
+#: silent pass for every repository that picked another.
+FALLBACK_DEFAULT_BRANCHES = ("main", "master", "develop", "trunk")
+
+
+def _default_remote_branch() -> str | None:
+    """Remote-tracking ref a no-upstream scan should compare against, or None.
+
+    Asks git for `origin/HEAD` first, which is what the remote actually says
+    its default branch is, so this needs no configuration and keeps working if
+    that default ever moves. Only when the clone has no `origin/HEAD` -- it is
+    not created by `git clone --single-branch`, among others -- does it guess
+    from `FALLBACK_DEFAULT_BRANCHES`.
+
+    This previously hardcoded a single conventional name. That is correct in
+    Raven's own repository and wrong in any consumer that chose differently,
+    which is the worst shape for a template defect: the tests pass upstream and
+    the scan quietly does nothing downstream.
+    """
+    head = _git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+    if head.returncode == 0 and head.stdout.strip():
+        return head.stdout.strip()
+    for name in FALLBACK_DEFAULT_BRANCHES:
+        ref = f"origin/{name}"
+        if _git(["show-ref", "--verify", "--quiet", f"refs/remotes/{ref}"]).returncode == 0:
+            return ref
+    return None
+
+
 def _outbound_range() -> str | None:
     upstream = _git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"])
     if upstream.returncode == 0 and upstream.stdout.strip():
         return f"{upstream.stdout.strip()}..HEAD"
-    if _git(["show-ref", "--verify", "--quiet", "refs/remotes/origin/main"]).returncode == 0:
-        return "origin/main..HEAD"
-    return None
+    base = _default_remote_branch()
+    return f"{base}..HEAD" if base else None
 
 
 def _scan_outbound() -> int:
     range_spec = _outbound_range()
     if range_spec is None:
-        # No upstream and no origin/main to diff against; nothing to compare, so
-        # skip rather than block a push this hook cannot meaningfully evaluate.
+        # No upstream and no remote default branch to diff against; nothing to
+        # compare, so skip rather than block a push this cannot evaluate.
         return 0
     diff = _git(["diff", "--no-color", "--unified=0", range_spec, "--", "."])
     return _scan(_added_lines(diff.stdout), f"git diff ({range_spec})")
