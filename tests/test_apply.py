@@ -216,9 +216,9 @@ template = "python"
                 )
                 self.assertTrue(installed.is_file())
                 if name not in unified:
-                    # Path-transformed files (raven-session-checkpoint.py) keep
-                    # their own adapter's paths, so only the unified ones can be
-                    # compared byte-for-byte with the canonical copy.
+                    # A non-unified file (e.g. the Claude-only read guard) has
+                    # no canonical cross-adapter copy, so only the unified
+                    # ones can be compared byte-for-byte with it.
                     continue
                 canonical = raven.REPO_ROOT / "common" / ".claude" / subdir / name
                 self.assertEqual(installed.read_bytes(), canonical.read_bytes())
