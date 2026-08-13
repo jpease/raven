@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from unittest import mock
 
 from helpers import RavenTestCase, raven
@@ -57,6 +58,15 @@ def _write_config(destination, text):
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(text, encoding="utf-8")
     return config_path
+
+
+def _accept_ns(destination, *, paths=None, dry_run=False, include_readme=False):
+    return argparse.Namespace(
+        destination=str(destination),
+        paths=paths or [],
+        dry_run=dry_run,
+        include_readme=include_readme,
+    )
 
 
 def _tree(destination):
@@ -566,6 +576,112 @@ class LanguageHandlingTests(RavenTestCase):
         self.assertIn("go", err.getvalue())
         # The configured template is untouched by the conflicting request.
         self.assertEqual((self.destination / ".raven" / "config.toml").read_bytes(), before)
+
+
+# ---------------------------------------------------------------------------
+# #174 — an existing config's `template` value must be re-validated against
+# list_language_templates() on every path that resolves it (upgrade, upgrade
+# --dry-run, accept), not only when a fresh config is created. `template = ""`
+# and `template = "common"`/`"scripts"` (real, non-template subdirectories of
+# the Raven checkout) previously slipped past `_run`'s bare `is_dir()` check,
+# turning `template = ""` in particular into a plan to copy the entire Raven
+# checkout (REPO_ROOT / "" == REPO_ROOT) into the destination.
+# ---------------------------------------------------------------------------
+class InvalidTemplateValueTests(RavenTestCase):
+    _BAD_TEMPLATES: ClassVar[list[str]] = ["", "common", "scripts"]
+
+    def _fresh_destination(self):
+        """An isolated temp destination, independent of `self.destination`.
+
+        Each bad-template case gets its own real install so a `subTest` loop
+        never reuses filesystem state across iterations (unlike re-invoking
+        `setUp()` mid-test, which piles up cleanups on the shared instance).
+        """
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return Path(tmp.name)
+
+    def _install_python(self, destination):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = raven.cmd_install(_install_ns(destination, language="python"))
+        self.assertEqual(rc, 0)
+
+    def _corrupt_template(self, destination, bad_value):
+        """Rewrite only the `template = "..."` line an install just wrote."""
+        config_path = destination / ".raven" / "config.toml"
+        text = config_path.read_text(encoding="utf-8")
+        new_text = text.replace('template = "python"', f'template = "{bad_value}"')
+        self.assertNotEqual(new_text, text, "expected exactly one template line to replace")
+        config_path.write_text(new_text, encoding="utf-8")
+
+    def test_upgrade_dry_run_rejects_invalid_template_and_writes_nothing(self):
+        for bad_value in self._BAD_TEMPLATES:
+            with self.subTest(template=bad_value):
+                destination = self._fresh_destination()
+                self._install_python(destination)
+                self._corrupt_template(destination, bad_value)
+                before = _tree(destination)
+                err = io.StringIO()
+                with (
+                    contextlib.redirect_stderr(err),
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    rc = raven.cmd_upgrade(_upgrade_ns(destination, dry_run=True))
+                self.assertEqual(rc, 2)
+                self.assertEqual(_tree(destination), before)
+
+    def test_upgrade_rejects_invalid_template_and_writes_nothing(self):
+        for bad_value in self._BAD_TEMPLATES:
+            with self.subTest(template=bad_value):
+                destination = self._fresh_destination()
+                self._install_python(destination)
+                self._corrupt_template(destination, bad_value)
+                before = _tree(destination)
+                err = io.StringIO()
+                with (
+                    contextlib.redirect_stderr(err),
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    rc = raven.cmd_upgrade(_upgrade_ns(destination))
+                self.assertEqual(rc, 2)
+                self.assertEqual(_tree(destination), before)
+
+    def test_accept_rejects_invalid_template_and_writes_nothing(self):
+        for bad_value in self._BAD_TEMPLATES:
+            with self.subTest(template=bad_value):
+                destination = self._fresh_destination()
+                self._install_python(destination)
+                self._corrupt_template(destination, bad_value)
+                before = _tree(destination)
+                err = io.StringIO()
+                with (
+                    contextlib.redirect_stderr(err),
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    rc = raven.cmd_accept(_accept_ns(destination))
+                self.assertEqual(rc, 2)
+                self.assertEqual(_tree(destination), before)
+
+    def test_doctor_reports_invalid_template_as_error(self):
+        for bad_value in self._BAD_TEMPLATES:
+            with self.subTest(template=bad_value):
+                destination = self._fresh_destination()
+                self._install_python(destination)
+                self._corrupt_template(destination, bad_value)
+                findings = raven.build_doctor_findings(destination)
+                self.assertTrue(
+                    any(f.severity is Severity.ERROR for f in findings),
+                    f"expected an ERROR finding for template={bad_value!r}",
+                )
+
+    def test_doctor_does_not_error_on_a_valid_template(self):
+        # Control: a real, valid template must not trip the new check.
+        # Deliberately not "dotfiles" -- gate_spec_for("dotfiles") is None even
+        # though "dotfiles" is a real, valid template (a pre-existing doctor.py
+        # gap tracked separately, out of scope for #174).
+        self._install_python(self.destination)
+        findings = raven.build_doctor_findings(self.destination)
+        self.assertFalse(any(f.severity is Severity.ERROR for f in findings))
 
 
 # ---------------------------------------------------------------------------

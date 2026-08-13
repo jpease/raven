@@ -141,15 +141,31 @@ def _load_config_or_report(destination: Path) -> RavenConfig | None:
 
 
 def _config_template_or_report(destination: Path, config: RavenConfig) -> str | None:
-    """Template name from an existing config, or None (after reporting) if absent.
+    """Template name from an existing config, or None (after reporting) if absent or invalid.
 
     A present config that yields no template (a missing ``template`` line or an
     unreadable file) must not silently fall back to the first language template.
+    Nor may a *present* but invalid value (an empty string, or a real,
+    non-template subdirectory of the Raven checkout such as "common" or
+    "scripts") pass through unchecked -- ``REPO_ROOT / ""`` resolves to
+    ``REPO_ROOT`` itself, and every ``NON_TEMPLATE_DIRS`` entry is a real
+    directory, so a bare ``is_dir()`` check downstream would accept either and
+    plan to copy it wholesale (#174). This is the shared chokepoint every
+    existing-config CLI path (`cmd_install`, `cmd_upgrade`, `cmd_accept`) uses
+    to resolve ``template_name``, so validating here covers all three.
     """
     if config.template is None:
         print(
             f"error: {destination / CONFIG_PATH} does not configure a template; "
             "set a valid `template` value or re-run `raven install <language>`.",
+            file=sys.stderr,
+        )
+        return None
+    if config.template not in list_language_templates():
+        print(
+            f"error: {destination / CONFIG_PATH} configures unknown language "
+            f"template {config.template!r}; set a valid `template` value or "
+            "re-run `raven install <language>`.",
             file=sys.stderr,
         )
         return None
@@ -274,7 +290,13 @@ def _run(
     template = REPO_ROOT / template_name
     excludes = set() if include_readme else DEFAULT_EXCLUDES
 
-    if not template.is_dir():
+    # A bare `template.is_dir()` check would accept "" (REPO_ROOT / "" ==
+    # REPO_ROOT) and any real NON_TEMPLATE_DIRS entry ("common", "scripts",
+    # ...), planning to copy the whole Raven checkout (#174). Checking
+    # membership in list_language_templates() instead is the second line of
+    # defence: existing-config callers already validate via
+    # _config_template_or_report, but _run must not rely solely on that.
+    if template_name not in list_language_templates():
         print(f"Unknown language template: {template_name}", file=sys.stderr)
         return 2
 
