@@ -61,6 +61,51 @@ def adapter_directory_name() -> str:
     return adapter.name if adapter is not None else _DEFAULT_ADAPTER_DIRECTORY_NAME
 
 
+def _root_from_install_layout() -> Path | None:
+    """Project root implied by this script's own install path.
+
+    One line on top of ``_adapter_directory_from_install_layout()``: the
+    project root is that adapter directory's parent. Returns ``None`` when
+    the script runs from a location that does not match the install layout,
+    so the caller can fall back to the process cwd.
+    """
+    adapter = _adapter_directory_from_install_layout()
+    return adapter.parent if adapter is not None else None
+
+
+def _root_from_cwd() -> Path | None:
+    """Nearest enclosing project directory at or above the process cwd."""
+    try:
+        cwd = Path.cwd().resolve()
+    except OSError:
+        return None
+    for candidate in (cwd, *cwd.parents):
+        if (candidate / ".git").exists() or (candidate / ".raven").is_dir():
+            return candidate
+    return cwd
+
+
+def project_root() -> Path:
+    """Project root every repo-relative lookup in this hook is anchored to.
+
+    A hook's process working directory is not reliably the project: Codex
+    Desktop can invoke a hook with a cwd outside the worktree, and its
+    launcher (``CANONICAL_CODEX_LAUNCHER`` in tests/test_agent_hooks.py) runs
+    this script through ``runpy`` without ever calling ``os.chdir()``, so
+    ``Path.cwd()`` is the wrong anchor for ``.raven/session.md``,
+    ``.raven/config.toml``, or the validator script path. Prefer this
+    script's own install location, which is inside the project by
+    construction, and fall back to walking up from cwd only when that
+    layout can't be inferred (e.g. a test loading this module from a
+    non-standard location). Same shape as ``raven-tool-check.py``'s
+    ``project_root()``, minus the ``@lru_cache``: that script memoizes
+    because it is called from many places in one long-lived process; this
+    hook computes it once per fresh, single-shot invocation, so caching
+    would save nothing.
+    """
+    return _root_from_install_layout() or _root_from_cwd() or Path(".")
+
+
 def _load_payload() -> dict | None:  # type: ignore[type-arg]
     try:
         payload = json.load(sys.stdin)
@@ -102,7 +147,7 @@ def _deny(message: str, payload: dict) -> int:  # type: ignore[type-arg]
     return 2
 
 
-def _enforcement_enabled() -> bool:
+def _enforcement_enabled(root: Path) -> bool:
     """Whether the [lifecycle].checkpoint_enforcement assignment is active.
 
     Reads only the active boolean assignment of ``checkpoint_enforcement`` inside
@@ -112,8 +157,11 @@ def _enforcement_enabled() -> bool:
 
     Fail-safe: a missing config, an unreadable file, or a non-boolean value keeps
     enforcement enabled (returns True) and emits a diagnostic to stderr.
+
+    ``root`` is the resolved project root (``project_root()``), not the raw
+    process cwd -- see that function's docstring for why.
     """
-    config = Path(".raven/config.toml")
+    config = root / ".raven" / "config.toml"
     if not config.exists():
         return True
     try:
@@ -281,16 +329,35 @@ def main() -> int:
     if not unit:
         return 0
 
-    if not _enforcement_enabled():
+    root = project_root()
+
+    if not _enforcement_enabled(root):
         return 0
 
-    if not Path(".raven/session.md").exists():
+    if not (root / ".raven" / "session.md").exists():
         return _deny("No active session. Run raven-session.py --init first.", payload)
+
+    script_path = root / adapter_directory_name() / "scripts" / "raven-session.py"
+    if not script_path.is_file():
+        print(
+            f"raven-session-checkpoint: cannot find {script_path}; "
+            "skipping checkpoint validation (failing open)",
+            file=sys.stderr,
+        )
+        return 0
 
     result = subprocess.run(
         [
+            # sys.executable here is not a bare interpreter guess: when this
+            # hook runs via raven-run-hook.sh (Claude side), that shim already
+            # probed for a working `python3`/`python`, verified it actually
+            # executes `-c ""` (dodging the Windows WindowsApps alias trap),
+            # and re-exec'd this hook script under it. So sys.executable, at
+            # this point, IS that already-resolved, already-verified
+            # interpreter -- reusing it to invoke the validator is correct,
+            # not a shortcut.
             sys.executable,
-            f"{adapter_directory_name()}/scripts/raven-session.py",
+            str(script_path),
             "--validate",
             unit,
         ],

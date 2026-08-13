@@ -837,6 +837,103 @@ class CodexSessionCheckpointPayloadFailOpenTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
 
 
+# --- Session checkpoint hook: cwd-independent root resolution (issue #196) --
+#
+# Every repo-relative lookup in raven-session-checkpoint.py used to resolve
+# against Path(".raven/...") -- the process cwd -- including the validator
+# script path (only the ".claude" vs ".codex" segment of that path was fixed
+# by #195). A hook's process cwd is not reliably the project root: the Codex
+# launcher (CANONICAL_CODEX_LAUNCHER above) locates the hook *file* through a
+# resolved repo root but never calls os.chdir(), so the actual OS-level cwd
+# when the hook body runs can be anywhere, including outside the repo
+# entirely. These tests drive the hook through a real subprocess invocation
+# with a real stdin payload -- not by calling internals -- against a real
+# temp git repo, with `cwd=` deliberately pointed elsewhere.
+SESSION_CHECKPOINT_HOOK = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-session-checkpoint.py"
+
+
+def _checkpoint_payload(command: str) -> str:
+    return json.dumps({"tool_input": {"command": command}})
+
+
+class SessionCheckpointRootResolutionTests(unittest.TestCase):
+    """The hook must find its own install root regardless of process cwd."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name) / "repo"
+        self.repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+
+        hooks_dir = self.repo / ".claude" / "hooks"
+        hooks_dir.mkdir(parents=True)
+        shutil.copy(SESSION_CHECKPOINT_HOOK, hooks_dir / "raven-session-checkpoint.py")
+
+        scripts_dir = self.repo / ".claude" / "scripts"
+        scripts_dir.mkdir(parents=True)
+        # A stub validator: these tests are about root resolution, not
+        # raven-session.py's own --validate business logic, so a script that
+        # simply succeeds is sufficient to prove the hook located and ran it.
+        (scripts_dir / "raven-session.py").write_text(
+            "#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n", encoding="utf-8"
+        )
+
+        raven_dir = self.repo / ".raven"
+        raven_dir.mkdir()
+        (raven_dir / "session.md").write_text("# active session\n", encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run_hook(self, cwd: Path) -> subprocess.CompletedProcess:
+        payload = _checkpoint_payload("python .claude/scripts/raven-session.py --complete unit-a")
+        return subprocess.run(
+            [sys.executable, str(self.repo / ".claude" / "hooks" / "raven-session-checkpoint.py")],
+            input=payload,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+        )
+
+    def test_finds_the_hook_from_a_subdirectory_of_the_repo(self):
+        subdir = self.repo / "src" / "nested"
+        subdir.mkdir(parents=True)
+
+        result = self._run_hook(cwd=subdir)
+
+        self.assertEqual(result.returncode, 0, f"stdout={result.stdout!r} stderr={result.stderr!r}")
+
+    def test_finds_the_hook_from_a_cwd_outside_the_repo(self):
+        with tempfile.TemporaryDirectory() as outside:
+            result = self._run_hook(cwd=Path(outside))
+
+        self.assertEqual(result.returncode, 0, f"stdout={result.stdout!r} stderr={result.stderr!r}")
+
+    def test_missing_validator_script_fails_open_with_a_diagnostic(self):
+        (self.repo / ".claude" / "scripts" / "raven-session.py").unlink()
+
+        result = self._run_hook(cwd=self.repo)
+
+        self.assertEqual(result.returncode, 0, f"stdout={result.stdout!r} stderr={result.stderr!r}")
+        self.assertIn("cannot find", result.stderr)
+        self.assertIn("raven-session.py", result.stderr)
+        self.assertIn("skipping checkpoint validation", result.stderr)
+        self.assertIn("failing open", result.stderr)
+
+    def test_validation_failure_still_denies(self):
+        """No change to deny behavior when validation genuinely fails."""
+        (self.repo / ".claude" / "scripts" / "raven-session.py").write_text(
+            "#!/usr/bin/env python3\nimport sys\n"
+            'print("unit not ready", file=sys.stderr)\nsys.exit(1)\n',
+            encoding="utf-8",
+        )
+
+        result = self._run_hook(cwd=self.repo)
+
+        self.assertEqual(result.returncode, 2, f"stdout={result.stdout!r} stderr={result.stderr!r}")
+        self.assertIn("unit not ready", result.stderr)
+
+
 class CatastrophicRmTargetTests(unittest.TestCase):
     """The guard has to see the spellings a shell would have expanded.
 

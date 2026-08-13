@@ -881,8 +881,19 @@ class SessionInputRoundTripPropertyTests(unittest.TestCase):
                     self.assertEqual(data["units"][0]["issue"], issue)
 
 
-def load_hook():
-    spec = importlib.util.spec_from_file_location("raven_session_checkpoint", HOOK_PATH)
+def load_hook(path: Path = HOOK_PATH):
+    """Load the checkpoint hook module from ``path`` (defaults to the real repo copy).
+
+    ``path`` matters as of #196: the hook resolves its project root from its
+    own ``__file__`` (``project_root()`` -> ``_root_from_install_layout()``),
+    not from the process cwd. A test that `os.chdir()`s into an unrelated tmp
+    fixture and expects the hook to treat that fixture as the project root
+    must load the module from a copy placed inside that fixture tree at the
+    correct relative position (``<fixture>/.claude/hooks/...``), not from
+    this real repo path -- otherwise ``__file__``-based resolution always
+    points back here regardless of the chdir.
+    """
+    spec = importlib.util.spec_from_file_location("raven_session_checkpoint", path)
     assert spec is not None
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -909,12 +920,20 @@ class CheckpointHookTests(unittest.TestCase):
         scripts_dir = self.root / ".claude" / "scripts"
         scripts_dir.mkdir(parents=True)
         shutil.copy(SCRIPT_PATH, scripts_dir / "raven-session.py")
+        # As of #196, the hook resolves its project root from its own
+        # __file__, not the process cwd -- so it must be loaded from a copy
+        # placed inside this fixture tree (see load_hook's docstring), not
+        # from the real repo's HOOK_PATH.
+        hooks_dir = self.root / ".claude" / "hooks"
+        hooks_dir.mkdir(parents=True)
+        self.hook_path = hooks_dir / "raven-session-checkpoint.py"
+        shutil.copy(HOOK_PATH, self.hook_path)
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def _run_hook(self, payload_str: str) -> int:
-        mod = load_hook()
+        mod = load_hook(self.hook_path)
         import os
 
         orig = os.getcwd()
@@ -1104,8 +1123,13 @@ class CheckpointHookTests(unittest.TestCase):
         )
 
 
-def load_codex_hook():
-    spec = importlib.util.spec_from_file_location("raven_session_checkpoint_codex", CODEX_HOOK_PATH)
+def load_codex_hook(path: Path = CODEX_HOOK_PATH):
+    """Load the Codex-side checkpoint hook module from ``path``.
+
+    See ``load_hook``'s docstring: ``path`` matters as of #196 for any test
+    that loads the module while `os.chdir()`d into an unrelated tmp fixture.
+    """
+    spec = importlib.util.spec_from_file_location("raven_session_checkpoint_codex", path)
     assert spec is not None
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -1144,6 +1168,15 @@ class CodexCheckpointHookTests(unittest.TestCase):
         scripts_dir = self.root / ".codex" / "scripts"
         scripts_dir.mkdir(parents=True)
         shutil.copy(CODEX_SCRIPT_PATH, scripts_dir / "raven-session.py")
+        # As of #196, the hook resolves its project root from its own
+        # __file__, not the process cwd -- so it must be loaded from a copy
+        # placed under this fixture's .codex/hooks/ (matching the Codex-only,
+        # no-.claude-tree layout this class simulates), not from the real
+        # repo's CODEX_HOOK_PATH.
+        hooks_dir = self.root / ".codex" / "hooks"
+        hooks_dir.mkdir(parents=True)
+        self.hook_path = hooks_dir / "raven-session-checkpoint.py"
+        shutil.copy(CODEX_HOOK_PATH, self.hook_path)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -1153,7 +1186,7 @@ class CodexCheckpointHookTests(unittest.TestCase):
         # is signaled via a "permissionDecision": "deny" JSON payload on
         # stdout rather than a nonzero return code. So callers must inspect
         # stdout, not just the return code, to tell allow from deny.
-        mod = load_codex_hook()
+        mod = load_codex_hook(self.hook_path)
         import os
 
         orig = os.getcwd()
@@ -1250,7 +1283,7 @@ class EnforcementEnabledTests(unittest.TestCase):
         orig = os.getcwd()
         os.chdir(self.root)
         try:
-            return mod._enforcement_enabled()
+            return mod._enforcement_enabled(self.root)
         finally:
             os.chdir(orig)
 
