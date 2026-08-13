@@ -209,6 +209,25 @@ class ClassifyDeactivatedTests(unittest.TestCase):
                 result = classify_deactivated(template, dest, manifest, _config(platform=platform))
                 self.assertEqual(result, DeactivatedClassification([], [], []))
 
+    def test_gated_skill_not_shipped_by_template_is_never_classified(self) -> None:
+        # #176: `_install_skill` always writes into both `template` and
+        # `dest`, so every other test in this class has the candidate
+        # trivially satisfy `key in shipped`. This test breaks that shape on
+        # purpose -- the file is tracked (manifest record) and gated
+        # (platform=gitlab), but the template no longer ships it at all, so
+        # it must fall through to classify_orphans instead (the #97
+        # boundary), never into classify_deactivated's candidate set.
+        template, dest = self._setup()
+        rel = ".agents/skills/raven-github-issues/SKILL.md"
+        _write(dest / rel, "skill content\n")  # deliberately not written into template
+        sha = file_sha256(dest / rel)
+        manifest = {
+            "schema": 1,
+            "files": {rel: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        result = classify_deactivated(template, dest, manifest, _config(platform="gitlab"))
+        self.assertEqual(result, DeactivatedClassification([], [], []))
+
     def test_malformed_manifest_files_returns_empty(self) -> None:
         template, dest = self._setup()
         manifest = {"schema": 1, "files": "not-a-dict"}
