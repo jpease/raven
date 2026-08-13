@@ -107,6 +107,82 @@ class AiAttributionContentHookTests(unittest.TestCase):
         rc, _ = self._run("outbound")
         self.assertEqual(rc, 0)
 
+    def _head_sha(self) -> str:
+        return subprocess.run(
+            ["git", "-C", str(self.repo), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+    def _set_remote_ref(self, ref: str, sha: str) -> None:
+        subprocess.run(
+            ["git", "-C", str(self.repo), "update-ref", f"refs/remotes/{ref}", sha], check=True
+        )
+
+    def test_outbound_uses_the_remote_default_branch_when_it_is_not_main(self):
+        """Raven ships to repositories whose default branch is not `main`.
+
+        Assuming `main` makes the base ref unresolvable there, which skipped
+        the scan entirely -- a silent pass, and invisible in Raven's own
+        repository because Raven does default to `main`.
+        """
+        self._commit("README.md", "# repo\n")
+        base = self._head_sha()
+        self._set_remote_ref("origin/develop", base)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.repo),
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/develop",
+            ],
+            check=True,
+        )
+        self._commit("notes.py", attribution_line("Claude") + "print('hi')\n")
+
+        rc, err = self._run("outbound")
+
+        self.assertEqual(rc, 1)
+        self.assertIn("origin/develop..HEAD", err)
+
+    def test_outbound_prefers_origin_head_over_a_conventional_name(self):
+        """`origin/HEAD` is what the remote actually says; a name list is a guess."""
+        self._commit("README.md", "# repo\n")
+        base = self._head_sha()
+        self._set_remote_ref("origin/main", base)
+        self._set_remote_ref("origin/develop", base)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.repo),
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/develop",
+            ],
+            check=True,
+        )
+        self._commit("notes.py", attribution_line("Claude") + "print('hi')\n")
+
+        rc, err = self._run("outbound")
+
+        self.assertEqual(rc, 1)
+        self.assertIn("origin/develop..HEAD", err)
+
+    def test_outbound_falls_back_to_a_conventional_name_without_origin_head(self):
+        """A clone made with --single-branch has no origin/HEAD to ask."""
+        self._commit("README.md", "# repo\n")
+        self._set_remote_ref("origin/master", self._head_sha())
+        self._commit("notes.py", attribution_line("Claude") + "print('hi')\n")
+
+        rc, err = self._run("outbound")
+
+        self.assertEqual(rc, 1)
+        self.assertIn("origin/master..HEAD", err)
+
     def test_respects_block_ai_attribution_content_false_in_config(self):
         self._commit("README.md", "# repo\n")
         self._stage("notes.py", attribution_line("Claude") + "print('hi')\n")
