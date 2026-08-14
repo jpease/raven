@@ -374,19 +374,20 @@ paths = [".claude/skills/raven-plan/**"]
                 self.assertEqual(lsp["command"], "mcp-language-server")
                 self.assertEqual(lsp["args"], args)
 
-    def test_readme_lsp_table_matches_the_shipped_defaults(self):
-        # The README table was the one place naming these servers that nothing
+    def test_tooling_doc_lsp_table_matches_the_shipped_defaults(self):
+        # This table was the one place naming these servers that nothing
         # checked, so it could describe a server no template installs.
-        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        doc_path = REPO_ROOT / "docs" / "tooling.md"
+        doc = doc_path.read_text(encoding="utf-8")
         for language in LSP_DEFAULTS:
             with self.subTest(language=language):
-                row = re.search(rf"^\|\s*{language}\s*\|([^|]*)\|", readme, re.M | re.I)
-                self.assertIsNotNone(row, f"README has no LSP table row for {language}")
+                row = re.search(rf"^\|\s*{language}\s*\|([^|]*)\|", doc, re.M | re.I)
+                self.assertIsNotNone(row, f"docs/tooling.md has no LSP table row for {language}")
                 assert row is not None
                 self.assertIn(
                     lsp_doc_command(language),
                     row.group(1),
-                    f"README's {language} row disagrees with the shipped .mcp.json",
+                    f"docs/tooling.md's {language} row disagrees with the shipped .mcp.json",
                 )
 
     def test_lsp_reference_doc_names_the_shipped_server_for_every_template(self):

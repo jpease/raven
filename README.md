@@ -10,9 +10,20 @@ Raven is a library to encourage AI coding agents towards effective and efficient
 
 **Note:** This is a rapidly developing space, so "best practices" is a moving target.
 
+## Why Raven
+
+- **Token discipline**: Prefer targeted retrieval, summaries, and deterministic tools over broad file reads.
+- **Reusable agent setup**: Share AGENTS guidance, skills, subagents, hooks, rules, docs, and MCP examples across repos.
+- **Agent adapters**: Keep `AGENTS.md` and `.agents/skills` canonical while installing thin Claude Code and Codex compatibility layers.
+- **Language-aware templates**: Start with common behavior, then layer language-specific rules.
+- **Safe updates**: Track installed files with `.raven/manifest.json` and only auto-upgrade unchanged Raven-managed files.
+- **Local control**: Configure each destination repo with a self-documented `.raven/config.toml`.
+- **Low collision surface**: Raven-owned files use the `raven-*` namespace so project-owned guidance can use natural names.
+
 ## Quick Start
 
-From the repository where you want Raven installed:
+Clone this repository somewhere and note where you put it. Then, from the
+repository you want Raven installed into:
 
 ```sh
 RAVEN_PATH=/path/to/raven
@@ -23,266 +34,70 @@ raven install python --dry-run
 raven install python
 ```
 
-Replace `python` with `typescript`, `go`, `rust`, `swift`, `elixir`, `lua`, `ruby`, or `dotfiles`.
+Replace `python` with `typescript`, `go`, `rust`, `swift`, `elixir`, `lua`,
+`ruby`, or `dotfiles`. Rather not touch `PATH`? Use
+`"$RAVEN_PATH/scripts/raven"` in place of `raven`.
 
-If you prefer not to edit `PATH`, use `"$RAVEN_PATH/scripts/raven"` in place of `raven`.
+To change anything before installing — say, the Claude Code adapter but not
+the Codex one — run `raven init <language>` first to write
+`.raven/config.toml`, then edit it. Omit the language and Raven prompts for it.
+
+**Your checkout has to preserve symlinks.** Raven's templates share files
+through symlinks, and a checkout that cannot create them stores each one as a
+regular file holding the target path — including two Codex security hooks,
+which would then do nothing. `install`, `upgrade`, and `accept` refuse that
+shape outright, and `raven doctor` reports it as an error. Fix it with
+`git config --global core.symlinks true` and a fresh clone; a flattened
+checkout cannot be repaired in place. On Windows, first enable Developer Mode
+or run git from an elevated shell so it is allowed to create symlinks.
 
 ## What Raven Installs
 
-Raven installs reusable agent guidance and the state needed to upgrade it safely:
+Reusable agent guidance, plus the state needed to upgrade it safely:
 
 - `.raven/config.toml`: human-edited configuration with inline documentation.
 - `.raven/manifest.json`: machine-written install state used for safe upgrades.
 - `AGENTS.md`: canonical agent instructions, or a guided merge artifact if the file already exists.
 - `.agents/skills/`: canonical reusable skills.
-- `.claude/settings.json`: managed like any other template file, upgraded in place. `.claude/settings.local.json` is documented as your own local-overrides layer -- Raven never manages it, and gitignores it the first time it installs or adopts `settings.json`.
-- `.gitattributes`: append-only, not whole-file managed. Raven merges in the `eol=lf` lines its shipped hooks/scripts need (so a Windows checkout of a `#!`-invoked file never gets CRLF-corrupted) into your existing `.gitattributes` if you have one, adding only the lines that are missing and never touching, reordering, or removing anything else already there. This runs on every install/upgrade, not just the first, so a line added by a later Raven release still reaches an already-installed repository.
+- `.claude/settings.json`: managed like any other template file, upgraded in place. `.claude/settings.local.json` is your own local-overrides layer — Raven never manages it.
+- `.gitattributes`: append-only. Raven adds the `eol=lf` lines its shipped hooks and scripts need and leaves everything else alone.
 - Claude Code and Codex adapter files when enabled in `.raven/config.toml`.
-- Optional starter tool configuration files when the selected language template includes them and the destination path does not already exist.
+- Starter tool configuration files when the language template ships them and the destination path does not already exist.
 
-`.gitattributes` only affects *future* checkouts -- git applies `eol=lf` at checkout time, so a working tree already checked out before Raven added these lines keeps whatever line endings it already has. If you are on Windows (or otherwise need the shipped hooks/scripts renormalized in an existing clone), re-normalize once after upgrading: `git rm --cached -r . && git reset --hard` (or your platform's equivalent). Raven does not run this for you.
+## Commands
 
-## Install Into a Repository
+| Command | Does |
+| --- | --- |
+| [`raven init <language>`](docs/commands.md#raven-init-language) | Write `.raven/config.toml` so you can configure before installing. |
+| [`raven install <language>`](docs/commands.md#raven-install-language) | Copy the template in and record what it wrote. |
+| [`raven upgrade`](docs/commands.md#raven-upgrade) | Re-apply the template over an existing install. |
+| [`raven accept`](docs/commands.md#raven-accept) | Record a merge you finished by hand. |
+| [`raven doctor`](docs/commands.md#raven-doctor) | Read-only health check of the Raven install. |
+| [`raven assess`](docs/commands.md#raven-assess) | Grade the project against its template's quality gates. |
 
-### 1. Get Raven
+Every command takes `--dry-run`. Full reference: [docs/commands.md](docs/commands.md).
 
-Clone, download, or otherwise get a copy of this repo on your local machine and take note of where you put it.
+## When a File Already Exists
 
-```sh
-RAVEN_PATH=/path/to/raven
-```
+Raven does not overwrite files you own. On upgrade it only replaces a managed
+file whose content still matches the hash recorded at install time; anything
+you edited is reported and left in place, with review artifacts written under
+`.raven/merge/` for you to merge by hand. `raven accept` then records the
+result so later upgrades stop asking.
 
-Your checkout must preserve symlinks. Raven's templates share files through symlinks, and a checkout that cannot create them stores each one as a regular file containing the target path instead — including two Codex security hooks, which would then do nothing. Raven does not support that shape: `install`, `upgrade`, and `accept` refuse outright, and `raven doctor` reports it as an error. If you hit it, run `git config --global core.symlinks true` and clone again; an existing flattened checkout cannot be repaired in place. On Windows, first enable Developer Mode or run git from an elevated shell so it is permitted to create symbolic links.
+A few files — `CLAUDE.md`, `.claude/settings.json` — Raven can take over
+outright instead, and asks for consent rather than writing a merge artifact.
 
-For the cleanest command, add Raven's scripts directory to your PATH:
+See [docs/upgrading.md](docs/upgrading.md) for the full rules, including
+removal of dropped files, template switching, and line-ending handling.
 
-```sh
-export PATH="$RAVEN_PATH/scripts:$PATH"
-```
+## Optional Tooling
 
-After that, you can run `raven` commands from any destination repository root. If you do not add it to PATH, use `"$RAVEN_PATH/scripts/raven"` in place of `raven` in the commands below.
-
-### 2. Navigate to the destination repository
-
-```sh
-cd /path/to/destination-repo
-```
-
-### 3. Initialize Raven (optional)
-
-```sh
-raven init <language>
-```
-
-Raven currently has support for Python, TypeScript, Go, Rust, Swift, Elixir, Lua, Ruby, and dotfiles. So for example, if you're using Raven in a Rust project you'd use:
-
-```sh
-raven init rust
-```
-
-This will generate `.raven/config.toml`. This is optional because running
-`install` will also generate the file if it doesn't exist. But if you wish to
-configure anything before installation, for example if you wish to
-install support for Claude or Codex, instead of both (the default), this is the
-way to do it.
-
-See `.raven/config.toml` for inline documentation of the available options.
-For example, Raven installs starter formatter/linter config files by default
-when the selected language template includes them, but only when the destination
-path does not already exist. To opt out before installation, set:
-
-```toml
-[components]
-tool_configs = false
-```
-
-**Tip:** If you omit the language, Raven will prompt you interactively.
-
-### 4. Preview the install
-
-```sh
-raven install <language> --dry-run
-```
-
-**Tip:** If you already configured a language via `raven init`, you can omit the language here.
-
-### 5. Install Raven
-
-```sh
-raven install <language>
-```
-
-Use `--dry-run` to see the full list of files before writing them.
-
-## Upgrade an Existing Installation
-
-### 1. Get a new version of Raven
-
-Pull, download, or otherwise get the latest copy of this repo on your local machine and take note of where you put it.
-
-### 2. Preview the upgrade
-
-```sh
-raven upgrade --dry-run
-```
-
-### 3. Upgrade Raven
-
-```sh
-raven upgrade
-```
-
-### Upgrade behavior
-
-Dry runs separate files into clear categories:
-
-- New Raven files to be copied
-- Unmodified Raven files that will safely be upgraded
-- Raven files that are already up to date
-- Locally modified Raven files requiring a manual merge
-- File name conflicts requiring a manual merge
-- Excluded template/configured files
-
-Raven overwrites only explicit override paths and managed files whose current content still matches the last installed manifest hash. Existing project-owned content is preserved by default.
-
-Upgrade also removes Raven-managed files the template no longer ships, but only when a file still matches its recorded baseline exactly; anything you edited is reported and left in place, and starter tool configs such as `pyproject.toml` are never removed. Changing `platform` in `.raven/config.toml` and running upgrade also removes previously-installed platform-gated skills that are no longer selected, under the same unmodified-baseline condition; modified ones are reported and kept. Because switching `template` in `.raven/config.toml` changes the whole shipped file set, Raven refuses that upgrade until you confirm it with `raven upgrade --confirm-template-switch`.
-
-## Merge Behavior for AGENTS.md and CLAUDE.md
-
-When `AGENTS.md` or `CLAUDE.md` already exists, Raven does not replace it. On install, it writes guided merge artifacts under `.raven/merge/`:
-
-- `AGENTS.md.raven` or `CLAUDE.md.raven`: the Raven-suggested content or symlink guidance.
-- `*.instructions.md`: a short merge note for the project owner.
-- `*.patch`: an append-only patch when Raven can represent the suggestion safely as text.
-
-Raven treats `AGENTS.md` as canonical and normally installs `CLAUDE.md` as a symlink to `AGENTS.md`.
-
-- If a destination repo already has a `CLAUDE.md` file, Raven leaves it alone by default.
-- To explicitly adopt the Raven compatibility symlink, answer Y when prompted or run with `--adopt-claude-symlink`.
-- When adoption is enabled, Raven moves the existing file to `CLAUDE.md.bak`.
-- If that backup already exists, Raven fails instead of overwriting it.
-
-The generated `AGENTS.md` patch wraps Raven guidance in a marked block with a content hash. If that block is applied and left unchanged, later `upgrade` runs can limit updates to the Raven block, preserving project-owned content elsewhere in `AGENTS.md`. If the Raven block is edited, a Raven upgrade will report it as requiring manual merge.
-
-## Ownership of `.claude/settings.json`
-
-Raven owns `.claude/settings.json` as managed content -- it upgrades in place like any other template file, with no guided-merge artifact. `.claude/settings.local.json` is Claude Code's own local-overrides layer: put your personal preferences there instead. Raven never manages `settings.local.json`, and gitignores it for you the first time it installs or adopts `settings.json`.
-
-- On a clean install, Raven writes `.claude/settings.json` straight away; later `raven upgrade` runs update it in place.
-- If a destination repo already has a hand-written `.claude/settings.json` that Raven does not yet track, Raven leaves it alone by default and reports that it needs adoption consent -- no `.raven/merge/` artifact is written for it, since Raven can take the file over outright rather than hand-merging it.
-- To explicitly adopt it, answer Y when prompted or run with `--adopt-settings-json`.
-- When adoption is enabled, Raven moves the existing file to `.claude/settings.json.bak` before installing Raven's version.
-- If that backup already exists, Raven fails instead of overwriting it.
-- Once adopted (or freshly installed), `.claude/settings.json` is tracked in the manifest and upgrades like any other Raven-managed file from then on.
-
-`.mcp.json` remains outside this ownership model and continues to go through the guided-merge path described above.
-
-## Finish a Manual Merge with `raven accept`
-
-For any conflicting file — a locally modified Raven-managed file, or an existing file Raven does not yet track — Raven leaves your file untouched and writes review artifacts under `.raven/merge/`:
-
-- `<file>.raven`: the current template version.
-- `<file>.diff`: a review-only diff from your file to the template (for non-instruction files).
-- `<file>.instructions.md`: how to merge.
-
-After you merge the template's changes by hand, record the result so future upgrades stop re-prompting:
-
-```sh
-raven accept            # accept every pending merge under .raven/merge/
-raven accept .mcp.json  # or accept specific paths
-```
-
-`accept` records your merged file as the new baseline — its current content plus the current template version — and removes the merge artifacts. A later `raven upgrade` then reports the file as up to date until Raven's template changes again, at which point it is surfaced for merge once more rather than silently overwriting your customizations. Preview with `raven accept --dry-run`.
-
-## Restore a Raven-Managed File
-
-By default, Raven will not overwrite a file you have edited locally — even if it is Raven-managed. To force a specific file back to the template version, pass its template-relative path as an argument:
-
-```sh
-raven upgrade .claude/scripts/raven-tool-check.py
-```
-
-This force-copies only the named file and leaves everything else untouched. Use `install` instead of `upgrade` when `.raven/config.toml` does not yet exist:
-
-```sh
-raven install python .claude/scripts/raven-tool-check.py
-```
-
-You can name multiple paths in a single command. The path must match the template layout exactly — run `raven upgrade --dry-run` first to see the canonical names if you are unsure.
-
-## Diagnose with `raven doctor`
-
-`raven doctor` performs a read-only health check of Raven's own installation in the current repository — config, manifest, enabled components, the AGENTS.md root instruction file, and the local toolchain. It exits non-zero only when the Raven install itself is broken (not for missing optional tools).
-
-```sh
-raven doctor          # human-readable report
-raven doctor --json   # machine-readable JSON
-```
-
-Exit code `1` means at least one `error` finding; exit `0` means only warnings or OK findings.
-
-## Assess with `raven assess`
-
-`raven assess` grades the project against its active template's quality-gate expectations — justfile recipe wiring, tool-config signals, pre-commit hook, and template fit. By default it performs only static checks (no processes are run). Pass `--run` to actually execute the gates:
-
-```sh
-raven assess          # static wiring checks only
-raven assess --run    # execute lint, format, typecheck, test gates
-raven assess --json   # machine-readable output (combine with --run)
-```
-
-Exit code `1` when any gate fails or a required config is missing; exit `0` otherwise.
-
-## Optional Tool Bootstrap
-
-After installing Raven in a repository, you can print a report for recommended but optional tools:
-
-```sh
-python .claude/scripts/raven-tool-check.py
-```
-
-For Codex installations, the equivalent script is:
-
-```sh
-python .codex/scripts/raven-tool-check.py
-```
-
-If `python` is not the right launcher, use that repo's configured launcher, such as `python3`, `py -3`, or an active virtual environment.
-
-The SessionStart hook can also run this check automatically for Claude Code or Codex when the corresponding adapter is enabled. Agent-facing workflows can cache results in `~/.raven/tool-memory.json` so users are not repeatedly prompted about the same tools.
-
-Raven treats checked tools as recommended capabilities, not mandatory dependencies. If a tool is not installed or configured, agents should use the retrieval ladder and fall back to cheaper deterministic tools.
-
-Recommended tools include `rg`, `fd`, `just`, `uvx`, Semble, GitNexus, `mcp-language-server`, ast-grep, Semgrep, Gitleaks, OSV-Scanner, `jq`, `yq`, and RTK.
-
-On Windows, prefer WSL when the target repository is POSIX-heavy or already uses Linux/macOS shell tooling. Native Windows is reasonable for Windows-native projects, but PATH handling and language-server installation should be verified per machine.
-
-Language templates include `.mcp.json` defaults for Semble, GitNexus, and LSP. For LSP, Raven uses `mcp-language-server` as the general fallback when the agent client does not already provide a reliable native/plugin LSP integration. The default language servers are:
-
-| Template   | LSP command in `.mcp.json`           |
-| ---------- | ------------------------------------ |
-| Python     | `pyright-langserver --stdio`         |
-| TypeScript | `typescript-language-server --stdio` |
-| Go         | `gopls`                              |
-| Rust       | `rust-analyzer`                      |
-| Swift      | `sourcekit-lsp`                      |
-| Elixir     | `expert --stdio`                     |
-| Lua        | `lua-language-server`                |
-| Ruby       | `ruby-lsp`                            |
-
-Install `mcp-language-server` and the language server for the template you chose from their official documentation. Raven includes the `.mcp.json` command shape; see `.claude/docs/raven-lsp-mcp.md` after installation for official documentation links and template-specific command shapes.
-
-See [raven-lsp-mcp.md](.claude/docs/raven-lsp-mcp.md) and [raven-tool-assessment.md](.claude/docs/raven-tool-assessment.md) after installation for the agent-facing details.
-
-## Why Raven Works
-
-- **Token discipline**: Prefer targeted retrieval, summaries, and deterministic tools over broad file reads.
-- **Reusable agent setup**: Share AGENTS guidance, skills, subagents, hooks, rules, docs, and MCP examples across repos.
-- **Agent adapters**: Keep `AGENTS.md` and `.agents/skills` canonical while installing thin Claude Code and Codex compatibility layers.
-- **Language-aware templates**: Start with common behavior, then layer language-specific rules.
-- **Safe updates**: Track installed files with `.raven/manifest.json` and only auto-upgrade unchanged Raven-managed files.
-- **Local control**: Configure each destination repo with a self-documented `.raven/config.toml`.
-- **Low collision surface**: Raven-owned files use the `raven-*` namespace so project-owned guidance can use natural names.
+Raven's templates recommend tools like `rg`, `fd`, `just`, ast-grep, Semgrep,
+and a language server over MCP, but requires none of them. Run
+`python .claude/scripts/raven-tool-check.py` after installing to see what you
+have. Details and the per-language LSP defaults are in
+[docs/tooling.md](docs/tooling.md).
 
 ## Repository Layout
 
@@ -290,7 +105,7 @@ Raven-managed paths use `raven-*` wherever possible.
 
 - `common/`: shared policy, skills, subagents, hooks, docs, rules, scripts, and MCP examples.
 - `python/`, `swift/`, `rust/`, `typescript/`, `go/`, `elixir/`, `lua/`, `ruby/`, `dotfiles/`: templates that assemble common guidance with stack-specific Raven rules.
-- `scripts/raven`: executable CLI wrapper for `raven init`, `raven install`, `raven upgrade`, `raven doctor`, and `raven assess`.
+- `scripts/raven`: executable CLI wrapper for the commands above.
 - `scripts/raven.py` and `scripts/raven_lib/`: Python implementation for the CLI.
 - `tests/`: applicator tests.
 - `project-skills/`: maintenance-only skills for this repository; not copied into destination repos.
