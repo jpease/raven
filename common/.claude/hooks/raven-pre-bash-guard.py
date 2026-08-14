@@ -413,15 +413,20 @@ def _nested_payloads(program: str, args: list[str]) -> list[str]:
         index = args.index(flag)
         return args[index + 1 : index + 2]
     if program == "ssh":
-        _flags, positionals = _normalize_options(args, _value_options_for(program))
-        # The first positional is the destination; the rest is the remote command.
-        # Rebuilding from the positionals is only safe here because the remote
-        # command is conventionally one quoted token, so it survives intact --
-        # see the `xargs` branch for why the same shape is wrong there. The
-        # unquoted spelling (`ssh host rm -rf /`) has the identical defect and is
-        # tracked in issue #215; do not copy this branch to a program whose
-        # payload arrives as bare tokens.
-        return [" ".join(positionals[1:])] if len(positionals) > 1 else []
+        # The first operand is the destination; everything after it is the remote
+        # command, sliced verbatim so it keeps its own flags. Rebuilding from
+        # `_normalize_options`' positionals instead worked only for the quoted
+        # spelling, where the remote command is a single token that survives
+        # intact; the equally legal bare spelling `ssh host rm -rf /` lost `-rf`
+        # to the flag set and reduced to `/` (issue #215).
+        #
+        # Joined with plain spaces because that is what ssh(1) itself does: it
+        # concatenates the remaining arguments and hands the result to the remote
+        # *shell* as a string. So `ssh host sh -c 'rm -rf /'` really does run
+        # `sh -c rm -rf /` remotely, and reproducing that faithfully means not
+        # re-quoting. `xargs` below is the opposite case for the same reason.
+        index = _first_operand_index(args, _value_options_for(program))
+        return [" ".join(args[index + 1 :])] if index + 1 < len(args) else []
     if program == "xargs":
         # Followed whatever flags are present. Claude Code treats only a flagless
         # `xargs` as transparent, which is right for an *allow* rule -- granting
@@ -436,8 +441,15 @@ def _nested_payloads(program: str, args: list[str]) -> list[str]:
         # `rm /` -- which no flag-keyed rule matches, and is not what was typed
         # either (issue #214). Only the rules keyed on a positional (`kubectl
         # delete pod`) survived that, which is why the gap stayed invisible.
+        #
+        # Re-quoted rather than space-joined, the opposite of `ssh` above and for
+        # the same reason: `xargs` execs the argv it was given instead of
+        # flattening it into a string, so a token that arrived quoted is still
+        # one argument. Space-joining collapsed `["sh", "-c", "rm -rf /"]` into
+        # `sh -c rm -rf /`, where `-c`'s operand reads as the bare word `rm` and
+        # the payload disappears one level down (issue #215).
         index = _first_operand_index(args, _value_options_for(program))
-        return [" ".join(args[index:])] if index < len(args) else []
+        return [shlex.join(args[index:])] if index < len(args) else []
     return []
 
 

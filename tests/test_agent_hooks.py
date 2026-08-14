@@ -418,6 +418,15 @@ class BashGuardTokenizedIntentTests(RavenTestCase):
         "xargs --max-args=1 rm -rf /",
         # Reached through another interpreter, within _MAX_NESTING_DEPTH.
         "sh -c 'xargs rm -rf /'",
+        # The inner payload arrives quoted. `xargs` execs the argv it was
+        # given rather than flattening it to a string, so the payload has to
+        # be re-quoted on the way down: space-joining collapsed these to
+        # `sh -c rm -rf /`, where `-c`'s operand reads as the bare word `rm`
+        # and the destructive command vanishes a level down (issue #215).
+        "xargs sh -c 'rm -rf /'",
+        "xargs bash -c 'rm -rf /'",
+        "xargs -n 1 sh -c 'rm -rf ~'",
+        "xargs -I{} sh -c 'kubectl delete pod {}'",
     ]
 
     #: The precision controls for the same path. These are the CI spellings that
@@ -430,6 +439,37 @@ class BashGuardTokenizedIntentTests(RavenTestCase):
         "xargs git clean -n",
         "xargs -I{} kubectl get pod {}",
         "xargs rg -r replacement pattern file.txt",
+        "xargs sh -c 'ls -la'",
+    ]
+
+    #: `ssh` accepts its remote command in two equally legal spellings, and only
+    #: the quoted one was covered. Quoted, it is a single token that survives
+    #: being rebuilt from the positionals; bare, its flags are folded into the
+    #: flag set and `ssh host rm -rf /` reduces to `/` (issue #215). The bare
+    #: spelling is what any tool that assembles an argv rather than a command
+    #: line emits, so it is not an exotic shape.
+    SSH_BARE_REMOTE_COMMAND: ClassVar[list[str]] = [
+        "ssh host rm -rf /",
+        "ssh host rm -rf ~",
+        "ssh host git clean -fdx",
+        "ssh host git branch -D topic",
+        # The same, behind a global option that takes a value operand and one
+        # that does not -- the destination has to be located before the remote
+        # command can start after it (issues #207 and #215 together).
+        "ssh -p 2222 host rm -rf /",
+        "ssh -o StrictHostKeyChecking=no host git clean -fdx",
+        "ssh -P host rm -rf /",
+    ]
+
+    #: The precision control for the bare spelling. `ssh host` alone has no
+    #: remote command at all, which is the shape a fix that slices one token too
+    #: early would turn into a false positive.
+    SSH_BARE_REMOTE_COMMAND_SAFE: ClassVar[list[str]] = [
+        "ssh host ls -la",
+        "ssh host git status",
+        "ssh host git clean -n",
+        "ssh host",
+        "ssh -p 2222 host",
     ]
 
     #: A global option taking a *separate* value operand, before the token that
@@ -485,6 +525,17 @@ class BashGuardTokenizedIntentTests(RavenTestCase):
 
     def test_an_xargs_payload_stays_precise(self):
         for command in self.XARGS_NESTED_SAFE:
+            with self.subTest(command=command):
+                result = self._claude(command)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_bare_ssh_remote_command_keeps_its_own_flags(self):
+        for command in self.SSH_BARE_REMOTE_COMMAND:
+            with self.subTest(command=command):
+                self.assertEqual(self._claude(command).returncode, 2, command)
+
+    def test_a_bare_ssh_remote_command_stays_precise(self):
+        for command in self.SSH_BARE_REMOTE_COMMAND_SAFE:
             with self.subTest(command=command):
                 result = self._claude(command)
                 self.assertEqual(result.returncode, 0, result.stderr)
