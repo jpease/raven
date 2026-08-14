@@ -691,10 +691,17 @@ def ensure_gitattributes_lines(destination: Path) -> None:
     missing = [line for line in required if line not in existing_patterns]
     if not missing:
         return
-    prefix = "" if not existing or existing.endswith("\n") else "\n"
+    # Two distinct newlines, both conditional (#217). `terminator` closes an
+    # existing final line that lacks its own "\n"; `separator` is the blank
+    # line that visually detaches Raven's block from whatever precedes it.
+    # Neither applies when the file is being created from nothing, where an
+    # unconditional separator left the generated file opening on a blank line.
+    terminator = "" if not existing or existing.endswith("\n") else "\n"
+    separator = "\n" if existing else ""
     body = "\n".join(missing)
     block = (
-        f"{prefix}\n# Raven: normalize shipped hook/script line endings (see README.md)\n{body}\n"
+        f"{terminator}{separator}"
+        f"# Raven: normalize shipped hook/script line endings (see README.md)\n{body}\n"
     )
     with gitattributes.open("a", encoding="utf-8") as f:
         f.write(block)

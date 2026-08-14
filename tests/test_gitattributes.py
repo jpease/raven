@@ -24,6 +24,7 @@ from __future__ import annotations
 import contextlib
 import fnmatch
 import io
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -208,6 +209,67 @@ hooks = false
         rc, output = self._install()
         self.assertEqual(rc, 0, output)
         self.assertFalse((self.destination / ".gitattributes").exists())
+
+
+class GitattributesBlockFormattingTests(unittest.TestCase):
+    """#217: the block separates from existing content without opening a new file blankly.
+
+    ``ensure_gitattributes_lines`` emitted an unconditional blank-line separator,
+    which is right when appending beneath existing content and wrong when the
+    destination has no ``.gitattributes`` at all -- there the generated file
+    opened with a stray blank line.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.destination = Path(self.tmp.name)
+
+    def _merge(self) -> str:
+        raven.ensure_gitattributes_lines(self.destination)
+        return (self.destination / ".gitattributes").read_text(encoding="utf-8")
+
+    def test_a_created_file_has_no_leading_blank_line(self):
+        text = self._merge()
+        self.assertTrue(
+            text.startswith("# Raven:"),
+            f"generated file should open with the header comment, got {text[:40]!r}",
+        )
+
+    def test_appending_separates_from_existing_content_with_one_blank_line(self):
+        (self.destination / ".gitattributes").write_text("*.png binary\n", encoding="utf-8")
+
+        text = self._merge()
+
+        self.assertTrue(
+            text.startswith("*.png binary\n\n# Raven:"),
+            f"expected exactly one blank line before the header, got {text[:48]!r}",
+        )
+
+    def test_appending_to_content_without_a_trailing_newline_stays_well_formed(self):
+        (self.destination / ".gitattributes").write_text("*.png binary", encoding="utf-8")
+
+        text = self._merge()
+
+        # The pre-existing rule must survive as its own line rather than being
+        # joined onto the header comment.
+        self.assertIn("*.png binary", text.splitlines())
+        self.assertTrue(
+            text.startswith("*.png binary\n\n# Raven:"),
+            f"expected the missing newline to be supplied, got {text[:48]!r}",
+        )
+
+    def test_every_required_line_is_still_written(self):
+        # Guards the formatting change against silently dropping content.
+        text = self._merge()
+        required = [
+            line.strip()
+            for line in (COMMON / ".gitattributes").read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        self.assertTrue(required)
+        for line in required:
+            self.assertIn(line, text.splitlines())
 
 
 if __name__ == "__main__":
