@@ -10,9 +10,7 @@ from raven_lib.template import should_preserve_symlink
 
 # ast-grep and rg are both installed by CI's `checks` job
 # (see .github/workflows/ci.yml: "Install check tools" / "Install search/tagging
-# tools"), unlike test_list_open_issues.py's HAVE_LIST_OPEN_ISSUES, which is a
-# genuinely local-only case (a private-repo symlink target). A skip on these
-# three in CI means a real regression, not an expected gap.
+# tools"). A skip on either in CI means a real regression, not an expected gap.
 HAVE_ASTGREP = shutil.which("ast-grep") is not None
 HAVE_RG = shutil.which("rg") is not None
 

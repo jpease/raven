@@ -79,10 +79,6 @@ check-fast: lint fmt-check hygiene
 check: check-fast typecheck test
     [ -f .raven/git-hooks/lib/with-verified-cache.sh ] && sh .raven/git-hooks/lib/with-verified-cache.sh check true || true
 
-# List open issues with hierarchy and priority
-list-open:
-    ./scripts/list_open_issues.py
-
 # Report known advisories in this project's dependency manifests.
 #
 # Deliberately NOT a dependency of `check`. Every other recipe here is a

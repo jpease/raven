@@ -37,10 +37,14 @@ def _referenced_names_by_file() -> dict[str, set[str]]:
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except (OSError, SyntaxError):
-            # scripts/list_open_issues.py is a symlink to a file shared across
-            # repos; it is legitimately absent in some checkouts (see the
-            # skipUnless in test_list_open_issues.py). A file we cannot read
-            # simply contributes no references.
+            # Defensive: every current file under scripts/**/*.py and
+            # tests/*.py is a first-party, readable, syntactically valid
+            # module, so this branch is not expected to trigger today. Kept
+            # rather than removed because the glob is open-ended -- a
+            # future entry (e.g. another symlink to shared, externally
+            # maintained content) could legitimately be absent or
+            # unparseable, and a file we cannot read simply contributes no
+            # references.
             continue
         names: set[str] = set()
         for node in ast.walk(tree):

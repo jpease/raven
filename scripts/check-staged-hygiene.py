@@ -99,13 +99,11 @@ ALLOW_MARKER = "raven-hygiene: allow"
 #: routine hash/version-bump noise very unlikely to false-positive, so the
 #: exclusion's only remaining effect was a real gap -- a `uv.lock`
 #: git-source dependency URL can legitimately leak a private repo name.
-EXCLUDED_PATHS = frozenset(
-    {
-        # Symlink to a file shared across repos (not this repo's content to
-        # police) -- ruff's extend-exclude skips it for the same reason.
-        "scripts/list_open_issues.py",
-    }
-)
+#: Empty is the current state, not dead infrastructure: kept as the
+#: documented escape hatch for a future tracked path that legitimately
+#: can't be scanned (its previous and only entry, the symlink removed by
+#: #204, is gone).
+EXCLUDED_PATHS: frozenset[str] = frozenset()
 
 #: Denylist entries shorter than this are dropped at load time (see
 #: `load_denylist`). Word-boundary matching alone does not stop a short,
