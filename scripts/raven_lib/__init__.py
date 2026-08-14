@@ -94,7 +94,7 @@ from .constants import (
     STARTER_TOOL_CONFIG_PATHS,
     _any_exists,
 )
-from .doctor import build_doctor_findings
+from .doctor import build_doctor_findings, merge_only_tracking_findings
 from .findings import Finding, Severity, exit_code, summarize
 from .gates import gate_spec_for
 from .git_hooks import detect_hook_manager, git_hooks_dir, hook_manager_guidance, install_git_hooks
@@ -136,6 +136,7 @@ from .template import (
     entries_for_destination,
     iter_template_entries,
 )
+from .tracking import untracked_merge_only_paths
 
 __all__ = [
     # constants
@@ -268,4 +269,6 @@ __all__ = [
     # doctor / assess
     "build_doctor_findings",
     "build_assess_findings",
+    "merge_only_tracking_findings",
+    "untracked_merge_only_paths",
 ]

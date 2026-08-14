@@ -70,6 +70,7 @@ from .plan import (
 )
 from .report import render_human, render_json, supports_unicode_marks
 from .template import broken_template_symlinks, entries_for_destination
+from .tracking import untracked_merge_only_paths
 
 
 def list_language_templates() -> list[str]:
@@ -605,6 +606,18 @@ def _run(
         print_section("Installed git hooks:", [f"{hooks_label}/{h}" for h in git_hooks_installed])
     else:
         _print_hook_manager_notice(destination)
+
+    # #216: a merge-only path is absent from the manifest by design, so it
+    # appears in none of the sections above -- and git honors an untracked
+    # .gitattributes, so nothing else will ever mention it either.
+    untracked_merge_only = untracked_merge_only_paths(destination)
+    if untracked_merge_only:
+        print()
+        print_section(
+            "Not tracked by git -- these apply in this working tree but reach no "
+            "other clone until committed:",
+            untracked_merge_only,
+        )
 
     if template_name == "swift":
         print()

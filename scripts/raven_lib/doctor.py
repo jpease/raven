@@ -31,6 +31,7 @@ from .manifest import ManifestStatus, git_ref, validate_manifest
 from .orphans import classify_orphans
 from .runner import Runner, probe_runner
 from .template import broken_template_symlinks, is_known_template
+from .tracking import untracked_merge_only_paths
 
 _INTEGRITY = "Install integrity"
 _DRIFT = "Drift & freshness"
@@ -678,6 +679,33 @@ def hook_manager_findings(destination: Path) -> list[Finding]:
     ]
 
 
+def merge_only_tracking_findings(destination: Path) -> list[Finding]:
+    """WARN when a merge-only path exists on disk but git does not track it (#216).
+
+    One finding covering every such path rather than one per path: they share a
+    single cause and a single fix, and the set is small.
+    """
+    untracked = untracked_merge_only_paths(destination)
+    if not untracked:
+        return []
+    listed = ", ".join(untracked)
+    return [
+        Finding(
+            id="doctor.install.merge_only_untracked",
+            severity=Severity.WARN,
+            category=_INTEGRITY,
+            title=f"merge-only path not tracked by git: {listed}",
+            detail=(
+                "Raven wrote this into the repository but git does not track it. Git "
+                "honors it in this working tree, so it looks correct here while reaching "
+                "no other clone -- the eol=lf rules that exist to protect a Windows "
+                "checkout protect only the clone that generated them."
+            ),
+            fix=f"git add {listed}, then commit",
+        )
+    ]
+
+
 def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> list[Finding]:
     """Assemble the full `raven doctor` findings list: config sanity, then every other check.
 
@@ -702,6 +730,7 @@ def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> l
     integrity = integrity_findings(destination)
     findings.extend(integrity)
     findings.extend(hook_manager_findings(destination))
+    findings.extend(merge_only_tracking_findings(destination))
     config = load_config(destination)
     if config.exists:
         findings.extend(drift_findings(destination))

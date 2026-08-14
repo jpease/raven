@@ -15,7 +15,7 @@ from enum import Enum
 from pathlib import Path
 
 
-def _clean_git_env() -> dict[str, str]:
+def clean_git_env() -> dict[str, str]:
     """Environment with GIT_* removed.
 
     An inherited ``GIT_DIR``/``GIT_INDEX_FILE``/``GIT_WORK_TREE`` -- which git
@@ -46,7 +46,7 @@ def _resolve_hooks_dir(destination: Path) -> tuple[Path | None, bool]:
     outside the repo's toplevel (e.g. a user-global hooks dir) -- callers use this
     to avoid writing Raven's hooks where they would affect other repositories.
     """
-    git_env = _clean_git_env()
+    git_env = clean_git_env()
     try:
         # core.hooksPath overrides the default hooks location entirely.
         result = subprocess.run(
