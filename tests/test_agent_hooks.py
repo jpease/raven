@@ -472,6 +472,42 @@ class BashGuardTokenizedIntentTests(RavenTestCase):
         "ssh -p 2222 host",
     ]
 
+    #: `rtk <cmd>` is a transparent proxy, and the form AGENTS.md steers agents
+    #: toward for anything noisy -- including git. Only `rtk proxy` was stepped
+    #: over, which is the rarest spelling, so every ordinary `rtk git clean
+    #: -fdx` resolved to a program called "rtk" and matched no rule. Worse than
+    #: an unguarded spelling: this one is produced *for* the agent by a rewrite
+    #: it never sees, so nothing about the command it typed says the guard
+    #: stopped applying.
+    RTK_WRAPPED: ClassVar[list[str]] = [
+        "rtk git clean -fdx",
+        "rtk git reset --hard",
+        "rtk git stash clear",
+        "rtk git branch -D topic",
+        "rtk git push --force origin main",
+        "rtk rm -rf /",
+        "rtk kubectl delete pod web",
+        # The explicit escape hatch keeps working, and composes with a wrapper
+        # on either side of it.
+        "rtk proxy git clean -fdx",
+        "sudo rtk git clean -fdx",
+        "rtk sh -c 'rm -rf /'",
+    ]
+
+    #: The precision control. RTK's own meta commands resolve to a program named
+    #: `gain` or `discover`, which no rule matches, and the ordinary wrapped
+    #: commands must stay ordinary.
+    RTK_WRAPPED_SAFE: ClassVar[list[str]] = [
+        "rtk gain",
+        "rtk gain --history",
+        "rtk discover",
+        "rtk --version",
+        "rtk git status",
+        "rtk git clean -n",
+        "rtk pytest -q",
+        "rtk proxy git status",
+    ]
+
     #: A global option taking a *separate* value operand, before the token that
     #: carries the meaning. The value is an ordinary token, so without knowing
     #: which options consume one it shifts the subcommand (git) or the
@@ -536,6 +572,17 @@ class BashGuardTokenizedIntentTests(RavenTestCase):
 
     def test_a_bare_ssh_remote_command_stays_precise(self):
         for command in self.SSH_BARE_REMOTE_COMMAND_SAFE:
+            with self.subTest(command=command):
+                result = self._claude(command)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_an_rtk_wrapped_command_is_still_denied(self):
+        for command in self.RTK_WRAPPED:
+            with self.subTest(command=command):
+                self.assertEqual(self._claude(command).returncode, 2, command)
+
+    def test_an_rtk_wrapped_command_stays_precise(self):
+        for command in self.RTK_WRAPPED_SAFE:
             with self.subTest(command=command):
                 result = self._claude(command)
                 self.assertEqual(result.returncode, 0, result.stderr)

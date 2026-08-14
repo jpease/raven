@@ -257,8 +257,21 @@ def _program_and_args(segment: list[str]) -> tuple[str, list[str]] | None:
         if re.match(r"[A-Za-z_][A-Za-z0-9_]*=", token):
             index += 1
             continue
-        if token == "rtk" and segment[index + 1 : index + 2] == ["proxy"]:
-            index += 2
+        if token.rsplit("/", 1)[-1] == "rtk":
+            # `rtk <cmd>` is a transparent proxy: AGENTS.md tells agents to route
+            # noisy commands through it, and the hook that rewrites `git status`
+            # into `rtk git status` does so silently, so this is a spelling the
+            # guard produces for itself rather than one a user has to type. Only
+            # `rtk proxy` was stepped over, which is the *rarest* form -- the
+            # explicit escape hatch -- while every ordinary `rtk git clean -fdx`
+            # resolved to a program called "rtk" and matched nothing.
+            #
+            # RTK's own meta commands (`rtk gain`, `rtk discover`) resolve to a
+            # program named "gain" or "discover", which no rule matches, so they
+            # need no special case.
+            index += 1
+            if segment[index : index + 1] == ["proxy"]:
+                index += 1
             continue
         break
     if index >= len(segment):
