@@ -1,7 +1,6 @@
 ---
 name: raven-doc-sync
 description: Use after implementing a feature or behavior change, before declaring done, to keep AGENTS.md, README, CHANGELOG, and related docs synchronized.
-model: haiku
 ---
 
 # Doc Sync

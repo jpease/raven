@@ -1,7 +1,6 @@
 ---
 name: raven-context-hygiene
 description: Use at unit completion and when the user signals a new unrelated task is beginning.
-model: haiku
 ---
 
 # Context Hygiene

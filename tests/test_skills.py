@@ -21,6 +21,55 @@ def section_region(text_lower, heading):
     return text_lower[start:end]
 
 
+SKILLS_DIR = REPO_ROOT / "common" / ".claude" / "skills"
+
+#: Shipped skills allowed to pin a model, mapped to the reason. Empty by
+#: design -- see the class docstring below and issue #208.
+MODEL_PINNED_SKILLS: dict[str, str] = {}
+
+
+class SkillModelOverrideTests(unittest.TestCase):
+    """A shipped skill must not pin `model:` without a recorded reason.
+
+    Claude Code documents the field as turn-scoped, not skill-scoped: "The
+    override applies for the rest of the current turn and is not saved to
+    settings; the session model resumes on your next prompt"
+    (code.claude.com/docs/en/skills.md, fetched 2026-08-13). So `model: haiku`
+    on a skill does not buy a cheap skill -- it downgrades every step that
+    follows it in the same turn, including the review and verification work a
+    Raven skill most often precedes. None of the shipped skills is terminal:
+    even the end-of-unit ones (`raven-commit`, `raven-context-hygiene`) are
+    routinely invoked mid-turn with work still to come.
+
+    A future skill that genuinely wants a smaller model should either accept
+    that turn-wide scope deliberately and register here, or use `context:
+    fork`, which scopes the model to a forked subagent instead.
+    """
+
+    def _skill_files(self):
+        files = sorted(SKILLS_DIR.glob("*/SKILL.md"))
+        self.assertNotEqual(files, [], f"no shipped skills found under {SKILLS_DIR}")
+        return files
+
+    def test_no_shipped_skill_pins_a_model_without_a_recorded_reason(self):
+        for path in self._skill_files():
+            with self.subTest(skill=path.parent.name):
+                pinned = re.search(
+                    r"^model:\s*(\S+)", path.read_text(encoding="utf-8"), re.MULTILINE
+                )
+                if path.parent.name in MODEL_PINNED_SKILLS:
+                    self.assertIsNotNone(
+                        pinned, "listed in MODEL_PINNED_SKILLS but pins no model -- drop the entry"
+                    )
+                    continue
+                self.assertIsNone(
+                    pinned,
+                    f"{path.parent.name} pins model: {pinned.group(1) if pinned else ''} -- the "
+                    "override lasts the rest of the turn, not just the skill (issue #208). "
+                    "Remove it, use context: fork, or register it in MODEL_PINNED_SKILLS.",
+                )
+
+
 class SkillsTests(RavenTestCase):
     def test_existing_claude_skills_directory_gets_raven_skill_files(self):
         existing = self.destination / ".claude" / "skills" / "existing-skill"

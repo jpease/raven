@@ -23,6 +23,27 @@ Claude-specific files:
 - `.claude/rules/raven-*.md`: Claude Code scoped rules.
 - `.claude/settings.json`: Claude Code hook wiring.
 
+### Why no shipped skill pins `model:`
+
+Claude Code's `model:` skill frontmatter is **turn-scoped, not skill-scoped**: "The override
+applies for the rest of the current turn and is not saved to settings; the session model
+resumes on your next prompt" (`code.claude.com/docs/en/skills.md`, fetched 2026-08-13).
+
+So `model: haiku` on a skill does not buy a cheap skill — it downgrades every step that
+follows it in the same turn. For Raven's skills that is precisely backwards: they are
+procedures that precede work, not ones that conclude it. Even the end-of-unit skills are
+not terminal — `raven-context-hygiene`'s own trigger includes "when the user signals a new
+unrelated task is beginning", and a commit is routinely followed by more work in the same
+turn. Four skills (`raven-commit`, `raven-context-hygiene`, `raven-doc-sync`,
+`raven-tool-bootstrap`) carried the field until issue #208; it is now removed everywhere,
+and `tests/test_skills.py::SkillModelOverrideTests` fails if one reappears without a
+registered reason.
+
+A skill that genuinely wants a smaller model should use `context: fork`, which scopes the
+model to a forked subagent instead of the caller's turn. This is a Claude-only field —
+Codex reads the same `SKILL.md` and ignores it, so pinning a model here also made the two
+harnesses behave differently for no stated reason.
+
 ## Codex Adapter
 
 Codex-specific files:

@@ -1,7 +1,6 @@
 ---
 name: raven-tool-bootstrap
 description: Use when the Raven tool check reports missing tools, or when the user asks to check, install, remember, or stop reminding about recommended tools.
-model: haiku
 ---
 
 # Tool Bootstrap
