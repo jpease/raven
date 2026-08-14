@@ -60,6 +60,32 @@ def load_prober(scripts_dir: Path) -> Any:
     return module
 
 
+def load_raven_config(scripts_dir: Path) -> Any:
+    """Import ``.raven/git-hooks/lib/raven_config.py`` for the shared config parser.
+
+    Same shape as ``load_prober`` above, and resolved the same way:
+    ``scripts_dir`` is this script's own directory, whichever adapter it was
+    installed under, two levels below the project root, and
+    ``raven_config.py`` ships two levels up from there in the same "hooks"
+    component -- independent of the ``root`` argument ``read_config_keys``
+    takes, which names the repo whose ``.raven/config.toml`` is actually
+    being read (a test fixture can point that at an isolated directory
+    without needing a full install alongside it).
+    """
+    path = scripts_dir.parent.parent / ".raven" / "git-hooks" / "lib" / "raven_config.py"
+    spec = importlib.util.spec_from_file_location(
+        "raven_config_for_roster",
+        path,
+        loader=SourceFileLoader("raven_config_for_roster", str(path)),
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load raven_config from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def resolve_repo_root(payload: dict | None, start: Path) -> Path | None:
     """Find the repository root without trusting the process cwd.
 
@@ -139,46 +165,31 @@ def render_mcp_line(names: list) -> str:
     return _line("MCP (cfg)", value)
 
 
-def _strip_inline_comment(value: str) -> str:
-    """Drop a trailing `# comment`, ignoring hashes inside quotes."""
-    in_quote = False
-    for index, char in enumerate(value):
-        if char == '"':
-            in_quote = not in_quote
-        elif char == "#" and not in_quote:
-            return value[:index]
-    return value
-
-
 def read_config_keys(root: Path) -> dict:
     """Read `template` and `[issue_tracker].platform` from .raven/config.toml.
 
-    A deliberately minimal two-key reader. The real parser in
-    scripts/raven_lib/config.py does not ship, and the prober's TOML helper
-    reads section headers only.
+    A deliberately minimal two-key reader built on the shared
+    ``.raven/git-hooks/lib/raven_config.py`` parser: the real parser in
+    scripts/raven_lib/config.py does not ship to a destination repository.
+    Missing file, missing section, missing key, and an unreadable file (the
+    shared module's ``RavenConfigError``) all fall back to the same
+    ``{"template": None, "platform": None}`` this always returned.
     """
     keys: dict = {"template": None, "platform": None}
+    raven_config = load_raven_config(Path(__file__).resolve().parent)
     path = root / ".raven" / "config.toml"
     try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+        parsed = raven_config.read_config(path)
+    except raven_config.RavenConfigError:
         return keys
-    section = ""
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("[") and line.endswith("]"):
-            section = line[1:-1].strip()
-            continue
-        if "=" not in line:
-            continue
-        name, _, value = line.partition("=")
-        cleaned = _strip_inline_comment(value).strip().strip('"')
-        if section == "" and name.strip() == "template":
-            keys["template"] = cleaned or None
-        elif section == "issue_tracker" and name.strip() == "platform":
-            keys["platform"] = cleaned or None
+    if parsed is None:
+        return keys
+    raw_template = parsed.get("", {}).get("template")
+    if raw_template is not None:
+        keys["template"] = raw_template.strip('"') or None
+    raw_platform = parsed.get("issue_tracker", {}).get("platform")
+    if raw_platform is not None:
+        keys["platform"] = raw_platform.strip('"') or None
     return keys
 
 

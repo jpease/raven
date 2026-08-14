@@ -39,9 +39,11 @@ is worse than the leak it is meant to catch.
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 import sys
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 _CONTENT_PATTERN = re.compile(
@@ -65,24 +67,55 @@ _MESSAGE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-_SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]")
-_BOOL_RE = re.compile(r"^\s*(\w+)\s*=\s*(true|false)\b", re.IGNORECASE)
+
+def _raven_config_module():
+    """Import the ``raven_config.py`` sibling shipped in this same directory.
+
+    This file already lives at ``.raven/git-hooks/lib/``, the same directory
+    ``raven_config.py`` ships in -- a fixed, flat sibling resolution, unlike
+    commit-msg's own loader, which has to climb up one level from
+    ``.raven/git-hooks/`` into ``lib/`` first. Same
+    ``spec_from_file_location`` + ``SourceFileLoader`` mechanism used
+    throughout the other rewired callers.
+    """
+    path = Path(__file__).resolve().parent / "raven_config.py"
+    spec = importlib.util.spec_from_file_location(
+        "raven_config_for_attribution_content",
+        path,
+        loader=SourceFileLoader("raven_config_for_attribution_content", str(path)),
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load raven_config from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _read_config_bool(config_path: Path, section: str, key: str, default: bool) -> bool:
-    if not config_path.exists():
+    """Read a boolean flag from ``config_path``, defaulting on anything short of a clean read.
+
+    Was previously a byte-for-byte copy of commit-msg's own regex-based
+    ``_read_config_bool`` (deliberately, per that hook's docstring, since it
+    cannot depend on this lib/ directory) -- but this file already lives
+    alongside the shared parser, so there is no reason for it to carry its
+    own duplicate implementation too. Also fixes the same pre-existing gap as
+    commit-msg's copy: an unreadable-but-present config used to propagate an
+    uncaught ``OSError`` instead of falling back to ``default`` like every
+    other read failure here already did.
+    """
+    raven_config = _raven_config_module()
+    try:
+        parsed = raven_config.read_config(config_path)
+    except raven_config.RavenConfigError:
         return default
-    in_section = False
-    for line in config_path.read_text(encoding="utf-8").splitlines():
-        m = _SECTION_RE.match(line)
-        if m:
-            in_section = m.group(1).strip() == section
-            continue
-        if in_section:
-            m = _BOOL_RE.match(line)
-            if m and m.group(1) == key:
-                return m.group(2).lower() == "true"
-    return default
+    if parsed is None:
+        return default
+    raw_value = parsed.get(section, {}).get(key)
+    if raw_value is None:
+        return default
+    parsed_value = raven_config.parse_bool(raw_value)
+    return default if parsed_value is None else parsed_value
 
 
 def _repo_root() -> Path | None:
