@@ -1,5 +1,6 @@
 import argparse
 import importlib.util
+import shutil
 import sys
 import tempfile
 import unittest
@@ -9,6 +10,15 @@ from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RAVEN_PATH = REPO_ROOT / "scripts" / "raven.py"
+
+# The shared config-parsing module every rewired hook/script under
+# common/.claude and common/.raven/git-hooks loads as a sibling file (see
+# common/.raven/git-hooks/lib/raven_config.py). It ships under the "hooks"
+# component alongside .raven/git-hooks itself, so any test fixture that
+# fabricates an installed-project layout (rather than loading a caller
+# straight from common/) needs a copy of it at the matching relative path for
+# that caller's own __file__-relative or root-relative resolution to find it.
+RAVEN_CONFIG_LIB = REPO_ROOT / "common" / ".raven" / "git-hooks" / "lib" / "raven_config.py"
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import raven_lib as raven  # noqa: E402,F401
@@ -40,6 +50,22 @@ def load_script_module(name: str, path: Path) -> Any:
     # importlib.abc.Loader base, whose typeshed stub omits exec_module.
     cast(SourceFileLoader, spec.loader).exec_module(module)
     return module
+
+
+def install_raven_config_lib(destination: Path) -> Path:
+    """Copy raven_config.py into a fabricated project's ``.raven/git-hooks/lib/``.
+
+    Mirrors what a real ``raven install``/``upgrade`` places there, for a test
+    fixture that builds a synthetic installed-project tree from scratch
+    (rather than loading a caller module straight out of ``common/``, where
+    the real file already sits at the matching relative offset). Returns the
+    destination path written.
+    """
+    lib_dir = destination / ".raven" / "git-hooks" / "lib"
+    lib_dir.mkdir(parents=True, exist_ok=True)
+    target = lib_dir / "raven_config.py"
+    shutil.copy2(RAVEN_CONFIG_LIB, target)
+    return target
 
 
 def attribution_line(tool: str = "Claude", verb: str = "Generated", prep: str = "by") -> str:

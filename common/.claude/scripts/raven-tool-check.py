@@ -9,14 +9,17 @@ or missing tool must degrade to a reported status, never a crash.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import platform
 import shutil
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from functools import cache, lru_cache
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 MEMORY_PATH = Path(os.environ.get("RAVEN_TOOL_MEMORY", Path.home() / ".raven" / "tool-memory.json"))
@@ -514,13 +517,53 @@ def _codex_mcp_config_paths(root: Path | None = None) -> list[Path]:
     return list(dict.fromkeys(paths))
 
 
+def _raven_config_module():
+    """Import ``.raven/git-hooks/lib/raven_config.py`` for the shared config parser.
+
+    Resolved via ``project_root()`` -- this script's own install-derived root
+    -- not the ``root`` argument the MCP-name lookups below take: those name
+    the repo whose ``.codex/config.toml`` is actually being read, which a
+    test fixture may point at an isolated directory. This always resolves to
+    the sibling ``raven_config.py`` shipped next to this script's own
+    installed copy, in the same "hooks" component. Same
+    ``spec_from_file_location`` + ``SourceFileLoader`` mechanism
+    ``load_prober`` in ``raven-capability-roster.py`` uses to reach this
+    script as a sibling module.
+    """
+    path = project_root() / ".raven" / "git-hooks" / "lib" / "raven_config.py"
+    spec = importlib.util.spec_from_file_location(
+        "raven_config_for_tool_check",
+        path,
+        loader=SourceFileLoader("raven_config_for_tool_check", str(path)),
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load raven_config from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _codex_mcp_server_names_from_toml(text: str) -> set[str]:
+    """Server names declared as ``[mcp_servers.<name>]`` table headers.
+
+    Routes through the shared parser's ``parse_config_text``, whose returned
+    section names already are exactly the set of declared table headers --
+    nested per-tool headers like ``mcp_servers.<name>.tools.<tool>`` are
+    filtered out the same way as before (a remaining "." after the prefix),
+    and a quoted header name is unquoted the same way as before too. This
+    file is Codex's own, not Raven's -- it can contain constructs (arrays,
+    nested tables) beyond this parser's subset, which is exactly why the
+    shared parser only ever looks at declared section names here rather than
+    trying to interpret every line.
+    """
+    raven_config = _raven_config_module()
+    sections = raven_config.parse_config_text(text)
     names: set[str] = set()
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("[mcp_servers.") or not stripped.endswith("]"):
+    for section in sections:
+        if not section.startswith("mcp_servers."):
             continue
-        server = stripped.removeprefix("[mcp_servers.").removesuffix("]").strip()
+        server = section[len("mcp_servers.") :].strip()
         if not server or "." in server:
             continue
         names.add(server.strip('"'))

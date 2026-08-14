@@ -13,10 +13,12 @@ Self-contained: standard library only.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
 import sys
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 DEFAULT_THRESHOLD = 500
@@ -41,6 +43,32 @@ SUPPORTED_EXTENSIONS = {
 }
 
 
+def _raven_config_module():
+    """Import ``.raven/git-hooks/lib/raven_config.py`` for its quote-aware
+    comment stripping and boolean parsing.
+
+    Resolved relative to this script's own installed location -- two levels
+    up from ``.claude/hooks/`` is the project root, and ``raven_config.py``
+    ships alongside this hook in the same "hooks" component -- not the
+    process cwd, so this keeps working regardless of where the hook is
+    invoked from. Same ``spec_from_file_location`` + ``SourceFileLoader``
+    mechanism ``load_prober`` in ``raven-capability-roster.py`` already uses
+    to reach a sibling script.
+    """
+    path = Path(__file__).resolve().parents[2] / ".raven" / "git-hooks" / "lib" / "raven_config.py"
+    spec = importlib.util.spec_from_file_location(
+        "raven_config_for_skeleton_guard",
+        path,
+        loader=SourceFileLoader("raven_config_for_skeleton_guard", str(path)),
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load raven_config from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def parse_gate_config(text: str) -> tuple[bool, int]:
     """Parse the opt-in gate config from the ``[skeleton]`` table of raw
     ``.raven/config.toml`` text.
@@ -48,16 +76,22 @@ def parse_gate_config(text: str) -> tuple[bool, int]:
     Returns ``(enabled, threshold)``. Default off with the default threshold.
     Only assignments inside the ``[skeleton]`` table are honored; keys in other
     tables (including the implicit root table), comments, and similarly named
-    keys have no effect. A section-aware line scan (no TOML parser) keeps the
-    hook self-contained, matching the checkpoint hook. Malformed values fall back
-    to the documented safe defaults without raising: a non-boolean ``read_gate``
-    keeps the prior value and a non-integer threshold keeps the prior threshold.
+    keys have no effect. A section-aware line scan keeps the walk order and
+    per-key precedence exactly as before; only the per-line comment stripping
+    and boolean coercion are delegated to the shared
+    ``.raven/git-hooks/lib/raven_config.py`` module, which strips a ``#``
+    comment correctly even inside a quoted value (the old
+    ``line.split("#", 1)[0]`` here did not). Malformed values fall back to the
+    documented safe defaults without raising: a non-boolean ``read_gate``
+    keeps the prior value and a non-integer threshold keeps the prior
+    threshold.
     """
+    raven_config = _raven_config_module()
     enabled = False
     threshold = DEFAULT_THRESHOLD
     section: str | None = None
     for raw in text.splitlines():
-        line = raw.split("#", 1)[0].strip()
+        line = raven_config.strip_comment(raw)
         if not line:
             continue
         if line.startswith("[") and line.endswith("]"):
@@ -67,10 +101,9 @@ def parse_gate_config(text: str) -> tuple[bool, int]:
             continue
         key, value = (part.strip() for part in line.split("=", 1))
         if key == "read_gate":
-            if value == "true":
-                enabled = True
-            elif value == "false":
-                enabled = False
+            parsed = raven_config.parse_bool(value)
+            if parsed is not None:
+                enabled = parsed
         elif key == "read_gate_threshold_lines" and value.isdigit():
             threshold = int(value)
     return (enabled, threshold)
@@ -127,10 +160,23 @@ def _line_count(path: str) -> int:
 
 
 def _gate_config() -> tuple[bool, int]:
+    """Read and parse the gate config, failing safe (gate off) on any read error.
+
+    Previously this had no ``try``/``except`` around ``read_text()`` at all: a
+    present-but-unreadable config (e.g. bad permissions) propagated an
+    uncaught ``OSError`` out of the hook. That was never an intentional
+    failure semantic -- every other read failure in this hook fails safe --
+    so it is fixed here rather than preserved, matching the missing-file case
+    just above it.
+    """
     config = Path(".raven/config.toml")
     if not config.exists():
         return (False, DEFAULT_THRESHOLD)
-    return parse_gate_config(config.read_text(encoding="utf-8"))
+    try:
+        text = config.read_text(encoding="utf-8")
+    except OSError:
+        return (False, DEFAULT_THRESHOLD)
+    return parse_gate_config(text)
 
 
 def _load_payload() -> dict | None:

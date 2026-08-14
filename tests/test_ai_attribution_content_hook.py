@@ -197,6 +197,59 @@ class AiAttributionContentHookTests(unittest.TestCase):
         rc, _ = self._run("staged")
         self.assertEqual(rc, 1)
 
+    def test_wrong_typed_value_falls_back_to_default_block(self):
+        self._commit("README.md", "# repo\n")
+        self._stage("notes.py", attribution_line("Claude") + "print('hi')\n")
+        rc, _ = self._run(
+            "staged", config_text='[git_hooks]\nblock_ai_attribution_content = "maybe"\n'
+        )
+        self.assertEqual(rc, 1)
+
+    def test_missing_section_falls_back_to_default_block(self):
+        self._commit("README.md", "# repo\n")
+        self._stage("notes.py", attribution_line("Claude") + "print('hi')\n")
+        rc, _ = self._run("staged", config_text="[other]\nblock_ai_attribution_content = false\n")
+        self.assertEqual(rc, 1)
+
+    def test_uppercase_false_still_disables_blocking(self):
+        # Pre-#201, this hook's own _BOOL_RE matched true/false via
+        # re.IGNORECASE, so an uppercase FALSE already worked here. The
+        # shared parser's parse_bool must stay case-insensitive too, or this
+        # silently reverts to the block-on default without ever raising.
+        self._commit("README.md", "# repo\n")
+        self._stage("notes.py", attribution_line("Claude") + "print('hi')\n")
+        rc, _ = self._run(
+            "staged", config_text="[git_hooks]\nblock_ai_attribution_content = FALSE\n"
+        )
+        self.assertEqual(rc, 0)
+
+    def test_unreadable_config_does_not_crash_and_falls_back_to_default_block(self):
+        # Pre-existing gap (issue #201): an unreadable-but-present config used
+        # to propagate an uncaught OSError out of the hook. Fixed to fail
+        # safe (fall back to the default, i.e. block) instead of crashing.
+        # A blocked-by-content-scan run and an unhandled-crash run are both
+        # exit 1, so this checks stderr shape, not just the return code, to
+        # actually distinguish "clean block" from "traceback".
+        self._commit("README.md", "# repo\n")
+        self._stage("notes.py", attribution_line("Claude") + "print('hi')\n")
+        raven_dir = self.repo / ".raven"
+        raven_dir.mkdir(exist_ok=True)
+        config = raven_dir / "config.toml"
+        config.write_text("[git_hooks]\nblock_ai_attribution_content = false\n", encoding="utf-8")
+        config.chmod(0o000)
+        try:
+            result = subprocess.run(
+                [sys.executable, str(self.SCRIPT_PATH), "staged"],
+                capture_output=True,
+                text=True,
+                cwd=str(self.repo),
+            )
+        finally:
+            config.chmod(0o644)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertIn("Forbidden AI attribution content found", result.stderr)
+
     _ZERO_SHA = "0" * 40
 
     def _run_plan(self, plan: str, remote: str = "origin") -> tuple[int, str]:

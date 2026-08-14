@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 import sys
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 # Match AI attribution trailers: Co-Authored-By/Generated-by naming a known AI tool or provider
@@ -22,25 +24,55 @@ _AI_TRAILER = re.compile(
     re.IGNORECASE,
 )
 
-# Minimal TOML scan: find a boolean key inside a named section.
-_SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]")
-_BOOL_RE = re.compile(r"^\s*(\w+)\s*=\s*(true|false)\b", re.IGNORECASE)
+
+def _raven_config_module():
+    """Import the ``lib/raven_config.py`` sibling of this hook's own directory.
+
+    This script (``.raven/git-hooks/commit-msg``) and the shared parser
+    (``.raven/git-hooks/lib/raven_config.py``) always ship together in the
+    "hooks" component, one level apart -- resolved via this file's own
+    location, not the repo root ``_repo_root()`` below computes for the
+    config file itself, so those two lookups can vary independently (a test
+    fixture can point ``_repo_root()`` at an isolated repo without needing a
+    full install alongside it).
+    """
+    path = Path(__file__).resolve().parent / "lib" / "raven_config.py"
+    spec = importlib.util.spec_from_file_location(
+        "raven_config_for_commit_msg",
+        path,
+        loader=SourceFileLoader("raven_config_for_commit_msg", str(path)),
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load raven_config from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _read_config_bool(config_path: Path, section: str, key: str, default: bool) -> bool:
-    if not config_path.exists():
+    """Read a boolean flag from ``config_path``, defaulting on anything short of a clean read.
+
+    Previously this had no ``try``/``except`` around ``read_text()``: a
+    present-but-unreadable config propagated an uncaught ``OSError`` out of
+    the hook, failing the commit outright. That was never an intentional
+    failure semantic here -- a missing file, a missing section, a missing
+    key, and a non-boolean value all already fell back to ``default`` -- so
+    it is fixed here to do the same, via the shared parser's
+    ``RavenConfigError``, rather than preserved.
+    """
+    raven_config = _raven_config_module()
+    try:
+        parsed = raven_config.read_config(config_path)
+    except raven_config.RavenConfigError:
         return default
-    in_section = False
-    for line in config_path.read_text(encoding="utf-8").splitlines():
-        m = _SECTION_RE.match(line)
-        if m:
-            in_section = m.group(1).strip() == section
-            continue
-        if in_section:
-            m = _BOOL_RE.match(line)
-            if m and m.group(1) == key:
-                return m.group(2).lower() == "true"
-    return default
+    if parsed is None:
+        return default
+    raw_value = parsed.get(section, {}).get(key)
+    if raw_value is None:
+        return default
+    parsed_value = raven_config.parse_bool(raw_value)
+    return default if parsed_value is None else parsed_value
 
 
 def _repo_root() -> Path | None:

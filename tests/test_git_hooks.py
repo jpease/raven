@@ -9,7 +9,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import attribution_line, install_ns, push_plan_line, raven, upgrade_ns
+from helpers import (
+    attribution_line,
+    install_ns,
+    install_raven_config_lib,
+    push_plan_line,
+    raven,
+    upgrade_ns,
+)
 from raven_lib.git_hooks import HookLinkAction, hook_link_action
 
 
@@ -830,6 +837,7 @@ class GitHookInstallerTests(unittest.TestCase):
         # script for tests that need to observe whether it ran at all.
         lib_dir = self.git_hooks_src / "lib"
         lib_dir.mkdir(parents=True, exist_ok=True)
+        install_raven_config_lib(self.destination)
         scanner = lib_dir / "check-ai-attribution-content.py"
         if scanner_body is None:
             source = (

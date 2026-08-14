@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import subprocess
 import sys
 import tempfile
@@ -127,6 +129,73 @@ class CommitMsgHookTests(unittest.TestCase):
         self.assertIn(
             "Co-Authored-By", msg_file.read_text(encoding="utf-8") if msg_file.exists() else msg
         )
+
+    def _run_in_repo(self, config_text: str | None) -> tuple[int, str]:
+        """Run the hook against a fresh repo, optionally with a .raven/config.toml."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+            if config_text is not None:
+                raven_dir = repo / ".raven"
+                raven_dir.mkdir()
+                (raven_dir / "config.toml").write_text(config_text, encoding="utf-8")
+            msg_file = repo / "COMMIT_EDITMSG"
+            msg = "feat: thing\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n"
+            msg_file.write_text(msg, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(self.HOOK_PATH), str(msg_file)],
+                capture_output=True,
+                text=True,
+                cwd=str(repo),
+            )
+            return result.returncode, msg_file.read_text(encoding="utf-8")
+
+    def test_wrong_typed_value_falls_back_to_default_strip(self):
+        rc, out = self._run_in_repo('[git_hooks]\nstrip_ai_attribution = "maybe"\n')
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Co-Authored-By", out)
+
+    def test_uppercase_false_still_disables_stripping(self):
+        # Pre-#201, this hook's own _BOOL_RE matched true/false via
+        # re.IGNORECASE, so an uppercase FALSE already worked here. The
+        # shared parser's parse_bool must stay case-insensitive too, or this
+        # silently reverts to the strip-on default without ever raising.
+        rc, out = self._run_in_repo("[git_hooks]\nstrip_ai_attribution = FALSE\n")
+        self.assertEqual(rc, 0)
+        self.assertIn("Co-Authored-By", out)
+
+    def test_missing_section_falls_back_to_default_strip(self):
+        rc, out = self._run_in_repo("[other]\nstrip_ai_attribution = false\n")
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Co-Authored-By", out)
+
+    def test_unreadable_config_does_not_crash_and_falls_back_to_default_strip(self):
+        # Pre-existing gap (issue #201): an unreadable-but-present config used
+        # to propagate an uncaught OSError out of the hook. Fixed to fail
+        # safe (fall back to the default) instead of crashing the commit.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+            raven_dir = repo / ".raven"
+            raven_dir.mkdir()
+            config = raven_dir / "config.toml"
+            config.write_text("[git_hooks]\nstrip_ai_attribution = false\n", encoding="utf-8")
+            config.chmod(0o000)
+            msg_file = repo / "COMMIT_EDITMSG"
+            msg = "feat: thing\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n"
+            msg_file.write_text(msg, encoding="utf-8")
+            try:
+                result = subprocess.run(
+                    [sys.executable, str(self.HOOK_PATH), str(msg_file)],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(repo),
+                )
+            finally:
+                config.chmod(0o644)
+            out = msg_file.read_text(encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Co-Authored-By", out)
 
     def test_default_strips_when_no_config(self):
         msg = "feat: add thing\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n"

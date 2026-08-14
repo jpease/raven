@@ -282,6 +282,16 @@ class ConfigReaderTests(RavenTestCase):
         self._write('template = "py#thon"\n')
         self.assertEqual(self.module.read_config_keys(self.destination)["template"], "py#thon")
 
+    def test_single_quoted_value_with_a_hash_is_not_truncated(self):
+        # Parser-4 bug: the old _strip_inline_comment tracked only double
+        # quotes, so a '#' inside a single-quoted value was treated as a
+        # comment start and truncated the value. read_config_keys only
+        # strips double quotes (unchanged), so the single quotes survive
+        # literally -- the point of this test is that the value is no
+        # longer cut off mid-string.
+        self._write("template = 'py#thon'\n")
+        self.assertEqual(self.module.read_config_keys(self.destination)["template"], "'py#thon'")
+
     def test_commented_out_platform_is_not_read(self):
         self._write('template = "python"\n[issue_tracker]\n# platform = "gitlab"\n')
         self.assertIsNone(self.module.read_config_keys(self.destination)["platform"])

@@ -9,12 +9,69 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from helpers import REPO_ROOT, RavenTestCase, load_script_module
+from helpers import REPO_ROOT, RavenTestCase, install_raven_config_lib, load_script_module
 from raven_lib.template import should_preserve_symlink
 
 TOOL_CHECK_SCRIPT = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
 CODEX_TOOL_CHECK_SCRIPT = REPO_ROOT / "common" / ".codex" / "scripts" / "raven-tool-check.py"
 CODEX_ROSTER_SCRIPT = REPO_ROOT / "common" / ".codex" / "scripts" / "raven-capability-roster.py"
+
+
+class CodexMcpServerNamesFromTomlTests(RavenTestCase):
+    """Direct tests for `_codex_mcp_server_names_from_toml`, which now routes
+    through the shared .raven/git-hooks/lib/raven_config.py parser instead of
+    its own bespoke per-line header scan (issue #201, parser 5).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.module = load_script_module("raven_tool_check_codex_names", TOOL_CHECK_SCRIPT)
+
+    def test_finds_a_simple_server_name(self):
+        names = self.module._codex_mcp_server_names_from_toml(
+            '[mcp_servers.semble]\ncommand = "uvx"\n'
+        )
+        self.assertEqual(names, {"semble"})
+
+    def test_finds_multiple_servers(self):
+        text = '[mcp_servers.semble]\ncommand = "uvx"\n\n[mcp_servers.gitnexus]\ncommand = "gitnexus"\n'
+        self.assertEqual(
+            self.module._codex_mcp_server_names_from_toml(text), {"semble", "gitnexus"}
+        )
+
+    def test_excludes_nested_dotted_headers(self):
+        # [mcp_servers.semble.tools.search] is per-tool config, not a server.
+        text = '[mcp_servers.semble]\ncommand = "uvx"\n[mcp_servers.semble.tools.search]\napproval_mode = "approve"\n'
+        self.assertEqual(self.module._codex_mcp_server_names_from_toml(text), {"semble"})
+
+    def test_unquotes_a_quoted_server_name(self):
+        text = '[mcp_servers."my server"]\ncommand = "x"\n'
+        self.assertEqual(self.module._codex_mcp_server_names_from_toml(text), {"my server"})
+
+    def test_ignores_unrelated_sections(self):
+        text = "[agents]\nmax_threads = 4\n\n[mcp_servers.semble]\ncommand = \"uvx\"\n"
+        self.assertEqual(self.module._codex_mcp_server_names_from_toml(text), {"semble"})
+
+    def test_a_hash_in_a_value_line_does_not_disrupt_later_header_parsing(self):
+        # A value containing '#' must not be misread as starting a comment
+        # that swallows a later real header -- the shared parser strips
+        # comments per line, quote-aware.
+        text = '[mcp_servers.semble]\ncommand = "uv#x"  # note\n\n[mcp_servers.gitnexus]\ncommand = "y"\n'
+        self.assertEqual(
+            self.module._codex_mcp_server_names_from_toml(text), {"semble", "gitnexus"}
+        )
+
+    def test_empty_text_yields_no_servers(self):
+        self.assertEqual(self.module._codex_mcp_server_names_from_toml(""), set())
+
+    def test_real_shipped_codex_config_parses(self):
+        # Pinned against the real template file so the reader and the
+        # shipped config cannot drift.
+        text = (REPO_ROOT / "python" / ".codex" / "config.toml").read_text(encoding="utf-8")
+        names = self.module._codex_mcp_server_names_from_toml(text)
+        self.assertIn("semble", names)
+        self.assertIn("gitnexus", names)
+        self.assertIn("lsp", names)
 
 
 class ToolCheckTests(RavenTestCase):
@@ -491,6 +548,10 @@ class ProjectRootResolutionTests(RavenTestCase):
         scripts = project / adapter / "scripts"
         scripts.mkdir(parents=True)
         shutil.copy2(script, scripts / "raven-tool-check.py")
+        # project_root() (and this prober's _raven_config_module()) resolves
+        # from the script's own installed location, so a fabricated project
+        # needs the shared config lib at its real installed path too.
+        install_raven_config_lib(project)
         return project
 
     def _isolated_env(self) -> dict[str, str]:

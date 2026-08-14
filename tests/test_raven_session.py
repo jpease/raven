@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import cast
 from unittest.mock import patch
 
+from helpers import install_raven_config_lib
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-session.py"
 HOOK_PATH = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-session-checkpoint.py"
@@ -916,6 +918,10 @@ class CheckpointHookTests(unittest.TestCase):
         self.raven_dir = self.root / ".raven"
         self.raven_dir.mkdir()
         self.config_file = self.raven_dir / "config.toml"
+        # _enforcement_enabled loads its sibling .raven/git-hooks/lib/raven_config.py
+        # via this fixture's own project_root(), so it needs a copy here too --
+        # mirroring what a real install actually ships alongside the hook.
+        install_raven_config_lib(self.root)
         # Simulate an installed project: the hook calls the script at this path
         scripts_dir = self.root / ".claude" / "scripts"
         scripts_dir.mkdir(parents=True)
@@ -1163,6 +1169,10 @@ class CodexCheckpointHookTests(unittest.TestCase):
         self.raven_dir = self.root / ".raven"
         self.raven_dir.mkdir()
         self.config_file = self.raven_dir / "config.toml"
+        # _enforcement_enabled loads its sibling .raven/git-hooks/lib/raven_config.py
+        # via this fixture's own project_root(), so it needs a copy here too --
+        # mirroring what a real install actually ships alongside the hook.
+        install_raven_config_lib(self.root)
         # Simulate a Codex-only installed project: no .claude tree at all, the
         # session CLI lives only under .codex/scripts.
         scripts_dir = self.root / ".codex" / "scripts"
@@ -1324,3 +1334,13 @@ class EnforcementEnabledTests(unittest.TestCase):
 
     def test_malformed_value_fails_safe_enabled(self):
         self.assertTrue(self._enabled('[lifecycle]\ncheckpoint_enforcement = "maybe"\n'))
+
+    def test_unreadable_config_stays_enabled(self):
+        self.config_file.write_text(
+            "[lifecycle]\ncheckpoint_enforcement = false\n", encoding="utf-8"
+        )
+        self.config_file.chmod(0o000)
+        try:
+            self.assertTrue(self._enabled(None))
+        finally:
+            self.config_file.chmod(0o644)

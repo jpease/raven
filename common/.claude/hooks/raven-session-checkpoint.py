@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
 import shlex
 import subprocess
 import sys
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 # This file is shared byte-for-byte between the Claude and Codex adapters (the
@@ -106,6 +108,34 @@ def project_root() -> Path:
     return _root_from_install_layout() or _root_from_cwd() or Path(".")
 
 
+def _raven_config_module():
+    """Import ``.raven/git-hooks/lib/raven_config.py`` for its quote-aware
+    comment stripping and boolean parsing.
+
+    Resolved via ``project_root()`` -- this script's own install-derived root
+    -- not the ``root`` argument ``_enforcement_enabled`` receives: those are
+    different concerns. ``root`` there says which repo's
+    ``.raven/config.toml`` to read (tests point it at an isolated fixture);
+    this always resolves to the sibling ``raven_config.py`` shipped next to
+    this hook's own installed copy, in the same "hooks" component. Same
+    ``spec_from_file_location`` + ``SourceFileLoader`` mechanism
+    ``load_prober`` in ``raven-capability-roster.py`` uses for the same kind
+    of sibling-script import.
+    """
+    path = project_root() / ".raven" / "git-hooks" / "lib" / "raven_config.py"
+    spec = importlib.util.spec_from_file_location(
+        "raven_config_for_checkpoint",
+        path,
+        loader=SourceFileLoader("raven_config_for_checkpoint", str(path)),
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load raven_config from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _load_payload() -> dict | None:  # type: ignore[type-arg]
     try:
         payload = json.load(sys.stdin)
@@ -172,9 +202,14 @@ def _enforcement_enabled(root: Path) -> bool:
             file=sys.stderr,
         )
         return True
+    # Comment stripping and boolean coercion delegate to the shared
+    # .raven/git-hooks/lib/raven_config.py module (quote-aware, unlike the old
+    # `raw.split("#", 1)[0]` here); the section-aware walk and per-key
+    # precedence stay exactly as before.
+    raven_config = _raven_config_module()
     section: str | None = None
     for raw in text.splitlines():
-        line = raw.split("#", 1)[0].strip()
+        line = raven_config.strip_comment(raw)
         if not line:
             continue
         if line.startswith("[") and line.endswith("]"):
@@ -185,10 +220,9 @@ def _enforcement_enabled(root: Path) -> bool:
         key, value = (part.strip() for part in line.split("=", 1))
         if key != "checkpoint_enforcement":
             continue
-        if value == "true":
-            return True
-        if value == "false":
-            return False
+        parsed = raven_config.parse_bool(value)
+        if parsed is not None:
+            return parsed
         print(
             "raven-session-checkpoint: [lifecycle].checkpoint_enforcement must be true or false, "
             f"got {value!r}; keeping enforcement enabled",

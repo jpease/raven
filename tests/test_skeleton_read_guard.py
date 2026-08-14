@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -144,6 +145,48 @@ class ParseGateConfigTests(RavenTestCase):
         # each header rather than latching the first table seen.
         text = "[skeleton]\nread_gate = true\n[other]\nread_gate = false\n"
         self.assertEqual(module.parse_gate_config(text), (True, 500))
+
+
+class GateConfigFileTests(RavenTestCase):
+    """`_gate_config()` reads .raven/config.toml relative to cwd; these drive it
+    through a real file (missing, unreadable, valid) rather than passing text
+    directly, unlike ParseGateConfigTests above.
+    """
+
+    def _with_cwd(self, func):
+        orig = os.getcwd()
+        os.chdir(self.destination)
+        try:
+            return func()
+        finally:
+            os.chdir(orig)
+
+    def test_missing_config_yields_safe_default(self):
+        module = _module()
+        self.assertEqual(self._with_cwd(module._gate_config), (False, module.DEFAULT_THRESHOLD))
+
+    def test_valid_config_is_read(self):
+        module = _module()
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            "[skeleton]\nread_gate = true\nread_gate_threshold_lines = 42\n", encoding="utf-8"
+        )
+        self.assertEqual(self._with_cwd(module._gate_config), (True, 42))
+
+    def test_unreadable_config_does_not_crash_and_yields_safe_default(self):
+        # Pre-existing gap (issue #201): an unreadable-but-present config used
+        # to propagate an uncaught OSError all the way out of the hook.
+        # Fixed here to fail safe (gate off) like every other read failure in
+        # this hook, rather than crashing the PreToolUse hook outright.
+        module = _module()
+        (self.destination / ".raven").mkdir()
+        config = self.destination / ".raven" / "config.toml"
+        config.write_text("[skeleton]\nread_gate = true\n", encoding="utf-8")
+        config.chmod(0o000)
+        try:
+            self.assertEqual(self._with_cwd(module._gate_config), (False, module.DEFAULT_THRESHOLD))
+        finally:
+            config.chmod(0o644)
 
 
 class IsSupportedTests(RavenTestCase):
