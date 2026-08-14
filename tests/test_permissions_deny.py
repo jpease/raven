@@ -27,7 +27,7 @@ import re
 import unittest
 
 from helpers import REPO_ROOT, load_script_module
-from test_agent_hooks import DENIED_BASH_COMMANDS
+from test_agent_hooks import DENIED_BASH_COMMANDS, PIPE_TO_SHELL_DENIED_COMMANDS
 
 SETTINGS_PATH = REPO_ROOT / "common" / ".claude" / "settings.json"
 EDIT_GUARD_PATH = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-pre-edit-guard.py"
@@ -301,6 +301,12 @@ OPTION_BEARING_CASES: list[tuple[str, str, bool]] = [
     # cluster orderings plus split/long-option spellings; only the 4
     # spellings the hook's own test fixture asserts are natively mirrored.
     ("git clean -fxd (unmirrored ordering)", "git clean -fxd", False),
+    # NOT mitigated: `git checkout -f` with no pathspec. The shipped rules are
+    # the flag-carrying spellings with an operand (`Bash(git checkout -f *)`),
+    # and a trailing " *" needs a real space and argument in the command. The
+    # hook denies it regardless of operand, because `-f` on checkout always
+    # means "discard whatever is in the worktree" (issue #210).
+    ("git checkout -f (no pathspec)", "git checkout -f", False),
     # NOT mitigated: the SQL "drop database" check is a raw, case-
     # insensitive substring match with no program-position/subcommand shape
     # to anchor a Bash prefix/wildcard rule on. Only the literal upper- and
@@ -325,6 +331,31 @@ class ProgramOptionBearingCoverageTests(unittest.TestCase):
                         "gap), but a Bash(...) rule matched -- update the gap note if this "
                         "is now intentionally covered",
                     )
+
+
+class PipeToShellIsHookOnlyTests(unittest.TestCase):
+    """Piping a fetched URL into a shell has no native mirror, deliberately.
+
+    Every other entry in this file records a gap that a glob *could* close at
+    some cost in precision. This one it cannot close at any cost: the rule is a
+    relationship between two command segments (something fetches, something
+    else interprets stdin), and a `Bash(...)` pattern matches one subcommand at
+    a time. A rule broad enough to reach it -- `Bash(curl *)`, `Bash(sh)` --
+    would deny ordinary work. The hook is the only layer that can hold this
+    one, which is asserted here so a future audit does not read the absence of
+    a `curl` entry in settings.json as an oversight (issue #212).
+    """
+
+    def test_no_native_rule_covers_the_fetch_into_interpreter_shape(self):
+        for command in PIPE_TO_SHELL_DENIED_COMMANDS:
+            with self.subTest(command=command):
+                covered = any(_bash_rule_matches(p, command) for p in BASH_RULES)
+                self.assertFalse(
+                    covered,
+                    f"a Bash(...) deny rule now matches {command!r} -- if that is "
+                    "intentional, check it does not also deny ordinary fetches or "
+                    "ordinary shell invocations, and update this note",
+                )
 
 
 class NoCautionOrEditRuleAdditionsSlippedIntoDenyTests(unittest.TestCase):

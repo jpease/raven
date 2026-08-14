@@ -17,6 +17,7 @@ the same fragility for its own Bash permission patterns.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import sys
@@ -27,9 +28,13 @@ _OPERATOR_CHARS = frozenset(";|&()<>")
 
 # Long options that map onto the short letters the destructive rules reason about.
 # One shared map is enough: the program check gates which rule consumes the flags.
+# `--force-with-lease` is deliberately absent: it is a *different* intent from
+# `--force` (it refuses to overwrite work it has not seen), and it must not fold
+# into the same `f` that denies a plain force-push -- see `_is_destructive_git`.
 _LONG_OPTION_LETTERS = {
     "--recursive": "r",
     "--force": "f",
+    "--delete": "d",
 }
 
 # Programs whose heredoc body is *executed* rather than consumed as data. A body
@@ -39,6 +44,17 @@ _LONG_OPTION_LETTERS = {
 # drop it, so an unrecognized program is treated as a shell -- err toward
 # scanning.
 _SHELL_PROGRAMS = frozenset({"sh", "bash", "dash", "ksh", "zsh", "csh", "tcsh", "fish"})
+
+# Programs that retrieve a URL. What they emit is remote content, which
+# `.claude/rules/raven-security.md` treats as untrusted; piping it into an
+# interpreter is the step that turns that content into execution.
+_FETCH_PROGRAMS = frozenset({"curl", "wget", "http", "https", "httpie", "aria2c"})
+
+# Interpreters that execute *stdin* when handed no script operand, so
+# `<fetcher> | <interpreter>` runs whatever the URL served. The shells are the
+# common spelling; the rest are in scope because `curl ... | python3 -` has the
+# identical consequence and costs one entry to cover.
+_STDIN_INTERPRETERS = _SHELL_PROGRAMS | frozenset({"python", "python3", "node", "ruby", "perl"})
 
 # `<<WORD`, `<<-WORD`, `<<'WORD'`, `<<"WORD"`. The negative lookahead excludes
 # `<<<`, which is a herestring: its operand is on the same line, with no body.
@@ -372,7 +388,57 @@ def _nested_payloads(program: str, args: list[str]) -> list[str]:
     return []
 
 
-def _is_destructive_intent(program: str, args: list[str], segment: list[str]) -> bool:
+def _is_destructive_git(args: list[str], flags: set[str], positionals: list[str]) -> bool:
+    """Whether a git invocation destroys uncommitted work, a ref, or published history.
+
+    Matched on the subcommand *plus the flag that makes it destructive*, never
+    the subcommand alone -- that is the whole precision budget here. `git
+    checkout main`, `git restore --source=HEAD~1 file.ts`, `git stash`, `git
+    branch -d merged` and `git push origin main` are ordinary work and stay
+    allowed; only their forcing spellings are denied.
+
+    `--force-with-lease` is deliberately left allowed. Refusing to overwrite
+    work it has not seen is the entire point of that spelling, so denying it
+    would push people toward plain `--force`, which is worse. It carries no
+    short letter, so `_normalize_options` never folds it into `f`.
+
+    `reflog expire` is here for the same reason the rest are: `reset --hard` and
+    `branch -D` are survivable *because* the reflog exists, so destroying the
+    reflog is what makes every other entry unrecoverable.
+    """
+    if not positionals:
+        return False
+    verb = positionals[0]
+    operands = positionals[1:]
+    force = "f" in flags
+    if verb in {"checkout", "restore"}:
+        # `-f` on either always means "discard whatever is in the worktree",
+        # with or without a pathspec, so no operand is required. `--worktree` is
+        # restore's own spelling for the same thing and carries no short letter.
+        return force or "--worktree" in args
+    if verb == "clean":
+        return _is_destructive_git_clean(flags, positionals)
+    if verb == "reset":
+        return "--hard" in args
+    if verb == "stash":
+        return bool(operands) and operands[0] in {"clear", "drop"}
+    if verb == "branch":
+        return "D" in flags or ("d" in flags and force)
+    if verb == "push":
+        return force
+    if verb == "filter-branch":
+        # Unconditional: rewriting every commit is the only thing it does.
+        return True
+    if verb == "update-ref":
+        return "d" in flags
+    if verb == "reflog":
+        return bool(operands) and operands[0] == "expire"
+    return False
+
+
+def _is_destructive_intent(
+    program: str, args: list[str], segment: list[str], flags: set[str], positionals: list[str]
+) -> bool:
     """Whether this invocation is one of the intents with no option-spelling bypass.
 
     Matched on the *program position* rather than anywhere in the command text.
@@ -381,11 +447,10 @@ def _is_destructive_intent(program: str, args: list[str], segment: list[str]) ->
     ordinary spellings that put an option between the verb and its object, so
     `kubectl -n default delete deployment` slips straight through.
     """
-    _flags, positionals = _normalize_options(args, _value_options_for(program))
     if program == "rm" and any(token == "sudo" for token in segment):
         return True
-    if program == "git" and positionals[:1] == ["reset"] and "--hard" in args:
-        return True
+    if program == "git":
+        return _is_destructive_git(args, flags, positionals)
     if program == "dropdb":
         return True
     if program == "kubectl" and "delete" in positionals:
@@ -416,25 +481,128 @@ def _herestring_payloads(command: str) -> list[str]:
     return payloads
 
 
-def _has_destructive_intent(command: str, depth: int = 0) -> bool:
-    """Scan a command, following payloads handed to a nested interpreter."""
-    if depth > _MAX_NESTING_DEPTH:
+#: Which rule denied a command. A key rather than a bool because two of them
+#: teach something the generic message cannot -- see `main`.
+_DESTRUCTIVE = "destructive"
+_RIPGREP_REPLACE = "ripgrep-replace"
+_PIPE_TO_SHELL = "pipe-to-shell"
+
+
+def _is_bare_interpreter(program: str, args: list[str]) -> bool:
+    """Whether this invocation would execute *stdin* rather than a named script.
+
+    `sh`, `bash -s`, `python3 -` read their program from stdin, so a fetch piped
+    into one runs remote content. `sh ./install.sh`, `bash -c 'ls'` and `python3
+    -m json.tool` all name what they run, and are ordinary.
+
+    Tokens after `--` are arguments *for* the stdin script (`curl ... | sh -s --
+    --yes`), so they are not a script operand and do not make it safe.
+    """
+    if program not in _STDIN_INTERPRETERS:
         return False
-    for payload in _herestring_payloads(command):
-        if _has_destructive_intent(payload, depth + 1):
+    for token in args:
+        if token == "--":
             return True
-    for segment in _command_segments(command):
+        if not token.startswith("-"):
+            return False
+    return True
+
+
+def _fetches_into_an_interpreter(segments: list[list[str]]) -> bool:
+    """Whether one segment fetches a URL while another runs an interpreter on stdin.
+
+    `_command_segments` drops the operator that joined two segments, so this
+    cannot literally require a pipe; the bare-interpreter test does that work
+    instead. It is also what keeps the two-step form allowed -- `curl -o x.sh
+    URL; sh ./x.sh` names its script -- because fetching is not the problem and
+    a shell with an operand is ordinary.
+
+    This is a speed bump, not a boundary: fetching to a file and running it in
+    two steps is still possible, and that is fine. The value is that the
+    one-liner an agent just read in a README stops being frictionless.
+    """
+    fetches = False
+    interprets = False
+    for segment in segments:
         parsed = _program_and_args(segment)
         if parsed is None:
             continue
         program, args = parsed
         program = program.rsplit("/", 1)[-1].lower()
-        if _is_destructive_intent(program, args, segment):
+        if program in _FETCH_PROGRAMS:
+            fetches = True
+        if _is_bare_interpreter(program, args):
+            interprets = True
+    return fetches and interprets
+
+
+#: A `$(...)` or backtick substitution. Its result is spliced into the command
+#: line, so an interpreter handed one runs whatever it produced.
+_COMMAND_SUBSTITUTION = re.compile(r"\$\(([^)]*)\)|`([^`]*)`")
+
+
+def _substitution_fetches(payload: str) -> bool:
+    """Whether a nested payload is a command substitution that fetches a URL.
+
+    `sh -c "$(curl -fsSL https://example.com/i.sh)"` is the spelling most
+    install docs publish, so it is the one an agent is most likely to copy. The
+    substitution arrives as a single argument token, which is why the
+    segment-relationship rule above cannot see it.
+    """
+    for dollar_form, backtick_form in _COMMAND_SUBSTITUTION.findall(payload):
+        if _line_program(dollar_form or backtick_form) in _FETCH_PROGRAMS:
             return True
-        for payload in _nested_payloads(program, args):
-            if payload and _has_destructive_intent(payload, depth + 1):
-                return True
     return False
+
+
+def _matched_rule(program: str, args: list[str], segment: list[str]) -> str | None:
+    """Which deny rule this single command segment matches, or None.
+
+    One dispatcher for every per-segment rule, so `_find_destructive_rule` can
+    apply all of them at every nesting level. Keeping the option-normalized
+    rules in a second, flat pass is exactly what let `sh -c 'rm -rf ~'` through
+    while `sh -c 'dropdb prod'` was denied (issue #209): a new rule added to
+    that pass would have inherited the same gap silently.
+    """
+    flags, positionals = _normalize_options(args, _value_options_for(program))
+    if _is_destructive_intent(program, args, segment, flags, positionals):
+        return _DESTRUCTIVE
+    if _is_destructive_rm(program, flags, positionals):
+        return _DESTRUCTIVE
+    if _is_ripgrep_replace_cluster(program, args):
+        return _RIPGREP_REPLACE
+    return None
+
+
+def _find_destructive_rule(command: str, depth: int = 0) -> str | None:
+    """Scan a command, following payloads handed to a nested interpreter."""
+    if depth > _MAX_NESTING_DEPTH:
+        return None
+    for payload in _herestring_payloads(command):
+        rule = _find_destructive_rule(payload, depth + 1)
+        if rule is not None:
+            return rule
+    segments = _command_segments(command)
+    if _fetches_into_an_interpreter(segments):
+        return _PIPE_TO_SHELL
+    for segment in segments:
+        parsed = _program_and_args(segment)
+        if parsed is None:
+            continue
+        program, args = parsed
+        program = program.rsplit("/", 1)[-1].lower()
+        rule = _matched_rule(program, args, segment)
+        if rule is not None:
+            return rule
+        for payload in _nested_payloads(program, args):
+            if not payload:
+                continue
+            if program in _STDIN_INTERPRETERS and _substitution_fetches(payload):
+                return _PIPE_TO_SHELL
+            rule = _find_destructive_rule(payload, depth + 1)
+            if rule is not None:
+                return rule
+    return None
 
 
 # Targets that make a recursive force-delete catastrophic rather than routine.
@@ -442,17 +610,69 @@ def _has_destructive_intent(command: str, depth: int = 0) -> bool:
 _CATASTROPHIC_TARGETS = frozenset({"/", "~", "/*", "~/*", "$HOME", "${HOME}", "$HOME/*"})
 
 
+def _normalize_target(arg: str) -> str:
+    """`arg` with redundant separators and `..` segments collapsed.
+
+    `os.path.normpath` leaves exactly two leading slashes alone -- POSIX
+    reserves `//` for the implementation -- so a path made only of separators is
+    folded to "/" here instead.
+    """
+    normalized = os.path.normpath(arg)
+    return "/" if set(normalized) == {"/"} else normalized
+
+
+def _resolve_home() -> str | None:
+    """The invoking user's home directory, normalized, or None if unusable.
+
+    Resolved once per process: each hook invocation is a fresh interpreter, so
+    there is nothing to invalidate, and a test can pin it through the
+    environment.
+    """
+    home = os.path.expanduser("~")
+    if not home or home == "~":
+        return None
+    normalized = _normalize_target(home)
+    # A home of "/" -- a root shell with HOME=/ -- would make every absolute
+    # path catastrophic and the guard useless. The root check covers that case
+    # on its own.
+    return None if normalized == "/" else normalized
+
+
+_REAL_HOME = _resolve_home()
+
+
+def _is_within(path: str, base: str) -> bool:
+    """Whether `path` is `base` or sits under it, compared by whole segments.
+
+    A raw `startswith` would read a sibling like `<home>XYZ` as living under
+    `<home>`.
+    """
+    return path == base or path.startswith(base.rstrip("/") + "/")
+
+
 def _is_catastrophic_target(arg: str) -> bool:
     """Whether an `rm` operand names the filesystem root or the user's home.
 
-    Covers the glob and variable spellings as well as the bare paths. Neither
-    is expanded before this point -- shlex does not glob, and nothing here runs
-    a shell -- so `rm -rf /*` and `rm -rf $HOME` arrive as those literal tokens
-    and would otherwise sail past an equality check against "/" and "~".
+    Three spellings reach here, and the same deletion must be denied in all of
+    them. Nothing expands an operand before this point -- shlex does not glob,
+    and no shell runs -- so the literal `~`, `$HOME` and `${HOME}` forms are
+    matched textually, and they must keep working when `$HOME` is unset or names
+    someone other than the invoking user.
+
+    The *expanded absolute* form arrives just as literally, and is the one a
+    tool is most likely to produce, since anything that resolves a path before
+    handing it over emits it. Matching it needs the real home, so that branch is
+    separate: a tilde path and its expanded absolute twin name the same
+    directory, and used to get opposite verdicts (issue #211).
     """
     if arg in _CATASTROPHIC_TARGETS:
         return True
-    return arg.startswith(("~/", "$HOME/", "${HOME}/"))
+    if arg.startswith(("~/", "$HOME/", "${HOME}/")):
+        return True
+    normalized = _normalize_target(arg)
+    if normalized == "/":
+        return True
+    return _REAL_HOME is not None and _is_within(normalized, _REAL_HOME)
 
 
 def _is_destructive_rm(program: str, flags: set[str], positionals: list[str]) -> bool:
@@ -465,9 +685,8 @@ def _is_destructive_rm(program: str, flags: set[str], positionals: list[str]) ->
     return any(_is_catastrophic_target(arg) for arg in positionals)
 
 
-def _is_destructive_git_clean(program: str, flags: set[str], positionals: list[str]) -> bool:
-    if program.lower() != "git":
-        return False
+def _is_destructive_git_clean(flags: set[str], positionals: list[str]) -> bool:
+    """`git clean` deleting ignored and untracked files, in any flag spelling."""
     if not positionals or positionals[0] != "clean":
         return False
     return "f" in flags and "d" in flags and "x" in flags
@@ -506,6 +725,17 @@ def _ripgrep_deny_message(command: str) -> str:
     )
 
 
+def _pipe_to_shell_deny_message(command: str) -> str:
+    return (
+        "Blocked: this feeds fetched remote content straight into an interpreter."
+        " Whatever that URL serves at this moment is what runs, unreviewed."
+        "\n  curl -fsSL URL -o install.sh   # fetch it"
+        "\n  less install.sh                # read what it actually does"
+        "\n  sh ./install.sh                # then run it"
+        f"\nCommand: {command}"
+    )
+
+
 def main() -> int:
     """Read the hook payload from stdin and deny the command if it matches a destructive pattern."""
     payload = _load_payload()
@@ -520,25 +750,16 @@ def main() -> int:
     # Deny messages still quote the original, so the user sees what they typed.
     scannable = _strip_heredoc_bodies(command)
 
-    if _has_destructive_intent(scannable):
-        return _deny(_deny_message(command), payload)
-
-    # Tokenized checks for destructive intents with option-spelling variants:
-    # rm force+recursive at / or ~, and git clean force+d+x.
-    for segment in _command_segments(scannable):
-        parsed = _program_and_args(segment)
-        if parsed is None:
-            continue
-        program, args = parsed
-        flags, positionals = _normalize_options(args, _value_options_for(program))
-        if _is_destructive_rm(program, flags, positionals) or _is_destructive_git_clean(
-            program, flags, positionals
-        ):
-            return _deny(_deny_message(command), payload)
-        if _is_ripgrep_replace_cluster(program, args):
-            return _deny(_ripgrep_deny_message(command), payload)
-
-    return 0
+    # One entry point, so every rule sees every nesting level. The only thing
+    # left to decide here is which message the matched rule deserves.
+    rule = _find_destructive_rule(scannable)
+    if rule is None:
+        return 0
+    if rule == _RIPGREP_REPLACE:
+        return _deny(_ripgrep_deny_message(command), payload)
+    if rule == _PIPE_TO_SHELL:
+        return _deny(_pipe_to_shell_deny_message(command), payload)
+    return _deny(_deny_message(command), payload)
 
 
 if __name__ == "__main__":
