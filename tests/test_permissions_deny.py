@@ -280,6 +280,17 @@ OPTION_BEARING_CASES: list[tuple[str, str, bool]] = [
     # git reset --hard: the mid-wildcard forms mitigate --hard appearing
     # after another positional (reordering), not just directly after reset.
     ("git reset HEAD --hard (reordered)", "git reset HEAD --hard", True),
+    # git with a global option taking a value operand: the same mid-wildcard
+    # shape already shipped for kubectl/aws/sudo, applied to git (issue #207).
+    ("git -c ... reset --hard", "git -c core.pager=cat reset --hard", True),
+    ("git -C ... reset --hard", "git -C /tmp reset --hard", True),
+    ("git --git-dir ... clean -fdx", "git --git-dir /srv/repo/.git clean -fdx", True),
+    # NOT mitigated: a destructive command reached through `ssh` has no
+    # anchorable shape -- the payload is one quoted argument, and a rule
+    # broad enough to see inside it (`Bash(ssh * delete *)`) would deny
+    # ordinary remote work. Hook-only, by the same reasoning as the entries
+    # above; the hook follows the payload, the native layer cannot.
+    ("ssh -p ... kubectl delete", "ssh -p 2222 host 'kubectl delete pod web'", False),
     # NOT mitigated: rm's catastrophic-target rules are exact literal
     # spellings mirroring the hook's own DENIED_BASH_COMMANDS fixture. An
     # extra/reordered flag the hook still catches via _normalize_options --

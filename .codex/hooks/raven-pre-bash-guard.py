@@ -250,17 +250,61 @@ def _program_and_args(segment: list[str]) -> tuple[str, list[str]] | None:
     return segment[index], segment[index + 1 :]
 
 
-def _normalize_options(args: list[str]) -> tuple[set[str], list[str]]:
+#: Options whose value is a *separate* following token, keyed by program.
+#:
+#: Such a value is an ordinary token, so without skipping it the value lands in
+#: the positionals and pushes the token that carries the meaning out of first
+#: place: `git -c core.pager=cat clean -fdx` reads as subcommand
+#: "core.pager=cat", and `ssh -p 2222 host "kubectl delete pod"` reads 2222 as
+#: the destination and `host ...` as the remote command. Both then match
+#: nothing. The valueless spellings (`git --no-pager clean -fdx`) were never
+#: affected, which is what made the gap easy to miss.
+#:
+#: Only the separated spelling needs listing. `--git-dir=/x` and `-C/tmp` are
+#: single tokens that never displace a positional.
+_VALUE_TAKING_OPTIONS = {
+    "git": frozenset(
+        {"-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"}
+    ),
+    # ssh(1)'s value-taking options, in full. Both directions are unsafe: an
+    # omission leaves a bypass, and a valueless option listed here swallows the
+    # token after it, so the destination shifts and the remote command the
+    # guard should scan disappears entirely. `-P` is the trap -- it took an
+    # argument in neither current ssh(1) nor this list, though scp/sftp spell
+    # their port option that way.
+    "ssh": frozenset(
+        {
+            "-B", "-b", "-c", "-D", "-E", "-e", "-F", "-I", "-i", "-J", "-L",
+            "-l", "-m", "-O", "-o", "-p", "-Q", "-R", "-S", "-W", "-w",
+        }
+    ),
+}  # fmt: skip
+
+
+def _value_options_for(program: str) -> frozenset:
+    """Value-taking options for `program`, matching how the rules name it."""
+    return _VALUE_TAKING_OPTIONS.get(program.rsplit("/", 1)[-1].lower(), frozenset())
+
+
+def _normalize_options(
+    args: list[str], value_options: frozenset = frozenset()
+) -> tuple[set[str], list[str]]:
     """Split args into a set of short-option letters and positional arguments.
 
     Combined clusters (``-rf``), split short options (``-r`` ``-f``), and mapped
     long options (``--recursive`` -> ``r``) all reduce to the same letter set.
     Tokens after a ``--`` end-of-options marker are treated as positional only.
+    A token in ``value_options`` consumes the one after it as its value, so the
+    value is never mistaken for a positional -- see ``_VALUE_TAKING_OPTIONS``.
     """
     flags: set[str] = set()
     positionals: list[str] = []
     end_of_options = False
+    skip_value = False
     for token in args:
+        if skip_value:
+            skip_value = False
+            continue
         if end_of_options:
             positionals.append(token)
             continue
@@ -269,12 +313,17 @@ def _normalize_options(args: list[str]) -> tuple[set[str], list[str]]:
             continue
         if token.startswith("--"):
             name = token.split("=", 1)[0]
+            # An inline `--opt=value` carries its value already.
+            skip_value = "=" not in token and name in value_options
             mapped = _LONG_OPTION_LETTERS.get(name)
             if mapped:
                 flags.add(mapped)
             # Unknown long options carry no short letter; ignore them.
         elif token.startswith("-") and len(token) > 1:
             flags.update(token[1:])
+            # Only the bare option takes a separate value; in a cluster
+            # (`-rf`) or with the value attached (`-C/tmp`) it does not.
+            skip_value = token in value_options
         else:
             positionals.append(token)
     return flags, positionals
@@ -309,7 +358,7 @@ def _nested_payloads(program: str, args: list[str]) -> list[str]:
         index = args.index(flag)
         return args[index + 1 : index + 2]
     if program == "ssh":
-        _flags, positionals = _normalize_options(args)
+        _flags, positionals = _normalize_options(args, _value_options_for(program))
         # The first positional is the destination; the rest is the remote command.
         return [" ".join(positionals[1:])] if len(positionals) > 1 else []
     if program == "xargs":
@@ -332,7 +381,7 @@ def _is_destructive_intent(program: str, args: list[str], segment: list[str]) ->
     ordinary spellings that put an option between the verb and its object, so
     `kubectl -n default delete deployment` slips straight through.
     """
-    _flags, positionals = _normalize_options(args)
+    _flags, positionals = _normalize_options(args, _value_options_for(program))
     if program == "rm" and any(token == "sudo" for token in segment):
         return True
     if program == "git" and positionals[:1] == ["reset"] and "--hard" in args:
@@ -481,7 +530,7 @@ def main() -> int:
         if parsed is None:
             continue
         program, args = parsed
-        flags, positionals = _normalize_options(args)
+        flags, positionals = _normalize_options(args, _value_options_for(program))
         if _is_destructive_rm(program, flags, positionals) or _is_destructive_git_clean(
             program, flags, positionals
         ):

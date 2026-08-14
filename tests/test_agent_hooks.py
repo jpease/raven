@@ -28,6 +28,12 @@ DENIED_BASH_COMMANDS = [
     "git clean -xfd",
     "git clean -d -f -x",
     "git clean --force -d -x",
+    # A git global option whose value is a *separate* token: without skipping
+    # that operand it lands where the subcommand is expected and every git
+    # rule reads the subcommand as "core.pager=cat" (issue #207).
+    "git -c core.pager=cat clean -fdx",
+    "git -C /tmp clean -fdx",
+    "git --git-dir /srv/repo/.git clean -fdx",
 ]
 
 # Safe commands / lookalike paths that MUST stay allowed (exit 0, no deny).
@@ -40,6 +46,12 @@ ALLOWED_BASH_COMMANDS = [
     "git clean -n",
     "cat /etc/rm-notes",
     "rm -rf /tmp/rf-cache",
+    # Skipping a global option's value must not cost precision: a benign
+    # subcommand stays benign, and a value that merely *contains* a
+    # destructive verb is a value, not the verb (issue #207).
+    "git -c core.pager=cat status",
+    "git -C /tmp clean -n",
+    "git -c clean.requireForce=false status",
 ]
 
 # rg commands using a bundled short-flag cluster containing `r` -- ripgrep's
@@ -269,6 +281,34 @@ class BashGuardTokenizedIntentTests(RavenTestCase):
         "timeout 30 kubectl delete pod web",
     ]
 
+    #: A global option taking a *separate* value operand, before the token that
+    #: carries the meaning. The value is an ordinary token, so without knowing
+    #: which options consume one it shifts the subcommand (git) or the
+    #: destination (ssh) out of first position and the rule stops matching.
+    #: The valueless spellings in NON_ADJACENT/NESTED never had this problem,
+    #: which is what made the gap easy to miss (issue #207).
+    VALUE_TAKING_GLOBAL_OPTION: ClassVar[list[str]] = [
+        "git -c core.pager=cat reset --hard",
+        "git -C /tmp reset --hard",
+        "git --git-dir /srv/repo/.git reset --hard HEAD",
+        "ssh -p 2222 host 'kubectl delete pod web'",
+        "ssh -o StrictHostKeyChecking=no host 'dropdb prod'",
+        # The error in the other direction: a *valueless* option wrongly
+        # listed as value-taking swallows the token after it, so the payload
+        # the guard should scan disappears. `ssh -P` takes no argument in
+        # current ssh(1), and listing it dropped the destination -- a false
+        # negative introduced by the fix for the false negatives.
+        "ssh -P host 'dropdb prod'",
+    ]
+
+    #: The same option shapes carrying something harmless. These prove the fix
+    #: skips a value operand rather than simply ignoring more tokens.
+    VALUE_TAKING_GLOBAL_OPTION_SAFE: ClassVar[list[str]] = [
+        "ssh -p 2222 host 'ls -la'",
+        "ssh -o StrictHostKeyChecking=no host 'git status'",
+        "git -c core.pager=cat log --oneline",
+    ]
+
     def _claude(self, command):
         return _run_bash_guard(CLAUDE_BASH_GUARD, {"tool_input": {"command": command}})
 
@@ -286,6 +326,17 @@ class BashGuardTokenizedIntentTests(RavenTestCase):
         for command in self.NESTED:
             with self.subTest(command=command):
                 self.assertEqual(self._claude(command).returncode, 2, command)
+
+    def test_a_global_option_with_a_value_operand_is_still_denied(self):
+        for command in self.VALUE_TAKING_GLOBAL_OPTION:
+            with self.subTest(command=command):
+                self.assertEqual(self._claude(command).returncode, 2, command)
+
+    def test_a_global_option_with_a_value_operand_stays_precise(self):
+        for command in self.VALUE_TAKING_GLOBAL_OPTION_SAFE:
+            with self.subTest(command=command):
+                result = self._claude(command)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_a_herestring_fed_to_a_shell_is_followed(self):
         self.assertEqual(self._claude("bash <<< 'sudo rm -rf /'").returncode, 2)
