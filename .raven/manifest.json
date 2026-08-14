@@ -146,9 +146,9 @@
       "sourceSha256": "967c05a3b43026c3fba1554ca579d1ad7550a38984303433a191d18767823b11"
     },
     ".claude/docs/raven-guardrails.md": {
-      "installedSha256": "e1b7a8bedea303119cda9f8bdc18c089d2ddeb1c02811e4e17221ce0139e92f7",
+      "installedSha256": "5a27e503dd6b2289a7204cd3707581eddf525774d667e21e9c1ee5831c40a643",
       "kind": "file",
-      "sourceSha256": "e1b7a8bedea303119cda9f8bdc18c089d2ddeb1c02811e4e17221ce0139e92f7"
+      "sourceSha256": "5a27e503dd6b2289a7204cd3707581eddf525774d667e21e9c1ee5831c40a643"
     },
     ".claude/docs/raven-lsp-mcp.md": {
       "installedSha256": "c620be4bded990a3dfd9384ce270cec624baa1bfbba70f6738f542a7e6ae943e",
@@ -186,9 +186,9 @@
       "sourceSha256": "33093d626ed6dba3bca704c08df291e396716825a8260c3a384f0cf84c8df89c"
     },
     ".claude/hooks/raven-pre-bash-guard.py": {
-      "installedSha256": "6f1c9ab646023e401a2f95b23673f1f29e58383aa4e1b95c73152f0cf495ccf5",
+      "installedSha256": "6fd599470bd059dc75fa0519bce94c825c0b419fe3b78c1a887d12c6b6a9f89d",
       "kind": "file",
-      "sourceSha256": "6f1c9ab646023e401a2f95b23673f1f29e58383aa4e1b95c73152f0cf495ccf5"
+      "sourceSha256": "6fd599470bd059dc75fa0519bce94c825c0b419fe3b78c1a887d12c6b6a9f89d"
     },
     ".claude/hooks/raven-pre-edit-guard.py": {
       "installedSha256": "8302be119ba4f62ec2bb365b64c89d7dcfce54c9f764fb899a3151162d655b9d",
@@ -292,9 +292,9 @@
       "sourceSha256": "33093d626ed6dba3bca704c08df291e396716825a8260c3a384f0cf84c8df89c"
     },
     ".codex/hooks/raven-pre-bash-guard.py": {
-      "installedSha256": "6f1c9ab646023e401a2f95b23673f1f29e58383aa4e1b95c73152f0cf495ccf5",
+      "installedSha256": "6fd599470bd059dc75fa0519bce94c825c0b419fe3b78c1a887d12c6b6a9f89d",
       "kind": "file",
-      "sourceSha256": "6f1c9ab646023e401a2f95b23673f1f29e58383aa4e1b95c73152f0cf495ccf5"
+      "sourceSha256": "6fd599470bd059dc75fa0519bce94c825c0b419fe3b78c1a887d12c6b6a9f89d"
     },
     ".codex/hooks/raven-pre-edit-guard.py": {
       "installedSha256": "8302be119ba4f62ec2bb365b64c89d7dcfce54c9f764fb899a3151162d655b9d",
@@ -397,8 +397,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "262689d5a451",
+  "ravenVersion": "df8c7344070e",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-14T05:00:26.037146+00:00"
+  "updatedAt": "2026-08-14T05:49:08.825309+00:00"
 }

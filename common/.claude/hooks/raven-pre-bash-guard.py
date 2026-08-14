@@ -294,6 +294,19 @@ _VALUE_TAKING_OPTIONS = {
             "-l", "-m", "-O", "-o", "-p", "-Q", "-R", "-S", "-W", "-w",
         }
     ),
+    # `xargs`' own options, so `_first_operand_index` can tell where its options
+    # end and the command it runs begins. Only the spellings whose argument is
+    # *required* belong here: GNU's optional-argument forms (`-e`, `-i`, `-l`,
+    # and the `--eof` / `--replace` / `--max-lines` long spellings) take a value
+    # only when it is attached, so listing them would swallow the command word
+    # instead -- the same trap `ssh -P` was. `-J`, `-R` and `-S` are BSD's.
+    "xargs": frozenset(
+        {
+            "-a", "-d", "-E", "-I", "-J", "-L", "-n", "-P", "-R", "-S", "-s",
+            "--arg-file", "--delimiter", "--max-args", "--max-chars",
+            "--max-procs", "--process-slot-var",
+        }
+    ),
 }  # fmt: skip
 
 
@@ -345,6 +358,32 @@ def _normalize_options(
     return flags, positionals
 
 
+def _first_operand_index(args: list[str], value_options: frozenset = frozenset()) -> int:
+    """Index of the first non-option token, skipping any option's value operand.
+
+    The complement of `_normalize_options`: that reports *what* the operands
+    are, this reports *where* they start. A caller needs the second when the
+    operands must keep their own flags, because rebuilding a command from
+    `_normalize_options`' positionals discards them -- see the `xargs` branch of
+    `_nested_payloads`.
+    """
+    index = 0
+    skip_value = False
+    while index < len(args):
+        token = args[index]
+        if skip_value:
+            skip_value = False
+        elif token == "--":
+            return index + 1
+        elif token.startswith("-") and len(token) > 1:
+            # An inline `--opt=value` or `-I{}` carries its value already.
+            skip_value = "=" not in token and token in value_options
+        else:
+            return index
+        index += 1
+    return index
+
+
 # Programs that execute a payload argument as a fresh command. Without stepping
 # into these, `bash -c "kubectl delete pod"` reads as a single `bash` call whose
 # arguments happen to contain words, and the destructive command inside it is
@@ -376,6 +415,12 @@ def _nested_payloads(program: str, args: list[str]) -> list[str]:
     if program == "ssh":
         _flags, positionals = _normalize_options(args, _value_options_for(program))
         # The first positional is the destination; the rest is the remote command.
+        # Rebuilding from the positionals is only safe here because the remote
+        # command is conventionally one quoted token, so it survives intact --
+        # see the `xargs` branch for why the same shape is wrong there. The
+        # unquoted spelling (`ssh host rm -rf /`) has the identical defect and is
+        # tracked in issue #215; do not copy this branch to a program whose
+        # payload arrives as bare tokens.
         return [" ".join(positionals[1:])] if len(positionals) > 1 else []
     if program == "xargs":
         # Followed whatever flags are present. Claude Code treats only a flagless
@@ -383,8 +428,16 @@ def _nested_payloads(program: str, args: list[str]) -> list[str]:
         # through a wrapper you have not fully parsed over-grants. A deny rule
         # wants the opposite: `xargs -I{} kubectl delete pod {}` still runs
         # `kubectl delete`, so not looking is the unsafe direction.
-        _flags, positionals = _normalize_options(args)
-        return [" ".join(positionals)] if positionals else []
+        #
+        # Sliced out of the original tokens rather than rebuilt from the
+        # positionals, because the command `xargs` runs is unquoted and
+        # multi-token: its flags sit in `args` alongside `xargs`' own, so
+        # `_normalize_options` strips them and `xargs rm -rf /` reduces to
+        # `rm /` -- which no flag-keyed rule matches, and is not what was typed
+        # either (issue #214). Only the rules keyed on a positional (`kubectl
+        # delete pod`) survived that, which is why the gap stayed invisible.
+        index = _first_operand_index(args, _value_options_for(program))
+        return [" ".join(args[index:])] if index < len(args) else []
     return []
 
 

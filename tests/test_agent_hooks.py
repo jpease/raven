@@ -392,6 +392,46 @@ class BashGuardTokenizedIntentTests(RavenTestCase):
         "sh -c 'git checkout main'",
     ]
 
+    #: `xargs` runs an *unquoted, multi-token* command, so its payload has to be
+    #: sliced out of the original tokens rather than rebuilt from the
+    #: positionals -- rebuilding drops the payload's own flags, and `xargs rm -rf
+    #: /` reduces to `rm /` (issue #214). The `kubectl delete pod` entry in
+    #: NESTED above is keyed on a positional, so it survived that and read as
+    #: coverage while every flag-keyed rule was missing one layer down. These
+    #: cover the other family: `rm`, `git clean`, `rg -r`, and the `git` verbs
+    #: whose forcing spelling is a flag.
+    XARGS_NESTED: ClassVar[list[str]] = [
+        "xargs rm -rf /",
+        "xargs -n 1 rm -rf /",
+        "xargs -I {} rm -rf /",
+        "xargs -I{} rm -rf ~",
+        "xargs git clean -fdx",
+        "xargs rg -rn foo",
+        "xargs git checkout -f main",
+        "xargs git branch -D topic",
+        "xargs git update-ref -d refs/heads/topic",
+        # `-a` takes a separate value operand, so the payload starts two tokens
+        # in; `--` ends the options; `-0` takes none and must not swallow `rm`.
+        "xargs -a list.txt rm -rf /",
+        "xargs -- rm -rf /",
+        "xargs -0 rm -rf /",
+        "xargs --max-args=1 rm -rf /",
+        # Reached through another interpreter, within _MAX_NESTING_DEPTH.
+        "sh -c 'xargs rm -rf /'",
+    ]
+
+    #: The precision controls for the same path. These are the CI spellings that
+    #: must keep working, so the fix cannot degrade into "anything after xargs".
+    XARGS_NESTED_SAFE: ClassVar[list[str]] = [
+        "echo x | xargs ruff check",
+        "echo x | xargs -n 1 shellcheck",
+        "xargs rm ./build/x",
+        "xargs -n 1 rm ./build/x",
+        "xargs git clean -n",
+        "xargs -I{} kubectl get pod {}",
+        "xargs rg -r replacement pattern file.txt",
+    ]
+
     #: A global option taking a *separate* value operand, before the token that
     #: carries the meaning. The value is an ordinary token, so without knowing
     #: which options consume one it shifts the subcommand (git) or the
@@ -437,6 +477,17 @@ class BashGuardTokenizedIntentTests(RavenTestCase):
         for command in self.NESTED:
             with self.subTest(command=command):
                 self.assertEqual(self._claude(command).returncode, 2, command)
+
+    def test_an_xargs_payload_keeps_its_own_flags(self):
+        for command in self.XARGS_NESTED:
+            with self.subTest(command=command):
+                self.assertEqual(self._claude(command).returncode, 2, command)
+
+    def test_an_xargs_payload_stays_precise(self):
+        for command in self.XARGS_NESTED_SAFE:
+            with self.subTest(command=command):
+                result = self._claude(command)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_a_global_option_with_a_value_operand_is_still_denied(self):
         for command in self.VALUE_TAKING_GLOBAL_OPTION:
