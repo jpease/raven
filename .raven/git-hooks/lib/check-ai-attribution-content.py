@@ -118,17 +118,23 @@ def _read_config_bool(config_path: Path, section: str, key: str, default: bool) 
     return default if parsed_value is None else parsed_value
 
 
-def _repo_root() -> Path | None:
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return Path(result.stdout.strip())
-    except subprocess.CalledProcessError:
-        return None
+def _repo_root() -> Path:
+    """The project root for this checkout, via the shared parent-directory walk.
+
+    This script always ships at ``<root>/.raven/git-hooks/lib/``, a fixed
+    offset -- three parents up from this file's own directory is the
+    candidate root. Passed as ``start`` to the shared
+    ``raven_config.resolve_repo_root`` (loaded by ``_raven_config_module``
+    above), which confirms it (or walks further up, e.g. if the hook were
+    relocated) rather than trusting the fixed offset blindly. Unlike the
+    ``git rev-parse --show-toplevel`` subprocess this replaces, the shared
+    walk never shells out to git, so it is immune to an inherited
+    ``GIT_DIR``/``GIT_WORK_TREE`` corrupting the answer -- see that
+    function's own docstring for why that class of bug motivated dropping
+    the subprocess call entirely (issue #202).
+    """
+    candidate = Path(__file__).resolve().parents[3]
+    return _raven_config_module().resolve_repo_root(candidate)
 
 
 def _git(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -410,10 +416,9 @@ def main() -> int:
         index += 1
 
     root = _repo_root()
-    if root is not None:
-        config = root / ".raven" / "config.toml"
-        if not _read_config_bool(config, "git_hooks", "block_ai_attribution_content", default=True):
-            return 0
+    config = root / ".raven" / "config.toml"
+    if not _read_config_bool(config, "git_hooks", "block_ai_attribution_content", default=True):
+        return 0
 
     if mode == "staged":
         return _scan_staged()

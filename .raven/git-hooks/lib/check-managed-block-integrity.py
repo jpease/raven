@@ -20,9 +20,11 @@ reads `git diff --cached` for the same reason.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import re
 import subprocess
 import sys
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 _BLOCK_BEGIN_RE = re.compile(r"<!-- RAVEN:BEGIN(?: sha256=([a-f0-9]{64}))? -->")
@@ -113,11 +115,49 @@ def _find_block(text: str) -> tuple[str | None, str] | None:
     return None
 
 
-def _repo_root() -> Path | None:
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False
+def _raven_config_module():
+    """Import the ``raven_config.py`` sibling shipped in this same directory.
+
+    This file already lives at ``.raven/git-hooks/lib/``, the same directory
+    ``raven_config.py`` ships in -- a fixed, flat sibling resolution, the
+    same one ``check-ai-attribution-content.py``'s own ``_raven_config_module``
+    uses for the same reason (this file has no adapter-directory ambiguity
+    to resolve, unlike ``raven-tool-check.py``). This script did not need
+    the shared config parser before issue #202; it needs it now only for
+    ``resolve_repo_root``. Same ``spec_from_file_location`` +
+    ``SourceFileLoader`` mechanism used throughout the other rewired
+    callers.
+    """
+    path = Path(__file__).resolve().parent / "raven_config.py"
+    spec = importlib.util.spec_from_file_location(
+        "raven_config_for_managed_block_integrity",
+        path,
+        loader=SourceFileLoader("raven_config_for_managed_block_integrity", str(path)),
     )
-    return Path(result.stdout.strip()) if result.returncode == 0 else None
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load raven_config from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _repo_root() -> Path:
+    """The project root for this checkout, via the shared parent-directory walk.
+
+    This script always ships at ``<root>/.raven/git-hooks/lib/``, a fixed
+    offset -- three parents up from this file's own directory is the
+    candidate root. Passed as ``start`` to the shared
+    ``raven_config.resolve_repo_root``, which confirms it (or walks further
+    up, e.g. if the hook were relocated) rather than trusting the fixed
+    offset blindly. Unlike the ``git rev-parse --show-toplevel`` subprocess
+    this replaces, the shared walk never shells out to git, so it is immune
+    to an inherited ``GIT_DIR``/``GIT_WORK_TREE`` corrupting the answer --
+    see that function's own docstring for why that class of bug motivated
+    dropping the subprocess call entirely (issue #202).
+    """
+    candidate = Path(__file__).resolve().parents[3]
+    return _raven_config_module().resolve_repo_root(candidate)
 
 
 # Staged-file mode bits, as reported by `git ls-files --stage`. Only the
@@ -174,8 +214,6 @@ def _staged_text(root: Path, name: str) -> str | None:
 def main() -> int:
     """Pre-commit entry point: fail if any staged root instruction file's managed block was hand-edited."""
     root = _repo_root()
-    if root is None:
-        return 0
 
     tampered: list[str] = []
     for name in _ROOT_INSTRUCTION_FILES:

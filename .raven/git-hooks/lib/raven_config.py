@@ -61,6 +61,17 @@ verbatim, across four of the six callers. Nothing else is added on top of
 the raw string values: string unquoting and the section-header filtering the
 Codex MCP-server-name lookup needs stay in their respective callers, since
 each is a one-line operation only that caller needs.
+
+A second, unrelated responsibility also lives here: ``resolve_repo_root(start)``,
+a shared parent-directory walk to find a project root. It has nothing to do
+with config parsing, but it was folded into this module rather than given a
+new file for the same reason parsing was consolidated here -- seven call
+sites across this shipped "hooks" component had each grown their own copy
+(four duplicating a ``.git``/``.raven`` walk inline, three shelling out to
+``git rev-parse --show-toplevel`` instead), and this module is already the
+one place every one of those seven call sites can import a sibling from.
+See ``resolve_repo_root``'s own docstring for why it is a pure filesystem
+walk rather than a ``git rev-parse`` wrapper.
 """
 
 from __future__ import annotations
@@ -191,3 +202,52 @@ def parse_bool(value: str) -> bool | None:
     if stripped == "false":
         return False
     return None
+
+
+def resolve_repo_root(start: Path) -> Path:
+    """Walk up from ``start`` to the nearest enclosing project root.
+
+    A directory counts as a root when ``.git`` exists there -- as a file
+    *or* a directory, so a linked worktree resolves correctly: a worktree's
+    own ``.git`` is a file pointing at the shared gitdir elsewhere, and that
+    file already sits at the worktree's own logical root, not the
+    superproject's, so no special-casing is needed -- or when ``.raven`` is
+    a directory, for a checkout that has Raven's own marker but, for
+    whatever reason, no ``.git`` alongside it (e.g. a destination that
+    vendors Raven's guidance without being its own git checkout).
+
+    Returns the first of ``start`` or its ancestors that matches, or
+    ``start`` itself if none do. Never raises, and never returns ``None`` --
+    the most permissive of the per-site behaviors this replaces, so every
+    caller's "always get *some* answer" contract keeps holding whether or
+    not a marker is ever found.
+
+    Deliberately a pure filesystem walk, not a ``git rev-parse
+    --show-toplevel`` subprocess wrapper. That subprocess call trusts the
+    process environment (``GIT_DIR``, ``GIT_WORK_TREE``, ``GIT_INDEX_FILE``),
+    and an inherited, stale value left over from an unrelated invocation
+    earlier in the same shell corrupts its answer -- exactly the failure
+    class ``scripts/raven_lib/git_hooks.py``'s ``_clean_git_env()`` exists to
+    strip before invoking git from the *installer*. That fix lives in the
+    installer's own package and is not available here: this module ships
+    into a destination repository as a standalone file, with no
+    ``raven_lib`` alongside it to import. A pure walk sidesteps the
+    corruption class entirely rather than needing to re-port
+    ``_clean_git_env`` a second time into a shipped copy -- and loses
+    nothing by doing so, since a parent walk already agrees with ``git
+    rev-parse --show-toplevel``'s answer in every legitimate
+    (non-corrupted-env) worktree and submodule case, as ``.git`` sits at the
+    true logical root in both.
+
+    ``start`` is taken exactly as given, not independently sourced from
+    ``Path.cwd()`` and not resolved here: every caller already has its own
+    opinion of what to start from (an install-layout-derived path, a hook
+    payload's ``cwd``, the process cwd) and has already decided whether and
+    how to resolve it -- redoing either step here would take that choice
+    away and risks masking a caller's own ``OSError`` handling around
+    ``Path.resolve()``.
+    """
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists() or (candidate / ".raven").is_dir():
+            return candidate
+    return start

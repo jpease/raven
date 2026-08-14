@@ -86,11 +86,25 @@ def load_raven_config(scripts_dir: Path) -> Any:
     return module
 
 
-def resolve_repo_root(payload: dict | None, start: Path) -> Path | None:
+def resolve_repo_root_for_payload(payload: dict | None, start: Path) -> Path | None:
     """Find the repository root without trusting the process cwd.
 
     Codex Desktop can invoke a hook with a cwd outside the project, so the
     hook payload's ``cwd`` takes precedence when present.
+
+    Named distinctly from -- and delegates its walk to -- the shared
+    ``raven_config.resolve_repo_root(start) -> Path`` (issue #202): that
+    function never returns ``None`` (it falls back to ``start`` itself), but
+    ``build_roster`` uses ``None`` here to mean "no repo found at all," which
+    skips every repo-specific roster section (template, gates, MCP servers,
+    tracker, index). Keeping this a separate name avoids two functions
+    called ``resolve_repo_root`` with different signatures and different
+    ``None`` semantics silently shadowing one another in the same file.
+    ``None`` is re-derived after the shared walk by checking whether its
+    answer actually carries a ``.git``/``.raven`` marker, rather than just
+    equaling the un-resolved ``start`` it fell back to -- also widening this
+    caller from ``.git``-only to the same ``.git``-or-``.raven`` semantics
+    every other rewired call site now shares.
     """
     candidate = start
     if isinstance(payload, dict):
@@ -101,9 +115,10 @@ def resolve_repo_root(payload: dict | None, start: Path) -> Path | None:
         candidate = candidate.resolve()
     except OSError:
         return None
-    for directory in (candidate, *candidate.parents):
-        if (directory / ".git").exists():
-            return directory
+    raven_config = load_raven_config(Path(__file__).resolve().parent)
+    found = raven_config.resolve_repo_root(candidate)
+    if (found / ".git").exists() or (found / ".raven").is_dir():
+        return found
     return None
 
 
@@ -437,7 +452,7 @@ def main() -> int:
 
     try:
         payload = read_payload()
-        root = resolve_repo_root(payload, Path.cwd())
+        root = resolve_repo_root_for_payload(payload, Path.cwd())
         prober = load_prober(Path(__file__).resolve().parent)
         text = build_roster(root, prober)
         if args.json:
