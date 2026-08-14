@@ -299,36 +299,39 @@ def append_patch_text(relative: str, existing_text: str, raven_text: str) -> str
     If the file already contains a managed block, the hunk **replaces** that block
     in place; appending a second one would leave two ``RAVEN:BEGIN`` blocks (#55).
     Only a file with no block yet gets an append hunk.
+
+    The hunk itself comes from ``difflib.unified_diff`` over the whole
+    reconstructed before/after file (``n=0``, no context lines, matching this
+    function's long-standing zero-context output) rather than a hand-written
+    ``@@`` header -- diffing the *whole* file, not just the changed region, is
+    what lets difflib compute correct line numbers on its own; since the two
+    sides are identical outside the changed region, SequenceMatcher's LCS
+    naturally isolates the hunk(s) to that region and leaves surrounding
+    content (before or after the block) out of the diff entirely.
     """
-    existing_lines = existing_text.splitlines()
+    # Every line gets a trailing "\n" here regardless of the destination
+    # file's actual line endings -- the same LF-normalizing assumption the
+    # previous hand-rolled hunk made via `"\n".join(...)`.
+    existing_lines = [line + "\n" for line in existing_text.splitlines()]
     block = find_raven_block(existing_text)
     if block is not None:
         # Replace the existing block region (BEGIN..END inclusive) in place. Drop
         # the leading blank separator that ``raven_managed_block`` prepends -- the
         # blank already precedes the existing block in the file.
-        new_lines = raven_managed_block(raven_text).splitlines()[1:]
-        old_lines = existing_lines[block.start : block.end + 1]
-        start = block.start + 1
-        patch_lines = [
-            f"--- a/{relative}",
-            f"+++ b/{relative}",
-            f"@@ -{start},{len(old_lines)} +{start},{len(new_lines)} @@",
-            *[f"-{line}" for line in old_lines],
-            *[f"+{line}" for line in new_lines],
-            "",
-        ]
-        return "\n".join(patch_lines)
-    block_lines = raven_managed_block(raven_text).splitlines()
-    start = len(existing_lines) + 1
-    count = len(block_lines)
-    patch_lines = [
-        f"--- a/{relative}",
-        f"+++ b/{relative}",
-        f"@@ -{len(existing_lines)},0 +{start},{count} @@",
-        *[f"+{line}" for line in block_lines],
-        "",
-    ]
-    return "\n".join(patch_lines)
+        new_block_lines = raven_managed_block(raven_text).splitlines()[1:]
+        replacement = [line + "\n" for line in new_block_lines]
+        new_lines = existing_lines[: block.start] + replacement + existing_lines[block.end + 1 :]
+    else:
+        appended = [line + "\n" for line in raven_managed_block(raven_text).splitlines()]
+        new_lines = existing_lines + appended
+    diff = difflib.unified_diff(
+        existing_lines,
+        new_lines,
+        fromfile=f"a/{relative}",
+        tofile=f"b/{relative}",
+        n=0,
+    )
+    return "".join(diff)
 
 
 def unified_diff_text(relative: str, existing_text: str, template_text: str) -> str:

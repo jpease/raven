@@ -329,10 +329,20 @@ class GuidedMergeTests(RavenTestCase):
         )
         patch = raven.append_patch_text("AGENTS.md", existing, "# AGENTS.md\n\nNew guidance.\n")
 
-        # A replace hunk deletes the old block markers and adds new ones.
+        # A replace hunk deletes the old BEGIN marker and adds the new one --
+        # the hash always changes with the content, so BEGIN is always a real
+        # diff line.
         self.assertIn("-<!-- RAVEN:BEGIN", patch)
-        self.assertIn("-<!-- RAVEN:END -->", patch)
         self.assertIn("+<!-- RAVEN:BEGIN", patch)
+        # The END marker text is byte-identical old and new (it carries no
+        # hash), so a real diff correctly leaves it out of the hunk entirely
+        # rather than deleting and re-adding an unchanged line -- unlike the
+        # old hand-rolled hunk, which always replaced the whole BEGIN..END
+        # region regardless of per-line equality. The block is still replaced
+        # in place, not duplicated: proven by application in
+        # test_generated_replace_patch_applies_to_exactly_one_block and the
+        # independent-expected-result tests below.
+        self.assertNotIn("RAVEN:END", patch)
 
     def test_top_level_headings_skips_fences_and_deep_headings(self):
         text = (
@@ -537,6 +547,86 @@ class GuidedMergeTests(RavenTestCase):
         self.assertIn("New guidance.", merged)
         self.assertNotIn("Old guidance.", merged)
         self.assertIn("keep me", merged)  # local content preserved
+
+    def test_append_patch_applies_to_independently_computed_expected_text(self):
+        # Acceptance test (issue #203): apply the emitted patch with `patch -p1`
+        # and compare the result to an expected text computed *independently* of
+        # append_patch_text -- existing_text with a fresh raven_managed_block
+        # spliced onto the end, exactly what a hand merge would produce. A test
+        # that only compares patch text to a golden string would not catch a
+        # hunk that applies but produces the wrong content.
+        if shutil.which("patch") is None:
+            self.skipTest("patch not installed")
+        existing = "# Local guidance\n\nkeep this local text\n\nmore local text\n"
+        raven_text = "# AGENTS.md\n\nTemplate guidance.\n"
+        target = self.destination / "AGENTS.md"
+        target.write_text(existing, encoding="utf-8")
+
+        patch_text = raven.append_patch_text("AGENTS.md", existing, raven_text)
+        patch_file = self.destination / "append.patch"
+        patch_file.write_text(patch_text, encoding="utf-8")
+
+        result = subprocess.run(
+            ["patch", "-p1", "-i", str(patch_file)],
+            cwd=self.destination,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+        # Independently computed: existing_text with the fresh managed block
+        # (raven_managed_block, not append_patch_text) appended after it.
+        expected = existing + raven.blocks.raven_managed_block(raven_text) + "\n"
+        self.assertEqual(target.read_text(encoding="utf-8"), expected)
+
+    def test_replace_patch_applies_to_independently_computed_expected_text(self):
+        # Acceptance test (issue #203): apply the emitted patch with `patch -p1`
+        # and compare the result to an expected text computed *independently* of
+        # append_patch_text -- the existing block's own start/end region (as
+        # find_raven_block locates it) spliced out and a fresh
+        # raven_managed_block spliced in. Local content on both sides of the
+        # block must survive untouched.
+        if shutil.which("patch") is None:
+            self.skipTest("patch not installed")
+        existing = (
+            "# Local guidance\n\nkeep me before\n\n"
+            "<!-- RAVEN:BEGIN sha256=" + "0" * 64 + " -->\n"
+            "# AGENTS.md\n\nOld guidance.\n"
+            "<!-- RAVEN:END -->\n\n"
+            "keep me after\n"
+        )
+        raven_text = "# AGENTS.md\n\nNew guidance.\n"
+        target = self.destination / "AGENTS.md"
+        target.write_text(existing, encoding="utf-8")
+
+        patch_text = raven.append_patch_text("AGENTS.md", existing, raven_text)
+        patch_file = self.destination / "replace.patch"
+        patch_file.write_text(patch_text, encoding="utf-8")
+
+        result = subprocess.run(
+            ["patch", "-p1", "-i", str(patch_file)],
+            cwd=self.destination,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+        # Independently computed: splice the fresh block into the region
+        # find_raven_block locates in the *original* text -- not anything
+        # append_patch_text itself produced.
+        block = raven.blocks.find_raven_block(existing)
+        assert block is not None
+        lines = existing.splitlines()
+        replacement = raven.blocks.raven_managed_block(raven_text).splitlines()[1:]
+        expected_lines = lines[: block.start] + replacement + lines[block.end + 1 :]
+        expected = "\n".join(expected_lines) + "\n"
+        merged = target.read_text(encoding="utf-8")
+        self.assertEqual(merged, expected)
+        self.assertEqual(merged.count("<!-- RAVEN:BEGIN"), 1, merged)
+        self.assertIn("keep me before", merged)
+        self.assertIn("keep me after", merged)
 
 
 if __name__ == "__main__":
