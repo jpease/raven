@@ -48,7 +48,12 @@ BLOCKED = [
     r"\.pfx$",
     r"\.crt$",
     r"\.cer$",
-    r"(^|/)\.env$",
+    # `.env` is the spelling projects use *least* for real values: the committed
+    # template is `.env.example` and the secrets live in `.env.local`,
+    # `.env.production`, `.env.development`. `.envrc` (direnv) is a shell script
+    # that commonly exports them (issue #213).
+    r"(^|/)\.env(\.[^/]*)?$",
+    r"(^|/)\.envrc$",
     # Anchored to a path segment: a bare `secrets` substring also blocks
     # `docs/how-we-handle-secrets.md` and any `test_secrets_helper.py`.
     r"(^|/)secrets?(\.|/|$)",

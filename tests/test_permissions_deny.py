@@ -110,7 +110,17 @@ BLOCKED_PATTERN_SAMPLES: dict[str, list[str]] = {
     r"\.pfx$": ["bundle.pfx", "certs/bundle.pfx"],
     r"\.crt$": ["server.crt", "certs/server.crt"],
     r"\.cer$": ["server.cer", "certs/server.cer"],
-    r"(^|/)\.env$": [".env", "config/.env"],
+    r"(^|/)\.env(\.[^/]*)?$": [
+        ".env",
+        "config/.env",
+        # The spellings that actually hold values: the committed template is
+        # `.env.example` and the secrets live beside it (issue #213).
+        ".env.local",
+        ".env.production",
+        ".env.development",
+        "packages/api/.env.local",
+    ],
+    r"(^|/)\.envrc$": [".envrc", "config/.envrc"],
     r"(^|/)secrets?(\.|/|$)": [
         "secret",
         "secrets",

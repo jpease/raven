@@ -8,6 +8,8 @@
       "Read(*.crt)",
       "Read(*.cer)",
       "Read(.env)",
+      "Read(.env.*)",
+      "Read(.envrc)",
       "Read(secret)",
       "Read(secrets)",
       "Read(secret.*)",

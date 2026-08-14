@@ -52,6 +52,17 @@ These are real, current gaps in `permissions.deny` relative to the hooks — not
 - **`git checkout -f` with no pathspec.** The shipped git-verb rules are the flag-carrying spellings *with* an operand (`Bash(git checkout -f *)`), because a trailing `" *"` needs a real space and argument in the command. The hook denies the bare form too — `-f` on `checkout`/`restore` always means "discard whatever is in the worktree", operand or not (issue #210).
 - **Claude Code also has an independent, non-configurable circuit breaker** for `rm -rf /` and `rm -rf ~` (including through `$(...)`/backtick/`<(...)` substitution), active even in `bypassPermissions` mode. This is separate from, and does not substitute for, the explicit `permissions.deny` rules shipped here — the other destructive intents (`git reset --hard`, `git clean -fdx`, `dropdb`, `kubectl delete`) have no such built-in breaker, and an explicit project-level rule is portable documentation of intent regardless of how the breaker's exact scope evolves.
 
+### `Read(...)` pattern depth, and the `.env` family
+
+Read and Edit rules use gitignore pattern syntax, and a **bare filename with no slash matches at any depth** — `Read(.env)` and `Read(**/.env)` are equivalent, so `packages/api/.env` is already covered without a `**/` entry (measured against code.claude.com/docs/en/permissions.md, 2026-08-13; the same measurement is what the `secret`/`credential` entries and `tests/test_permissions_deny.py::_read_rule_matches` rest on). A single directory segment like `secrets/**` also matches at any depth *in a deny rule* specifically, though not in an allow rule. This is recorded here rather than beside the block because `settings.json` is strict JSON and cannot carry a comment.
+
+Two decisions behind the `.env` entries (issue #213):
+
+- **`Read(.env.*)` deliberately catches `.env.example` too.** Rules are evaluated deny → ask → allow, so a deny rule cannot carry an allowlist exception; keeping the template readable would mean enumerating the secret-bearing variants instead and leaving an unlisted one (`.env.prod`) exposed. That is the wrong direction for a secrets rule, and the cost is small — a `Read` deny does not stop `cat .env.example`, which is the same known ceiling every `Read(...)` entry here has.
+- **`.envrc` is in scope.** direnv's file is a shell script that commonly exports the same secrets, and it matched nothing before.
+
+`raven-pre-edit-guard.py`'s `BLOCKED` list carries the same two patterns, so Codex — which has no `permissions` layer at all — gets the same coverage.
+
 `tests/test_permissions_deny.py` is the enforcement point for keeping `permissions.deny` from drifting out of sync with the hooks: it reads the edit guard's real `BLOCKED`/`CAUTION` module-level lists and the bash guard's own `DENIED_BASH_COMMANDS` test fixture, cross-checks them against the real, parsed `permissions.deny` array, and asserts no caution-tier pattern ever appears there.
 
 ## Required Verification Pattern
