@@ -36,7 +36,7 @@ class RootResolutionTests(RavenTestCase):
         nested = self.destination / "a" / "b"
         nested.mkdir(parents=True)
         (self.destination / ".git").mkdir()
-        found = self.module.resolve_repo_root(None, nested)
+        found = self.module.resolve_repo_root_for_payload(None, nested)
         self.assertEqual(found, self.destination.resolve())
 
     def test_payload_cwd_wins_over_process_cwd(self):
@@ -44,11 +44,18 @@ class RootResolutionTests(RavenTestCase):
         # the payload is the only reliable signal. See tests/test_agent_hooks.py:257.
         (self.destination / ".git").mkdir()
         outside = Path(self.tmp.name).parent
-        found = self.module.resolve_repo_root({"cwd": str(self.destination)}, outside)
+        found = self.module.resolve_repo_root_for_payload({"cwd": str(self.destination)}, outside)
         self.assertEqual(found, self.destination.resolve())
 
     def test_returns_none_when_no_git_directory_is_found(self):
-        self.assertIsNone(self.module.resolve_repo_root(None, self.destination))
+        self.assertIsNone(self.module.resolve_repo_root_for_payload(None, self.destination))
+
+    def test_raven_directory_without_git_is_recognized(self):
+        # Issue #202: this caller now shares the same .git-or-.raven
+        # semantics as every other rewired call site, not .git-only.
+        (self.destination / ".raven").mkdir()
+        found = self.module.resolve_repo_root_for_payload(None, self.destination)
+        self.assertEqual(found, self.destination.resolve())
 
 
 class CliSectionTests(RavenTestCase):

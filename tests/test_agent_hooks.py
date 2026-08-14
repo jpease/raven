@@ -562,7 +562,8 @@ CANONICAL_CODEX_LAUNCHER = (
     'python -c "import io,json,runpy,sys; from pathlib import Path; '
     "payload=sys.stdin.read(); relative=sys.argv[1]; "
     "cwd=Path(json.loads(payload)['cwd']).resolve(); "
-    "root=next((path for path in (cwd,*cwd.parents) if (path/'.git').exists()), cwd); "
+    "root=next((path for path in (cwd,*cwd.parents) if (path/'.git').exists() "
+    "or (path/'.raven').is_dir()), cwd); "
     "sys.stdin=io.StringIO(payload); sys.argv=sys.argv[1:]; "
     'runpy.run_path(str(root / relative), run_name=\'__main__\')" '
 )

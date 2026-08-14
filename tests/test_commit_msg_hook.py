@@ -1,12 +1,31 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import REPO_ROOT, raven
+from helpers import REPO_ROOT, install_raven_config_lib, raven
+
+
+def _install_hook_into(repo: Path) -> Path:
+    """Copy the commit-msg hook (and its raven_config.py sibling) into `repo`.
+
+    _repo_root() (issue #202) is install-layout-derived from the hook's own
+    __file__, not the process cwd -- so a test exercising a fixture repo's
+    config must run a copy of the hook installed at the same relative
+    offset (``.raven/git-hooks/commit-msg``) a real install would use, or
+    _repo_root() resolves to this checkout's own tree instead of the
+    fixture. Returns the installed hook's path.
+    """
+    hooks_dir = repo / ".raven" / "git-hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    installed = hooks_dir / "commit-msg"
+    shutil.copy2(REPO_ROOT / "common" / ".raven" / "git-hooks" / "commit-msg", installed)
+    install_raven_config_lib(repo)
+    return installed
 
 
 class CommitMsgHookTests(unittest.TestCase):
@@ -15,14 +34,18 @@ class CommitMsgHookTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.msg_file = Path(self.tmp.name) / "COMMIT_EDITMSG"
+        self.repo = Path(self.tmp.name)
+        subprocess.run(["git", "init", "-q", str(self.repo)], capture_output=True, check=True)
+        self.installed_hook = _install_hook_into(self.repo)
+        self.msg_file = self.repo / "COMMIT_EDITMSG"
 
     def _run_hook(self, message: str) -> tuple[str, int]:
         self.msg_file.write_text(message, encoding="utf-8")
         result = subprocess.run(
-            [sys.executable, str(self.HOOK_PATH), str(self.msg_file)],
+            [sys.executable, str(self.installed_hook), str(self.msg_file)],
             capture_output=True,
             text=True,
+            cwd=str(self.repo),
         )
         return self.msg_file.read_text(encoding="utf-8"), result.returncode
 
@@ -111,8 +134,8 @@ class CommitMsgHookTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+            installed_hook = _install_hook_into(repo)
             raven_dir = repo / ".raven"
-            raven_dir.mkdir()
             (raven_dir / "config.toml").write_text(
                 "[git_hooks]\nstrip_ai_attribution = false\n", encoding="utf-8"
             )
@@ -120,7 +143,7 @@ class CommitMsgHookTests(unittest.TestCase):
             msg = "feat: thing\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n"
             msg_file.write_text(msg, encoding="utf-8")
             result = subprocess.run(
-                [sys.executable, str(self.HOOK_PATH), str(msg_file)],
+                [sys.executable, str(installed_hook), str(msg_file)],
                 capture_output=True,
                 text=True,
                 cwd=str(repo),
@@ -135,15 +158,14 @@ class CommitMsgHookTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+            installed_hook = _install_hook_into(repo)
             if config_text is not None:
-                raven_dir = repo / ".raven"
-                raven_dir.mkdir()
-                (raven_dir / "config.toml").write_text(config_text, encoding="utf-8")
+                (repo / ".raven" / "config.toml").write_text(config_text, encoding="utf-8")
             msg_file = repo / "COMMIT_EDITMSG"
             msg = "feat: thing\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n"
             msg_file.write_text(msg, encoding="utf-8")
             result = subprocess.run(
-                [sys.executable, str(self.HOOK_PATH), str(msg_file)],
+                [sys.executable, str(installed_hook), str(msg_file)],
                 capture_output=True,
                 text=True,
                 cwd=str(repo),
@@ -176,9 +198,8 @@ class CommitMsgHookTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
-            raven_dir = repo / ".raven"
-            raven_dir.mkdir()
-            config = raven_dir / "config.toml"
+            installed_hook = _install_hook_into(repo)
+            config = repo / ".raven" / "config.toml"
             config.write_text("[git_hooks]\nstrip_ai_attribution = false\n", encoding="utf-8")
             config.chmod(0o000)
             msg_file = repo / "COMMIT_EDITMSG"
@@ -186,7 +207,7 @@ class CommitMsgHookTests(unittest.TestCase):
             msg_file.write_text(msg, encoding="utf-8")
             try:
                 result = subprocess.run(
-                    [sys.executable, str(self.HOOK_PATH), str(msg_file)],
+                    [sys.executable, str(installed_hook), str(msg_file)],
                     capture_output=True,
                     text=True,
                     cwd=str(repo),
@@ -213,9 +234,10 @@ class CommitMsgHookTests(unittest.TestCase):
         raw = b"fix: bug \xff\xfe invalid utf8\n"
         self.msg_file.write_bytes(raw)
         result = subprocess.run(
-            [sys.executable, str(self.HOOK_PATH), str(self.msg_file)],
+            [sys.executable, str(self.installed_hook), str(self.msg_file)],
             capture_output=True,
             text=True,
+            cwd=str(self.repo),
         )
         self.assertEqual(result.returncode, 0)
         self.assertEqual(self.msg_file.read_bytes(), raw)
@@ -223,9 +245,10 @@ class CommitMsgHookTests(unittest.TestCase):
     def test_no_bogus_removed_message_for_trailing_blank_only(self):
         self.msg_file.write_text("fix: x\n\n", encoding="utf-8")
         result = subprocess.run(
-            [sys.executable, str(self.HOOK_PATH), str(self.msg_file)],
+            [sys.executable, str(self.installed_hook), str(self.msg_file)],
             capture_output=True,
             text=True,
+            cwd=str(self.repo),
         )
         self.assertEqual(result.returncode, 0)
         self.assertNotIn("removed AI attribution", result.stderr)

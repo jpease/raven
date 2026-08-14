@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,7 @@ from pathlib import Path
 from helpers import (
     REPO_ROOT,
     attribution_line,
+    install_raven_config_lib,
     load_script_module,
     push_plan_line,
     trailer_line,
@@ -29,6 +31,17 @@ class AiAttributionContentHookTests(unittest.TestCase):
             ["git", "-C", str(self.repo), "config", "user.email", "t@example.com"], check=True
         )
         subprocess.run(["git", "-C", str(self.repo), "config", "user.name", "Test"], check=True)
+        # _repo_root() (issue #202) is install-layout-derived from this
+        # script's own __file__, not the process cwd -- so every subprocess
+        # invocation below must run a copy of the hook (and its
+        # raven_config.py sibling) installed at the same relative offset a
+        # real install would use, or _repo_root() resolves to this
+        # checkout's own common/ tree instead of self.repo.
+        lib_dir = self.repo / ".raven" / "git-hooks" / "lib"
+        lib_dir.mkdir(parents=True)
+        self.installed_script = lib_dir / self.SCRIPT_PATH.name
+        shutil.copy2(self.SCRIPT_PATH, self.installed_script)
+        install_raven_config_lib(self.repo)
 
     def _commit(self, path: str, content: str, message: str = "commit") -> None:
         file_path = self.repo / path
@@ -46,7 +59,7 @@ class AiAttributionContentHookTests(unittest.TestCase):
             raven_dir.mkdir(exist_ok=True)
             (raven_dir / "config.toml").write_text(config_text, encoding="utf-8")
         result = subprocess.run(
-            [sys.executable, str(self.SCRIPT_PATH), mode],
+            [sys.executable, str(self.installed_script), mode],
             capture_output=True,
             text=True,
             cwd=str(self.repo),
@@ -239,7 +252,7 @@ class AiAttributionContentHookTests(unittest.TestCase):
         config.chmod(0o000)
         try:
             result = subprocess.run(
-                [sys.executable, str(self.SCRIPT_PATH), "staged"],
+                [sys.executable, str(self.installed_script), "staged"],
                 capture_output=True,
                 text=True,
                 cwd=str(self.repo),
@@ -256,7 +269,14 @@ class AiAttributionContentHookTests(unittest.TestCase):
         # `outbound --push-plan` reads Git's pre-push plan from stdin. The flag
         # makes reading stdin opt-in, so a bare `outbound` never blocks on a tty.
         result = subprocess.run(
-            [sys.executable, str(self.SCRIPT_PATH), "outbound", "--push-plan", "--remote", remote],
+            [
+                sys.executable,
+                str(self.installed_script),
+                "outbound",
+                "--push-plan",
+                "--remote",
+                remote,
+            ],
             input=plan,
             capture_output=True,
             text=True,

@@ -474,15 +474,31 @@ def _prober_path() -> str:
 
 
 def _root_from_cwd() -> Path | None:
-    """Nearest enclosing project directory at or above the process cwd."""
+    """Nearest enclosing project directory at or above the process cwd.
+
+    Delegates the walk to the shared ``.raven/git-hooks/lib/raven_config.py``
+    module's ``resolve_repo_root`` (issue #202) rather than duplicating it.
+    """
     try:
         cwd = Path.cwd().resolve()
     except OSError:
         return None
-    for candidate in (cwd, *cwd.parents):
-        if (candidate / ".git").exists() or (candidate / ".raven").is_dir():
-            return candidate
-    return cwd
+    try:
+        return _raven_config_module().resolve_repo_root(cwd)
+    except (ImportError, OSError):
+        # Bootstrap edge case: this branch only runs once
+        # _root_from_install_layout() has already failed to find where this
+        # checkout lives, and _raven_config_module() (see its own docstring)
+        # needs exactly that answer to locate its sibling raven_config.py.
+        # When it still can't be found from here, fall back to the walk
+        # inline -- project_root() must never raise, and there is no way to
+        # ask the shared module where it is without already knowing where
+        # this script is. This is the one duplicate this refactor cannot
+        # fully remove.
+        for candidate in (cwd, *cwd.parents):
+            if (candidate / ".git").exists() or (candidate / ".raven").is_dir():
+                return candidate
+        return cwd
 
 
 @lru_cache(maxsize=1)
@@ -520,17 +536,26 @@ def _codex_mcp_config_paths(root: Path | None = None) -> list[Path]:
 def _raven_config_module():
     """Import ``.raven/git-hooks/lib/raven_config.py`` for the shared config parser.
 
-    Resolved via ``project_root()`` -- this script's own install-derived root
-    -- not the ``root`` argument the MCP-name lookups below take: those name
-    the repo whose ``.codex/config.toml`` is actually being read, which a
-    test fixture may point at an isolated directory. This always resolves to
-    the sibling ``raven_config.py`` shipped next to this script's own
-    installed copy, in the same "hooks" component. Same
+    Resolved via ``_root_from_install_layout()`` -- this script's own
+    install-derived root -- not the ``root`` argument the MCP-name lookups
+    below take: those name the repo whose ``.codex/config.toml`` is actually
+    being read, which a test fixture may point at an isolated directory.
+    Also deliberately not the full ``project_root()``: ``_root_from_cwd()``
+    (one of ``project_root()``'s own fallback branches) calls this function
+    to reach ``resolve_repo_root``, so routing this lookup through
+    ``project_root()`` would recurse into ``_root_from_cwd()`` a second time
+    before the first call ever returns. Falls back to ``Path(".")`` --
+    matching ``project_root()``'s own ultimate fallback -- when the install
+    layout can't be inferred either, since at that point there is no
+    reliable answer left to try.
+    This always resolves to the sibling ``raven_config.py`` shipped next to
+    this script's own installed copy, in the same "hooks" component. Same
     ``spec_from_file_location`` + ``SourceFileLoader`` mechanism
     ``load_prober`` in ``raven-capability-roster.py`` uses to reach this
     script as a sibling module.
     """
-    path = project_root() / ".raven" / "git-hooks" / "lib" / "raven_config.py"
+    root = _root_from_install_layout() or Path(".")
+    path = root / ".raven" / "git-hooks" / "lib" / "raven_config.py"
     spec = importlib.util.spec_from_file_location(
         "raven_config_for_tool_check",
         path,

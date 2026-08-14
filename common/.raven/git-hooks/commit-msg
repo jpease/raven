@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import importlib.util
 import re
-import subprocess
 import sys
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
@@ -31,10 +30,11 @@ def _raven_config_module():
     This script (``.raven/git-hooks/commit-msg``) and the shared parser
     (``.raven/git-hooks/lib/raven_config.py``) always ship together in the
     "hooks" component, one level apart -- resolved via this file's own
-    location, not the repo root ``_repo_root()`` below computes for the
-    config file itself, so those two lookups can vary independently (a test
-    fixture can point ``_repo_root()`` at an isolated repo without needing a
-    full install alongside it).
+    location. ``_repo_root()`` below is now also derived from this same
+    file location (issue #202), rather than an independently injectable
+    value: a test exercising a fixture repo now installs this script (and
+    its ``lib/raven_config.py`` sibling) at the fixture's own matching
+    relative offset, rather than pointing an isolated ``_repo_root()`` at it.
     """
     path = Path(__file__).resolve().parent / "lib" / "raven_config.py"
     spec = importlib.util.spec_from_file_location(
@@ -75,25 +75,30 @@ def _read_config_bool(config_path: Path, section: str, key: str, default: bool) 
     return default if parsed_value is None else parsed_value
 
 
-def _repo_root() -> Path | None:
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return Path(result.stdout.strip())
-    except subprocess.CalledProcessError:
-        return None
+def _repo_root() -> Path:
+    """The project root for this checkout, via the shared parent-directory walk.
+
+    This hook always ships at ``<root>/.raven/git-hooks/commit-msg``, a
+    fixed offset -- two parents up from this file's own directory is the
+    candidate root. Passed as ``start`` to the shared
+    ``raven_config.resolve_repo_root`` (loaded by ``_raven_config_module``
+    above), which confirms it (or walks further up, e.g. if the hook were
+    relocated) rather than trusting the fixed offset blindly. Unlike the
+    ``git rev-parse --show-toplevel`` subprocess this replaces, the shared
+    walk never shells out to git, so it is immune to an inherited
+    ``GIT_DIR``/``GIT_WORK_TREE`` corrupting the answer -- see that
+    function's own docstring for why that class of bug motivated dropping
+    the subprocess call entirely (issue #202).
+    """
+    candidate = Path(__file__).resolve().parents[2]
+    return _raven_config_module().resolve_repo_root(candidate)
 
 
 def main() -> int:
     root = _repo_root()
-    if root is not None:
-        config = root / ".raven" / "config.toml"
-        if not _read_config_bool(config, "git_hooks", "strip_ai_attribution", default=True):
-            return 0
+    config = root / ".raven" / "config.toml"
+    if not _read_config_bool(config, "git_hooks", "strip_ai_attribution", default=True):
+        return 0
 
     msg_file = Path(sys.argv[1])
     try:

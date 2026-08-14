@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import REPO_ROOT, load_script_module, raven
+from helpers import REPO_ROOT, install_raven_config_lib, load_script_module, raven
 
 SCRIPT_PATH = (
     REPO_ROOT / "common" / ".raven" / "git-hooks" / "lib" / "check-managed-block-integrity.py"
@@ -45,6 +46,18 @@ class ManagedBlockIntegrityHookTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.repo = Path(self.tmp.name)
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        # _repo_root() (issue #202) is install-layout-derived from this
+        # script's own __file__, not the process cwd or an injectable repo
+        # root -- so the fixture repo needs a real copy of the hook (and its
+        # raven_config.py sibling) at the same relative offset a real
+        # install would use, and _run() below must execute *that* copy, not
+        # the canonical common/ source, for _repo_root() to resolve to
+        # self.repo instead of this checkout's own common/ tree.
+        lib_dir = self.repo / ".raven" / "git-hooks" / "lib"
+        lib_dir.mkdir(parents=True)
+        self.installed_script = lib_dir / SCRIPT_PATH.name
+        shutil.copy2(SCRIPT_PATH, self.installed_script)
+        install_raven_config_lib(self.repo)
 
     def _write(self, path: str, content: str) -> None:
         (self.repo / path).write_text(content, encoding="utf-8")
@@ -61,7 +74,7 @@ class ManagedBlockIntegrityHookTests(unittest.TestCase):
 
     def _run(self) -> tuple[int, str]:
         result = subprocess.run(
-            [sys.executable, str(self.SCRIPT_PATH)],
+            [sys.executable, str(self.installed_script)],
             capture_output=True,
             text=True,
             cwd=str(self.repo),

@@ -7,6 +7,8 @@ same way every other standalone Raven script under test is -- see
 
 from __future__ import annotations
 
+import os
+import subprocess
 import unittest
 
 from helpers import REPO_ROOT, RavenTestCase, load_script_module
@@ -148,6 +150,141 @@ class ParseBoolTests(unittest.TestCase):
 
     def test_mixed_case_false_is_recognized(self):
         self.assertIs(_module().parse_bool("False"), False)
+
+
+class ResolveRepoRootTests(RavenTestCase):
+    """Correctness matrix for the shared `resolve_repo_root(start) -> Path` walk.
+
+    This is the one function in the module whose whole reason to exist is
+    "never shell out to git" (see its docstring) -- the GIT_DIR/GIT_WORK_TREE
+    test below is the single most important test in this class, since it is
+    the concrete, provable reason the design rejected a `git rev-parse
+    --show-toplevel` hybrid in favor of a pure filesystem walk.
+    """
+
+    def test_normal_checkout_finds_the_git_directory(self):
+        (self.destination / ".git").mkdir()
+        nested = self.destination / "a" / "b"
+        nested.mkdir(parents=True)
+        found = _module().resolve_repo_root(nested)
+        self.assertEqual(found, self.destination)
+
+    def test_subdirectory_walks_up_to_the_root(self):
+        (self.destination / ".git").mkdir()
+        nested = self.destination / "src" / "pkg" / "mod"
+        nested.mkdir(parents=True)
+        found = _module().resolve_repo_root(nested)
+        self.assertEqual(found, self.destination)
+
+    def test_raven_directory_without_git_is_recognized(self):
+        (self.destination / ".raven").mkdir()
+        found = _module().resolve_repo_root(self.destination)
+        self.assertEqual(found, self.destination)
+
+    def test_git_as_a_file_is_recognized_not_only_a_directory(self):
+        # A linked worktree's own .git is a file (pointing at the shared
+        # gitdir elsewhere), not a directory -- see test_linked_worktree_*
+        # below for the real end-to-end case; this is the narrower unit
+        # proof that a plain file named .git is enough on its own.
+        (self.destination / ".git").write_text("gitdir: /elsewhere\n", encoding="utf-8")
+        found = _module().resolve_repo_root(self.destination)
+        self.assertEqual(found, self.destination)
+
+    def test_returns_start_when_nothing_is_found(self):
+        # No .git/.raven anywhere in this isolated tempdir's ancestry. Relies
+        # on the same assumption the roster's own equivalent test already
+        # makes: the real filesystem root above a fresh tempdir carries
+        # neither marker in this environment.
+        found = _module().resolve_repo_root(self.destination)
+        self.assertEqual(found, self.destination)
+
+    def test_env_git_dir_and_work_tree_do_not_affect_the_result(self):
+        # The concrete, provable reason a `git rev-parse --show-toplevel`
+        # hybrid was rejected: that subprocess call trusts GIT_DIR/
+        # GIT_WORK_TREE from the environment, and an inherited, stale value
+        # corrupts its answer. A pure filesystem walk must be provably
+        # unaffected by either variable.
+        (self.destination / ".git").mkdir()
+        nested = self.destination / "a" / "b"
+        nested.mkdir(parents=True)
+        decoy = self.destination / "decoy-gitdir"
+        decoy.mkdir()
+        old_environ = dict(os.environ)
+        os.environ["GIT_DIR"] = str(decoy)
+        os.environ["GIT_WORK_TREE"] = str(self.destination.parent)
+        try:
+            found = _module().resolve_repo_root(nested)
+        finally:
+            os.environ.clear()
+            os.environ.update(old_environ)
+        self.assertEqual(found, self.destination)
+
+    def test_linked_worktree_finds_the_worktrees_own_root(self):
+        # Real `git worktree add`, not a synthetic .git-file stand-in --
+        # same construction pattern as
+        # tests/test_git_hooks.py::test_linked_worktree_installs_into_shared_hooks_dir,
+        # including its skipTest fallback if worktree creation isn't
+        # available in this environment.
+        subprocess.run(
+            ["git", "init", "-q", str(self.destination)],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.destination),
+                "-c",
+                "user.email=raven@example.com",
+                "-c",
+                "user.name=Raven Test",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+            capture_output=True,
+            check=True,
+        )
+        worktree_dir = self.destination.parent / "linked-wt"
+        added = subprocess.run(
+            ["git", "-C", str(self.destination), "worktree", "add", str(worktree_dir)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if added.returncode != 0:
+            self.skipTest(f"git could not create a linked worktree here: {added.stderr.strip()}")
+        self.addCleanup(
+            lambda: subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(self.destination),
+                    "worktree",
+                    "remove",
+                    "--force",
+                    str(worktree_dir),
+                ],
+                capture_output=True,
+            )
+        )
+        nested = worktree_dir / "a" / "b"
+        nested.mkdir(parents=True)
+
+        # Resolve before calling, per resolve_repo_root's own contract: it
+        # takes `start` exactly as given and does not resolve it, so a
+        # caller comparing against a symlinked tempdir (macOS's /var ->
+        # /private/var) must resolve on both sides, same as a real caller
+        # (Path.cwd().resolve()) already does before calling in.
+        found = _module().resolve_repo_root(nested.resolve())
+
+        # The worktree's own root, not the main checkout it branched from --
+        # a `.git` *file* sits at the worktree's own root, pointing at the
+        # shared gitdir, so the walk must stop there.
+        self.assertEqual(found, worktree_dir.resolve())
+        self.assertTrue((worktree_dir / ".git").is_file())
 
 
 class ModuleShipsAtItsDocumentedPathTests(unittest.TestCase):
