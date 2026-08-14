@@ -66,6 +66,12 @@ ignore = ["D203", "D205", "D213", "D400", "D401", "D415"]
 "tests/*.py" = ["D100", "D101", "D102", "D103"]
 
 [tool.ruff.format]
+# `.gitattributes` (#206) forces `eol=lf` at checkout for the shipped .py files
+# under `.raven/git-hooks/lib/` -- checked for conflict with "auto" (preserve
+# whatever line ending the file already has): none. `eol=lf` wins at the git
+# layer before ruff ever opens the file, so a CRLF version of one of those
+# files is not a state "auto" could ever observe and "preserve" here. Recorded
+# so this is a considered non-decision, not a silent gap.
 line-ending = "auto"
 quote-style = "preserve"
 

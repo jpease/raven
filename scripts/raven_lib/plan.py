@@ -16,10 +16,16 @@ from .apply import (
     claude_symlink_adoption_needed,
     copy_paths,
 )
-from .blocks import ensure_settings_local_gitignored, write_guided_merge_artifacts
+from .blocks import (
+    ensure_gitattributes_lines,
+    ensure_settings_local_gitignored,
+    write_guided_merge_artifacts,
+)
+from .config import component_disabled
 from .constants import (
     CLAUDE_BACKUP_PATH,
     CLAUDE_PATH,
+    GITATTRIBUTES_PATH,
     SETTINGS_JSON_BACKUP_PATH,
     SETTINGS_JSON_PATH,
     _any_exists,
@@ -610,6 +616,19 @@ def apply_plan(
     # (see `ensure_settings_local_gitignored`).
     if SETTINGS_JSON_PATH in plan.will_copy or adopted_settings_json:
         ensure_settings_local_gitignored(destination)
+
+    # Merge Raven's required `.gitattributes` lines on every apply, not just
+    # first install (#206): unlike the single fixed settings.local.json
+    # gitignore entry above, `.gitattributes`' required set can grow in a
+    # later Raven release, and an existing installation must pick up a newly
+    # added line on its next upgrade -- that only happens if this runs every
+    # time. Safe to do so: `ensure_gitattributes_lines` is a no-op read once
+    # every required line is already present. Gated on the "hooks" component
+    # (COMPONENT_PATHS registers `.gitattributes` there, see constants.py)
+    # so a repo that declined hook enforcement is not handed .gitattributes
+    # lines for hooks it never installed.
+    if not component_disabled(GITATTRIBUTES_PATH, config):
+        ensure_gitattributes_lines(destination, template)
 
     failed_orphans: list[str] = []
     removed_orphans = remove_orphans(destination, orphans.will_remove, failed_orphans)

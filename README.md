@@ -36,8 +36,11 @@ Raven installs reusable agent guidance and the state needed to upgrade it safely
 - `AGENTS.md`: canonical agent instructions, or a guided merge artifact if the file already exists.
 - `.agents/skills/`: canonical reusable skills.
 - `.claude/settings.json`: managed like any other template file, upgraded in place. `.claude/settings.local.json` is documented as your own local-overrides layer -- Raven never manages it, and gitignores it the first time it installs or adopts `settings.json`.
+- `.gitattributes`: append-only, not whole-file managed. Raven merges in the `eol=lf` lines its shipped hooks/scripts need (so a Windows checkout of a `#!`-invoked file never gets CRLF-corrupted) into your existing `.gitattributes` if you have one, adding only the lines that are missing and never touching, reordering, or removing anything else already there. This runs on every install/upgrade, not just the first, so a line added by a later Raven release still reaches an already-installed repository.
 - Claude Code and Codex adapter files when enabled in `.raven/config.toml`.
 - Optional starter tool configuration files when the selected language template includes them and the destination path does not already exist.
+
+`.gitattributes` only affects *future* checkouts -- git applies `eol=lf` at checkout time, so a working tree already checked out before Raven added these lines keeps whatever line endings it already has. If you are on Windows (or otherwise need the shipped hooks/scripts renormalized in an existing clone), re-normalize once after upgrading: `git rm --cached -r . && git reset --hard` (or your platform's equivalent). Raven does not run this for you.
 
 ## Install Into a Repository
 

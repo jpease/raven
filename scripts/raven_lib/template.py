@@ -15,6 +15,7 @@ from .config import config_excluded
 from .constants import (
     EXCLUDED_NAMES,
     EXPECTED_TEMPLATE_SYMLINKS,
+    MERGE_ONLY_TEMPLATE_PATHS,
     REPO_ROOT,
     STARTER_TOOL_CONFIG_PATHS,
     _any_exists,
@@ -44,8 +45,18 @@ def is_known_template(name: str) -> bool:
 def is_excluded(
     path: Path, relative: str, explicit_excludes: set[str], config: RavenConfig | None = None
 ) -> bool:
-    """Whether ``relative`` is skipped by explicit excludes, config gating, or its name."""
+    """Whether ``relative`` is skipped by explicit excludes, config gating, or its name.
+
+    ``MERGE_ONLY_TEMPLATE_PATHS`` (currently just ``.gitattributes``, #206) is
+    checked unconditionally, independent of ``explicit_excludes``/config: those
+    paths ship a real template file that must never become a normal
+    will_copy/will_upgrade entry, so a caller cannot accidentally re-include one
+    by omitting it from its excludes set the way ``--include-readme`` re-includes
+    README.md.
+    """
     if relative in explicit_excludes:
+        return True
+    if relative in MERGE_ONLY_TEMPLATE_PATHS:
         return True
     if config and config_excluded(relative, config):
         return True

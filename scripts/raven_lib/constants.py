@@ -32,6 +32,24 @@ CLAUDE_BACKUP_PATH = "CLAUDE.md.bak"
 # instead of redirecting a link.
 SETTINGS_JSON_PATH = ".claude/settings.json"
 SETTINGS_JSON_BACKUP_PATH = ".claude/settings.json.bak"
+# .gitattributes (#206) ships a real common/.gitattributes template file --
+# unlike .gitignore, which has no template file at all and is purely
+# synthesized by blocks._ensure_gitignored -- but still must never be
+# whole-file copied onto a destination: most destination repos already carry
+# their own .gitattributes for reasons unrelated to Raven (binary handling,
+# diff drivers, language-specific normalization), unlike .claude/settings.json
+# (#200), which destination repos rarely hand-write before Raven arrives. Kept
+# out of DEFAULT_EXCLUDES on purpose: DEFAULT_EXCLUDES is toggled off by
+# --include-readme (see cli.py), a flag with nothing to do with
+# .gitattributes, so folding it in there would make --include-readme
+# accidentally re-enable whole-file copy. `is_excluded` checks this set
+# directly and unconditionally instead, so the walk never turns
+# .gitattributes into a normal will_copy/will_upgrade TemplateEntry;
+# `blocks.ensure_gitattributes_lines` merges its required lines into the
+# destination's own .gitattributes, the same idempotent-append shape
+# `_ensure_gitignored` already established for .gitignore.
+GITATTRIBUTES_PATH = ".gitattributes"
+MERGE_ONLY_TEMPLATE_PATHS = {GITATTRIBUTES_PATH}
 RAVEN_BLOCK_BEGIN = "<!-- RAVEN:BEGIN -->"
 RAVEN_BLOCK_BEGIN_RE = re.compile(r"<!-- RAVEN:BEGIN(?: sha256=([a-f0-9]{64}))? -->")
 RAVEN_BLOCK_END = "<!-- RAVEN:END -->"
@@ -65,7 +83,13 @@ COMPONENT_PATHS = {
     "root_instructions": ["AGENTS.md", "CLAUDE.md"],
     "skills": [".agents/skills", ".claude/skills"],
     "agents": [".claude/agents", ".codex/agents"],
-    "hooks": [".claude/hooks", ".codex/hooks", ".codex/hooks.json", ".raven/git-hooks"],
+    "hooks": [
+        ".claude/hooks",
+        ".codex/hooks",
+        ".codex/hooks.json",
+        ".gitattributes",
+        ".raven/git-hooks",
+    ],
     "rules": [".claude/rules", ".codex/rules"],
     "docs": [".claude/docs"],
     "scripts": [".claude/scripts", ".codex/scripts"],

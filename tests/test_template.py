@@ -210,6 +210,10 @@ paths = [".claude/skills/raven-plan/**"]
                     (destination / ".codex" / "agents" / "raven-security-reviewer.toml").is_file()
                 )
                 self.assertTrue((destination / ".codex" / "rules" / "raven.rules").is_file())
+                self.assertTrue((destination / ".gitattributes").is_file())
+                self.assertIn(
+                    "* text=auto", (destination / ".gitattributes").read_text(encoding="utf-8")
+                )
                 self.assertIn("Already up to date", upgrade_output.getvalue())
                 self.assertIn(
                     "Manual merge required (locally modified Raven-managed files; "

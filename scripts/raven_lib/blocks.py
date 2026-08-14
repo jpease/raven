@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Literal
 
 from .constants import (
+    GITATTRIBUTES_PATH,
     MERGE_DIR,
     RAVEN_BLOCK_BEGIN_RE,
     RAVEN_BLOCK_END,
@@ -614,6 +615,85 @@ def ensure_settings_local_gitignored(destination: Path) -> None:
         ".claude/settings.local.json",
         "Raven: your local Claude Code settings overlay (see .claude/settings.json)",
     )
+
+
+def _gitattributes_required_lines(template: Path) -> list[str]:
+    """Non-comment, non-blank lines from the shipped ``common/.gitattributes`` template.
+
+    Read directly from ``template``'s own ``.gitattributes`` (every language
+    tree reaches it through a ``.gitattributes -> ../common/.gitattributes``
+    symlink at its root, the same shape ``AGENTS.md`` already uses -- see
+    ``_TREE_SYMLINKS_TO_COMMON`` in ``self-check.py``) rather than a hardcoded
+    Python list, so the required set can never drift from what
+    ``common/.gitattributes`` actually says, and a test can assert coverage by
+    scanning the real shipped tree instead of restating it (#206). Returns an
+    empty list -- a silent no-op for ``ensure_gitattributes_lines`` -- if the
+    template has no ``.gitattributes`` at all, rather than raising, since a
+    caller might reasonably pass a stripped-down template in a test fixture.
+    """
+    source = template / GITATTRIBUTES_PATH
+    if not source.exists():
+        return []
+    lines = []
+    for raw in source.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        lines.append(line)
+    return lines
+
+
+def _existing_gitattributes_patterns(text: str) -> set[str]:
+    """Effective attribute lines from ``.gitattributes`` text.
+
+    Deliberately parallel to ``_existing_ignore_patterns``: compares by exact
+    line, not substring, so a comment merely mentioning a pattern is never
+    counted as the real rule. Kept as its own small function rather than
+    reusing ``_existing_ignore_patterns`` directly -- despite the identical
+    body -- so its name does not imply gitignore-specific semantics to a
+    future reader; both files share the same ``#``-comment syntax, which is
+    the only reason the logic happens to match.
+    """
+    patterns = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        patterns.add(line)
+    return patterns
+
+
+def ensure_gitattributes_lines(destination: Path, template: Path) -> None:
+    """Idempotently append Raven's required ``.gitattributes`` lines under a labeled header.
+
+    Mirrors ``_ensure_gitignored``'s shape (exact-line dedup, append-only,
+    correct handling of a file missing its trailing newline) but merges into
+    ``.gitattributes`` instead of ``.gitignore``, and reads its required lines
+    from the shipped template rather than a hardcoded string, since
+    ``.gitattributes`` (#206) -- unlike the single fixed ``.gitignore`` entry
+    ``_ensure_gitignored`` was built for -- ships a real, evolving template
+    file. Never touches, reorders, or removes an existing line: most
+    destination repos already have their own ``.gitattributes`` for reasons
+    unrelated to Raven (binary handling, diff drivers, language-specific
+    normalization), unlike ``.claude/settings.json`` (#200), which Raven owns
+    outright (see ``common/.claude/docs/raven-namespace.md``).
+    """
+    required = _gitattributes_required_lines(template)
+    if not required:
+        return
+    gitattributes = destination / GITATTRIBUTES_PATH
+    existing = gitattributes.read_text(encoding="utf-8") if gitattributes.exists() else ""
+    existing_patterns = _existing_gitattributes_patterns(existing)
+    missing = [line for line in required if line not in existing_patterns]
+    if not missing:
+        return
+    prefix = "" if not existing or existing.endswith("\n") else "\n"
+    body = "\n".join(missing)
+    block = (
+        f"{prefix}\n# Raven: normalize shipped hook/script line endings (see README.md)\n{body}\n"
+    )
+    with gitattributes.open("a", encoding="utf-8") as f:
+        f.write(block)
 
 
 def _write_merge_artifact(path: Path, text: str) -> None:

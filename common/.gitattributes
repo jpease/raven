@@ -1,0 +1,15 @@
+# Raven: normalize line endings so shipped hooks/scripts with a `#!` shebang
+# never break from a Windows-checked-out CRLF (#206). Only the two blanket
+# rules and the explicit per-path entries below are copied into a
+# destination's own .gitattributes -- see blocks.ensure_gitattributes_lines
+# and common/.claude/docs/raven-namespace.md for how this file is merged
+# (append-only, never a whole-file copy) rather than installed like most of
+# common/.
+* text=auto
+*.sh text eol=lf
+.raven/git-hooks/pre-commit text eol=lf
+.raven/git-hooks/pre-push text eol=lf
+.raven/git-hooks/commit-msg text eol=lf
+.raven/git-hooks/lib/raven_config.py text eol=lf
+.raven/git-hooks/lib/check-managed-block-integrity.py text eol=lf
+.raven/git-hooks/lib/check-ai-attribution-content.py text eol=lf
