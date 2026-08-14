@@ -112,7 +112,6 @@ _TREE_SYMLINKS_TO_COMMON = [
     ".codex/hooks.json",
     ".codex/rules",
     ".codex/scripts",
-    ".gitattributes",
     ".raven/git-hooks",
     "AGENTS.md",
 ]

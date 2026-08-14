@@ -628,7 +628,7 @@ def apply_plan(
     # so a repo that declined hook enforcement is not handed .gitattributes
     # lines for hooks it never installed.
     if not component_disabled(GITATTRIBUTES_PATH, config):
-        ensure_gitattributes_lines(destination, template)
+        ensure_gitattributes_lines(destination)
 
     failed_orphans: list[str] = []
     removed_orphans = remove_orphans(destination, orphans.will_remove, failed_orphans)

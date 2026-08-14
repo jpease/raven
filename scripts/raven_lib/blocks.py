@@ -22,6 +22,7 @@ from .constants import (
     MERGE_DIR,
     RAVEN_BLOCK_BEGIN_RE,
     RAVEN_BLOCK_END,
+    REPO_ROOT,
     ROOT_INSTRUCTION_FILES,
     _any_exists,
 )
@@ -617,21 +618,23 @@ def ensure_settings_local_gitignored(destination: Path) -> None:
     )
 
 
-def _gitattributes_required_lines(template: Path) -> list[str]:
+def _gitattributes_required_lines() -> list[str]:
     """Non-comment, non-blank lines from the shipped ``common/.gitattributes`` template.
 
-    Read directly from ``template``'s own ``.gitattributes`` (every language
-    tree reaches it through a ``.gitattributes -> ../common/.gitattributes``
-    symlink at its root, the same shape ``AGENTS.md`` already uses -- see
-    ``_TREE_SYMLINKS_TO_COMMON`` in ``self-check.py``) rather than a hardcoded
-    Python list, so the required set can never drift from what
-    ``common/.gitattributes`` actually says, and a test can assert coverage by
-    scanning the real shipped tree instead of restating it (#206). Returns an
-    empty list -- a silent no-op for ``ensure_gitattributes_lines`` -- if the
-    template has no ``.gitattributes`` at all, rather than raising, since a
-    caller might reasonably pass a stripped-down template in a test fixture.
+    Read directly from ``common/.gitattributes`` via ``REPO_ROOT`` rather than
+    through a per-language-tree symlink: git refuses to follow a symlink when
+    reading a ``.gitattributes`` file (a VCS-reserved filename, hardened the
+    same way ``.gitmodules``/``.mailmap`` are), so unlike every other shared
+    path in ``_TREE_SYMLINKS_TO_COMMON`` in ``self-check.py``,
+    ``.gitattributes`` cannot use that symlink shape at all -- git prints
+    "Too many levels of symbolic links" and silently ignores the file on any
+    tree where it tries. Reading straight from ``common/`` sidesteps the
+    restriction entirely (#206). Returns an empty list -- a silent no-op for
+    ``ensure_gitattributes_lines`` -- if ``common/.gitattributes`` is missing,
+    rather than raising, since a caller might reasonably run against a
+    stripped-down ``common/`` in a test fixture.
     """
-    source = template / GITATTRIBUTES_PATH
+    source = REPO_ROOT / "common" / GITATTRIBUTES_PATH
     if not source.exists():
         return []
     lines = []
@@ -663,22 +666,23 @@ def _existing_gitattributes_patterns(text: str) -> set[str]:
     return patterns
 
 
-def ensure_gitattributes_lines(destination: Path, template: Path) -> None:
+def ensure_gitattributes_lines(destination: Path) -> None:
     """Idempotently append Raven's required ``.gitattributes`` lines under a labeled header.
 
     Mirrors ``_ensure_gitignored``'s shape (exact-line dedup, append-only,
     correct handling of a file missing its trailing newline) but merges into
     ``.gitattributes`` instead of ``.gitignore``, and reads its required lines
-    from the shipped template rather than a hardcoded string, since
-    ``.gitattributes`` (#206) -- unlike the single fixed ``.gitignore`` entry
-    ``_ensure_gitignored`` was built for -- ships a real, evolving template
-    file. Never touches, reorders, or removes an existing line: most
-    destination repos already have their own ``.gitattributes`` for reasons
-    unrelated to Raven (binary handling, diff drivers, language-specific
-    normalization), unlike ``.claude/settings.json`` (#200), which Raven owns
-    outright (see ``common/.claude/docs/raven-namespace.md``).
+    from the shipped ``common/.gitattributes`` template rather than a
+    hardcoded string, since ``.gitattributes`` (#206) -- unlike the single
+    fixed ``.gitignore`` entry ``_ensure_gitignored`` was built for -- ships a
+    real, evolving template file. Never touches, reorders, or removes an
+    existing line: most destination repos already have their own
+    ``.gitattributes`` for reasons unrelated to Raven (binary handling, diff
+    drivers, language-specific normalization), unlike ``.claude/settings.json``
+    (#200), which Raven owns outright (see
+    ``common/.claude/docs/raven-namespace.md``).
     """
-    required = _gitattributes_required_lines(template)
+    required = _gitattributes_required_lines()
     if not required:
         return
     gitattributes = destination / GITATTRIBUTES_PATH
