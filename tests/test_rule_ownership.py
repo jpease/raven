@@ -41,6 +41,9 @@ class RuleOwnershipTests(unittest.TestCase):
     def test_common_security_rules_file_has_no_collision(self):
         self._assert_no_collision(REPO_ROOT / "common" / ".claude" / "rules" / "raven-security.md")
 
+    def test_common_prose_rules_file_has_no_collision(self):
+        self._assert_no_collision(REPO_ROOT / "common" / ".claude" / "rules" / "raven-prose.md")
+
     def test_python_rules_file_has_no_collision(self):
         self._assert_no_collision(REPO_ROOT / "python" / ".claude" / "rules" / "raven-python.md")
 
