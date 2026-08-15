@@ -1151,7 +1151,21 @@ toolchain."
 
 - [ ] **Step 1: Update the README**
 
-Find the section listing shipped skills and add both entries alongside the existing ones, matching the surrounding format exactly. Read the neighbouring lines first and match their voice — that is the `match the voice` rule from the skill this task is documenting.
+`README.md` has no per-skill list. It refers to `.agents/skills/` generically at
+line 61 and never enumerates individual skills, so do not invent a list — that
+would be a structural change to the README dressed up as doc sync.
+
+What it does have is `## Optional Tooling` at line 94, listing `rg`, `fd`,
+`just`, ast-grep, and Semgrep. Vale belongs there and nowhere else. Add it to
+that sentence, keeping the existing "recommends but requires none of them"
+framing intact:
+
+```markdown
+Raven's templates recommend tools like `rg`, `fd`, `just`, ast-grep, Semgrep,
+Vale, and a language server over MCP, but requires none of them. Run
+```
+
+Make no other README change.
 
 - [ ] **Step 2: Decide on AGENTS.md**
 
