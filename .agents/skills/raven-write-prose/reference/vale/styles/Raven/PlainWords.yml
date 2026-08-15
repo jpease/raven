@@ -4,6 +4,9 @@ level: warning
 ignorecase: true
 swap:
   adjudicate: decide
+  adjudicated: decided
+  adjudicates: decides
+  adjudication: decision
   vacuous: empty
   utilise: use
   utilize: use
