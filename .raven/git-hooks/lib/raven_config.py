@@ -31,7 +31,7 @@ anything more than a raw string per key, and folding that capability in here
 would grow every destination repository's checkout for a capability nothing
 installed there uses.
 
-Two entry points, layered so each caller can build its own failure posture on
+Two entry points, layered so each caller can build its own failure handling on
 top:
 
 ``parse_config_text(text)`` -- a pure function from raw config text to
@@ -52,7 +52,7 @@ constructs (multi-line arrays, nested nested tables) beyond this subset.
 (permissions, a bad encoding) raises `RavenConfigError`, so a caller that
 wants to fail closed can let that propagate, and a caller that wants to fail
 open (every current one) can catch it and return its own safe default. Which
-posture is correct is a per-caller decision this module does not make for
+behavior is correct is a per-caller decision this module does not make for
 its callers.
 
 ``parse_bool(value)`` is a small typed-coercion convenience on top, since

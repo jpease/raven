@@ -80,7 +80,7 @@ def _config_gated(relative: str, config: RavenConfig) -> bool:
     ``exclude_paths`` globs. Those match much wider path sets, so folding
     them in here would let a much wider config change drive file removal --
     an ``exclude_paths`` edit or a component toggle would then start deleting
-    files, which is a materially larger and riskier behavior than gate-driven
+    files, which is a much larger and riskier behavior than gate-driven
     deactivation.
     """
     return _platform_gated(relative, config) or _template_gated(relative, config)
