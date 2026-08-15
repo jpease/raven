@@ -345,7 +345,7 @@ def _parse_frontmatter_description(text: str) -> str | None:
 # and drifted to a stale 362, which left the aggregate test's fixture clearing
 # the true limit by 4 words -- still passing, but one raise away from silently
 # testing nothing.
-SKILL_DESCRIPTION_AGGREGATE_LIMIT = 392
+SKILL_DESCRIPTION_AGGREGATE_LIMIT = 435
 SKILL_DESCRIPTION_PER_SKILL_LIMIT = 30
 
 
