@@ -120,6 +120,11 @@
       "kind": "file",
       "sourceSha256": "ce435ba9e16cc1d128c4abde6729d321f812e030836ab4c0a1a9257e826a1de8"
     },
+    ".agents/skills/raven-write-prose/reference/vale/styles/.gitignore": {
+      "installedSha256": "4e5572a32f8c013bac25bac2c1e5fb5e3356af0abc086a332d60dda578c05691",
+      "kind": "file",
+      "sourceSha256": "4e5572a32f8c013bac25bac2c1e5fb5e3356af0abc086a332d60dda578c05691"
+    },
     ".agents/skills/raven-write-prose/reference/vale/styles/Raven/KeepTest.yml": {
       "installedSha256": "bb96deae5e925e9f61f5cc0b368ac9a40fe7b73aa25cbf10633441a547aac8b1",
       "kind": "file",
@@ -452,8 +457,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "57a332193ff8",
+  "ravenVersion": "742ac02feb5d",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-15T07:10:45.174867+00:00"
+  "updatedAt": "2026-08-15T07:13:52.091230+00:00"
 }

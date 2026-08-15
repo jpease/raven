@@ -1,0 +1,8 @@
+# `vale sync` writes fetched packages into this directory, beside Raven's own
+# style. Keep ours tracked and leave everything downloaded out of git, so
+# following the enable steps in docs/tooling.md does not leave a consumer with
+# dozens of untracked third-party files or commit them by accident.
+*
+!.gitignore
+!Raven/
+!Raven/**
