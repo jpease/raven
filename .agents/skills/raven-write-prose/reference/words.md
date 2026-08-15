@@ -13,6 +13,14 @@ Each word carries a keep-test. A word that passes its test stays. A flat ban wou
 | posture | describing physical stance | approach, stance |
 | materially | quantifying a difference you can state | enough to matter, or give the number |
 
+## Words to weigh, but not to lint
+
+`explicitly` and `deliberately` are the two most common long adverbs in this body of prose — 594 and 460 uses across 1.6 million words of markdown in five repositories. Both usually earn their place. `explicitly` contrasts with *implicitly* or *by inference*; `deliberately` marks a choice so a later reader does not undo it as an oversight.
+
+Same test for both: does it rule out an alternative the reader might otherwise assume? If not, cut it.
+
+Neither is a Vale rule. At those counts a linter would raise about a thousand prompts, nearly all of them passing, which teaches people to skip the tool. A word whose true-positive rate is low belongs in a writer's checklist, not a gate.
+
 ## Adding a word
 
 Add words because they rose in measurement, not because they sound inflated. A list built from intuition covers words nobody writes.
