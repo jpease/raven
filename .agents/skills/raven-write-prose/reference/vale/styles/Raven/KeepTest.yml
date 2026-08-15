@@ -1,0 +1,10 @@
+extends: existence
+message: "'%s' has a keep-test in reference/words.md. Confirm it passes, or rewrite."
+level: suggestion
+ignorecase: true
+tokens:
+  - canonical\w*
+  - durabl\w*
+  - posture
+  - materiall\w*
+  - surfac(e|es|ed|ing)

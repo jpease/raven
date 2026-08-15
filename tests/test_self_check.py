@@ -4,18 +4,24 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from helpers import REPO_ROOT, load_script_module
 
 SELF_CHECK = REPO_ROOT / "scripts" / "self-check.py"
 
-# The three always-loaded files that make up the "python" language profile in
-# validate_aggregate_budget(). Other profiles share AGENTS.md + security
-# but point at a different language rules file; leaving those language
-# files absent makes the validator skip those profiles, so a test only needs
-# to populate this one profile to drive the pass/fail paths.
+# The four always-loaded files that make up the "python" language profile in
+# validate_aggregate_budget(). Other profiles share AGENTS.md + prose +
+# security but point at a different language rules file; leaving those
+# language files absent makes the validator skip those profiles, so a test
+# only needs to populate this one profile to drive the pass/fail paths.
+#
+# Every SHARED entry must appear here. The validator skips a profile whose
+# files are not all present, so an omission turns a raising test into a
+# silently passing one.
 PYTHON_PROFILE_FILES = (
     "common/AGENTS.md",
+    "common/.claude/rules/raven-prose.md",
     "common/.claude/rules/raven-security.md",
     "python/.claude/rules/raven-python.md",
 )
@@ -23,7 +29,7 @@ PYTHON_PROFILE_FILES = (
 # Mirrors the "python" cap in validate_aggregate_budget(). Kept here so the
 # test's word totals straddle the real threshold; update both together if the
 # budget changes.
-PYTHON_BUDGET = 1918
+PYTHON_BUDGET = 1993
 
 
 def _write_words(path: Path, count: int) -> None:
@@ -46,7 +52,7 @@ class AggregateBudgetTest(unittest.TestCase):
             _write_words(self.root / rel, words_per_file)
 
     def test_passes_when_profile_sum_under_budget(self) -> None:
-        # 3 * 250 = 750, comfortably under the 1918 python cap.
+        # 4 * 250 = 1000, comfortably under the 1993 python cap.
         self._populate(250)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -54,7 +60,7 @@ class AggregateBudgetTest(unittest.TestCase):
         self.assertIn("aggregate context budget ok", buf.getvalue())
 
     def test_raises_when_profile_sum_exceeds_budget(self) -> None:
-        # 3 * 700 = 2100, just over the 1918 python cap.
+        # 4 * 700 = 2800, over the 1993 python cap.
         self.assertGreater(700 * len(PYTHON_PROFILE_FILES), PYTHON_BUDGET)
         self._populate(700)
         buf = io.StringIO()
@@ -470,6 +476,49 @@ class GuidanceDocsWiringTests(unittest.TestCase):
         ]
         self.assertGreater(guidance_pos, installed_shape_positions[0])
         self.assertLess(guidance_pos, upgrade_pos)
+
+
+class ProseStyleValidationTests(unittest.TestCase):
+    """A skill that violates its own rules has no standing. This gate is why
+    the shipped prose stays honest, and it must never fail on a missing
+    optional tool.
+    """
+
+    def setUp(self):
+        self.module = load_script_module("self_check_under_test", SELF_CHECK)
+
+    def test_missing_vale_is_reported_and_non_fatal(self):
+        # Bound separately rather than nested: SIM117 wants one `with`, and
+        # the parenthesized multi-context form needs Python 3.10.
+        no_vale = mock.patch.object(self.module.shutil, "which", return_value=None)
+        out = io.StringIO()
+        with no_vale, contextlib.redirect_stdout(out):
+            self.module.validate_prose_style()
+        self.assertIn("vale not installed", out.getvalue())
+
+    def test_targets_are_prose_that_uses_the_rules(self):
+        """Definitional files are excluded on purpose. Naming a banned word
+        is their whole job, so a word-checker always trips on them.
+        """
+        names = {p.name for p in self.module.prose_style_targets()}
+        self.assertIn("AGENTS.md", names)
+        self.assertIn("README.md", names)
+        self.assertNotIn("raven-prose.md", names)
+        self.assertNotIn("words.md", names)
+        self.assertNotIn("SKILL.md", names)
+
+    def test_every_target_exists(self):
+        missing = [p for p in self.module.prose_style_targets() if not p.exists()]
+        self.assertFalse(missing, f"prose style targets missing: {missing}")
+
+    def test_runs_before_the_self_upgrade(self):
+        import inspect
+
+        source = inspect.getsource(self.module.main)
+        self.assertLess(
+            source.index("validate_prose_style()"),
+            source.index("RAVEN self-upgrade dry run"),
+        )
 
 
 if __name__ == "__main__":

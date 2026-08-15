@@ -243,6 +243,80 @@ def validate_context_budget() -> None:
     print("context budget ok")
 
 
+def prose_style_targets() -> list[Path]:
+    """Shipped prose the Raven Vale style is applied to.
+
+    These are files that *use* the prose rules. The rules file, words.md, and
+    both prose SKILL.md files are excluded: naming the banned words is their
+    job, so a word-level check always trips on them. Their self-application is
+    the long-word sweep, which no linter can run.
+
+    Kept as a function rather than a constant so tests can assert coverage
+    without duplicating the list.
+    """
+    return [
+        REPO_ROOT / "common" / "AGENTS.md",
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "CONTRIBUTING.md",
+        *sorted((REPO_ROOT / "common" / ".claude" / "docs").glob("*.md")),
+    ]
+
+
+def validate_prose_style() -> None:
+    """Fail if shipped prose violates the prose style Raven itself ships.
+
+    Vale is optional. A missing binary prints a notice and returns, because
+    templates must stay installable without a Go toolchain.
+    """
+    print("==> validate shipped prose against the Raven Vale style")
+
+    if shutil.which("vale") is None:
+        print("  vale not installed, skipping prose style check")
+        return
+
+    config = (
+        REPO_ROOT
+        / "common"
+        / ".agents"
+        / "skills"
+        / "raven-write-prose"
+        / "reference"
+        / "vale"
+        / ".vale.ini"
+    )
+    if not config.exists():
+        print(f"  WARNING: {config.relative_to(REPO_ROOT)} not found, skipping")
+        return
+
+    targets = prose_style_targets()
+    missing = [str(p.relative_to(REPO_ROOT)) for p in targets if not p.exists()]
+    if missing:
+        raise SystemExit(f"Prose style targets missing: {', '.join(sorted(missing))}.")
+
+    # warning, not error: PlainWords is a hard ban and fails the gate, while
+    # KeepTest is a suggestion that prompts a judgment call. Running at error
+    # would gate on nothing, since no rule in the style is error level.
+    result = subprocess.run(
+        [
+            "vale",
+            f"--config={config}",
+            "--output=line",
+            "--minAlertLevel=warning",
+            *[str(p) for p in targets],
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        print(result.stdout)
+        raise SystemExit(
+            "Shipped prose violates the Raven Vale style. A prose skill that "
+            "fails its own rules has no standing -- fix the prose, not the style."
+        )
+    print("prose style ok")
+
+
 def validate_aggregate_budget() -> None:
     """Fail if a language's SUM of always-loaded files exceeds its aggregate word budget.
 
@@ -716,6 +790,7 @@ def main() -> int:
     validate_context_budget()
     validate_aggregate_budget()
     validate_skill_description_budget()
+    validate_prose_style()
     warn_stale_docs()
     validate_installed_shape()
     validate_guidance_docs()
