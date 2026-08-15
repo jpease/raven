@@ -38,7 +38,13 @@ Each row names the artifact, gives a test you can run, and gives the fix. Run th
 
 The long-word sweep is Orwell's rules 2 and 5 made mechanical. Run it on anything you write. Most hits are technical terms with no shorter form and get kept; the sweep exists to make you ask the question of each one rather than only of words someone already listed.
 
-`X, not Y` needs judgment, not a regex. Plain contrast — "Green tests prove behavior, not design health" — is good writing, and appears 3,174 times in the same 1.6 million words that hold 4 of the split form. The tell is defining a thing by knocking down an alternative nobody proposed: "Extended is a signal, not a verdict." Ask whether the negated half was ever on the table. If it was, keep the sentence.
+`X, not Y` needs judgment, and here is the test: **delete the negated half. Does the sentence still say something?**
+
+"Green tests prove behavior, not design health" → "Green tests prove behavior." Still a claim. Keep it.
+
+"It's not about speed. It's about correctness." → the first sentence alone says nothing. That is the tell.
+
+Use the delete test rather than a regex. The broad form appears 3,244 times across 1.6 million words and the narrow copula form 516, nearly all of them ruling out a real misreading. Three independent reviewers reading an earlier wording of this rule flagged sentences that passed the delete test, so judge by the test and not by the shape.
 
 Two tells read backwards from the rest. `Unearned confidence` and `No specifics` fire when something is *missing*, so a clean document scores no on both. Do not read a low total as a clean document without checking which tells the zeroes came from.
 
