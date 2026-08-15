@@ -1009,16 +1009,15 @@ class ProseStyleValidationTests(unittest.TestCase):
                 self.module.validate_prose_style()
         self.assertIn("vale not installed", out.getvalue())
 
-    def test_targets_cover_every_shipped_prose_file(self):
-        targets = self.module.prose_style_targets()
-        names = {p.name for p in targets}
-        self.assertIn("raven-prose.md", names)
-        self.assertIn("raven-prose-reviewer.md", names)
-        self.assertEqual(
-            len([p for p in targets if p.name == "SKILL.md"]),
-            2,
-            "both prose skills must be checked against the style they ship",
-        )
+    def test_targets_are_prose_that_uses_the_rules(self):
+        """Definitional files are excluded on purpose. Naming a banned word
+        is their whole job, so a word-checker always trips on them."""
+        names = {p.name for p in self.module.prose_style_targets()}
+        self.assertIn("AGENTS.md", names)
+        self.assertIn("README.md", names)
+        self.assertNotIn("raven-prose.md", names)
+        self.assertNotIn("words.md", names)
+        self.assertNotIn("SKILL.md", names)
 ```
 
 `SELF_CHECK` is the module-level constant `tests/test_self_check.py` already defines for the script path. Reuse it rather than rebuilding the path.
@@ -1034,17 +1033,21 @@ Add to `scripts/self-check.py`, after `validate_skill_description_budget`:
 
 ```python
 def prose_style_targets() -> list[Path]:
-    """Shipped prose files the Raven Vale style is applied to.
+    """Shipped prose the Raven Vale style is applied to.
+
+    These are files that USE the prose rules. The rules file, words.md, and
+    both prose SKILL.md files are excluded: naming the banned words is their
+    job, so a word-level check always trips on them. Their self-application
+    is the long-word sweep, which no linter can run.
 
     Kept as a function rather than a constant so tests can assert coverage
     without duplicating the list.
     """
-    skills = REPO_ROOT / "common" / ".agents" / "skills"
     return [
-        REPO_ROOT / "common" / ".claude" / "rules" / "raven-prose.md",
-        skills / "raven-write-prose" / "SKILL.md",
-        skills / "raven-review-prose" / "SKILL.md",
-        REPO_ROOT / "common" / ".claude" / "agents" / "raven-prose-reviewer.md",
+        REPO_ROOT / "common" / "AGENTS.md",
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "CONTRIBUTING.md",
+        *sorted((REPO_ROOT / "common" / ".claude" / "docs").glob("*.md")),
     ]
 
 
@@ -1079,7 +1082,7 @@ def validate_prose_style() -> None:
         raise SystemExit(f"Prose style targets missing: {', '.join(sorted(missing))}.")
 
     result = subprocess.run(
-        ["vale", f"--config={config}", "--output=line", "--minAlertLevel=error"]
+        ["vale", f"--config={config}", "--output=line", "--minAlertLevel=warning"]
         + [str(p) for p in prose_style_targets()],
         capture_output=True,
         text=True,
@@ -1096,7 +1099,9 @@ def validate_prose_style() -> None:
 
 `scripts/self-check.py` already imports both `shutil` (line 16) and `subprocess` (line 17). No new imports are needed.
 
-Note the `--minAlertLevel=error` flag: the keep-test rules are `suggestion` level and must not fail the gate, since a correct `canonical` in shipped prose is expected.
+Note `--minAlertLevel=warning`. `PlainWords` is `warning` and fails the gate; `KeepTest` is `suggestion` and does not, since a correct `canonical` in `raven-authority-map.md` is expected rather than a violation. Running at `error` would gate on nothing at all, because no rule in the style is `error` level.
+
+Verified before implementing: this target set at `warning` returns zero findings today, so the gate starts green and any future hit is real drift.
 
 - [ ] **Step 4: Wire it into the run**
 
