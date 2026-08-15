@@ -65,6 +65,4 @@ Then check the citation. A coinage tends to arrive with one: `WORD` named as a p
 git grep -c 'the-coined-phrase' -- 'AGENTS.md'
 ```
 
-This is not hypothetical. `adjudicate` and `vacuous` were nearly downgraded from `never` to keep-tests because a repository appeared to use both as settled terms — one documenting an "adjudication-ledger pattern" cited to `AGENTS.md §2.1`. That section is titled "One-Command Check" and never uses the phrase. Both words entered that repo in 2026 through agent-written commits. They were the tic, wearing the costume of a domain term, and the fake citation is what made the costume convincing.
-
-Weigh a word's history, not how established it looks.
+Both checks come from a real case: `adjudicate` was nearly downgraded from `never` because a repo cited an "adjudication-ledger pattern" to a section titled "One-Command Check" that never uses the phrase.

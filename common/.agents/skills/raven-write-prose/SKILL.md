@@ -16,9 +16,9 @@ Write prose a human would write. Plain words are part of that. The larger part i
 5. Never use a foreign phrase, a scientific word or a jargon word if you can think of an everyday English equivalent.
 6. Break any of these rules sooner than say anything outright barbarous.
 
-## The twelve tells
+## The thirteen tells
 
-Each row names the artifact, gives a test you can run, and gives the fix. Run the tests; do not judge by feel.
+Each row names the artifact, gives a test you can run, and gives the fix. Run the tests; do not judge by feel. Apply the delete tests to whole paragraphs as well as sentences — an explanation that restates the rule above it goes the same way a flourish does.
 
 | tell | test | fix |
 |---|---|---|
@@ -34,8 +34,11 @@ Each row names the artifact, gives a test you can run, and gives the fix. Run th
 | No specifics | Count numbers, names, paths, versions. Zero? | Add them, or say you don't know. |
 | Unearned confidence | Does the piece admit any dead end? | Say what you did not verify. |
 | Long-word default | `rg -oN '\b[a-z]{9,}\b' FILE \| sort -u`, then triage each | Use the shorter everyday word. |
+| Closing flourish | Take the last sentence of each paragraph. Does it hold a fact the paragraph did not already have? | Delete it. If it held a fact, state the fact plainly. |
 
 The long-word sweep is Orwell's rules 2 and 5 made mechanical. Run it on anything you write. Most hits are technical terms with no shorter form and get kept; the sweep exists to make you ask the question of each one rather than only of words someone already listed.
+
+The closing-flourish test is positional, not lexical. A metaphor-word count across 148,000 words of drafting found 24 hits, so the vocabulary is too rare and too varied for a linter to catch. The position is consistent: last sentence of a paragraph, after the facts, restating them.
 
 ## Tone
 
