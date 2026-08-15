@@ -119,5 +119,39 @@ class WriteProseSkillTests(unittest.TestCase):
         self.assertIn("git log", text)
 
 
+VALE_DIR = SKILLS / "raven-write-prose" / "reference" / "vale"
+
+
+class ValeStyleTests(unittest.TestCase):
+    def test_config_and_styles_exist(self):
+        self.assertTrue((VALE_DIR / ".vale.ini").exists())
+        self.assertTrue((VALE_DIR / "styles" / "Raven" / "PlainWords.yml").exists())
+        self.assertTrue((VALE_DIR / "styles" / "Raven" / "KeepTest.yml").exists())
+
+    def test_hard_ban_words_are_substitutions_not_keep_tests(self):
+        text = (VALE_DIR / "styles" / "Raven" / "PlainWords.yml").read_text(encoding="utf-8")
+        self.assertIn("extends: substitution", text)
+        for word in ["adjudicate", "vacuous"]:
+            with self.subTest(word=word):
+                self.assertIn(word, text)
+
+    def test_keep_test_words_are_suggestions_not_errors(self):
+        text = (VALE_DIR / "styles" / "Raven" / "KeepTest.yml").read_text(encoding="utf-8")
+        self.assertIn("extends: existence", text)
+        self.assertIn("level: suggestion", text)
+        self.assertIn("canonical", text)
+
+    def test_third_party_package_is_commented_out(self):
+        """Vale sync fetches over the network. Opting in is an explicit
+        consumer edit, never a shipped default.
+        """
+        lines = (VALE_DIR / ".vale.ini").read_text(encoding="utf-8").splitlines()
+        active = [ln for ln in lines if ln.strip() and not ln.strip().startswith("#")]
+        self.assertFalse(
+            [ln for ln in active if ln.strip().startswith("Packages")],
+            "Packages must stay commented out -- it fetches a third-party rule package over the network",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
