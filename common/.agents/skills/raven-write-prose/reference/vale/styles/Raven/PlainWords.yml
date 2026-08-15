@@ -2,7 +2,14 @@ extends: substitution
 message: "Use '%s' instead of '%s'."
 level: warning
 ignorecase: true
+# Only the re- forms. Bare "litigate" is the ordinary legal word and would
+# false-positive on any contract or policy document. Measured across two chat
+# corpora: 16 uses, every one of them a re- form, zero bare.
 swap:
+  re-?litigates: reopens
+  re-?litigated: reopened
+  re-?litigating: reopening
+  re-?litigate: reopen
   adjudicate: decide
   adjudicated: decided
   adjudicates: decides

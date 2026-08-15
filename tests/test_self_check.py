@@ -29,7 +29,7 @@ PYTHON_PROFILE_FILES = (
 # Mirrors the "python" cap in validate_aggregate_budget(). Kept here so the
 # test's word totals straddle the real threshold; update both together if the
 # budget changes.
-PYTHON_BUDGET = 1993
+PYTHON_BUDGET = 1998
 
 
 def _write_words(path: Path, count: int) -> None:
@@ -52,7 +52,7 @@ class AggregateBudgetTest(unittest.TestCase):
             _write_words(self.root / rel, words_per_file)
 
     def test_passes_when_profile_sum_under_budget(self) -> None:
-        # 4 * 250 = 1000, comfortably under the 1993 python cap.
+        # 4 * 250 = 1000, comfortably under the 1998 python cap.
         self._populate(250)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -60,7 +60,7 @@ class AggregateBudgetTest(unittest.TestCase):
         self.assertIn("aggregate context budget ok", buf.getvalue())
 
     def test_raises_when_profile_sum_exceeds_budget(self) -> None:
-        # 4 * 700 = 2800, over the 1993 python cap.
+        # 4 * 700 = 2800, over the 1998 python cap.
         self.assertGreater(700 * len(PYTHON_PROFILE_FILES), PYTHON_BUDGET)
         self._populate(700)
         buf = io.StringIO()

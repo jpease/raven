@@ -5,6 +5,7 @@ Each word carries a keep-test. A word that passes its test stays. A flat ban wou
 | word | keep only when | otherwise write |
 |---|---|---|
 | adjudicate | never | decide, settle |
+| re-litigate | never | reopen, argue again |
 | vacuous, vacuously | never | a test: passes without testing anything. a claim: says nothing |
 | surface (verb) | never | show, report, raise |
 | canonical | naming the authoritative source among competing copies | the real one, use X |

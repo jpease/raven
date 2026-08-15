@@ -207,7 +207,10 @@ def validate_context_budget() -> None:
         "ruby/.claude/rules/raven-ruby.md": 850,
         "dotfiles/.claude/rules/raven-dotfiles.md": 530,
         # shared rules files (symlinked from language dirs)
-        "common/.claude/rules/raven-prose.md": 75,
+        # Raised 75 -> 80 deliberately: this file is the only prose guardrail
+        # that reaches ordinary chat, and the maintainer has named three tics
+        # (adjudicate, vacuous, re-litigate) that only a loaded rule can catch.
+        "common/.claude/rules/raven-prose.md": 80,
         "common/.claude/rules/raven-security.md": 45,
     }
     print("==> validate context budget for always-loaded guidance")
@@ -337,15 +340,15 @@ def validate_aggregate_budget() -> None:
     ]
     PROFILES: dict[str, tuple[int, str]] = {
         # language: (aggregate word budget, language rules file)
-        "python": (1993, "python/.claude/rules/raven-python.md"),
-        "elixir": (2123, "elixir/.claude/rules/raven-elixir.md"),
-        "rust": (2053, "rust/.claude/rules/raven-rust.md"),
-        "swift": (1893, "swift/.claude/rules/raven-swift.md"),
-        "typescript": (1913, "typescript/.claude/rules/raven-typescript.md"),
-        "go": (2073, "go/.claude/rules/raven-go.md"),
-        "lua": (1913, "lua/.claude/rules/raven-lua.md"),
-        "ruby": (2083, "ruby/.claude/rules/raven-ruby.md"),
-        "dotfiles": (1747, "dotfiles/.claude/rules/raven-dotfiles.md"),
+        "python": (1998, "python/.claude/rules/raven-python.md"),
+        "elixir": (2128, "elixir/.claude/rules/raven-elixir.md"),
+        "rust": (2058, "rust/.claude/rules/raven-rust.md"),
+        "swift": (1898, "swift/.claude/rules/raven-swift.md"),
+        "typescript": (1918, "typescript/.claude/rules/raven-typescript.md"),
+        "go": (2078, "go/.claude/rules/raven-go.md"),
+        "lua": (1918, "lua/.claude/rules/raven-lua.md"),
+        "ruby": (2088, "ruby/.claude/rules/raven-ruby.md"),
+        "dotfiles": (1752, "dotfiles/.claude/rules/raven-dotfiles.md"),
     }
     print("==> validate aggregate context budget per language profile")
 

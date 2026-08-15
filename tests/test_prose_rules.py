@@ -19,8 +19,8 @@ CANONICAL = REPO_ROOT / "common" / ".claude" / "rules" / "raven-prose.md"
 
 # Matches THRESHOLDS in scripts/self-check.py. `validate_context_budget`
 # counts with len(text.split()), which treats each "-" bullet marker as a
-# token, so seven bullets cost seven words before any prose.
-WORD_BUDGET = 75
+# token, so each bullet costs a word before any prose.
+WORD_BUDGET = 80
 
 
 class ProseRulesTests(unittest.TestCase):
