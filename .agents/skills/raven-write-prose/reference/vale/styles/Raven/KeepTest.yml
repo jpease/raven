@@ -7,6 +7,11 @@ ignorecase: true
 # `canonical(ly)?` rather than `canonical\w*`, because the wider form matched
 # `canonicalize`/`canonicalized`/`canonicalizes` -- function names, not prose.
 #
+# `durabl\w*` stays wide only because Vale skips code spans. A fourth repo
+# writes `DurableLocalChangeIntent` and `canonicalizeAggregateIdentities` in
+# prose and neither fires, since both sit in backticks. Identifiers written
+# bare would trip this rule.
+#
 # Bare `surface` is dropped. Sampling a consumer repo found it is a noun about
 # three times in four (`CLI surface`, `config surface`, `public surface`), so
 # flagging it cost far more false prompts than it caught. The inflected forms
