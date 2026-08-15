@@ -164,15 +164,38 @@ class ValeStyleTests(unittest.TestCase):
         self.assertIn("level: suggestion", text)
         self.assertIn("canonical", text)
 
-    def test_third_party_package_is_commented_out(self):
-        """Vale sync fetches over the network. Opting in is an explicit
-        consumer edit, never a shipped default.
-        """
+    def _active_ini_lines(self):
         lines = (VALE_DIR / ".vale.ini").read_text(encoding="utf-8").splitlines()
-        active = [ln for ln in lines if ln.strip() and not ln.strip().startswith("#")]
-        self.assertFalse(
-            [ln for ln in active if ln.strip().startswith("Packages")],
-            "Packages must stay commented out -- it fetches a third-party rule package over the network",
+        return [ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")]
+
+    def test_no_unsynced_package_is_named_in_based_on_styles(self):
+        """`Packages` is a declaration and fetches nothing; an unsynced package
+        listed there is inert. Naming one in `BasedOnStyles` is not: Vale then
+        refuses to run at all with "style does not exist on StylesPath", which
+        would break the gate in every consumer that has not run `vale sync`.
+        Only the vendored Raven style may appear there.
+        """
+        based = [ln for ln in self._active_ini_lines() if ln.startswith("BasedOnStyles")]
+        self.assertTrue(based, "expected a BasedOnStyles line")
+        for line in based:
+            with self.subTest(line=line):
+                self.assertEqual(
+                    line,
+                    "BasedOnStyles = Raven",
+                    "a synced package belongs in the commented opt-in block, not here",
+                )
+
+    def test_declared_packages_stay_opt_in(self):
+        """Declaring a package is safe, but `vale sync` fetches over the
+        network. Keep the set small and deliberate rather than open-ended.
+        """
+        declared = [ln for ln in self._active_ini_lines() if ln.startswith("Packages")]
+        self.assertEqual(len(declared), 1, "expected exactly one Packages line")
+        names = {n.strip() for n in declared[0].split("=", 1)[1].split(",")}
+        self.assertEqual(
+            names,
+            {"proselint", "write-good"},
+            "changing the declared package set is a deliberate call -- update this test with it",
         )
 
 
