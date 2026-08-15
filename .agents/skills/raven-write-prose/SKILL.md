@@ -1,11 +1,13 @@
 ---
 name: raven-write-prose
-description: Use when drafting or editing prose — comments, READMEs, docs, specs, commit messages, issue bodies. Applies plain-language rules and removes machine-writing tells.
+description: Use when drafting or editing prose — comments, READMEs, docs, specs, commit messages, issue bodies. Plain-language rules plus a structural edit pass.
 ---
 
 # Write Prose
 
-Write prose a human would write. Plain words are part of that. The larger part is structure: what marks text as machine-written is rhythm, list length, hedging, and signposting, and a word swap reaches none of it.
+Plain words are part of good prose. The larger part is structure — rhythm, list length, hedging, signposting — and a word swap reaches none of it.
+
+**These tests do not detect machine writing.** Graded against six of this author's blog posts and nine agent-written technical documents, they fired 6.6 times per human essay and 3.9 times per agent document. What they measure is scaffolding a writer leaves in: an essay signposts, runs sentences to a similar length, and closes paragraphs rhetorically, whichever kind of writer made it. Use them as an edit pass on a draft, never as evidence about who wrote something.
 
 ## Spine: Orwell's six rules
 
@@ -16,7 +18,7 @@ Write prose a human would write. Plain words are part of that. The larger part i
 5. Never use a foreign phrase, a scientific word or a jargon word if you can think of an everyday English equivalent.
 6. Break any of these rules sooner than say anything outright barbarous.
 
-## The thirteen tells
+## The twelve tells
 
 Each row names the artifact, gives a test you can run, and gives the fix. Run the tests; do not judge by feel. Apply the delete tests to whole paragraphs as well as sentences — an explanation that restates the rule above it goes the same way a flourish does.
 
@@ -26,7 +28,6 @@ Each row names the artifact, gives a test you can run, and gives the fix. Run th
 | Throat-clearing | Does sentence one carry new information? | Start where information starts. |
 | Tricolon default | Count list lengths. Are most three? | Cut to two or extend to four where honest. |
 | `not X, but Y` | Search `not…but`, `isn't…it's`, `not about…about`, and the split form `It is not A. It is B.` | State Y alone. |
-| Uniform rhythm | In prose paragraphs only, three consecutive sentences within ~5 words. Skip lists, tables, and checklists — even length there is deliberate. | Merge two, or cut one to a fragment. |
 | Symmetric hedge | A sentence weighing both sides, concluding neither | Commit, or cut it. |
 | Drumroll or dependent heading | Does the heading name its own content? Ordinary nesting is fine; flag one that names nothing alone, like `### Inputs` or `### Decision`. | Name it in full. |
 | Restating close | Does the last paragraph hold a new fact? | Cut it. |
@@ -48,7 +49,9 @@ Use the delete test rather than a regex. The broad form appears 3,244 times acro
 
 Two tells read backwards from the rest. `Unearned confidence` and `No specifics` fire when something is *missing*, so a clean document scores no on both. Do not read a low total as a clean document without checking which tells the zeroes came from.
 
-Expect the count to track document type. Across nine real documents, procedures and reference pages fired 1 to 3 tells each; the one conceptual spec fired 10. Prose that argues is where these tests earn their place.
+Expect the count to track document type. Across nine technical documents, procedures and reference pages fired 1 to 3 tells each; the one conceptual spec fired 10, and essays fired more still. Prose that argues is where these tests earn their place, and where they are noisiest.
+
+A "uniform rhythm" test was removed after measurement. It asked for three consecutive sentences of similar length, and it had no working range: technical documents contain almost no paragraph reaching three sentences, while every essay tested fired on runs like 4/9/9 words, which are not uniform. Two thresholds were tried and both were guesses.
 
 The closing-flourish test is positional, not lexical. A metaphor-word count across 148,000 words of drafting found 24 hits, so the vocabulary is too rare and too varied for a linter to catch. The position is consistent: last sentence of a paragraph, after the facts, restating them.
 

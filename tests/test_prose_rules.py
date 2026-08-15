@@ -101,7 +101,6 @@ class WriteProseSkillTests(unittest.TestCase):
             "Throat-clearing",
             "Tricolon",
             "not X, but Y",
-            "Uniform rhythm",
             "Symmetric hedge",
             "dependent heading",
             "Restating close",

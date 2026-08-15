@@ -14,7 +14,7 @@ Follow the `raven-write-prose` rules:
 - Orwell's six rules, especially: no long word where a short one will do, cut every cuttable word, active over passive.
 - No signposting, no throat-clearing, no restating close.
 - End each paragraph on its last fact. Delete a closing sentence that only restates.
-- Vary sentence length. Do not default every list to three items.
+- Do not default every list to three items.
 - Avoid `not X, but Y`.
 - Cite specifics. Numbers, names, paths.
 - Say what you do not know rather than writing around it.

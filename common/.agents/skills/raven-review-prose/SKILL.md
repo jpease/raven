@@ -25,7 +25,7 @@ Two things it will flag that are correct. A file whose job is to name the banned
 
 ## Pass 2: the structural pass
 
-Walk all thirteen tells from `raven-write-prose`. Run each test rather than judging by feel. The long-word sweep is the one most often skipped and the one that finds the most:
+Walk all twelve tells from `raven-write-prose`. Run each test rather than judging by feel. The long-word sweep is the one most often skipped and the one that finds the most:
 
 ```bash
 rg -oN '\b[a-z]{9,}\b' FILE | sort -u
