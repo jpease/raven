@@ -48,6 +48,12 @@ Baseline taken 2026-08-14 across 400 commits, roughly 6,700 lines of body prose:
 
 Re-run against commits made after the rules file landed and compare. A word that has not fallen needs a different fix than another table row.
 
+When measuring a repo that installs Raven, exclude the installed paths. Raven's own guidance uses `canonical` heavily and correctly, so a repo-wide count charges Raven's vocabulary to the writer:
+
+```bash
+git grep -ohiwE 'WORD' -- 'docs/*' 'README.md' 'src/*'   # the writer's own prose
+```
+
 ## The sweep finds what the table cannot
 
 The table only holds words someone thought to add. For everything else run the long-word sweep from the skill:

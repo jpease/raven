@@ -31,7 +31,7 @@ Each row names the artifact, gives a test you can run, and gives the fix. Run th
 | Drumroll or dependent heading | Does it name the content, and does it still parse with the heading above it removed? | Name it in full. |
 | Restating close | Does the last paragraph hold a new fact? | Cut it. |
 | Bulletification | Are the bullets full sentences that flow? | Make them a paragraph. |
-| No specifics | Count numbers, names, paths, versions. Zero? | Add them, or say you don't know. |
+| No specifics | Count numbers, names, paths, versions. Zero? | Add them, or say you don't know. Do not cite evidence for a claim nobody would dispute. |
 | Unearned confidence | Does the piece admit any dead end? | Say what you did not verify. |
 | Long-word default | `rg -oN '\b[a-z]{9,}\b' FILE \| sort -u`, then triage each | Use the shorter everyday word. |
 | Closing flourish | Take the last sentence of each paragraph. Does it hold a fact the paragraph did not already have? | Delete it. If it held a fact, state the fact plainly. |
