@@ -1114,8 +1114,8 @@ class SubagentOutOfScopeContractTests(unittest.TestCase):
         )
         self.assertEqual(
             len(paths),
-            8,
-            f"expected 4 Claude + 4 Codex agent contracts, found {len(paths)}",
+            10,
+            f"expected 5 Claude + 5 Codex agent contracts, found {len(paths)}",
         )
         for path in paths:
             with self.subTest(agent=f"{path.parent.name}/{path.name}"):

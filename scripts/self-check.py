@@ -91,6 +91,7 @@ def validate_shared_docs_sync() -> None:
 _TREE_SYMLINKS_TO_COMMON = [
     ".agents/skills",
     ".claude/agents/raven-codebase-cartographer.md",
+    ".claude/agents/raven-prose-reviewer.md",
     ".claude/agents/raven-refactor-reviewer.md",
     ".claude/agents/raven-security-reviewer.md",
     ".claude/agents/raven-test-debugger.md",
