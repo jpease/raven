@@ -193,7 +193,7 @@ class ValeStyleTests(unittest.TestCase):
         names = {n.strip() for n in declared[0].split("=", 1)[1].split(",")}
         self.assertEqual(
             names,
-            {"proselint", "write-good"},
+            {"proselint", "write-good", "Readability"},
             "changing the declared package set is a deliberate call -- update this test with it",
         )
 
