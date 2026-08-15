@@ -9,7 +9,7 @@ Long context degrades AI response quality. Natural task boundaries — finishing
 
 ## Goal
 
-A lightweight skill that surfaces a context hygiene recommendation at the right moment, prompts the user to make a deliberate choice, and stays out of the way otherwise.
+A lightweight skill that raises a context hygiene recommendation at the right moment, prompts the user to make a deliberate choice, and stays out of the way otherwise.
 
 ## Non-Goals
 

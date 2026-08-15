@@ -111,7 +111,7 @@ scripts/
 | `--complete <unit-name>` | Mark unit done, advance current pointer, update timestamp. If a child issue number is recorded for this unit, close it via `gh`/`glab`. |
 | `--status` | Print current unit, completed units, remaining units, and parent issue if set. |
 | `--validate <unit-name>` | Exit 0 if valid to complete; exit 1 + message if not. Called by hook only. |
-| `--archive` | Move completed units to `session-archive.md`, reset units list for next phase. User-triggered: agent surfaces the suggestion when the context cap warning fires, but waits for confirmation before running. |
+| `--archive` | Move completed units to `session-archive.md`, reset units list for next phase. User-triggered: agent offers the suggestion when the context cap warning fires, but waits for confirmation before running. |
 
 ### Invariants
 - Script is the **only** process that reads or writes `session.md`. The skill and hook never access the file directly.

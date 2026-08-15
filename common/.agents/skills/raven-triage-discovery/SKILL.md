@@ -5,7 +5,7 @@ description: Use when work outside the current issue's scope is discovered mid-t
 
 # Triage Discovery
 
-Work surfaced mid-task that falls outside the current issue's acceptance criteria needs a disposition, not a mention. This skill assigns one.
+Work found mid-task that falls outside the current issue's acceptance criteria needs a disposition, not a mention. This skill assigns one.
 
 ## Skip When
 

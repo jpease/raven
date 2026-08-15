@@ -440,7 +440,7 @@ def build_roster(root: Path | None, prober: Any) -> str:
 def main() -> int:
     """CLI/hook entry point: build and print the roster, always exiting 0.
 
-    Any exception during roster assembly is swallowed rather than surfaced --
+    Any exception during roster assembly is swallowed rather than reported --
     see the ``except`` block below for why a crashing SessionStart hook is
     worse than a silently missing roster.
     """

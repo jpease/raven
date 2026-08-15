@@ -19,7 +19,7 @@ Use this skill when a task changes package manifests, lockfiles, dependency vers
 
 ## Advisory Triage
 
-`just audit` surfaces known advisories for the project's lockfiles. It is report-only and deliberately outside `check`, so run it on demand — it never blocks a commit, and its findings are inputs to the triage below rather than a failure to fix.
+`just audit` reports known advisories for the project's lockfiles. It is report-only and deliberately outside `check`, so run it on demand — it never blocks a commit, and its findings are inputs to the triage below rather than a failure to fix.
 
 Advisories are evidence, not instructions. Classify before acting.
 

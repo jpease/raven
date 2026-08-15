@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make every finding surfaced outside the current issue's scope receive an explicit, stated disposition — FOLD IN, FILE, or DROP — so out-of-scope work stops disappearing into issue and epic comments.
+**Goal:** Make every finding raised outside the current issue's scope receive an explicit, stated disposition — FOLD IN, FILE, or DROP — so out-of-scope work stops disappearing into issue and epic comments.
 
 **Architecture:** A new tracker-agnostic skill, `raven-triage-discovery`, owns the disposition contract. Two enforcement points reference it: `raven-task-complete` gates unit completion on stating dispositions, and the four shipped reviewer sub-agents must return a `## Out Of Scope Findings` section that the parent then dispositions. The two platform-gated issue skills supply tracker-specific filing mechanics but no longer own the rule.
 
@@ -158,7 +158,7 @@ description: Use when work outside the current issue's scope is discovered mid-t
 
 # Triage Discovery
 
-Work surfaced mid-task that falls outside the current issue's acceptance criteria needs a disposition, not a mention. This skill assigns one.
+Work found mid-task that falls outside the current issue's acceptance criteria needs a disposition, not a mention. This skill assigns one.
 
 ## Skip When
 
@@ -274,7 +274,7 @@ Expected: all pass.
 git add common/.agents/skills/raven-triage-discovery/ scripts/self-check.py tests/test_skills.py tests/test_config.py
 git commit -m "feat(skills): add raven-triage-discovery disposition contract
 
-Out-of-scope findings surfaced mid-task had no defined disposition, so
+Out-of-scope findings raised mid-task had no defined disposition, so
 they drifted to the cheapest action -- a comment on the issue or its
 epic, where nothing schedules them. The skill forces one of FOLD IN,
 FILE, or DROP, prohibits comment-only as a terminal record, and resolves
@@ -353,7 +353,7 @@ Expected: `test_process_requires_dispositioning_discovered_work` and `test_outpu
 In `common/.agents/skills/raven-task-complete/SKILL.md`, in the `## Process` section, insert a new step between the current step 4 (`Run lint and type-check`) and current step 5 (`State the verification summary`), then renumber the final step to 6:
 
 ```markdown
-5. **Disposition discovered work** — enumerate anything surfaced during this unit that falls outside the current issue's acceptance criteria, including findings returned by sub-agents, and assign each one a disposition per `raven-triage-discovery`. "None" must be stated, not implied.
+5. **Disposition discovered work** — enumerate anything found during this unit that falls outside the current issue's acceptance criteria, including findings returned by sub-agents, and assign each one a disposition per `raven-triage-discovery`. "None" must be stated, not implied.
 6. **State the verification summary** before handing off.
 ```
 

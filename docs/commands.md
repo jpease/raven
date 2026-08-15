@@ -88,7 +88,7 @@ raven accept .mcp.json  # or named paths only
 ```
 
 See [Upgrading and Merges](upgrading.md#finishing-a-merge-with-raven-accept)
-for what "accept" records and when the file surfaces again.
+for what "accept" records and when the file shows up again.
 
 ## `raven doctor`
 

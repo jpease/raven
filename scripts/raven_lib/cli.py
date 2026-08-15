@@ -86,7 +86,7 @@ def swift_install_note() -> list[str]:
     """Post-install guidance for the swift template.
 
     The swift justfile resolves the Xcode scheme at build/test time, so there is
-    no placeholder to edit and no XcodeGen assumption. This surfaces that up
+    no placeholder to edit and no XcodeGen assumption. This raises that up
     front -- and reassures the common case of installing Raven before the Xcode
     app exists, where the gate skips cleanly rather than failing at push time.
     """

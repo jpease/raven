@@ -38,7 +38,7 @@ if command -v gitleaks >/dev/null 2>&1; then
     # stop the old fallback from ever firing, blocking every commit on an
     # old gitleaks (issue #198). Tolerate an optional leading v/V in case a
     # repackaged build prefixes the version. An unparseable version fails
-    # closed to the modern `git` subcommand and surfaces its output: an
+    # closed to the modern `git` subcommand and shows its output: an
     # unrecognized gitleaks is more likely to be newer than 8.19 -- which
     # shipped a long time ago -- than older.
     gitleaks_version=$(gitleaks version 2>/dev/null)

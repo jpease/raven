@@ -39,7 +39,7 @@ Confirmed against current upstream docs, not assumed from general knowledge
 - **Audit: osv-scanner**, not bundler-audit. Originally scoped as
   bundler-audit (confirmed via the `rubysec/bundler-audit` README: binary
   `bundle-audit`, command `bundle-audit check --update`), but reading
-  `tests/test_gates.py` surfaced a hard repo convention:
+  `tests/test_gates.py` revealed a hard repo convention:
   `test_scanning_templates_invoke_osv_scanner_without_failing_the_shell`
   asserts, for every template not in `_NO_SCANNER_INPUT = {"swift", "lua"}`,
   that its `audit` recipe invokes osv-scanner specifically (checks for the

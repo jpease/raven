@@ -358,7 +358,7 @@ def drift_findings(destination: Path) -> list[Finding]:
     missing = sorted(set(classification.will_copy) - set(pending))
     # Files with a pending guided merge are, by construction, also classified as
     # needs_merge. Subtract them so each finding is disjoint: "locally modified"
-    # surfaces only drift that has no merge artifact yet, while "pending guided
+    # reports only drift that has no merge artifact yet, while "pending guided
     # merge" owns the rest. Reporting both sets in full double-counts the same
     # files and offers contradictory fixes for them.
     modified = sorted(

@@ -73,7 +73,7 @@ def reconcile_state(
         # matches the recorded baseline (e.g. an accepted manual merge) there is
         # nothing to do. A later local edit has nothing upstream to merge against,
         # so it is "local_only": upgrade leaves it untouched without manufacturing
-        # a guided merge, and doctor surfaces it informationally.
+        # a guided merge, and doctor reports it informationally.
         return "local_only" if user_touched else "identical"
     if user_touched:
         return "needs_merge"

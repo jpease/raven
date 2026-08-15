@@ -747,7 +747,7 @@ def validate_guidance_docs() -> None:
     Run as a subprocess (like ruff/pytest below), not imported, so this
     validator can also be invoked standalone -- see the script's own
     docstring. Placed with the other validators, before the self-upgrade
-    steps, so a docs defect surfaces before a real upgrade is applied.
+    steps, so a docs defect appears before a real upgrade is applied.
     """
     run(
         "guidance docs check",

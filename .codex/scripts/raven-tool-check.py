@@ -153,7 +153,7 @@ TOOLS = [
         "id": "osv-scanner",
         "name": "OSV-Scanner",
         "commands": [["osv-scanner", "--version"]],
-        "purpose": "surfacing known advisories in dependency lockfiles via `just audit`",
+        "purpose": "reporting known advisories in dependency lockfiles via `just audit`",
         "install": {
             "darwin": "official install docs: https://google.github.io/osv-scanner/installation/",
             "linux": "official install docs: https://google.github.io/osv-scanner/installation/",
@@ -167,7 +167,7 @@ TOOLS = [
         # with the working tree), so a repo whose advisories arrive by another
         # route is fully covered without it.
         "optionalWhen": (
-            "dependency advisories are surfaced by another approved control"
+            "dependency advisories are reported by another approved control"
             " (e.g. Dependabot, Renovate, or a platform scanner)"
         ),
     },

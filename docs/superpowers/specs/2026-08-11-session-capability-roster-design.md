@@ -576,7 +576,7 @@ Issue #143 must be fixed for the roster to reach subagents, but the two changes
 are independent and can land in either order. Neither ordering creates a
 regression.
 
-One pre-existing bug surfaced during review is tracked separately and is not a
+One pre-existing bug found during review is tracked separately and is not a
 prerequisite: the prober's `Path.cwd()` assumption (#147). The emitter resolves
 its own root, so it is unaffected, but the two touch adjacent code.
 

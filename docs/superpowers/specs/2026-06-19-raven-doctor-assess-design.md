@@ -90,7 +90,7 @@ This makes `--run` a real CI gate while keeping the static/default mode advisory
   `--run`, so tests stub it.
 - **Config & manifest reading** reuses `config.py` and `manifest.py`.
 - **Drift detection** reuses the same template-vs-installed comparison the
-  `upgrade` path already computes (in `plan.py` / `apply.py`), surfaced as
+  `upgrade` path already computes (in `plan.py` / `apply.py`), reported as
   findings rather than as an upgrade plan.
 
 ## `raven doctor` Checks
@@ -201,7 +201,7 @@ render through `report.py`, and return the severity-derived exit code.
 
 - Missing `.raven/` install: `doctor` reports it as an `error` with a `fix` to
   run `raven install`; `assess` reports it as a single `error` and exits.
-- Unreadable/malformed config or manifest: surfaced as an `error` finding, not an
+- Unreadable/malformed config or manifest: reported as an `error` finding, not an
   uncaught exception.
 - `--run` gate subprocess failures (non-zero exit) are expected signal, captured
   as findings; runner/OS errors (command not found, timeout) are captured and

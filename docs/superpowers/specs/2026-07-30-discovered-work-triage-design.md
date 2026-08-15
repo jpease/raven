@@ -2,10 +2,10 @@
 
 ## Problem
 
-Work surfaced mid-task that falls outside the current issue's scope reliably
+Work found mid-task that falls outside the current issue's scope reliably
 ends up as a comment on the current issue or its parent epic, where nothing
 schedules it and nobody sees it. Observed repeatedly, most often when a
-sub-agent surfaces a finding the parent then absorbs into prose.
+sub-agent reports a finding the parent then absorbs into prose.
 
 Four mechanisms produce this:
 
@@ -63,7 +63,7 @@ Silence stops being a passing state.
 
 A new tracker-agnostic skill, `raven-triage-discovery`, canonical at
 `common/.agents/skills/raven-triage-discovery/SKILL.md`. It owns exactly one
-thing: every finding surfaced during a unit of work that is not already covered
+thing: every finding raised during a unit of work that is not already covered
 by the current issue's acceptance criteria is assigned exactly one disposition.
 
 | Disposition | Meaning | Required action |
