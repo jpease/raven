@@ -1,6 +1,6 @@
 ---
 name: raven-review-prose
-description: Use when reviewing prose for machine-writing tells and inflated wording, or when a draft needs rebuilding rather than editing.
+description: Use when reviewing prose for inflated wording and leftover scaffolding, or when a draft needs rebuilding rather than editing.
 ---
 
 # Review Prose
