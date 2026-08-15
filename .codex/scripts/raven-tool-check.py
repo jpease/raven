@@ -172,6 +172,22 @@ TOOLS = [
         ),
     },
     {
+        "id": "vale",
+        "name": "Vale",
+        "commands": [["vale", "--version"]],
+        "purpose": "word-level prose checks for the raven-write-prose and raven-review-prose skills",
+        "install": {
+            "darwin": "brew install vale",
+            "linux": "official install docs: https://vale.sh/docs/install",
+            "windows": "winget install errata-ai.Vale, or see https://vale.sh/docs/install",
+        },
+        # The prose skills degrade to a printed notice without it, and
+        # self-check skips its prose gate rather than failing. The structural
+        # half of those skills is a reading pass no linter performs, so a repo
+        # without Vale still gets most of the value.
+        "optionalWhen": ("prose is reviewed by hand, or the repo does not keep prose under review"),
+    },
+    {
         "id": "jq",
         "name": "jq",
         "commands": [["jq", "--version"]],

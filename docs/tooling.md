@@ -29,7 +29,31 @@ tools over and over.
 ## Recommended tools
 
 `rg`, `fd`, `just`, `uvx`, Semble, GitNexus, `mcp-language-server`, ast-grep,
-Semgrep, Gitleaks, OSV-Scanner, `jq`, `yq`, and RTK.
+Semgrep, Gitleaks, OSV-Scanner, Vale, `jq`, `yq`, and RTK.
+
+## Vale takes a second step
+
+Installing the binary is not enough. The `raven-write-prose` skill ships a
+config that declares three style packages, and none of them download until you
+ask:
+
+```bash
+cd .agents/skills/raven-write-prose/reference/vale
+vale sync
+```
+
+That fetches proselint, write-good, and Readability over the network. Until you
+run it the declaration does nothing, and Vale checks only the small vendored
+`Raven` style, which needs no download. Skipping this step costs you the
+cliché, corporate-speak, and hedging checks, not correctness.
+
+After syncing, open `.vale.ini` and follow the commented block to add
+`proselint` to `BasedOnStyles`. Do not add it before syncing — Vale refuses to
+run at all against a style it cannot find.
+
+Without Vale the prose skills still work. They print one line saying it is
+missing and carry on to the structural pass, which is a reading pass no linter
+performs.
 
 ## Language servers over MCP
 
