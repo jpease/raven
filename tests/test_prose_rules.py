@@ -1,3 +1,4 @@
+import re
 import unittest
 
 from helpers import REPO_ROOT
@@ -213,6 +214,63 @@ class ProseReviewerAgentTests(unittest.TestCase):
             with self.subTest(tree=tree):
                 self.assertTrue(link.is_symlink(), f"{link} is not a symlink")
                 self.assertEqual(link.resolve(), canonical.resolve())
+
+
+FRONTMATTER_KEY_RE = re.compile(r"^([A-Za-z][\w-]*):\s*(.*)$")
+
+
+def _frontmatter_lines(path):
+    """Yield the lines between the opening and closing `---` of a file."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return []
+    out = []
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return out
+        out.append(line)
+    return []
+
+
+class FrontmatterValidityTests(unittest.TestCase):
+    """An unquoted YAML scalar holding ": " parses as a nested mapping, which
+    is a YAML error. Claude Code tolerates it, so it goes unnoticed until a
+    strict consumer chokes -- Vale aborts its whole run on one such file,
+    silently skipping every file after it.
+
+    Checked without PyYAML on purpose: the runtime is stdlib-only and this
+    catches the one failure mode that has actually occurred.
+    """
+
+    def _files(self):
+        paths = sorted(SKILLS.glob("*/SKILL.md"))
+        paths += sorted((REPO_ROOT / "common" / ".claude" / "agents").glob("*.md"))
+        self.assertTrue(paths, "expected shipped skills and agents to exist")
+        return paths
+
+    def test_no_frontmatter_value_holds_an_unquoted_colon_space(self):
+        offenders = []
+        for path in self._files():
+            for line in _frontmatter_lines(path):
+                match = FRONTMATTER_KEY_RE.match(line)
+                if not match:
+                    continue
+                value = match.group(2)
+                if value[:1] in {'"', "'"}:
+                    continue
+                if ": " in value:
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {line.strip()[:70]}")
+        self.assertFalse(
+            offenders,
+            "unquoted frontmatter value contains ': ', which is invalid YAML. "
+            "Quote the value or replace the colon with a dash:\n  " + "\n  ".join(offenders),
+        )
+
+    def test_every_file_has_frontmatter(self):
+        missing = [
+            str(p.relative_to(REPO_ROOT)) for p in self._files() if not _frontmatter_lines(p)
+        ]
+        self.assertFalse(missing, f"files with no parseable frontmatter: {missing}")
 
 
 if __name__ == "__main__":

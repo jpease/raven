@@ -1,6 +1,6 @@
 ---
 name: raven-debloat
-description: Use for periodic subtractive maintenance: removing dead code, inert placeholder subsystems, or redundant layers.
+description: Use for periodic subtractive maintenance — removing dead code, inert placeholder subsystems, or redundant layers.
 ---
 
 # Debloat
