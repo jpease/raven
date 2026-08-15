@@ -25,18 +25,24 @@ Each row names the artifact, gives a test you can run, and gives the fix. Run th
 | Signposting | Delete the sentence. Does meaning survive? | Delete it. |
 | Throat-clearing | Does sentence one carry new information? | Start where information starts. |
 | Tricolon default | Count list lengths. Are most three? | Cut to two or extend to four where honest. |
-| `not X, but Y` | Search `not…but`, `isn't…it's`, `not about…about` | State Y alone. |
-| Uniform rhythm | Three consecutive sentences within ~5 words | Merge two, or cut one to a fragment. |
+| `not X, but Y` | Search `not…but`, `isn't…it's`, `not about…about`, and the split form `It is not A. It is B.` | State Y alone. |
+| Uniform rhythm | In prose paragraphs only, three consecutive sentences within ~5 words. Skip lists, tables, and checklists — even length there is deliberate. | Merge two, or cut one to a fragment. |
 | Symmetric hedge | A sentence weighing both sides, concluding neither | Commit, or cut it. |
-| Drumroll or dependent heading | Does it name the content, and does it still parse with the heading above it removed? | Name it in full. |
+| Drumroll or dependent heading | Does the heading name its own content? Ordinary nesting is fine; flag one that names nothing alone, like `### Inputs` or `### Decision`. | Name it in full. |
 | Restating close | Does the last paragraph hold a new fact? | Cut it. |
-| Bulletification | Are the bullets full sentences that flow? | Make them a paragraph. |
-| No specifics | Count numbers, names, paths, versions. Zero? | Add them, or say you don't know. Do not cite evidence for a claim nobody would dispute. |
+| Bulletification | Are the bullets full sentences that flow into each other? And the reverse: has every paragraph become a `**Label**: value` bullet? | Give flowing bullets their paragraph back, or a bulleted argument its prose. |
+| No specifics | Count numbers, names, paths, versions. Zero? Applies to conceptual and summary prose; engineering docs are built from specifics and always pass. | Add them, or say you don't know. Do not cite evidence for a claim nobody would dispute. |
 | Unearned confidence | Does the piece admit any dead end? | Say what you did not verify. |
 | Long-word default | `rg -oN '\b[a-z]{9,}\b' FILE \| sort -u`, then triage each | Use the shorter everyday word. |
 | Closing flourish | Take the last sentence of each paragraph. Does it hold a fact the paragraph did not already have? | Delete it. If it held a fact, state the fact plainly. |
 
 The long-word sweep is Orwell's rules 2 and 5 made mechanical. Run it on anything you write. Most hits are technical terms with no shorter form and get kept; the sweep exists to make you ask the question of each one rather than only of words someone already listed.
+
+`X, not Y` needs judgment, not a regex. Plain contrast — "Green tests prove behavior, not design health" — is good writing, and appears 3,174 times in the same 1.6 million words that hold 4 of the split form. The tell is defining a thing by knocking down an alternative nobody proposed: "Extended is a signal, not a verdict." Ask whether the negated half was ever on the table. If it was, keep the sentence.
+
+Two tells read backwards from the rest. `Unearned confidence` and `No specifics` fire when something is *missing*, so a clean document scores no on both. Do not read a low total as a clean document without checking which tells the zeroes came from.
+
+Expect the count to track document type. Across nine real documents, procedures and reference pages fired 1 to 3 tells each; the one conceptual spec fired 10. Prose that argues is where these tests earn their place.
 
 The closing-flourish test is positional, not lexical. A metaphor-word count across 148,000 words of drafting found 24 hits, so the vocabulary is too rare and too varied for a linter to catch. The position is consistent: last sentence of a paragraph, after the facts, restating them.
 
