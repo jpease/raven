@@ -153,5 +153,31 @@ class ValeStyleTests(unittest.TestCase):
         )
 
 
+REVIEW_SKILL = SKILLS / "raven-review-prose" / "SKILL.md"
+
+
+class ReviewProseSkillTests(unittest.TestCase):
+    def test_skill_exists(self):
+        self.assertTrue(REVIEW_SKILL.exists(), f"missing {REVIEW_SKILL}")
+
+    def test_description_is_within_the_per_skill_cap(self):
+        count = len(_frontmatter_description(REVIEW_SKILL).split())
+        self.assertLessEqual(count, DESCRIPTION_WORD_CAP, f"description is {count} words")
+
+    def test_vale_absence_is_documented_as_non_fatal(self):
+        text = REVIEW_SKILL.read_text(encoding="utf-8")
+        self.assertIn("not installed", text)
+        self.assertIn("continue", text.lower())
+
+    def test_rebuild_path_withholds_the_original_draft(self):
+        """The whole point of the rebuild path. A subagent that sees the
+        original keys off it and swaps words while keeping the shape.
+        """
+        text = REVIEW_SKILL.read_text(encoding="utf-8")
+        self.assertIn("raven-prose-reviewer", text)
+        self.assertIn("never", text.lower())
+        self.assertIn("outline", text.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
