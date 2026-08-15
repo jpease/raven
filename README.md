@@ -94,7 +94,7 @@ removal of dropped files, template switching, and line-ending handling.
 ## Optional Tooling
 
 Raven's templates recommend tools like `rg`, `fd`, `just`, ast-grep, Semgrep,
-and a language server over MCP, but requires none of them. Run
+Vale, and a language server over MCP, but requires none of them. Run
 `python .claude/scripts/raven-tool-check.py` after installing to see what you
 have. Details and the per-language LSP defaults are in
 [docs/tooling.md](docs/tooling.md).
