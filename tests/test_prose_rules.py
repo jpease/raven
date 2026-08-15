@@ -129,13 +129,34 @@ class ValeStyleTests(unittest.TestCase):
         self.assertTrue((VALE_DIR / ".vale.ini").exists())
         self.assertTrue((VALE_DIR / "styles" / "Raven" / "PlainWords.yml").exists())
         self.assertTrue((VALE_DIR / "styles" / "Raven" / "KeepTest.yml").exists())
+        self.assertTrue((VALE_DIR / "styles" / "Raven" / "Vacuous.yml").exists())
 
-    def test_hard_ban_words_are_substitutions_not_keep_tests(self):
-        text = (VALE_DIR / "styles" / "Raven" / "PlainWords.yml").read_text(encoding="utf-8")
-        self.assertIn("extends: substitution", text)
-        for word in ["adjudicate", "vacuous"]:
+    def test_hard_ban_words_fail_the_gate(self):
+        """The gate runs at warning, so a hard ban must be warning or above.
+
+        `vacuous` has its own file rather than a PlainWords entry: the
+        one-word swap PlainWords can express is wrong for the sense the word
+        gets used in, since "passes vacuously" is not "passes emptily".
+        """
+        plain = (VALE_DIR / "styles" / "Raven" / "PlainWords.yml").read_text(encoding="utf-8")
+        self.assertIn("extends: substitution", plain)
+        self.assertIn("level: warning", plain)
+        self.assertIn("adjudicate", plain)
+
+        vac = (VALE_DIR / "styles" / "Raven" / "Vacuous.yml").read_text(encoding="utf-8")
+        self.assertIn("level: warning", vac)
+        self.assertIn("vacuous(ly)?", vac)
+
+    def test_a_hard_ban_is_never_downgraded_to_a_suggestion(self):
+        """Both words were briefly moved to keep-tests on the strength of a
+        repo that turned out to have learned them from an agent. Assert the
+        shape so a future move is a deliberate test change, not a quiet one.
+        """
+        keep = (VALE_DIR / "styles" / "Raven" / "KeepTest.yml").read_text(encoding="utf-8")
+        tokens = keep.split("tokens:", 1)[-1]
+        for word in ["adjudicat", "vacuous"]:
             with self.subTest(word=word):
-                self.assertIn(word, text)
+                self.assertNotIn(word, tokens, f"{word} is a hard ban, not a suggestion")
 
     def test_keep_test_words_are_suggestions_not_errors(self):
         text = (VALE_DIR / "styles" / "Raven" / "KeepTest.yml").read_text(encoding="utf-8")

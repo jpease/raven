@@ -121,14 +121,19 @@
       "sourceSha256": "bb96deae5e925e9f61f5cc0b368ac9a40fe7b73aa25cbf10633441a547aac8b1"
     },
     ".agents/skills/raven-write-prose/reference/vale/styles/Raven/PlainWords.yml": {
-      "installedSha256": "1b852c550e1217cd722a1f94afc80ec14bcea4b3f4d67e2b857aa24e81ef7c95",
+      "installedSha256": "7e91b033c8bd05b58c3c00d1617dee74df7a3dd2a3928a5949f4d6e9f44d49cb",
       "kind": "file",
-      "sourceSha256": "1b852c550e1217cd722a1f94afc80ec14bcea4b3f4d67e2b857aa24e81ef7c95"
+      "sourceSha256": "7e91b033c8bd05b58c3c00d1617dee74df7a3dd2a3928a5949f4d6e9f44d49cb"
+    },
+    ".agents/skills/raven-write-prose/reference/vale/styles/Raven/Vacuous.yml": {
+      "installedSha256": "04fc107eb8c2bf52cc3aa6b7445a46552830d557a15a0c53316ddf4d2d7b710d",
+      "kind": "file",
+      "sourceSha256": "04fc107eb8c2bf52cc3aa6b7445a46552830d557a15a0c53316ddf4d2d7b710d"
     },
     ".agents/skills/raven-write-prose/reference/words.md": {
-      "installedSha256": "e612f1699a8c6322bc685026face605daca8ee0300c0ad4963f7b03679ac91c4",
+      "installedSha256": "e293993a5b38f30c1cd0ccf015ce49ff93add047a04a28ef6af4a924df7d925c",
       "kind": "file",
-      "sourceSha256": "e612f1699a8c6322bc685026face605daca8ee0300c0ad4963f7b03679ac91c4"
+      "sourceSha256": "e293993a5b38f30c1cd0ccf015ce49ff93add047a04a28ef6af4a924df7d925c"
     },
     ".agents/skills/raven-write-tests/SKILL.md": {
       "installedSha256": "db5bafcace7888a2f99bccf35d93c79e8e84974735fead7b1b3baa6b119adff6",
@@ -246,9 +251,9 @@
       "sourceSha256": "eba3a8ba3d85c6709630c39af40281f85a180067242eba2f6ee447600f35785b"
     },
     ".claude/rules/raven-prose.md": {
-      "installedSha256": "fc4308db07b375d5ca239f25e45c148ebd136af007ce0fb2c5bc19ebcc7f84a7",
+      "installedSha256": "283bf276bb005390dcca2f7cecb74e7aba27ef06a4fb94711fcfad4f050bc8c6",
       "kind": "file",
-      "sourceSha256": "fc4308db07b375d5ca239f25e45c148ebd136af007ce0fb2c5bc19ebcc7f84a7"
+      "sourceSha256": "283bf276bb005390dcca2f7cecb74e7aba27ef06a4fb94711fcfad4f050bc8c6"
     },
     ".claude/rules/raven-python.md": {
       "installedSha256": "d01fd83d18648611a7a23fdb6d6ca3cf5cd49909af2879ebc27ceba9cb25e2da",
@@ -442,8 +447,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "1693a56957e0",
+  "ravenVersion": "82ce5841f52d",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-15T05:36:42.941833+00:00"
+  "updatedAt": "2026-08-15T05:41:51.067879+00:00"
 }

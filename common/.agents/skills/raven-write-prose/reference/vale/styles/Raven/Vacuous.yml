@@ -1,0 +1,12 @@
+extends: existence
+message: "Replace '%s'. A test that passes vacuously passes without testing anything; a claim that is vacuous says nothing."
+level: warning
+ignorecase: true
+# Its own rule rather than a PlainWords entry, because the one-word swap
+# PlainWords offers is wrong here. "Empty" is not a synonym for the logic
+# sense: "the fixture passes vacuously" does not mean "passes emptily".
+#
+# Covers the -ly form, which the old swap missed. Of 120 uses measured in one
+# repo's drafting, 22 were `vacuously`.
+tokens:
+  - vacuous(ly)?

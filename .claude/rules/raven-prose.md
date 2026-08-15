@@ -1,6 +1,6 @@
 # Prose Rules
 
-- Plain words: decide not adjudicate, empty not vacuous, show not surface.
+- Plain words: decide not adjudicate, show not surface. Never vacuous.
 - No signposting or throat-clearing. Start with the content.
 - Cut a closing sentence that adds no fact.
 - Vary sentence length. Not every list is three items.
