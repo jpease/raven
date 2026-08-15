@@ -106,9 +106,14 @@
       "sourceSha256": "8d67409cff2f5ed644dd726b7c65ffe31588227b8e7de34c8e4be5da1b20dd57"
     },
     ".agents/skills/raven-write-prose/SKILL.md": {
-      "installedSha256": "5c56a76a4799ea91a3bb72fb0451357b78e0ba657627d6e627e4ea2f2566f471",
+      "installedSha256": "a5cdd13468db385cf6b78926fa0a4445a20ad900bf0f9bc41ffb2fd96c7748b1",
       "kind": "file",
-      "sourceSha256": "5c56a76a4799ea91a3bb72fb0451357b78e0ba657627d6e627e4ea2f2566f471"
+      "sourceSha256": "a5cdd13468db385cf6b78926fa0a4445a20ad900bf0f9bc41ffb2fd96c7748b1"
+    },
+    ".agents/skills/raven-write-prose/reference/genres.md": {
+      "installedSha256": "6fd8d43e4712281d1daffe49a38495cd3add0d1b3ab4a8e3da406d3877a47f05",
+      "kind": "file",
+      "sourceSha256": "6fd8d43e4712281d1daffe49a38495cd3add0d1b3ab4a8e3da406d3877a47f05"
     },
     ".agents/skills/raven-write-prose/reference/vale/.vale.ini": {
       "installedSha256": "ce435ba9e16cc1d128c4abde6729d321f812e030836ab4c0a1a9257e826a1de8",
@@ -447,8 +452,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "83994788512b",
+  "ravenVersion": "57a332193ff8",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-15T06:59:09.580468+00:00"
+  "updatedAt": "2026-08-15T07:10:45.174867+00:00"
 }

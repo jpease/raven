@@ -79,6 +79,12 @@ When you take a rule from an outside style guide, rewrite it in plain words befo
 - Settled terms with no plain equivalent.
 - Any file whose existing voice is deliberate.
 
+## Genre
+
+Read `reference/genres.md` before running the tells. Which of them can fire depends on what you are writing, and a zero from a tell that cannot fire is not a clean result. It also carries the one rule per genre worth knowing: a comment says why, a docstring states a contract, a README orients, a spec records a decision.
+
+For a code comment, run one test before any of the twelve: does this still describe what the code does? Reviewing 486 comments produced 19 edits and 10 were contradicted by the code beside them, against one finding each from the prose tests.
+
 ## Words
 
 Read `reference/words.md` when doing a word pass. It holds the flagged-word table with a keep-test for each, and how to measure which words to add.

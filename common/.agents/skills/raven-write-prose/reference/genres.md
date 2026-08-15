@@ -1,0 +1,77 @@
+# Genre
+
+The twelve tells are one set, but which of them can fire depends entirely on
+what you are writing. Measured across nine technical documents, six essays, and
+486 code comments: procedures fired 1 to 3 tells each, one conceptual spec fired
+10, essays fired 6.6 per file, and code comments produced almost no prose
+findings at all.
+
+Read the row for what you are writing before running the tells.
+
+| genre | what it is for | dominant failure | tells that cannot fire |
+|---|---|---|---|
+| code comment | why this, over the alternative a reader would otherwise restore | the comment no longer describes the code | heading, bulletification, restating close |
+| docstring | the contract: arguments, raises, guarantees, invariants | drifting into why, or promising behavior the function lacks | heading, bulletification |
+| README | what it is, who it is for, the first command | becoming reference material | — |
+| design doc, spec | the decision, and what it rules out | restating the requirement as though deciding it | `not X, but Y`, symmetric hedge, restating close |
+| essay, blog post | an argument someone could disagree with | scaffolding: signposting, rhetorical closes | no specifics |
+
+## Code comments
+
+The most valuable test on a comment is not a prose test. Reviewing 486 comments
+added by one branch produced 19 edits, and 10 of them were comments contradicted
+by the code beside them — a docstring describing behavior a later fix removed, a
+rule stated directly above the constant that violates it, a module docstring
+claiming parity that the same file denies twice. The prose tests found one
+finding each.
+
+So run this first, before any tell: **does this comment still describe what the
+code does?** A stale comment is worse than no comment, because it is evidence.
+One of the ten asserted a `git` option "carries no short letter" when it does,
+and that false assertion was the reason a guard checked only half its input.
+
+Then the genre rule: the code states what. The comment states why, and the test
+is whether a reader who deleted the code's non-obvious choice would put it back.
+
+Two failure shapes worth naming:
+
+**Restating the line below.** `# increment the counter` above `counter += 1`.
+Catch it with the throat-clearing test.
+
+**Comment as changelog.** "This used to be X, which broke when Y." Concrete on
+the day it is written and decaying from then on, because it describes a bug no
+current reader can observe. The same review found five of these, one of which
+had already gone stale and become the first kind of error.
+
+What good looks like, from the same corpus: a comment naming the exact misfire
+a change would cause, with the value or version that proves it. "Listing GNU's
+optional-argument forms would hand back `-rf /` and match nothing" is not
+derivable from the constant it sits above, which is the whole point.
+
+## Docstrings
+
+A docstring is a contract, so the reader is deciding whether to call the thing.
+Give arguments, what it raises, what it guarantees. Push the reasoning down into
+a comment where the reasoning lives.
+
+The failure to watch is promising more than the code does. One docstring in the
+reviewed corpus offered a fallback path the function returned before ever
+reaching.
+
+## READMEs
+
+Orientation, not reference: what this is, who it is for, and the first command
+that works. Every detail you add pushes the first command further down.
+
+Link the reference material rather than inlining it. A README that answers every
+question has stopped answering the first one.
+
+## Design docs and specs
+
+The reason to write one is the decision — what was chosen and what that rules
+out. Restating the requirement in the decision's place is the common failure,
+and it reads as settled work when nothing was settled.
+
+Three tells cannot fire here and a zero from them means nothing: specs carry no
+argument to build antithesis or hedging out of, and they close on a table or an
+open-questions list, which always holds new facts.
