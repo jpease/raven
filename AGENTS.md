@@ -30,7 +30,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=1b9ed74e3d0b2325f8b4c737468de967574a803124480d864f23756039628c8c -->
+<!-- RAVEN:BEGIN sha256=fd923ac364fc64a074dbe53edb04b1540ce929fe6b32965293cb467a39b002a2 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -62,6 +62,7 @@ Use the cheapest adequate source before reading full files.
 | Build, test, or log output | RTK-wrapped shell command |
 
 - `rg` is recursive by default; never pass `-r` for recursion. `-r` is ripgrep's `--replace` and takes an argument — unlike grep's `-r`, which means `--recursive`.
+- `rg` skips hidden files and directories by default. Raven's own content sits under `.agents/` and `.claude/`, so `rg pattern common/` finds nothing and reads as clean. Use `--hidden` or `git grep` when searching shipped guidance.
 - Batch independent reads, searches, and inspections per turn.
 - Skeleton-first: for a large or unfamiliar file, get a symbol map (LSP document symbols, or `ast-grep`/`rg`) before reading, then read only the ranges you need — read a full file only when it is small or the whole structure matters.
 - Return concise findings before editing.
