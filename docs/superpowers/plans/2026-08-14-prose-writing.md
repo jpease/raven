@@ -1196,6 +1196,97 @@ language profiles for no gain."
 
 ---
 
+### Task 8: Cold-context validation of the shipped skill
+
+The skill's audience is someone who was not present when it was written. Every
+earlier task was authored by someone carrying that context, so none of them
+test whether the shipped text works on its own. This task does.
+
+**Files:**
+- Create: `docs/superpowers/plans/2026-08-14-prose-writing-coldrun.md` (findings record)
+- Modify: `common/.agents/skills/raven-write-prose/SKILL.md` — only if the run finds a defect
+
+**Interfaces:**
+- Consumes: the finished `raven-write-prose/SKILL.md` from Task 2.
+- Produces: a findings record, and skill fixes if warranted.
+
+- [ ] **Step 1: Dispatch a cold subagent**
+
+Use the Agent tool with `subagent_type: "general-purpose"`. Do NOT use
+`subagent_type: "fork"` — a fork inherits this conversation's context, which is
+the exact thing being controlled for.
+
+The brief must contain the full text of `raven-write-prose/SKILL.md` and nothing
+else about this project's history. Prompt:
+
+```
+Read these writing rules, then follow them.
+
+<paste the full contents of common/.agents/skills/raven-write-prose/SKILL.md>
+
+Task: write a 300-word README section introducing a command-line tool that
+checks a repository's documentation for broken links. Invent plausible
+specifics -- flag names, exit codes, output format. Return only the section.
+
+End your return with an "## Out Of Scope Findings" section listing anything you
+noticed outside the assigned scope, each with evidence. Write none under the
+heading when there is nothing.
+```
+
+- [ ] **Step 2: Grade the output against all twelve tells**
+
+Run the mechanical tests yourself on the returned text. Do not ask the subagent
+to grade itself — it will grade against its own intent rather than the artifact.
+
+```bash
+# save the returned section to a scratch file first
+rg -oN '\b[a-z]{9,}\b' SCRATCH.md | sort -u          # long-word sweep
+rg -ni "not [a-z ]{1,30} but |isn't [a-z ]{1,20} it's" SCRATCH.md
+rg -c '^' SCRATCH.md                                  # then read for rhythm
+```
+
+Check the remaining tells by reading: signposting, throat-clearing, tricolon
+counts, symmetric hedges, heading independence, restating close,
+bulletification, specifics present, admitted uncertainty.
+
+- [ ] **Step 3: Record the result**
+
+Write `docs/superpowers/plans/2026-08-14-prose-writing-coldrun.md` with the date,
+the exact prompt used, the returned text, and a table of which tells fired.
+
+Record the real numbers. A run where nine tells fire is more useful than a run
+reported as broadly fine.
+
+- [ ] **Step 4: Decide what the result means**
+
+- **Zero hard-ban words and two or fewer structural tells:** the skill works.
+  Record it and stop.
+- **Three or more structural tells:** the skill is documentation rather than a
+  working guardrail. Identify which tells failed to transfer, and fix the skill
+  by making those tests more concrete — not by adding more rules. A longer skill
+  is the failure mode here, not the fix.
+- **Any hard-ban word:** the word table is not reaching the writer. Check whether
+  the SKILL.md pointer to `reference/words.md` is explicit enough about when to
+  read it.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/superpowers/plans/2026-08-14-prose-writing-coldrun.md
+# add the SKILL.md too if Step 4 changed it
+git commit -m "test(prose): record a cold-context run of the write-prose skill
+
+Every other task was written by someone carrying the context the skill is
+meant to replace, so none of them test the shipped text on its own. This
+run gives a subagent the SKILL.md and nothing else, then grades the
+output against all twelve tells.
+
+Recording the real counts rather than a verdict, so a later revision can
+tell whether it improved."
+```
+
+---
+
 ## Verification Checklist
 
 Run after all seven tasks land:
