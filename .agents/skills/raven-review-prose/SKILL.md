@@ -7,6 +7,19 @@ description: Use when reviewing prose for inflated wording and leftover scaffold
 
 Three passes, cheapest first. Stop at any pass that resolves the piece.
 
+## Pass 0: what is under review
+
+Reviewing a whole file? Skip to pass 1. Reviewing a branch or a diff, settle which prose the change actually introduced before flagging any of it.
+
+A comment whose lines fall inside a diff hunk is not a comment the change wrote. Editing one line of a docstring pulls the entire docstring into the hunk, and a file rewritten in full pulls in every comment it already had. Blame each line you mean to flag:
+
+```bash
+sha=$(git blame -L "$LINE,$LINE" --porcelain HEAD -- "$FILE" | head -1 | cut -d' ' -f1)
+git merge-base --is-ancestor "$sha" "$BASE" && echo "pre-existing" || echo "in scope"
+```
+
+On one 132-commit branch, 2 of 10 findings sat on lines that came from the base branch. Both were real defects. Report them apart from the change under review rather than folding them in, and let whoever owns the branch decide.
+
 ## Pass 1: Vale, if installed
 
 ```bash
@@ -18,6 +31,14 @@ fi
 ```
 
 When Vale is not installed, print that one line and continue to pass 2. A missing optional tool never fails a review.
+
+A low finding count is good news only once you know the rules are live. `Packages` in that config *declares* proselint, write-good and Readability; nothing downloads until someone runs `vale sync` in that directory, and `write-good.Passive = YES` sits there inert until they do. So check what is actually on StylesPath first:
+
+```bash
+ls <path-to>/raven-write-prose/reference/vale/styles/
+```
+
+A package on the `Packages` line but missing from that listing adds no rules. Unsynced, the sentence "The results were surfaced by the system and were utilized" yields one finding and flags neither passive. Against one 1805-comment corpus the same input scored 4 findings before a sync and 308 after.
 
 Vale covers the word half only. It cannot see a tricolon, a restating conclusion, or a dependent heading.
 
