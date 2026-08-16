@@ -15,6 +15,7 @@ Read the row for what you are writing before running the tells.
 | README | what it is, who it is for, the first command | becoming reference material | — |
 | design doc, spec | the decision, and what it rules out | restating the requirement as though deciding it | `not X, but Y`, symmetric hedge, restating close |
 | essay, blog post | an argument someone could disagree with | scaffolding: signposting, rhetorical closes | no specifics |
+| commit subject, issue title | what changed, in one line a reader can scan | a tag that rates the work — "measured, not inferred" | heading, bulletification, restating close, closing flourish |
 
 ## Code comments
 
@@ -98,3 +99,20 @@ and it reads as settled work when nothing was settled.
 Three tells cannot fire here and a zero from them means nothing: specs carry no
 argument to build antithesis or hedging out of, and they close on a table or an
 open-questions list, which always holds new facts.
+
+## Commit subjects and issue titles
+
+A title is one line and holds no paragraphs, so four of the twelve tells have
+nothing to fire on. What is left is the tag: `X, not Y` hung off the end.
+
+The tag earns its place when the negated half names what the change replaced —
+`not cwd`, `not the checked-out branch` — because a reader who knew the old
+behavior needs telling it is gone. It does not when the negated half rates how
+the work was done: "measured, not inferred", "verified, not assumed", "earned,
+not claimed". Nobody was going to assume otherwise, so the tag adds no fact and
+reads as self-congratulation. This one was reported from outside, on an issue
+written by an agent that had these rules loaded, which is why it now has a row.
+The measurement behind it is in `SKILL.md` under the `not X, but Y` tell.
+
+A title that needs the method is a title missing a number: "measured across
+nine documents" beats both versions.

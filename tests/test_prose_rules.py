@@ -36,6 +36,15 @@ class ProseRulesTests(unittest.TestCase):
             "tier 1 is frozen -- put new guidance in the write-prose skill instead",
         )
 
+    def test_canonical_file_covers_the_trailing_tag_form(self):
+        """`not X, but Y` alone let the trailing `X, not Y` tag through. It was
+        reported from a repo that had this file loaded, so tier 1 is where the
+        fix has to sit -- the skill below it is not always read before a title
+        gets written.
+        """
+        text = CANONICAL.read_text(encoding="utf-8")
+        self.assertIn('"X, not Y"', text)
+
     def test_canonical_file_points_at_the_writing_skill(self):
         text = CANONICAL.read_text(encoding="utf-8")
         self.assertIn(
@@ -61,6 +70,7 @@ class ProseRulesTests(unittest.TestCase):
 SKILLS = REPO_ROOT / "common" / ".agents" / "skills"
 WRITE_SKILL = SKILLS / "raven-write-prose" / "SKILL.md"
 WORDS_REF = SKILLS / "raven-write-prose" / "reference" / "words.md"
+GENRES_REF = SKILLS / "raven-write-prose" / "reference" / "genres.md"
 
 # Matches SKILL_DESCRIPTION_PER_SKILL_LIMIT in scripts/self-check.py.
 DESCRIPTION_WORD_CAP = 30
@@ -112,6 +122,19 @@ class WriteProseSkillTests(unittest.TestCase):
         ]:
             with self.subTest(tell=tell):
                 self.assertIn(tell, text)
+
+    def test_title_tag_carries_a_second_test_beyond_the_delete_test(self):
+        """The delete test passes "add genre rules, measured rather than
+        assumed", because the half before the comma is a working subject line.
+        Without a second test the tell has no reach into titles at all.
+        """
+        text = WRITE_SKILL.read_text(encoding="utf-8")
+        self.assertIn("commit subject, or an issue title", text)
+        self.assertIn("rule out something the reader would otherwise have expected", text)
+
+    def test_genre_reference_covers_titles(self):
+        genres = GENRES_REF.read_text(encoding="utf-8")
+        self.assertIn("commit subject, issue title", genres)
 
     def test_word_reference_exists_and_carries_the_measurement_procedure(self):
         self.assertTrue(WORDS_REF.exists(), f"missing {WORDS_REF}")

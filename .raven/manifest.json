@@ -106,14 +106,14 @@
       "sourceSha256": "8d67409cff2f5ed644dd726b7c65ffe31588227b8e7de34c8e4be5da1b20dd57"
     },
     ".agents/skills/raven-write-prose/SKILL.md": {
-      "installedSha256": "a5cdd13468db385cf6b78926fa0a4445a20ad900bf0f9bc41ffb2fd96c7748b1",
+      "installedSha256": "54d63edebfe780f62ce7f6340d8276a936c1017066575ed6b19cbd9b4c92074b",
       "kind": "file",
-      "sourceSha256": "a5cdd13468db385cf6b78926fa0a4445a20ad900bf0f9bc41ffb2fd96c7748b1"
+      "sourceSha256": "54d63edebfe780f62ce7f6340d8276a936c1017066575ed6b19cbd9b4c92074b"
     },
     ".agents/skills/raven-write-prose/reference/genres.md": {
-      "installedSha256": "db4e9cf3e26d1a68875d32eeb2d413e6e89a8071d18b270d852444408e27bead",
+      "installedSha256": "5e1acc3f343559984320c4ba4c12d9deb0c9aaf808ab81753b57ae5e4f9b07c8",
       "kind": "file",
-      "sourceSha256": "db4e9cf3e26d1a68875d32eeb2d413e6e89a8071d18b270d852444408e27bead"
+      "sourceSha256": "5e1acc3f343559984320c4ba4c12d9deb0c9aaf808ab81753b57ae5e4f9b07c8"
     },
     ".agents/skills/raven-write-prose/reference/vale/.vale.ini": {
       "installedSha256": "71bac07294d48f01db50a9bc417d048c39f5cbfbe09133b29cc4f282ce121187",
@@ -261,9 +261,9 @@
       "sourceSha256": "eba3a8ba3d85c6709630c39af40281f85a180067242eba2f6ee447600f35785b"
     },
     ".claude/rules/raven-prose.md": {
-      "installedSha256": "4e403b5ffd70a45c963c66597d2b43c415d7b2854afa879b8cf35663b04ab575",
+      "installedSha256": "e5a3aaf10fd60f01dfdcf20ef49d1796513654daa6265eb402a6373500a4eea1",
       "kind": "file",
-      "sourceSha256": "4e403b5ffd70a45c963c66597d2b43c415d7b2854afa879b8cf35663b04ab575"
+      "sourceSha256": "e5a3aaf10fd60f01dfdcf20ef49d1796513654daa6265eb402a6373500a4eea1"
     },
     ".claude/rules/raven-python.md": {
       "installedSha256": "d01fd83d18648611a7a23fdb6d6ca3cf5cd49909af2879ebc27ceba9cb25e2da",
@@ -457,8 +457,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "691080b339f8",
+  "ravenVersion": "f5067a121761",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-16T04:29:22.957428+00:00"
+  "updatedAt": "2026-08-16T15:35:07.918554+00:00"
 }

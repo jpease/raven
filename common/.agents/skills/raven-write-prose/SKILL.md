@@ -27,7 +27,7 @@ Each row names the artifact, gives a test you can run, and gives the fix. Run th
 | Signposting | Delete the sentence. Does meaning survive? | Delete it. |
 | Throat-clearing | Does sentence one carry new information? | Start where information starts. |
 | Tricolon default | Count list lengths. Are most three? | Cut to two or extend to four where honest. |
-| `not X, but Y` | Search `not…but`, `isn't…it's`, `not about…about`, and the split form `It is not A. It is B.` | State Y alone. |
+| `not X, but Y` | Search `not…but`, `isn't…it's`, `not about…about`, the split form `It is not A. It is B.`, and the trailing tag `X, not Y` | State Y alone. In a title, cut the tag. |
 | Symmetric hedge | A sentence weighing both sides, concluding neither | Commit, or cut it. |
 | Drumroll or dependent heading | Does the heading name its own content? Ordinary nesting is fine; flag one that names nothing alone, like `### Inputs` or `### Decision`. | Name it in full. |
 | Restating close | Does the last paragraph hold a new fact? | Cut it. |
@@ -46,6 +46,19 @@ The long-word sweep is Orwell's rules 2 and 5 made mechanical. Run it on anythin
 "It's not about speed. It's about correctness." → the first sentence alone says nothing. That is the tell.
 
 Use the delete test rather than a regex. The broad form appears 3,244 times across 1.6 million words and the narrow copula form 516, nearly all of them ruling out a real misreading. Three independent reviewers reading an earlier wording of this rule flagged sentences that passed the delete test, so judge by the test and not by the shape.
+
+One shape gets through the delete test: the tag appended to a heading, a commit subject, or an issue title. "add genre rules, measured rather than assumed" survives it, since "add genre rules" is a working subject line on its own. A title takes a second test instead: **does the negated half rule out something the reader would otherwise have expected?**
+
+```bash
+git log --format='%s' -n 400 | rg -N ',\s+(not|never|rather than|instead of)\b'
+rg -N '^#{1,6}.*,\s+(not|never|rather than|instead of)\b' FILE
+```
+
+Of 400 commit subjects here, 25 carry a tag. Twenty-four name a thing — `not cwd`, `not the checked-out branch`, `not Package.swift`, `instead of four` — and each rules out the wrong behavior the fix replaced. One rates the method: "measured rather than assumed", written into this repo's log while this skill was being built. Another repo's 400 subjects carry 17 tags, every one of the naming kind.
+
+Position decides this, not vocabulary, which is why no linter can. Across 199,921 words of issue prose from two repositories, `measured|verified|declared` paired against `assumed|estimated|inferred` appears 7 times. Five name work to do or a state to fix — "The launch-sweep cost of the repair is measured rather than assumed", "'Done' is currently self-declared rather than verified" — and a reader can check both. The other two are one issue's own heading and its restatement, "Measured, not estimated:", over figures already gathered. Same words either way, so a token list would flag all seven or none.
+
+In a title the replacement is the number that earned the claim: "measured across nine documents" over "measured, not assumed".
 
 Two tells read backwards from the rest. `Unearned confidence` and `No specifics` fire when something is *missing*, so a clean document scores no on both. Do not read a low total as a clean document without checking which tells the zeroes came from.
 
