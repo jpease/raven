@@ -30,6 +30,18 @@ code does?** A stale comment is worse than no comment, because it is evidence.
 One of the ten asserted a `git` option "carries no short letter" when it does,
 and that false assertion was the reason a guard checked only half its input.
 
+Two mechanical checks answer that question cheaply:
+
+- **An identifier in backticks that the file does not define.** One docstring
+  promised a height capped to ``_BAR_MAX_HEIGHT``; the constant is
+  ``_BAR_MAX_H``, and no such name had ever existed.
+- **A count or a superlative.** "Seventeen files here are past 2000 lines,
+  topping out at `<name>.py`" went stale inside the branch that wrote it —
+  seventeen at the base, eighteen at the tip — and the superlative half was
+  wrong the day it was typed, naming a file 2857 lines short of the largest.
+  Make the number reproducible by naming the command that produces it, or drop
+  the number.
+
 Then the genre rule: the code states what. The comment states why, and the test
 is whether a reader who deleted the code's non-obvious choice would put it back.
 
@@ -42,6 +54,17 @@ Catch it with the throat-clearing test.
 the day it is written and decaying from then on, because it describes a bug no
 current reader can observe. The same review found five of these, one of which
 had already gone stale and become the first kind of error.
+
+**The example nobody runs.** A worked example is checked by a doctest runner or
+by nothing, and the difference shows. One repo carried 39 examples under the two
+trees its `python -m doctest` gate covered and 39 under a tree nothing collected
+— `testpaths = tests`, no `--doctest-modules`. Every example-shaped defect found
+was in the uncollected half, among them `_effective_bar_width(10, 52)  # -> 4`
+for a function returning 3, with arithmetic beside it summing to 56 against a
+52-pixel budget. Form is a hint and the runner is the fact: 24 of the
+uncollected examples were already in `>>>` form, which buys nothing where
+nothing collects it. Find out what executes an example before trusting it, and
+verify by hand the ones nothing does.
 
 What good looks like, from the same corpus: a comment naming the exact misfire
 a change would cause, with the value or version that proves it. "Listing GNU's
