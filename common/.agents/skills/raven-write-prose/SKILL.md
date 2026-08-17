@@ -9,6 +9,28 @@ Plain words are part of good prose. The larger part is structure — rhythm, lis
 
 **These tests do not detect machine writing.** What they measure is scaffolding a writer leaves in: an essay signposts, runs sentences to a similar length, and closes paragraphs rhetorically, whichever kind of writer made it. Use them as an edit pass on a draft, never as evidence about who wrote something.
 
+## Correctness first
+
+The fourteen tests measure scaffolding. None of them measures whether the
+document is true, and the measured failures of real documentation are the other
+kind: across 179 documentation units and two surveys of 323 developers, the
+three severest problems were ambiguity, incompleteness, and incorrectness
+(Uddin and Robillard, *How API Documentation Fails*, IEEE Software 2015). A
+page can score zero tells and still send its reader to a flag that no longer
+exists.
+
+So run your genre's question before any of the fourteen:
+
+| genre | the question |
+|---|---|
+| code comment | does this still describe what the code does? |
+| docstring | does the function raise, return, and guarantee what this says? |
+| README, tutorial, how-to | did you run the commands, in order, from a clean checkout? |
+| reference | is every name, type, default, and version the one in the code? |
+| spec, essay | is every number and citation traceable to something you checked? |
+
+A failure here outranks every finding below it.
+
 ## Spine: Orwell's six rules
 
 1. Never use a metaphor, simile or other figure of speech which you are used to seeing in print.
@@ -17,6 +39,13 @@ Plain words are part of good prose. The larger part is structure — rhythm, lis
 4. Never use the passive where you can use the active.
 5. Never use a foreign phrase, a scientific word or a jargon word if you can think of an everyday English equivalent.
 6. Break any of these rules sooner than say anything outright barbarous.
+
+Rule 4 needs a test of its own, because "passive" is the label most often hung
+on sentences that are not passive. Orwell's own essay runs 26% passive against
+a 17% baseline for transitive verbs in ordinary prose (Pullum, *Fear and
+Loathing of the English Passive*). Judge by what the sentence hides: **does it
+drop an actor the reader needs?** "The file is written atomically" hides
+nobody. "Mistakes were made" hides the whole point.
 
 ## The fourteen tells
 
@@ -92,9 +121,7 @@ When you take a rule from an outside style guide, rewrite it in plain words befo
 
 ## Genre
 
-Read `reference/genres.md` before running the tells. Which of them can fire depends on what you are writing, and a zero from a tell that cannot fire is not a clean result. It also carries the one rule per genre worth knowing: a comment says why, a docstring states a contract, a README orients, a spec records a decision.
-
-For a code comment, run one test before any of the fourteen: does this still describe what the code does?
+Read `reference/genres.md` before running the tells. Which of them can fire depends on what you are writing, and a zero from a tell that cannot fire is not a clean result. It also carries the one rule per genre worth knowing: a comment says why, a docstring states a contract, a README orients, a spec records a decision, a tutorial gets the reader to a first run that works, a how-to serves someone who already knows, a reference states what is.
 
 ## Words
 

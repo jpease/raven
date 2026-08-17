@@ -10,8 +10,11 @@ Read the row for what you are writing before running the tells.
 | genre | what it is for | dominant failure | tells that cannot fire |
 |---|---|---|---|
 | code comment | why this, over the alternative a reader would otherwise restore | the comment no longer describes the code | heading, bulletification, restating close |
-| docstring | the contract: arguments, raises, guarantees, invariants | drifting into why, or promising behavior the function lacks | heading, bulletification |
-| README | what it is, who it is for, the first command | becoming reference material | — |
+| docstring | the contract: arguments, raises, guarantees, invariants, one example | drifting into why, or promising behavior the function lacks | heading, bulletification |
+| README | what it is, who it is for, why it exists, the first command | becoming reference material | — |
+| tutorial | a first run that works, start to finish | explaining — the lesson stops to teach the model | symmetric hedge, no specifics, bulletification |
+| how-to | one task, for a reader who already knows the subject | teaching something the task does not need | symmetric hedge, no specifics, bulletification, restating close |
+| reference | names, types, defaults, errors, versions | arguing, or drifting into how-to | symmetric hedge, `not X, but Y`, no specifics, closing flourish |
 | design doc, spec | the decision, and what it rules out | restating the requirement as though deciding it | `not X, but Y`, symmetric hedge, restating close |
 | essay, blog post | an argument someone could disagree with | scaffolding: signposting, rhetorical closes | no specifics |
 | commit subject, issue title | what changed, in one line a reader can scan | a tag that rates the work — "measured, not inferred" | heading, bulletification, restating close, closing flourish |
@@ -80,6 +83,13 @@ The failure to watch is promising more than the code does. One docstring in the
 reviewed corpus offered a fallback path the function returned before ever
 reaching.
 
+Two items from Rust's API guidelines carry into any language. **C-EXAMPLE**:
+every public item gets an example that exercises it. **C-FAILURE**: what it
+raises, what it panics on, and what makes it unsafe get their own section
+rather than a clause in the summary. Rust can hold C-EXAMPLE to every public
+item because rustdoc compiles and runs doc examples as tests by default — the
+same difference "The example nobody runs" above turns on, made structural.
+
 ## READMEs
 
 Orientation, not reference: what this is, who it is for, and the first command
@@ -87,6 +97,36 @@ that works. Every detail you add pushes the first command further down.
 
 Link the reference material rather than inlining it. A README that answers every
 question has stopped answering the first one.
+
+Two things go missing at scale. Prana and colleagues hand-labelled 4,226
+sections across 393 READMEs: what and how are well covered, purpose and status
+are thin. Say why the project exists and what state it is in — alpha,
+maintained, archived — near the top, where someone deciding whether to use it
+is looking.
+
+## Tutorials, how-to guides, and reference
+
+Three genres, one failure between them: writing in the wrong mode. A tutorial
+that stops to explain the data model, a how-to that recaps what the tutorial
+covered, a reference page that argues for a design — each is competent prose
+doing a job the reader did not open the page for. Diátaxis names the split, and
+Django's docs were built on it before it had a name.
+
+- **Tutorial**: the reader has not done this before. Everything is stated, in
+  order, and it works from a clean checkout. Cut every choice you can; a branch
+  point is a place to fail.
+- **How-to**: the reader knows the subject and has a task. Start at the task.
+- **Reference**: the reader is checking a fact. Names, types, defaults, errors,
+  versions, and no argument.
+
+Bulletification cannot fire in any of the three. Morkes and Nielsen measured a
+page rewritten for scanning at 47% higher usability, written concisely at 58%,
+and written objectively rather than promotionally at 27% — 124% with all three.
+The tell is a finding about essays and design docs, where a bulleted list
+stands in for an argument. In a procedure the list is the argument.
+
+That 27% is also what the stakes-inflation tell rests on: promotional wording
+measured worse than plain wording on the same content.
 
 ## Design docs and specs
 

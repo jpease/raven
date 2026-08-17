@@ -138,6 +138,50 @@ class WriteProseSkillTests(unittest.TestCase):
         genres = GENRES_REF.read_text(encoding="utf-8")
         self.assertIn("commit subject, issue title", genres)
 
+    def test_a_correctness_gate_runs_ahead_of_the_tells(self):
+        """The fourteen tells measure scaffolding. Uddin and Robillard found
+        the severest documentation problems are ambiguity, incompleteness, and
+        incorrectness -- none of which any tell can see. A page scoring zero
+        tells can still be wrong, so the genre's correctness question has to
+        come first in the file, not after the table.
+        """
+        text = WRITE_SKILL.read_text(encoding="utf-8")
+        self.assertIn("Correctness first", text)
+        self.assertLess(
+            text.index("Correctness first"),
+            text.index("## The fourteen tells"),
+            "the correctness gate must precede the tells it outranks",
+        )
+
+    def test_the_passive_rule_carries_a_test_of_its_own(self):
+        """Orwell's rule 4 is the rule most often applied to sentences that are
+        not passive -- his own essay runs 26% passive against a 17% baseline.
+        The six rules stay quoted verbatim, so the test has to sit beneath them.
+        """
+        text = WRITE_SKILL.read_text(encoding="utf-8")
+        self.assertIn("Never use the passive where you can use the active.", text)
+        self.assertIn("drop an actor the reader needs", text)
+
+    def test_genre_reference_covers_the_documentation_modes(self):
+        """Tutorial, how-to, and reference were missing, which left the three
+        genres most user-facing docs actually are with no row -- and their
+        shared failure, writing in the wrong mode, unnamed.
+        """
+        genres = GENRES_REF.read_text(encoding="utf-8")
+        for genre in ["| tutorial |", "| how-to |", "| reference |"]:
+            with self.subTest(genre=genre):
+                self.assertIn(genre, genres)
+        self.assertIn("writing in the wrong mode", genres)
+
+    def test_bulletification_is_marked_dead_in_the_task_genres(self):
+        """The tell pushes against bullets; Morkes and Nielsen measured a
+        scannable page at 47% higher usability. Both hold, because the tell is
+        about essays and design docs. Without the exemption a procedure gets
+        edited in the direction the measurement argues against.
+        """
+        genres = GENRES_REF.read_text(encoding="utf-8")
+        self.assertIn("Bulletification cannot fire", genres)
+
     def test_word_reference_exists_and_carries_the_measurement_procedure(self):
         self.assertTrue(WORDS_REF.exists(), f"missing {WORDS_REF}")
         text = WORDS_REF.read_text(encoding="utf-8")
