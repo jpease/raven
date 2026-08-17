@@ -109,7 +109,7 @@ behavior needs telling it is gone. It does not when the negated half rates how
 the work was done: "measured, not inferred", "verified, not assumed", "earned,
 not claimed". Nobody was going to assume otherwise, so the tag adds no fact and
 reads as self-congratulation. This one was reported from outside, on an issue
-written by an agent that had these rules loaded, which is why it now has a row.
+an agent filed after loading these rules, which is why it now has a row.
 The measurement behind it is in `SKILL.md` under the `not X, but Y` tell.
 
 A title that needs the method is a title missing a number: "measured across
