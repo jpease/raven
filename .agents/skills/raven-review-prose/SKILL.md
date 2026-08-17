@@ -18,7 +18,7 @@ sha=$(git blame -L "$LINE,$LINE" --porcelain HEAD -- "$FILE" | head -1 | cut -d'
 git merge-base --is-ancestor "$sha" "$BASE" && echo "pre-existing" || echo "in scope"
 ```
 
-On one 132-commit branch, 2 of 10 findings sat on lines that came from the base branch. Both were real defects. Report them apart from the change under review rather than folding them in, and let whoever owns the branch decide.
+A finding on a pre-existing line can still be a real defect. Report it apart from the change under review rather than folding it in, and let whoever owns the branch decide.
 
 ## Pass 1: Vale, if installed
 
@@ -38,7 +38,7 @@ A low finding count is good news only once you know the rules are live. `Package
 ls <path-to>/raven-write-prose/reference/vale/styles/
 ```
 
-A package on the `Packages` line but missing from that listing adds no rules. Unsynced, the sentence "The results were surfaced by the system and were utilized" yields one finding and flags neither passive. Against one 1805-comment corpus the same input scored 4 findings before a sync and 308 after.
+A package on the `Packages` line but missing from that listing adds no rules. Unsynced, the sentence "The results were surfaced by the system and were utilized" yields one finding and flags neither passive.
 
 Vale covers the word half only. It cannot see a tricolon, a restating conclusion, or a dependent heading.
 
@@ -46,7 +46,7 @@ Two things it will flag that are correct. A file whose job is to name the banned
 
 ## Pass 2: the structural pass
 
-Walk all twelve tells from `raven-write-prose`. Run each test rather than judging by feel. The long-word sweep is the one most often skipped and the one that finds the most:
+Walk all fourteen tells from `raven-write-prose`. Run each test rather than judging by feel. The long-word sweep is the one most often skipped and the one that finds the most:
 
 ```bash
 rg -oN '\b[a-z]{9,}\b' FILE | sort -u

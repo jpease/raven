@@ -119,6 +119,8 @@ class WriteProseSkillTests(unittest.TestCase):
             "Unearned confidence",
             "Long-word default",
             "Closing flourish",
+            "Essence-framing",
+            "Stakes-inflation",
         ]:
             with self.subTest(tell=tell):
                 self.assertIn(tell, text)

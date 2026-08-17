@@ -15,7 +15,7 @@ Each word carries a keep-test. A word that passes its test stays. A flat ban wou
 
 ## Words to weigh, but not to lint
 
-`explicitly` and `deliberately` are the two most common long adverbs in this body of prose — 594 and 460 uses across 1.6 million words of markdown in five repositories. Both usually earn their place. `explicitly` contrasts with *implicitly* or *by inference*; `deliberately` marks a choice so a later reader does not undo it as an oversight.
+`explicitly` and `deliberately` are the two most common long adverbs in this body of prose. Both usually earn their place. `explicitly` contrasts with *implicitly* or *by inference*; `deliberately` marks a choice so a later reader does not undo it as an oversight.
 
 Same test for both: does it rule out an alternative the reader might otherwise assume? If not, cut it.
 

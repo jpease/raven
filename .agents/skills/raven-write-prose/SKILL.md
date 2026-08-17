@@ -7,7 +7,7 @@ description: Use when drafting or editing prose — comments, READMEs, docs, spe
 
 Plain words are part of good prose. The larger part is structure — rhythm, list length, hedging, signposting — and a word swap reaches none of it.
 
-**These tests do not detect machine writing.** Graded against six of this author's blog posts and nine agent-written technical documents, they fired 6.6 times per human essay and 3.9 times per agent document. What they measure is scaffolding a writer leaves in: an essay signposts, runs sentences to a similar length, and closes paragraphs rhetorically, whichever kind of writer made it. Use them as an edit pass on a draft, never as evidence about who wrote something.
+**These tests do not detect machine writing.** What they measure is scaffolding a writer leaves in: an essay signposts, runs sentences to a similar length, and closes paragraphs rhetorically, whichever kind of writer made it. Use them as an edit pass on a draft, never as evidence about who wrote something.
 
 ## Spine: Orwell's six rules
 
@@ -18,7 +18,7 @@ Plain words are part of good prose. The larger part is structure — rhythm, lis
 5. Never use a foreign phrase, a scientific word or a jargon word if you can think of an everyday English equivalent.
 6. Break any of these rules sooner than say anything outright barbarous.
 
-## The twelve tells
+## The fourteen tells
 
 Each row names the artifact, gives a test you can run, and gives the fix. Run the tests; do not judge by feel. Apply the delete tests to whole paragraphs as well as sentences — an explanation that restates the rule above it goes the same way a flourish does.
 
@@ -36,6 +36,8 @@ Each row names the artifact, gives a test you can run, and gives the fix. Run th
 | Unearned confidence | Does the piece admit any dead end? | Say what you did not verify. |
 | Long-word default | `rg -oN '\b[a-z]{9,}\b' FILE \| sort -u`, then triage each | Use the shorter everyday word. |
 | Closing flourish | Take the last sentence of each paragraph. Does it hold a fact the paragraph did not already have? | Delete it. If it held a fact, state the fact plainly. |
+| Essence-framing | Search `what (this\|that\|it)('s)? (really\|actually) (means\|is\|matters)`, `at (its\|their) core`, `(boils\|comes) down to`, `the real (question\|issue) is`. A heading or a named specific ("what registry v2 means") is not a hit. | Delete the frame; state the claim directly. |
+| Stakes-inflation | Search `changes everything`, `cannot be overstated`, `profound implications`, `watershed moment`, `game-?changer`, `pivotal moment`, `marks a turning point` | Cut it, or replace with the number that earns the claim. |
 
 The long-word sweep is Orwell's rules 2 and 5 made mechanical. Run it on anything you write. Most hits are technical terms with no shorter form and get kept; the sweep exists to make you ask the question of each one rather than only of words someone already listed.
 
@@ -45,7 +47,7 @@ The long-word sweep is Orwell's rules 2 and 5 made mechanical. Run it on anythin
 
 "It's not about speed. It's about correctness." → the first sentence alone says nothing. That is the tell.
 
-Use the delete test rather than a regex. The broad form appears 3,244 times across 1.6 million words and the narrow copula form 516, nearly all of them ruling out a real misreading. Three independent reviewers reading an earlier wording of this rule flagged sentences that passed the delete test, so judge by the test and not by the shape.
+Use the delete test rather than a regex: most instances of the broad form are ruling out a real misreading. Reviewers reading an earlier wording of this rule flagged sentences that passed the delete test, so judge by the test and not by the shape.
 
 One shape gets through the delete test: the tag appended to a heading, a commit subject, or an issue title. "add genre rules, measured rather than assumed" survives it, since "add genre rules" is a working subject line on its own. A title takes a second test instead: **does the negated half rule out something the reader would otherwise have expected?**
 
@@ -54,19 +56,15 @@ git log --format='%s' -n 400 | rg -N ',\s+(not|never|rather than|instead of)\b'
 rg -N '^#{1,6}.*,\s+(not|never|rather than|instead of)\b' FILE
 ```
 
-Of 400 commit subjects here, 25 carry a tag. Twenty-four name a thing — `not cwd`, `not the checked-out branch`, `not Package.swift`, `instead of four` — and each rules out the wrong behavior the fix replaced. One rates the method: "measured rather than assumed", written into this repo's log while this skill was being built. Another repo's 400 subjects carry 17 tags, every one of the naming kind.
+Commit subjects here carry a tag that names a thing — `not cwd`, `not the checked-out branch`, `not Package.swift`, `instead of four` — and each rules out the wrong behavior the fix replaced. One rates the method instead: "measured rather than assumed", written into this repo's log while this skill was being built.
 
-Position decides this, not vocabulary, which is why no linter can. Across 199,921 words of issue prose from two repositories, `measured|verified|declared` paired against `assumed|estimated|inferred` appears 7 times. Five name work to do or a state to fix — "The launch-sweep cost of the repair is measured rather than assumed", "'Done' is currently self-declared rather than verified" — and a reader can check both. The other two are one issue's own heading and its restatement, "Measured, not estimated:", over figures already gathered. Same words either way, so a token list would flag all seven or none.
+Position decides this, not vocabulary, which is why no linter can. `measured|verified|declared` paired against `assumed|estimated|inferred` turns up both ways: naming a checkable state — "The launch-sweep cost of the repair is measured rather than assumed", "'Done' is currently self-declared rather than verified" — and rating already-gathered work, "Measured, not estimated:". Same words either way, so a token list would flag both or neither.
 
 In a title the replacement is the number that earned the claim: "measured across nine documents" over "measured, not assumed".
 
 Two tells read backwards from the rest. `Unearned confidence` and `No specifics` fire when something is *missing*, so a clean document scores no on both. Do not read a low total as a clean document without checking which tells the zeroes came from.
 
-Expect the count to track document type. Across nine technical documents, procedures and reference pages fired 1 to 3 tells each; the one conceptual spec fired 10, and essays fired more still. Prose that argues is where these tests earn their place, and where they are noisiest.
-
-A "uniform rhythm" test was removed after measurement. It asked for three consecutive sentences of similar length, and it had no working range: technical documents contain almost no paragraph reaching three sentences, while every essay tested fired on runs like 4/9/9 words, which are not uniform. Two thresholds were tried and both were guesses.
-
-The closing-flourish test is positional, not lexical. A metaphor-word count across 148,000 words of drafting found 24 hits, so the vocabulary is too rare and too varied for a linter to catch. The position is consistent: last sentence of a paragraph, after the facts, restating them.
+Expect the count to track document type: procedures and reference pages fire 1 to 3 tells each, a conceptual spec can fire 10, and essays fire more still. Prose that argues is where these tests earn their place, and where they are noisiest.
 
 ## Tone
 
@@ -96,7 +94,7 @@ When you take a rule from an outside style guide, rewrite it in plain words befo
 
 Read `reference/genres.md` before running the tells. Which of them can fire depends on what you are writing, and a zero from a tell that cannot fire is not a clean result. It also carries the one rule per genre worth knowing: a comment says why, a docstring states a contract, a README orients, a spec records a decision.
 
-For a code comment, run one test before any of the twelve: does this still describe what the code does? Reviewing 486 comments produced 19 edits and 10 were contradicted by the code beside them, against one finding each from the prose tests.
+For a code comment, run one test before any of the fourteen: does this still describe what the code does?
 
 ## Words
 

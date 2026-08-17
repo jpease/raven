@@ -1,9 +1,8 @@
 # Genre
 
-The twelve tells are one set, but which of them can fire depends entirely on
-what you are writing. Measured across nine technical documents, six essays, and
-486 code comments: procedures fired 1 to 3 tells each, one conceptual spec fired
-10, essays fired 6.6 per file, and code comments produced almost no prose
+The fourteen tells are one set, but which of them can fire depends entirely on
+what you are writing: procedures fire 1 to 3 tells each, a conceptual spec can
+fire 10, essays fire more still, and code comments produce almost no prose
 findings at all.
 
 Read the row for what you are writing before running the tells.
@@ -19,17 +18,16 @@ Read the row for what you are writing before running the tells.
 
 ## Code comments
 
-The most valuable test on a comment is not a prose test. Reviewing 486 comments
-added by one branch produced 19 edits, and 10 of them were comments contradicted
-by the code beside them — a docstring describing behavior a later fix removed, a
-rule stated directly above the constant that violates it, a module docstring
-claiming parity that the same file denies twice. The prose tests found one
-finding each.
+The most valuable test on a comment is not a prose test. Comments contradicted
+by the code beside them are the dominant failure — a docstring describing
+behavior a later fix removed, a rule stated directly above the constant that
+violates it, a module docstring claiming parity that the same file denies
+twice.
 
 So run this first, before any tell: **does this comment still describe what the
 code does?** A stale comment is worse than no comment, because it is evidence.
-One of the ten asserted a `git` option "carries no short letter" when it does,
-and that false assertion was the reason a guard checked only half its input.
+One asserted a `git` option "carries no short letter" when it does, and that
+false assertion was the reason a guard checked only half its input.
 
 Two mechanical checks answer that question cheaply:
 
@@ -53,8 +51,8 @@ Catch it with the throat-clearing test.
 
 **Comment as changelog.** "This used to be X, which broke when Y." Concrete on
 the day it is written and decaying from then on, because it describes a bug no
-current reader can observe. The same review found five of these, one of which
-had already gone stale and become the first kind of error.
+current reader can observe. This recurs, and can decay further into the first
+kind of error: a comment that no longer matches the code beside it.
 
 **The example nobody runs.** A worked example is checked by a doctest runner or
 by nothing, and the difference shows. One repo carried 39 examples under the two
@@ -102,7 +100,7 @@ open-questions list, which always holds new facts.
 
 ## Commit subjects and issue titles
 
-A title is one line and holds no paragraphs, so four of the twelve tells have
+A title is one line and holds no paragraphs, so four of the fourteen tells have
 nothing to fire on. What is left is the tag: `X, not Y` hung off the end.
 
 The tag earns its place when the negated half names what the change replaced —
