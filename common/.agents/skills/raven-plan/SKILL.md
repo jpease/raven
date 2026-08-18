@@ -11,13 +11,22 @@ This complements interactive planning modes. The important output is a project-l
 
 ## Process
 
-1. Clarify the goal, constraints, acceptance criteria, and known non-goals.
+1. Interrogate the request per Interrogate First, then record the goal, constraints, acceptance criteria, and known non-goals.
 2. Inspect enough project context to identify the owning modules and verification path.
 3. Write a concise durable plan in a project-appropriate location, such as `.raven/plans/<short-name>.md`, unless the repo already has a planning convention.
 4. Include scope, assumptions, ordered work items, verification, rollback or follow-up notes, and open questions.
-5. Get approval before executing when the plan changes public API, schema, migration, release, auth, destructive, dependency, or broad architecture behavior.
-6. Update the plan at meaningful checkpoints instead of relying on chat history.
-7. When complete, record what shipped, what was verified, and any follow-up issues.
+5. Run the Fresh-Context Check before requesting approval.
+6. Get approval before executing when the plan changes public API, schema, migration, release, auth, destructive, dependency, or broad architecture behavior.
+7. Update the plan at meaningful checkpoints instead of relying on chat history.
+8. When complete, record what shipped, what was verified, and any follow-up issues.
+
+## Interrogate First
+
+Question the request before writing anything down. Ask what the goal leaves undefined, which constraints are assumed rather than stated, and what result the user would call wrong. Keep asking until the user says the description is complete.
+
+Propose the first approach yourself. Reacting to an approach the user proposed inherits its blind spots, and AGENTS.md Safety Rules already governs ratifying it without challenge.
+
+Write no code during this step. The Completion Criteria below make a plan terminable; they do not make an underspecified request correct, and a terminable plan built on one finishes green on the wrong work.
 
 ## Completion Criteria
 
@@ -44,12 +53,28 @@ Prose-only criteria such as "the migration is complete" or "tests are passing" a
 
 ## Assumptions
 
+## Alternatives (approach rejected / why / what would reopen it)
+
 ## Work Items (end state / verification command / invariants per item)
 
 ## Verification
 
 ## Follow-Ups
 ```
+
+Fill Alternatives during the design discussion, while the argument is live. Written afterwards it degrades to a list of approaches nobody seriously held, and the reasoning that ruled each one out is already gone.
+
+An alternative a reader would actively restore at the code — an obvious-looking simplification the plan rejected for a reason invisible at that line — also earns a comment at the site, per `raven-write-prose` on code comments. The rest stay in the plan: a rejected-alternatives note at every decision site decays into changelog commentary about a design no current reader can observe.
+
+## Fresh-Context Check
+
+A plan is durable when someone holding only the plan can act on it. Test that instead of assuming it.
+
+Hand the plan alone — no conversation history — to a zero-context reader: a fresh session, or a sub-agent briefed with nothing but the file path. Ask it to state the goal, the files it would change, and the verification command it would run.
+
+It passes when the reader answers all three and asks no blocking question. Every question it does ask marks a hole; write the answer into the plan and repeat. Answering in chat leaves the hole in place and hides it, because the next reader starts where the fresh one did.
+
+When no fresh session or sub-agent is available, say the plan is unverified for resumption rather than calling it durable.
 
 ## Avoid
 

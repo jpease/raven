@@ -328,8 +328,56 @@ class PlanSkillTests(unittest.TestCase):
     def test_stays_proportionate(self):
         self.assertLess(
             len(self.content.splitlines()),
-            65,
-            "raven-plan/SKILL.md should stay skimmable even after the completion-criteria addition",
+            85,
+            "raven-plan/SKILL.md should stay skimmable even after the completion-criteria, "
+            "interrogation, and fresh-context additions",
+        )
+
+    def test_interrogation_precedes_writing_the_plan(self):
+        region = section_region(self.lowered, "## interrogate first")
+
+        self.assertIn(
+            "propose the first approach yourself",
+            region,
+            "expected the agent to propose the first approach rather than react to the user's",
+        )
+        self.assertIn(
+            "write no code",
+            region,
+            "expected an explicit no-code rule during the design discussion",
+        )
+
+    def test_plan_shape_records_rejected_alternatives(self):
+        # Asserted against the whole document rather than a section_region:
+        # the Durable Plan Shape section wraps a fenced template whose own
+        # "## " lines truncate the region at the first one.
+        self.assertIn(
+            "## alternatives (approach rejected / why / what would reopen it)",
+            self.lowered,
+            "expected the plan template to carry an Alternatives section",
+        )
+        self.assertIn(
+            "while the argument is live",
+            self.lowered,
+            "expected Alternatives to be filled during the design discussion, "
+            "not reconstructed afterwards",
+        )
+
+    def test_fresh_context_check_is_a_negative_control(self):
+        region = section_region(self.lowered, "## fresh-context check")
+
+        # The check is worthless if the reader carries the authoring session's
+        # context, and worthless again if holes are patched in chat instead of
+        # in the artifact. Both halves are guarded verbatim.
+        self.assertIn(
+            "no conversation history",
+            region,
+            "expected the fresh reader to be denied the authoring session's context",
+        )
+        self.assertIn(
+            "write the answer into the plan",
+            region,
+            "expected holes to be closed in the artifact rather than in chat",
         )
 
     def test_completion_criteria_require_end_state_verification_and_invariants(self):
