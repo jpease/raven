@@ -6,19 +6,14 @@
   <img src="./raven.jpg" alt="Raven mascot" width="58%">
 </p>
 
-Raven is a library to encourage AI coding agents towards effective and efficient behavior.
+Raven installs one set of agent instructions — `AGENTS.md`, skills, subagents,
+hooks, and rules — into your repositories, then upgrades them in place without
+overwriting what you changed. It is for anyone maintaining more than one repo
+who would rather not hand-copy the same guidance into each.
 
-**Note:** This is a rapidly developing space, so "best practices" is a moving target.
-
-## Why Raven
-
-- **Token discipline**: Prefer targeted retrieval, summaries, and deterministic tools over broad file reads.
-- **Reusable agent setup**: Share AGENTS guidance, skills, subagents, hooks, rules, docs, and MCP examples across repos.
-- **Agent adapters**: Keep `AGENTS.md` and `.agents/skills` canonical while installing thin Claude Code and Codex compatibility layers.
-- **Language-aware templates**: Start with common behavior, then layer language-specific rules.
-- **Safe updates**: Track installed files with `.raven/manifest.json` and only auto-upgrade unchanged Raven-managed files.
-- **Local control**: Configure each destination repo with a self-documented `.raven/config.toml`.
-- **Low collision surface**: Raven-owned files use the `raven-*` namespace so project-owned guidance can use natural names.
+**Status:** no tagged release. Installs pin to a commit sha recorded in
+`.raven/manifest.json`, and the template file set changes between commits. This
+is a fast-moving space, so treat any "best practice" here as a moving target.
 
 ## Quick Start
 
@@ -51,6 +46,16 @@ shape outright, and `raven doctor` reports it as an error. Fix it with
 checkout cannot be repaired in place. On Windows, first enable Developer Mode
 or run git from an elevated shell so it is allowed to create symlinks.
 
+## Why Raven
+
+- **Token discipline**: Prefer targeted retrieval, summaries, and deterministic tools over broad file reads.
+- **Reusable agent setup**: Share AGENTS guidance, skills, subagents, hooks, rules, docs, and MCP examples across repos.
+- **Agent adapters**: Keep `AGENTS.md` and `.agents/skills` canonical while installing thin Claude Code and Codex compatibility layers.
+- **Language-aware templates**: Start with common behavior, then layer language-specific rules.
+- **Safe updates**: Track installed files with `.raven/manifest.json` and only auto-upgrade unchanged Raven-managed files.
+- **Local control**: Configure each destination repo with a self-documented `.raven/config.toml`.
+- **Low collision surface**: Raven-owned files use the `raven-*` namespace so project-owned guidance can use natural names.
+
 ## What Raven Installs
 
 Reusable agent guidance, plus the state needed to upgrade it safely:
@@ -75,7 +80,9 @@ Reusable agent guidance, plus the state needed to upgrade it safely:
 | [`raven doctor`](docs/commands.md#raven-doctor) | Read-only health check of the Raven install. |
 | [`raven assess`](docs/commands.md#raven-assess) | Grade the project against its template's quality gates. |
 
-Every command takes `--dry-run`. Full reference: [docs/commands.md](docs/commands.md).
+`install`, `upgrade`, and `accept` take `--dry-run`. `doctor` and `assess` are
+read-only, and `init` writes only `.raven/config.toml`. Full reference:
+[docs/commands.md](docs/commands.md).
 
 ## When a File Already Exists
 
@@ -94,7 +101,7 @@ removal of dropped files, template switching, and line-ending handling.
 ## Optional Tooling
 
 Raven's templates recommend tools like `rg`, `fd`, `just`, ast-grep, Semgrep,
-Vale, and a language server over MCP, but requires none of them. Run
+Vale, and a language server over MCP, but require none of them. Run
 `python .claude/scripts/raven-tool-check.py` after installing to see what you
 have. Details and the per-language LSP defaults are in
 [docs/tooling.md](docs/tooling.md).
@@ -124,13 +131,16 @@ uv run --group dev python scripts/self-check.py
 `just test` and `just check` resolve their own `uv`-managed dev environment
 by default (see `[dependency-groups]` in `pyproject.toml` and the committed
 `uv.lock`) -- no manual venv setup needed. Not using `uv`? Install the dev
-group into your own interpreter (`python -m pip install --group dev`) and
+group into your own interpreter (`python -m pip install --group dev`, pip 25.1
+or newer) and
 override the launcher: `RAVEN_PYTHON=python just test` or
 `just PYTHON='python' test`.
 
-Use `scripts/self-check.py` for the dogfood workflow: it validates this repo's installed Raven shape, runs self-upgrade dry-run/apply, and then runs the unit tests. `self-check.py` requires Raven to already be installed in this repo (`.raven/config.toml` must exist); run `python scripts/raven.py install <language>` first if you have a fresh clone.
-
-Project-local maintenance skills live under `project-skills/`; destination-facing files live in `common/` or language template directories.
+Use `scripts/self-check.py` for the dogfood workflow: it validates this repo's
+installed Raven shape, runs self-upgrade dry-run/apply, and then runs the unit
+tests. It requires Raven to already be installed here (`.raven/config.toml`
+must exist); on a fresh clone run `python scripts/raven.py install <language>`
+first.
 
 ## License
 
