@@ -106,9 +106,9 @@
       "sourceSha256": "8be4db2aae466cef51b64618926a11a91a350fb65bb4f4bd6eb0c7781056834b"
     },
     ".agents/skills/raven-write-prose/SKILL.md": {
-      "installedSha256": "8658dfd27d42e2a1d24ac15deda724ed1447e253209026475b49ccdca7f9f759",
+      "installedSha256": "bc8874180251fb032c040912951d6d0cf0f6532f47f4fdc0c9227a389dd46771",
       "kind": "file",
-      "sourceSha256": "8658dfd27d42e2a1d24ac15deda724ed1447e253209026475b49ccdca7f9f759"
+      "sourceSha256": "bc8874180251fb032c040912951d6d0cf0f6532f47f4fdc0c9227a389dd46771"
     },
     ".agents/skills/raven-write-prose/reference/genres.md": {
       "installedSha256": "2f56ec668e0da5d0baa05c24b53e44db20337b94871011e4d386b98d18089133",
@@ -457,8 +457,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "e059eb9da6a1",
+  "ravenVersion": "582c7377c642",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-18T14:43:31.638908+00:00"
+  "updatedAt": "2026-08-18T21:34:09.539231+00:00"
 }

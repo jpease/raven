@@ -31,6 +31,8 @@ So run your genre's question before any of the fourteen:
 
 A failure here outranks every finding below it.
 
+Trouble writing plainly is often a signal for an unchecked claim. Verify, then write the plain version.
+
 ## Spine: Orwell's six rules
 
 1. Never use a metaphor, simile or other figure of speech which you are used to seeing in print.
@@ -69,6 +71,8 @@ Each row names the artifact, gives a test you can run, and gives the fix. Run th
 | Stakes-inflation | Search `changes everything`, `cannot be overstated`, `profound implications`, `watershed moment`, `game-?changer`, `pivotal moment`, `marks a turning point` | Cut it, or replace with the number that earns the claim. |
 
 The long-word sweep is Orwell's rules 2 and 5 made mechanical. Run it on anything you write. Most hits are technical terms with no shorter form and get kept; the sweep exists to make you ask the question of each one rather than only of words someone already listed.
+
+The sweep also flags one fact restated across clauses to sound thorough. "Retry failed calls up to three times" says the whole change; "implemented an enhanced retry mechanism to improve resilience against transient call failures" says it twice, in different words. Test: does the word add a fact `retry` didn't already carry? `enhanced`, `mechanism`, and `resilience` don't — cut them.
 
 `X, not Y` needs judgment, and here is the test: **delete the negated half. Does the sentence still say something?**
 
