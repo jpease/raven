@@ -777,6 +777,87 @@ class DoctorToolchainTests(RavenTestCase):
                 )
 
 
+class DoctorProberPathTests(RavenTestCase):
+    """`components.claude.scripts` and `components.codex.scripts` toggle
+    independently, so the prober can live under either adapter directory.
+    Doctor used to look only under `.claude/`, which turned a Codex-only
+    install's entire toolchain section into one warning telling the reader to
+    reinstall a script that was already there.
+    """
+
+    def _config(self):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n', encoding="utf-8"
+        )
+
+    def _install_prober(self, adapter):
+        scripts = self.destination / adapter / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "raven-tool-check.py").write_text("", encoding="utf-8")
+
+    def _recording_runner(self):
+        seen = []
+        payload = json.dumps({"os": "darwin", "results": []})
+
+        def runner(command, cwd):
+            seen.append(command)
+            return RunResult(
+                ok=True, code=0, stdout=payload, stderr="", found=True, timed_out=False
+            )
+
+        return runner, seen
+
+    def _prober_argument(self, seen):
+        for command in seen:
+            for part in command:
+                if "raven-tool-check.py" in part:
+                    return part
+        raise AssertionError(f"no tool-check invocation in {seen!r}")
+
+    def test_codex_only_install_runs_the_codex_prober(self):
+        from raven_lib.doctor import toolchain_findings
+
+        self._config()
+        self._install_prober(".codex")
+        runner, seen = self._recording_runner()
+
+        findings = toolchain_findings(self.destination, runner)
+
+        self.assertIn(".codex", self._prober_argument(seen))
+        self.assertEqual([f for f in findings if f.id == "doctor.tool.script"], [])
+
+    def test_claude_wins_when_both_adapters_are_installed(self):
+        from raven_lib.doctor import toolchain_findings
+
+        self._config()
+        self._install_prober(".claude")
+        self._install_prober(".codex")
+        runner, seen = self._recording_runner()
+
+        toolchain_findings(self.destination, runner)
+
+        self.assertIn(".claude", self._prober_argument(seen))
+
+    def test_warning_names_the_path_that_was_tried(self):
+        from raven_lib.doctor import toolchain_findings
+
+        self._config()
+        self._install_prober(".codex")
+
+        def runner(command, cwd):
+            return RunResult(ok=False, code=1, stdout="", stderr="", found=True, timed_out=True)
+
+        findings = toolchain_findings(self.destination, runner)
+
+        warning = next(f for f in findings if f.id == "doctor.tool.script")
+        # Naming `.claude/` here is what made the old warning unactionable on a
+        # Codex install: the reader checks that path, finds nothing, and the
+        # suggested `raven install` restores a file that is already present.
+        self.assertIn(".codex/scripts/raven-tool-check.py", warning.detail)
+        self.assertNotIn(".claude", warning.detail)
+
+
 class DoctorHookManagerTests(RavenTestCase):
     def _git_init(self):
         subprocess.run(["git", "init", str(self.destination)], capture_output=True, check=True)

@@ -108,7 +108,7 @@ removal of dropped files, template switching, and line-ending handling.
 
 Raven's templates recommend tools like `rg`, `fd`, `just`, ast-grep, Semgrep,
 Vale, and a language server over MCP, but require none of them. Run
-`python .claude/scripts/raven-tool-check.py` after installing to see what you
+`raven doctor` after installing; its Toolchain section reports which ones you
 have. Details and the per-language LSP defaults are in
 [docs/tooling.md](docs/tooling.md).
 

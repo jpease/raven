@@ -37,6 +37,10 @@ _INTEGRITY = "Install integrity"
 _DRIFT = "Drift & freshness"
 _HOOKS = "Git hooks"
 
+# Adapter script directories, in the order `_tool_check_script` prefers them.
+_ADAPTER_DIRS = (".claude", ".codex")
+_PROBER_FILENAME = "raven-tool-check.py"
+
 # Gate tools with no reliable --version flag: probing them with --version
 # exits non-zero even when the binary is installed and working (e.g. gofmt
 # exits 2 with "flag provided but not defined: -version"). For these, being
@@ -570,8 +574,30 @@ def drift_findings(destination: Path) -> list[Finding]:
 _TOOLCHAIN = "Toolchain"
 
 
-def _tool_check_results(destination: Path, runner: Runner) -> list[dict[str, object]] | None:
-    script = destination / ".claude" / "scripts" / "raven-tool-check.py"
+def _tool_check_script(destination: Path) -> Path:
+    """Locate the tool-check prober in whichever adapter directory this install has.
+
+    `components.claude.scripts` and `components.codex.scripts` toggle
+    independently, so a destination can carry `.claude/scripts/`,
+    `.codex/scripts/`, or both. Hardcoding the Claude path made `raven doctor`
+    on a Codex-only install collapse its whole toolchain section into an
+    unavailable-script warning whose fix (`raven install`) could not help,
+    since the prober was installed -- just under the other adapter.
+
+    Prefer the Claude copy when both exist; the two are byte-identical (see
+    `.claude/docs/raven-agent-compatibility.md`). Fall back to it when neither
+    does, so the warning names a path the reader recognizes.
+    """
+    candidates = [destination / name / "scripts" / _PROBER_FILENAME for name in _ADAPTER_DIRS]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def _tool_check_results(
+    destination: Path, runner: Runner, script: Path
+) -> list[dict[str, object]] | None:
     result = runner([sys.executable, str(script), "--json"], destination)
     if result.timed_out:
         return None
@@ -588,15 +614,20 @@ def _tool_check_results(destination: Path, runner: Runner) -> list[dict[str, obj
 def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list[Finding]:
     """Report tool-check results (found/missing recommended tools), or warn if the script failed."""
     findings: list[Finding] = []
-    results = _tool_check_results(destination, runner)
+    script = _tool_check_script(destination)
+    results = _tool_check_results(destination, runner, script)
     if results is None:
+        try:
+            shown = script.relative_to(destination).as_posix()
+        except ValueError:  # pragma: no cover -- script is built from destination
+            shown = script.as_posix()
         findings.append(
             Finding(
                 id="doctor.tool.script",
                 severity=Severity.WARN,
                 category=_TOOLCHAIN,
                 title="Tool-check script unavailable",
-                detail="could not run .claude/scripts/raven-tool-check.py --json",
+                detail=f"could not run {shown} --json",
                 fix="run `raven install` to restore Raven scripts, then re-run",
             )
         )
