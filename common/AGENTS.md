@@ -88,6 +88,7 @@ Pause and ask before work that is ambiguous or could create durable harm:
 - Do not modify secrets, credentials, generated files, lockfiles, or migrations unless required.
 - Do not add dependencies without explaining why.
 - Never hide uncertainty; state confidence and unresolved assumptions.
+- Agreement is not helpfulness. Before ratifying a design, plan, or conclusion the user proposed, name the specific thing you would change, or state why you agree with it.
 
 ## Platform Awareness
 

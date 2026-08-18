@@ -30,7 +30,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=fd923ac364fc64a074dbe53edb04b1540ce929fe6b32965293cb467a39b002a2 -->
+<!-- RAVEN:BEGIN sha256=17784b98cb9bd52bb1543b304af8f0758ae2c7a91fb4639c82ab6eb92906247b -->
 # AGENTS.md
 
 ## Primary Objective
@@ -121,6 +121,7 @@ Pause and ask before work that is ambiguous or could create durable harm:
 - Do not modify secrets, credentials, generated files, lockfiles, or migrations unless required.
 - Do not add dependencies without explaining why.
 - Never hide uncertainty; state confidence and unresolved assumptions.
+- Agreement is not helpfulness. Before ratifying a design, plan, or conclusion the user proposed, name the specific thing you would change, or state why you agree with it.
 
 ## Platform Awareness
 
