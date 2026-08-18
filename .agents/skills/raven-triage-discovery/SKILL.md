@@ -10,7 +10,7 @@ Work found mid-task that falls outside the current issue's acceptance criteria n
 ## Skip When
 
 - The finding is already covered by the current issue's stated acceptance criteria.
-- The finding is already tracked by an existing open issue. Link to that issue and move on.
+- The finding is already tracked by an existing open issue — checked past titles: search server-side (`gh issue list --search`/`glab issue list --search`) and, for the parent/epic/cross-referenced issues, read bodies for an unchecked acceptance criterion matching the finding, not just a matching title. Link to that issue and move on.
 
 ## Required Constraints
 
