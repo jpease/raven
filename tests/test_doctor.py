@@ -839,6 +839,36 @@ class DoctorProberPathTests(RavenTestCase):
 
         self.assertIn(".claude", self._prober_argument(seen))
 
+    def test_real_codex_only_install_leaves_doctor_a_prober_to_run(self):
+        """End-to-end: the config toggle really does produce the layout above.
+
+        The three tests around this one build the adapter tree by hand, so they
+        prove the resolver without proving the layout is reachable. This one
+        runs a real install with `[components.claude] scripts = false` and
+        checks both halves -- that `.claude/scripts/` is absent while the
+        prober is present under `.codex/`, and that doctor then runs it.
+        """
+        from raven_lib.doctor import toolchain_findings
+
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n\n[components.claude]\nscripts = false\n',
+            encoding="utf-8",
+        )
+        _install(self)
+
+        self.assertFalse((self.destination / ".claude" / "scripts").exists())
+        self.assertTrue(
+            (self.destination / ".codex" / "scripts" / "raven-tool-check.py").exists(),
+            "codex scripts stay installed when only the claude toggle is off",
+        )
+
+        runner, seen = self._recording_runner()
+        findings = toolchain_findings(self.destination, runner)
+
+        self.assertIn(".codex", self._prober_argument(seen))
+        self.assertEqual([f for f in findings if f.id == "doctor.tool.script"], [])
+
     def test_warning_names_the_path_that_was_tried(self):
         from raven_lib.doctor import toolchain_findings
 
