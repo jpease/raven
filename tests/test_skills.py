@@ -6,19 +6,65 @@ from helpers import REPO_ROOT, RavenTestCase, raven
 
 def section_region(text_lower, heading):
     """Return the slice of ``text_lower`` from ``heading`` up to the next
-    ``## `` heading (or end of string).
+    ``## `` heading outside a fenced code block (or end of string).
 
     ``heading`` must already be a lowercase ``## ...`` string, since callers
     pass a pre-lowered copy of the document. Single module-level helper used
     by every skill-guidance test class below -- previously this existed as
     four near-duplicate copies under two names and two signatures.
+
+    Fenced blocks are skipped because several skills document a markdown
+    template inside a fence, and the template's own ``## `` lines would
+    otherwise end the region at the first one, silently shrinking it to the
+    prose above the fence. That misfires in both directions: an ``assertIn``
+    fails confusingly for a phrase that is in the section, and an
+    ``assertNotIn`` passes for a phrase sitting just past the cut.
+
+    Fence tracking is deliberately simple -- any line whose first non-space
+    characters are ``` or ~~~ toggles the state. A fence opened with a longer
+    run to embed a shorter one would defeat it; no shipped skill does that,
+    and the alternative is a markdown parser in a test helper.
     """
     start = text_lower.find(heading)
     if start == -1:
         raise AssertionError(f"expected a {heading!r} section")
-    next_heading = text_lower.find("\n## ", start + len(heading))
-    end = next_heading if next_heading != -1 else len(text_lower)
-    return text_lower[start:end]
+    body_start = start + len(heading)
+    in_fence = False
+    position = 0
+    for line in text_lower[body_start:].splitlines(keepends=True):
+        stripped = line.lstrip()
+        if stripped.startswith(("```", "~~~")):
+            in_fence = not in_fence
+        elif not in_fence and line.startswith("## "):
+            return text_lower[start : body_start + position]
+        position += len(line)
+    return text_lower[start:]
+
+
+class SectionRegionTests(unittest.TestCase):
+    """Guards the helper every skill-guidance test below depends on.
+
+    Its failure mode is silent: a region cut short still supports assertions,
+    it just answers them about less of the document than the caller meant.
+    """
+
+    def test_fenced_headings_do_not_end_the_region(self):
+        text = "## shape\n\n```markdown\n## goal\n\n## scope\n```\n\nafter the fence\n\n## next\n"
+        region = section_region(text, "## shape")
+
+        self.assertIn("## scope", region, "a heading inside the fence must not cut the region")
+        self.assertIn("after the fence", region, "prose below the fence belongs to the section")
+        self.assertNotIn("## next", region, "the real next heading still ends the region")
+
+    def test_unfenced_heading_still_ends_the_region(self):
+        region = section_region("## one\n\nbody\n\n## two\n\nother\n", "## one")
+
+        self.assertIn("body", region)
+        self.assertNotIn("other", region)
+
+    def test_missing_heading_is_an_explicit_failure(self):
+        with self.assertRaises(AssertionError):
+            section_region("## one\n\nbody\n", "## absent")
 
 
 SKILLS_DIR = REPO_ROOT / "common" / ".claude" / "skills"
@@ -348,17 +394,16 @@ class PlanSkillTests(unittest.TestCase):
         )
 
     def test_plan_shape_records_rejected_alternatives(self):
-        # Asserted against the whole document rather than a section_region:
-        # the Durable Plan Shape section wraps a fenced template whose own
-        # "## " lines truncate the region at the first one.
+        region = section_region(self.lowered, "## durable plan shape")
+
         self.assertIn(
             "## alternatives (approach rejected / why / what would reopen it)",
-            self.lowered,
+            region,
             "expected the plan template to carry an Alternatives section",
         )
         self.assertIn(
             "while the argument is live",
-            self.lowered,
+            region,
             "expected Alternatives to be filled during the design discussion, "
             "not reconstructed afterwards",
         )
