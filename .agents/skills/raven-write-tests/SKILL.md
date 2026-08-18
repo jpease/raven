@@ -35,6 +35,7 @@ description: Use when adding, fixing, or reviewing tests.
 | "The test broke, I'll update it to match" | Classify the failure first. Updating a stale assertion without classifying it can mask a regression. |
 | "Coverage looks thin but the main path works" | Missing edge cases and regressions are the gap this skill exists to close, not something to wave off. |
 | "This failure is in a different file, that's unrelated" | A required-member change on a shared interface breaks every implementer at once. Sweep repo-wide before deciding it's unrelated. |
+| "This guard has been green for months, it must work" | Green-forever is exactly the invisible failure mode. Write the negative control before trusting it. |
 
 ## When Existing Tests Fail
 
@@ -45,6 +46,15 @@ Classify the failure before acting:
 - **Test bug** — the test was wrong before the change; fix the test and document why.
 - **Environment issue** — flaky, timing-dependent, or platform-specific; fix or isolate the condition.
 - **Pre-existing failure** — was already failing before the change; note it separately, do not fix as part of this change.
+
+## Guards
+
+A guard — a check script, lint rule, CI gate, schema validator, or invariant assertion — is not a test and needs a different check. A test is written alongside the behavior it protects, so red-first applies naturally. A guard usually predates the change it's meant to catch and is expected to pass on every commit, so its failure mode is invisible: it keeps passing on input it should reject, and nothing ever runs it against such input.
+
+- Write a negative control: temporarily construct the condition the guard exists to catch and confirm the guard fails on it, then restore. A guard that has never been observed failing is unverified, no matter how long it's been green.
+- Diff the guard's stated scope against its implementation. If a comment or name names a bounded set ("the legacy fixtures", "the deprecated endpoints"), the code should enumerate that set rather than glob an unbounded one and rely on the two coinciding by coincidence — the first new item that legitimately matches the glob will be rejected as a violation of the very state it was built to produce.
+- Assert on effect, not intent. A guard that greps for `unset FOO` in a script proves the line was written, not that the tool being invoked actually reads the environment rather than a config file. Assert against the rendered output or observable behavior the guard is meant to guarantee, not the command string that was supposed to produce it.
+- When a reader tolerates a missing field by substituting a default, test the mapping end to end over a fixture that goes through the real reader, and assert that a populated field arrives populated — not only that an absent one degrades cleanly. A unit test that constructs the domain object directly skips the mapping layer where the wiring gap actually lives.
 
 ## Process
 
