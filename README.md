@@ -37,19 +37,25 @@ To change anything before installing — say, the Claude Code adapter but not
 the Codex one — run `raven init <language>` first to write
 `.raven/config.toml`, then edit it. Omit the language and Raven prompts for it.
 
-**Your checkout has to preserve symlinks.** Raven's templates share files
-through symlinks, and a checkout that cannot create them stores each one as a
-regular file holding the target path — including two Codex security hooks,
-which would then do nothing. `install`, `upgrade`, and `accept` refuse that
-shape outright, and `raven doctor` reports it as an error. Fix it with
-`git config --global core.symlinks true` and a fresh clone; a flattened
-checkout cannot be repaired in place. On Windows, first enable Developer Mode
-or run git from an elevated shell so it is allowed to create symlinks.
+> **NOTE: Your checkout has to preserve symlinks.**
+> 
+> Raven's templates share files through symlinks, and a checkout that cannot
+> create them stores each one as a regular file holding the target path — including
+> two Codex security hooks, which would then do nothing.
+> 
+> `install`, `upgrade`, and `accept` refuse that shape outright, and `raven doctor`
+> reports it as an error.
+>
+> Fix it with `git config --global core.symlinks true` and a fresh clone; a
+> flattened checkout cannot be repaired in place.
+>
+> On Windows, first enable Developer Mode or run git from an elevated shell
+> so it is allowed to create symlinks.
 
 ## Why Raven
 
-- **Token discipline**: Prefer targeted retrieval, summaries, and deterministic tools over broad file reads.
-- **Reusable agent setup**: Share AGENTS guidance, skills, subagents, hooks, rules, docs, and MCP examples across repos.
+- **Token discipline**: Prefer targeted retrieval, summaries, and deterministic tools.
+- **Reusable agent setup**: Share guidance, skills, hooks, rules, and docs across repos.
 - **Agent adapters**: Keep `AGENTS.md` and `.agents/skills` canonical while installing thin Claude Code and Codex compatibility layers.
 - **Language-aware templates**: Start with common behavior, then layer language-specific rules.
 - **Safe updates**: Track installed files with `.raven/manifest.json` and only auto-upgrade unchanged Raven-managed files.
@@ -89,8 +95,8 @@ read-only, and `init` writes only `.raven/config.toml`. Full reference:
 Raven does not overwrite files you own. On upgrade it only replaces a managed
 file whose content still matches the hash recorded at install time; anything
 you edited is reported and left in place, with review artifacts written under
-`.raven/merge/` for you to merge by hand. `raven accept` then records the
-result so later upgrades stop asking.
+`.raven/merge/` for you to merge by hand. `raven accept` records the
+result so later upgrades don't pester you about it.
 
 A few files — `CLAUDE.md`, `.claude/settings.json` — Raven can take over
 outright instead, and asks for consent rather than writing a merge artifact.
