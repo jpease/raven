@@ -26,7 +26,7 @@ from .constants import (
     DEFAULT_COMPONENTS,
     VALID_PLATFORMS,
 )
-from .models import RavenConfig
+from .models import RavenConfig, SourceSpec
 
 _ISSUE_TRACKER_SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]")
 _PLATFORM_LINE_RE = re.compile(r"^\s*platform\s*=")
@@ -229,6 +229,53 @@ def _merge_component_overrides(
     return {**defaults, **overrides}
 
 
+_SOURCES_PREFIX = "sources."
+# The only `kind` a source may declare. A second entry belongs here only once
+# `doctor` can actually detect that kind of install -- an unrecognized value
+# fails the config rather than being carried as an inert string.
+VALID_SOURCE_KINDS = ("claude-plugin",)
+
+
+def _build_sources(raw: dict) -> dict[str, SourceSpec]:
+    """Collect ``[sources.<name>]`` sections into name -> `SourceSpec`.
+
+    Reads the flat section names `parse_simple_toml` produces -- a dotted
+    header parses as the literal key ``"sources.superpowers"`` -- filtering on
+    the ``sources.`` prefix, the same pattern
+    `_merge_component_overrides` uses for ``components.claude``. A bare
+    ``[sources]`` section has no dot, fails the prefix filter, and declares
+    nothing; that is deliberate, not an oversight.
+
+    Unknown keys inside a section are ignored so a future field stays
+    forward-compatible, but a bad `kind` or `required` fails the whole config:
+    these gate what `doctor` reports about a dependency, and a typo must not
+    silently downgrade the check.
+    """
+    sources: dict[str, SourceSpec] = {}
+    for section, value in raw.items():
+        if not isinstance(section, str) or not section.startswith(_SOURCES_PREFIX):
+            continue
+        # The suffix is taken whole: `[sources.a.b]` names the source `a.b`.
+        name = section[len(_SOURCES_PREFIX) :]
+        if not name:
+            raise ConfigError(f"[{section}]: source name is empty")
+        if not isinstance(value, dict):
+            raise ConfigError(f"[{section}]: expected a section, got {value!r}")
+        kind = value.get("kind")
+        if kind is None:
+            raise ConfigError(f"[{section}]: kind is required, one of {list(VALID_SOURCE_KINDS)}")
+        if not isinstance(kind, str) or kind not in VALID_SOURCE_KINDS:
+            raise ConfigError(
+                f"[{section}]: kind must be "
+                f"{' or '.join(repr(k) for k in VALID_SOURCE_KINDS)}, got {kind!r}"
+            )
+        required = value.get("required", False)
+        if not isinstance(required, bool):
+            raise ConfigError(f"[{section}]: required must be true or false, got {required!r}")
+        sources[name] = SourceSpec(kind=kind, required=required)
+    return sources
+
+
 def build_config(raw: dict, *, exists: bool) -> RavenConfig:
     """Build a RavenConfig from a parsed-TOML mapping. Pure; no filesystem access."""
     exclude_paths: list[str] = []
@@ -273,6 +320,7 @@ def build_config(raw: dict, *, exists: bool) -> RavenConfig:
         exclude_paths=exclude_paths,
         platform=platform,
         exists=exists,
+        sources=_build_sources(raw),
     )
 
 

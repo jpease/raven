@@ -149,3 +149,20 @@ strip_ai_attribution = true
 # pre-push (outbound), alongside strip_ai_attribution above, which only cleans
 # commit message trailers.
 block_ai_attribution_content = true
+
+# [sources.superpowers]
+# An externally-installed agent-skill library this repository depends on.
+# Raven neither installs nor vendors one: `raven doctor` checks that the
+# dependency is present and reports every lane where a Raven skill and an
+# installed upstream skill claim the same kind of work.
+#
+# kind is required, and "claude-plugin" is the only value Raven recognizes
+# today -- the plugin is looked up in Claude Code's installed-plugin registry.
+# The section name is the plugin name.
+#
+# required = false reports a missing source as a warning; true makes it an
+# error, for a repository whose workflow genuinely depends on it. A registry
+# Raven cannot read stays a warning either way, because "cannot tell" is not
+# "missing".
+# kind = "claude-plugin"
+# required = false

@@ -40,6 +40,21 @@ class ManifestRecord:
 
 
 @dataclass(frozen=True)
+class SourceSpec:
+    """One ``[sources.<name>]`` declaration: an externally-installed guidance library.
+
+    The section suffix is the source's name (``[sources.superpowers]`` declares
+    the plugin ``superpowers``), so this record carries no name field of its
+    own. ``kind`` says how to look for it -- ``"claude-plugin"`` is the only
+    recognized value today. ``required`` raises a missing source from WARN to
+    ERROR in `doctor`, for a repository whose workflow genuinely depends on it.
+    """
+
+    kind: str
+    required: bool = False
+
+
+@dataclass(frozen=True)
 class RavenConfig:
     """Parsed, defaulted view of ``.raven/config.toml`` (or its absence)."""
 
@@ -56,6 +71,11 @@ class RavenConfig:
     # deactivation (see `deactivated._platform_gated`); unset never does.
     platform: str | None = None
     exists: bool = False
+    # Appended last, after `exists`, and defaulted: `tests/test_orphans.py`
+    # constructs RavenConfig positionally, so inserting a field anywhere
+    # earlier would silently rebind those arguments. Keyed by the
+    # `[sources.<name>]` section suffix; empty when the config declares none.
+    sources: dict[str, SourceSpec] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

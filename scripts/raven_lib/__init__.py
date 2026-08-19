@@ -119,6 +119,7 @@ from .models import (
     ManifestRecord,
     RavenBlock,
     RavenConfig,
+    SourceSpec,
     TemplateEntry,
 )
 from .plan import (
@@ -174,6 +175,7 @@ __all__ = [
     "ApplyPlan",
     "Fingerprint",
     "ManifestRecord",
+    "SourceSpec",
     # config
     "ConfigError",
     "parse_simple_toml",

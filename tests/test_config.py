@@ -121,6 +121,93 @@ class BuildConfigTests(unittest.TestCase):
             raven.build_config(raw, exists=True)
 
 
+class SourcesConfigTests(unittest.TestCase):
+    """`[sources.<name>]` declarations parse into `RavenConfig.sources`.
+
+    The section name arrives from `parse_simple_toml` as the flat key
+    ``"sources.superpowers"``, so most cases go through the real parser rather
+    than a hand-built dict -- the prefix filter is the part that would break if
+    the parser's section handling ever changed.
+    """
+
+    def _sources(self, text):
+        return raven.build_config(raven.parse_simple_toml(text), exists=True).sources
+
+    def test_no_sources_section_yields_empty_dict(self):
+        self.assertEqual(raven.build_config({}, exists=False).sources, {})
+
+    def test_declared_source_parses_with_required_defaulting_to_false(self):
+        sources = self._sources('[sources.superpowers]\nkind = "claude-plugin"\n')
+        self.assertEqual(sources, {"superpowers": raven.SourceSpec(kind="claude-plugin")})
+        self.assertFalse(sources["superpowers"].required)
+
+    def test_required_true_is_carried(self):
+        sources = self._sources('[sources.superpowers]\nkind = "claude-plugin"\nrequired = true\n')
+        self.assertTrue(sources["superpowers"].required)
+
+    def test_two_sources_are_both_declared(self):
+        sources = self._sources(
+            '[sources.superpowers]\nkind = "claude-plugin"\n'
+            '[sources.other]\nkind = "claude-plugin"\n'
+        )
+        self.assertEqual(sorted(sources), ["other", "superpowers"])
+
+    def test_unknown_key_inside_section_is_ignored(self):
+        # Forward compatibility: a field a later Raven adds must not fail an
+        # older Raven's parse.
+        sources = self._sources(
+            '[sources.superpowers]\nkind = "claude-plugin"\nmin_version = "6.0.0"\n'
+        )
+        self.assertEqual(sources["superpowers"], raven.SourceSpec(kind="claude-plugin"))
+
+    def test_missing_kind_raises_naming_the_section(self):
+        with self.assertRaises(raven.ConfigError) as ctx:
+            self._sources("[sources.superpowers]\nrequired = true\n")
+        self.assertIn("[sources.superpowers]", str(ctx.exception))
+        self.assertIn("kind", str(ctx.exception))
+
+    def test_unrecognized_kind_raises_naming_section_and_value(self):
+        with self.assertRaises(raven.ConfigError) as ctx:
+            self._sources('[sources.superpowers]\nkind = "npm"\n')
+        self.assertIn("[sources.superpowers]", str(ctx.exception))
+        self.assertIn("claude-plugin", str(ctx.exception))
+        self.assertIn("npm", str(ctx.exception))
+
+    def test_non_bool_required_raises(self):
+        with self.assertRaises(raven.ConfigError) as ctx:
+            self._sources('[sources.superpowers]\nkind = "claude-plugin"\nrequired = "yes"\n')
+        self.assertIn("[sources.superpowers]", str(ctx.exception))
+        self.assertIn("must be true or false", str(ctx.exception))
+
+    def test_empty_source_name_raises(self):
+        with self.assertRaises(raven.ConfigError) as ctx:
+            self._sources('[sources.]\nkind = "claude-plugin"\n')
+        self.assertIn("[sources.]", str(ctx.exception))
+
+    def test_bare_sources_section_declares_nothing(self):
+        # No dot, so it fails the prefix filter. Deliberate: `[sources]` names
+        # no source, and inventing one from an empty suffix would be a guess.
+        self.assertEqual(self._sources('[sources]\nkind = "claude-plugin"\n'), {})
+
+    def test_dotted_suffix_is_taken_whole(self):
+        sources = self._sources('[sources.a.b]\nkind = "claude-plugin"\n')
+        self.assertEqual(sorted(sources), ["a.b"])
+
+    def test_rendered_starter_config_documents_the_section_without_declaring_one(self):
+        text = raven.default_config_text("python", False, "none")
+        self.assertIn("# [sources.superpowers]", text)
+        self.assertIn('# kind = "claude-plugin"', text)
+        self.assertIn("# required = false", text)
+        # Commented out, so a fresh install declares nothing.
+        self.assertEqual(raven.build_config(raven.parse_simple_toml(text), exists=True).sources, {})
+
+    def test_non_section_sources_value_raises(self):
+        # Cannot come from `parse_simple_toml`, which always makes a section a
+        # dict, but `build_config` is public and must fail closed on it.
+        with self.assertRaises(raven.ConfigError):
+            raven.build_config({"sources.superpowers": "claude-plugin"}, exists=True)
+
+
 class ParseSimpleTomlTests(unittest.TestCase):
     """Issue #28 — TOML parser must handle literal strings, quoted commas, and hash in strings."""
 
