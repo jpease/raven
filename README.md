@@ -112,6 +112,22 @@ Vale, and a language server over MCP, but require none of them. Run
 have. Details and the per-language LSP defaults are in
 [docs/tooling.md](docs/tooling.md).
 
+## External Skill Libraries
+
+A repository can also depend on a skill library installed outside it, such as a
+Claude Code plugin. Declare it and `raven doctor` checks that it is installed,
+then lists every lane where one of its skills and a Raven skill claim the same
+kind of work:
+
+```toml
+[sources.superpowers]
+kind = "claude-plugin"
+```
+
+Raven neither installs nor vendors the library, and retires none of its own
+skills in response. The report exists so that call can be made on evidence.
+Details are in [docs/commands.md](docs/commands.md#raven-doctor).
+
 ## Repository Layout
 
 Raven-managed paths use `raven-*` wherever possible.
