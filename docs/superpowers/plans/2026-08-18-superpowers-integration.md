@@ -231,6 +231,10 @@ Raven's templates "recommend tools ... but require none of them". The per-source
   with no dot fails the prefix filter and is inert — it declares nothing, and
   that is deliberate rather than an oversight. A dotted suffix such as
   `[sources.a.b]` names the plugin `a.b` — the suffix is taken whole.
+  A `sources.<name>` key whose value is not a table also raises `ConfigError`:
+  `parse_simple_toml` cannot produce one (a section is always a dict), but
+  `build_config` is public and takes a raw mapping, so it fails closed there
+  the way the rest of the module does.
 - **Verification**: `uv run --group dev python -m pytest tests/test_config.py tests/test_raven_config_lib.py tests/test_package_api.py tests/test_orphans.py` exits 0.
 - **Invariants**: `parse_simple_toml` and `parse_value` unmodified. The new
   `RavenConfig` field is appended **after** `exists` with a default —
@@ -318,7 +322,8 @@ Raven's templates "recommend tools ... but require none of them". The per-source
 - **Verification**: `uv run --group dev python -m pytest tests/test_doctor.py -k sources` exits 0, including a
   Codex-only skip case and a `required = true` ERROR case.
 - **Invariants**: `build_doctor_findings` keeps its config-first short-circuit;
-  no existing finding id, severity, or category name changes.
+  no existing finding id, severity, or category name changes. `Sources` is appended last, after
+  `Drift & freshness`, so no existing section moves in the rendered report.
 
 ### 4. `LANE_CLAIMS` and collision findings — the deliverable
 
@@ -380,10 +385,12 @@ Raven's templates "recommend tools ... but require none of them". The per-source
 - **Verification**: `uv run --group dev python -m pytest tests/test_config.py` exits 0 and
   `uv run --group dev python scripts/raven.py install --dry-run` renders the template without a parse error.
 - **Invariants**: A freshly rendered config parses to the same `RavenConfig` as
-  before, modulo an empty `sources`. Editing `config.toml.tmpl` changes a
-  template file's content hash, so `.raven/manifest.json` gains a real entry
-  change that **is** expected and should be committed — distinct from the
-  version/timestamp-only churn Work Item 6 discards.
+  before, modulo an empty `sources`. `.raven/manifest.json` gains **no** entry
+  for this edit, contrary to what an earlier draft of this item predicted:
+  `config.toml.tmpl` is not itself installed anywhere, and the file it renders,
+  `.raven/config.toml`, is not manifest-tracked (Assumption 10). The only
+  manifest diff a self-check produces here is the version/timestamp churn Work
+  Item 6 discards.
 
 ### 6. Converge the self-install
 

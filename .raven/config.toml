@@ -73,3 +73,15 @@ checkpoint_enforcement = true
 # platform = "github"   # use raven-github-issues + gh CLI
 # platform = "gitlab"   # use raven-gitlab-issues + glab CLI
 platform = "github"      # dogfooding: raven repo uses GitHub Issues
+
+[sources.superpowers]
+# The Superpowers skill library, installed as a Claude Code plugin rather than
+# vendored here. Declaring it lets `raven doctor` check that it is installed
+# and report the lanes where a Raven skill and a Superpowers skill claim the
+# same kind of work.
+#
+# required stays false: true would report an ERROR on every contributor
+# machine without the plugin and turn a green doctor red. Nothing in this
+# repository breaks when the plugin is absent.
+kind = "claude-plugin"
+required = false
