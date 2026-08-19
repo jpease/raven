@@ -8,8 +8,10 @@ call site.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_EXCLUDES = {"README.md"}
@@ -178,6 +180,102 @@ SYMLINK_CHECKOUT_FIX = (
     "On Windows, first enable Developer Mode or run git from an elevated shell so it "
     "is permitted to create symbolic links."
 )
+
+
+class LaneClaim(NamedTuple):
+    """One lane a Raven skill and an upstream skill both claim.
+
+    ``prefer`` is one of exactly two values, ``"raven"`` or ``"upstream"``.
+    There is no third state on purpose: a lane whose owner is unclear does not
+    belong in the table yet.
+    """
+
+    lane: str
+    raven_skill: str
+    source: str
+    upstream_skill: str
+    prefer: str
+    reason: str
+
+
+# Lanes claimed by both a Raven skill and a skill from a declared source.
+#
+# Declared, never inferred. Name and description similarity would miss the
+# cases that matter -- the strongest real pair, `raven-debug-failure` and
+# `systematic-debugging`, shares no tokens -- and invent ones that do not. A
+# row here is an opinion Raven is willing to state and a test can check.
+#
+# This is data: adding a row requires no code change. A row is evaluated only
+# when its `source` is declared in the destination's `.raven/config.toml`, so
+# the table being machine-global does not make the report machine-global.
+LANE_CLAIMS = (
+    LaneClaim(
+        "planning",
+        "raven-plan",
+        "superpowers",
+        "writing-plans",
+        "raven",
+        "durable artifact, interrogation, fresh-context check",
+    ),
+    LaneClaim(
+        "testing",
+        "raven-write-tests",
+        "superpowers",
+        "test-driven-development",
+        "raven",
+        "repo guards and duplicate-check funnel",
+    ),
+    LaneClaim(
+        "debugging",
+        "raven-debug-failure",
+        "superpowers",
+        "systematic-debugging",
+        "raven",
+        "CI-failure handling upstream lacks",
+    ),
+    LaneClaim(
+        "completion",
+        "raven-task-complete",
+        "superpowers",
+        "verification-before-completion",
+        "raven",
+        "lifecycle checkpoint integration",
+    ),
+    LaneClaim(
+        "review",
+        "raven-review-pr",
+        "superpowers",
+        "requesting-code-review",
+        "raven",
+        "antipattern registry and Semgrep promotion",
+    ),
+    LaneClaim(
+        "delegation",
+        "raven-delegate-or-inline",
+        "superpowers",
+        "dispatching-parallel-agents",
+        "raven",
+        "inline-vs-delegate decision upstream does not make",
+    ),
+)
+
+
+def claude_config_dir() -> Path:
+    """Where Claude Code keeps its user-level state, honoring ``CLAUDE_CONFIG_DIR``.
+
+    The single place in ``raven_lib`` that reads that variable: `doctor` looks
+    up the plugin registry beneath this directory, and keeping the lookup here
+    means a test can point `doctor` at a temp registry by passing a path
+    instead of patching the environment or ``Path.home``.
+
+    An empty value is treated as unset -- ``CLAUDE_CONFIG_DIR=""`` in a shell
+    profile means "I did not set this", not "resolve against the filesystem
+    root".
+    """
+    override = os.environ.get("CLAUDE_CONFIG_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / ".claude"
 
 
 def _any_exists(p: Path) -> bool:

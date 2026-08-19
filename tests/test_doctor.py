@@ -15,8 +15,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from helpers import RavenTestCase, raven
 from raven_lib.config import _update_config_platform
-from raven_lib.constants import CONFIG_PATH
-from raven_lib.doctor import build_doctor_findings, drift_findings, integrity_findings
+from raven_lib.constants import CONFIG_PATH, LANE_CLAIMS, claude_config_dir
+from raven_lib.doctor import (
+    FOUND,
+    NOT_FOUND,
+    UNDETERMINABLE,
+    build_doctor_findings,
+    detect_plugin,
+    drift_findings,
+    integrity_findings,
+    sources_findings,
+)
 from raven_lib.findings import Severity, exit_code
 from raven_lib.models import Classification
 from raven_lib.runner import RunResult
@@ -1019,6 +1028,400 @@ class DoctorFlattenedSymlinkTests(RavenTestCase):
         ids = self._ids(build_doctor_findings(self.destination, _fake_toolcheck_runner([])))
         self.assertNotIn("doctor.install.flattened", ids)
         self.assertIn("doctor.drift.missing", ids)
+
+
+class DoctorPluginRegistryTests(RavenTestCase):
+    """`detect_plugin` reads Claude Code's installed-plugin registry.
+
+    Every case writes a real registry file into the temp directory and passes
+    its path. Nothing here patches ``Path.home`` or the environment: the path
+    is a parameter precisely so it does not have to be.
+    """
+
+    def _registry(self, text):
+        path = self.destination / "installed_plugins.json"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def _registry_json(self, payload):
+        return self._registry(json.dumps(payload))
+
+    def _one_record(self, install_path="/plugins/superpowers/6.3.0", version="6.3.0", scope="user"):
+        return {
+            "scope": scope,
+            "installPath": install_path,
+            "version": version,
+        }
+
+    def test_registry_absent_is_undeterminable_not_missing(self):
+        # The distinction the whole check rests on: a machine with no registry
+        # tells Raven nothing, and answering "not installed" there would be a
+        # confident wrong answer.
+        status = detect_plugin(self.destination / "nope.json", "superpowers")
+        self.assertEqual(status.state, UNDETERMINABLE)
+        self.assertNotEqual(status.state, NOT_FOUND)
+
+    def test_registry_that_is_a_directory_is_undeterminable(self):
+        # Portable stand-in for an unreadable file: chmod is a no-op as root
+        # and meaningless on Windows, a directory is neither.
+        path = self.destination / "installed_plugins.json"
+        path.mkdir()
+        self.assertEqual(detect_plugin(path, "superpowers").state, UNDETERMINABLE)
+
+    def test_registry_with_invalid_json_is_undeterminable(self):
+        path = self._registry("{not json")
+        self.assertEqual(detect_plugin(path, "superpowers").state, UNDETERMINABLE)
+
+    def test_registry_with_non_dict_root_is_undeterminable(self):
+        path = self._registry_json([1, 2, 3])
+        self.assertEqual(detect_plugin(path, "superpowers").state, UNDETERMINABLE)
+
+    def test_registry_with_non_dict_plugins_is_undeterminable(self):
+        path = self._registry_json({"version": 1, "plugins": ["superpowers"]})
+        self.assertEqual(detect_plugin(path, "superpowers").state, UNDETERMINABLE)
+
+    def test_registry_without_the_plugin_is_not_found(self):
+        path = self._registry_json(
+            {"version": 1, "plugins": {"other@market": [self._one_record()]}}
+        )
+        self.assertEqual(detect_plugin(path, "superpowers").state, NOT_FOUND)
+
+    def test_registry_with_one_record_is_found_with_version_and_path(self):
+        path = self._registry_json(
+            {"version": 1, "plugins": {"superpowers@claude-plugins-official": [self._one_record()]}}
+        )
+        status = detect_plugin(path, "superpowers")
+        self.assertEqual(status.state, FOUND)
+        self.assertEqual(status.versions, ("6.3.0",))
+        self.assertEqual(status.install_paths, (Path("/plugins/superpowers/6.3.0"),))
+        self.assertEqual(status.registry, path)
+
+    def test_registry_with_three_records_reports_all_of_them(self):
+        # A plugin installed at several scopes gets no tie-break: every
+        # recorded installPath is a place worth looking.
+        records = [
+            self._one_record("/a", "6.1.0", "user"),
+            self._one_record("/b", "6.2.0", "project"),
+            self._one_record("/c", "6.3.0", "local"),
+        ]
+        path = self._registry_json({"version": 1, "plugins": {"superpowers@market": records}})
+        status = detect_plugin(path, "superpowers")
+        self.assertEqual(status.state, FOUND)
+        self.assertEqual(status.versions, ("6.1.0", "6.2.0", "6.3.0"))
+        self.assertEqual(status.install_paths, (Path("/a"), Path("/b"), Path("/c")))
+
+    def test_registry_version_unknown_is_found_and_carried_verbatim(self):
+        path = self._registry_json(
+            {"version": 1, "plugins": {"superpowers@market": [self._one_record(version="unknown")]}}
+        )
+        status = detect_plugin(path, "superpowers")
+        self.assertEqual(status.state, FOUND)
+        self.assertEqual(status.versions, ("unknown",))
+
+    def test_registry_key_without_a_marketplace_suffix_still_matches(self):
+        path = self._registry_json({"version": 1, "plugins": {"superpowers": [self._one_record()]}})
+        self.assertEqual(detect_plugin(path, "superpowers").state, FOUND)
+
+    def test_registry_key_prefix_must_match_whole_segment(self):
+        path = self._registry_json(
+            {"version": 1, "plugins": {"superpowers-x@m": [self._one_record()]}}
+        )
+        self.assertEqual(detect_plugin(path, "superpowers").state, NOT_FOUND)
+
+
+class ClaudeConfigDirTests(unittest.TestCase):
+    """`claude_config_dir` is the one place `raven_lib` reads CLAUDE_CONFIG_DIR."""
+
+    def test_env_override_is_used_when_set(self):
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": "/tmp/claude-elsewhere"}):
+            self.assertEqual(claude_config_dir(), Path("/tmp/claude-elsewhere"))
+
+    def test_empty_env_value_falls_back_to_the_home_default(self):
+        # An empty value in a shell profile means "unset", not "the filesystem
+        # root". Asserted by shape, so no test has to patch ``Path.home``.
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": ""}):
+            self.assertEqual(claude_config_dir().name, ".claude")
+
+    def test_doctor_module_reads_no_environment_of_its_own(self):
+        source = (Path(__file__).resolve().parents[1] / "scripts/raven_lib/doctor.py").read_text()
+        self.assertNotIn("os.environ", source)
+        self.assertNotIn("expanduser", source)
+        self.assertNotIn("Path.home", source)
+
+
+class DoctorSourcesTests(RavenTestCase):
+    """The `Sources` section: one status finding per declared source.
+
+    Fixtures are hand-built rather than installed: `sources_findings` reads a
+    `.claude/` directory, a config object, and a registry path, so a real
+    install would add cost without adding coverage.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.dest = self.destination / "dest"
+        (self.dest / ".claude").mkdir(parents=True)
+
+    def _config(self, required=False, name="superpowers"):
+        return raven.build_config(
+            {f"sources.{name}": {"kind": "claude-plugin", "required": required}}, exists=True
+        )
+
+    def _registry_with(self, *, plugin="superpowers", install_path="/plugins/sp/6.3.0"):
+        path = self.destination / "installed_plugins.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "plugins": {
+                        f"{plugin}@claude-plugins-official": [
+                            {"scope": "user", "installPath": install_path, "version": "6.3.0"}
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def _missing_registry(self):
+        return self.destination / "absent.json"
+
+    def _empty_registry(self):
+        path = self.destination / "empty.json"
+        path.write_text(json.dumps({"version": 1, "plugins": {}}), encoding="utf-8")
+        return path
+
+    def test_sources_installed_source_is_ok(self):
+        findings = sources_findings(self.dest, self._config(), registry=self._registry_with())
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].id, "doctor.sources.superpowers")
+        self.assertEqual(findings[0].severity, Severity.OK)
+        self.assertEqual(findings[0].category, "Sources")
+        self.assertIn("6.3.0", findings[0].title)
+
+    def test_sources_missing_source_is_warn_when_not_required(self):
+        findings = sources_findings(self.dest, self._config(), registry=self._empty_registry())
+        self.assertEqual([f.severity for f in findings], [Severity.WARN])
+        self.assertEqual(exit_code(findings), 0)
+
+    def test_sources_missing_required_source_is_error(self):
+        findings = sources_findings(
+            self.dest, self._config(required=True), registry=self._empty_registry()
+        )
+        self.assertEqual([f.severity for f in findings], [Severity.ERROR])
+        self.assertEqual(exit_code(findings), 1)
+
+    def test_sources_undeterminable_stays_warn_even_when_required(self):
+        # "Raven cannot tell" is not "the dependency is missing". A machine
+        # whose registry Raven could not read must not fail a build over it.
+        findings = sources_findings(
+            self.dest, self._config(required=True), registry=self._missing_registry()
+        )
+        self.assertEqual([f.severity for f in findings], [Severity.WARN])
+        self.assertIn("undeterminable", findings[0].title)
+        self.assertIn(str(self._missing_registry()), findings[0].detail)
+
+    def test_sources_codex_only_destination_gets_no_section(self):
+        codex_only = self.destination / "codex-only"
+        (codex_only / ".codex").mkdir(parents=True)
+        self.assertEqual(
+            sources_findings(codex_only, self._config(), registry=self._registry_with()), []
+        )
+
+    def test_sources_undeclared_config_gets_no_section(self):
+        empty = raven.build_config({}, exists=True)
+        self.assertEqual(sources_findings(self.dest, empty, registry=self._registry_with()), [])
+
+    def test_sources_two_declared_sources_get_one_status_finding_each(self):
+        config = raven.build_config(
+            {
+                "sources.superpowers": {"kind": "claude-plugin"},
+                "sources.other": {"kind": "claude-plugin"},
+            },
+            exists=True,
+        )
+        findings = sources_findings(self.dest, config, registry=self._registry_with())
+        self.assertEqual(
+            [f.id for f in findings],
+            ["doctor.sources.superpowers", "doctor.sources.other"],
+        )
+
+    def test_sources_wording_never_claims_the_plugin_is_active(self):
+        # An installed plugin can still be blocklisted or disabled per project,
+        # neither of which Raven reads. "session" is the specific word to keep
+        # out of these strings.
+        registries = [self._registry_with(), self._empty_registry(), self._missing_registry()]
+        for registry in registries:
+            with self.subTest(registry=registry.name):
+                for finding in sources_findings(self.dest, self._config(), registry=registry):
+                    text = f"{finding.title} {finding.detail} {finding.fix or ''}".lower()
+                    self.assertNotIn("active", text)
+                    self.assertNotIn("session", text)
+                    self.assertNotIn("available", text)
+
+    def test_sources_section_appears_in_a_real_doctor_run(self):
+        _install(self)
+        config_path = self.destination / CONFIG_PATH
+        config_path.write_text(
+            config_path.read_text(encoding="utf-8")
+            + '\n[sources.superpowers]\nkind = "claude-plugin"\n',
+            encoding="utf-8",
+        )
+        findings = build_doctor_findings(self.destination, _fake_toolcheck_runner([]))
+        sources = [f for f in findings if f.category == "Sources"]
+        # Exactly one *status* finding. Collisions share the category and are
+        # machine-dependent (they need the plugin actually installed here), so
+        # this asserts the status half only.
+        status_ids = [f.id for f in sources if not f.id.startswith("doctor.sources.collision.")]
+        self.assertEqual(status_ids, ["doctor.sources.superpowers"])
+
+
+class DoctorCollisionTests(RavenTestCase):
+    """`LANE_CLAIMS` rows become INFO findings when both skills are installed.
+
+    The fixture builds all three halves of a collision -- the Raven skill
+    directory, the upstream skill directory under a temp installPath, and the
+    config declaration -- so each can be removed independently.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.dest = self.destination / "dest"
+        (self.dest / ".claude").mkdir(parents=True)
+        self.install_path = self.destination / "plugins" / "superpowers" / "6.3.0"
+
+    def _raven_skill(self, name="raven-debug-failure"):
+        (self.dest / ".agents" / "skills" / name).mkdir(parents=True, exist_ok=True)
+
+    def _upstream_skill(self, name="systematic-debugging"):
+        (self.install_path / "skills" / name).mkdir(parents=True, exist_ok=True)
+
+    def _registry(self, *, install_paths=None):
+        paths = [self.install_path] if install_paths is None else install_paths
+        path = self.destination / "installed_plugins.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "plugins": {
+                        "superpowers@claude-plugins-official": [
+                            {"scope": "user", "installPath": str(p), "version": "6.3.0"}
+                            for p in paths
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def _declared(self):
+        return raven.build_config({"sources.superpowers": {"kind": "claude-plugin"}}, exists=True)
+
+    def _collisions(self, config=None, registry=None):
+        findings = sources_findings(
+            self.dest,
+            self._declared() if config is None else config,
+            registry=self._registry() if registry is None else registry,
+        )
+        return [f for f in findings if f.id.startswith("doctor.sources.collision.")]
+
+    def test_collision_reported_when_both_skills_are_installed(self):
+        self._raven_skill()
+        self._upstream_skill()
+        collisions = self._collisions()
+        self.assertEqual([f.id for f in collisions], ["doctor.sources.collision.debugging"])
+        finding = collisions[0]
+        self.assertEqual(finding.severity, Severity.INFO)
+        self.assertEqual(finding.category, "Sources")
+        self.assertIn("raven-debug-failure", finding.title)
+        self.assertIn("systematic-debugging", finding.title)
+        self.assertIn("debugging", finding.title)
+        self.assertIn("raven", finding.detail)
+
+    def test_collision_absent_without_the_raven_skill_directory(self):
+        self._upstream_skill()
+        self.assertEqual(self._collisions(), [])
+
+    def test_collision_absent_without_the_upstream_skill_directory(self):
+        self._raven_skill()
+        self.assertEqual(self._collisions(), [])
+
+    def test_collision_absent_when_the_source_is_undeclared(self):
+        # The table is machine-global; the report is not. A repo that never
+        # opted in gets nothing, however many plugins the machine has.
+        self._raven_skill()
+        self._upstream_skill()
+        self.assertEqual(self._collisions(config=raven.build_config({}, exists=True)), [])
+
+    def test_collision_absent_when_the_plugin_is_not_installed(self):
+        self._raven_skill()
+        self._upstream_skill()
+        empty = self.destination / "empty.json"
+        empty.write_text(json.dumps({"version": 1, "plugins": {}}), encoding="utf-8")
+        self.assertEqual(self._collisions(registry=empty), [])
+
+    def test_collision_absent_when_the_registry_is_undeterminable(self):
+        self._raven_skill()
+        self._upstream_skill()
+        self.assertEqual(self._collisions(registry=self.destination / "absent.json"), [])
+
+    def test_collision_found_under_any_recorded_install_path(self):
+        # Several install records get no tie-break: every recorded path is a
+        # place worth looking, and the upstream tree sits under only one here.
+        self._raven_skill()
+        self._upstream_skill()
+        other = self.destination / "plugins" / "superpowers" / "6.2.0"
+        other.mkdir(parents=True)
+        registry = self._registry(install_paths=[other, self.install_path])
+        self.assertEqual(
+            [f.id for f in self._collisions(registry=registry)],
+            ["doctor.sources.collision.debugging"],
+        )
+
+    def test_collision_reports_every_matching_lane_in_table_order(self):
+        for claim in LANE_CLAIMS:
+            self._raven_skill(claim.raven_skill)
+            self._upstream_skill(claim.upstream_skill)
+        self.assertEqual(
+            [f.id for f in self._collisions()],
+            [f"doctor.sources.collision.{claim.lane}" for claim in LANE_CLAIMS],
+        )
+
+    def test_collision_never_fails_a_gate(self):
+        for claim in LANE_CLAIMS:
+            self._raven_skill(claim.raven_skill)
+            self._upstream_skill(claim.upstream_skill)
+        findings = sources_findings(self.dest, self._declared(), registry=self._registry())
+        self.assertEqual(exit_code(findings), 0)
+
+    def test_collision_suppressed_entirely_on_a_codex_only_destination(self):
+        codex_only = self.destination / "codex-only"
+        (codex_only / ".codex").mkdir(parents=True)
+        (codex_only / ".agents" / "skills" / "raven-debug-failure").mkdir(parents=True)
+        self._upstream_skill()
+        self.assertEqual(
+            sources_findings(codex_only, self._declared(), registry=self._registry()), []
+        )
+
+    def test_collision_opens_no_file_inside_either_skill_directory(self):
+        # Directory existence is the whole test: an empty directory on both
+        # sides still collides, so nothing can be reading SKILL.md.
+        self._raven_skill()
+        self._upstream_skill()
+        self.assertEqual(list((self.dest / ".agents/skills/raven-debug-failure").iterdir()), [])
+        self.assertEqual([f.id for f in self._collisions()], ["doctor.sources.collision.debugging"])
+
+
+class LaneClaimsTableTests(unittest.TestCase):
+    def test_prefer_is_one_of_exactly_two_values(self):
+        for claim in LANE_CLAIMS:
+            self.assertIn(claim.prefer, ("raven", "upstream"), claim.lane)
+
+    def test_lane_slugs_are_unique(self):
+        lanes = [claim.lane for claim in LANE_CLAIMS]
+        self.assertEqual(sorted(lanes), sorted(set(lanes)))
 
 
 if __name__ == "__main__":

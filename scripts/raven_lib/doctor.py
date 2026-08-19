@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from .apply import classify
@@ -19,15 +20,18 @@ from .constants import (
     COMPONENT_PATHS,
     DEFAULT_EXCLUDES,
     KIND_SYMLINK,
+    LANE_CLAIMS,
     REPO_ROOT,
     SYMLINK_CHECKOUT_FIX,
     _any_exists,
+    claude_config_dir,
 )
 from .deactivated import classify_deactivated
 from .findings import Finding, Severity
 from .gates import gate_spec_for
 from .git_hooks import detect_hook_manager, hook_manager_guidance
 from .manifest import ManifestStatus, git_ref, validate_manifest
+from .models import RavenConfig, SourceSpec
 from .orphans import classify_orphans
 from .runner import Runner, probe_runner
 from .template import broken_template_symlinks, is_known_template
@@ -737,6 +741,216 @@ def merge_only_tracking_findings(destination: Path) -> list[Finding]:
     ]
 
 
+_SOURCES = "Sources"
+
+# Where Claude Code records the plugins it has installed, relative to the
+# Claude config directory.
+_REGISTRY_RELATIVE = Path("plugins") / "installed_plugins.json"
+
+# `detect_plugin` outcomes. UNDETERMINABLE is not a soft NOT_FOUND: it means
+# Raven could not read the registry at all, so it knows nothing about the
+# plugin either way.
+FOUND = "found"
+NOT_FOUND = "not-found"
+UNDETERMINABLE = "undeterminable"
+
+
+@dataclass(frozen=True)
+class PluginStatus:
+    """What `detect_plugin` could establish about one plugin from the registry.
+
+    ``registry`` echoes back the file that was read (or attempted) so a finding
+    can name the exact path rather than re-deriving it. ``versions`` and
+    ``install_paths`` are the values read across every install record for the
+    plugin, in file order, deliberately not reduced to a single winner: a plugin
+    can be installed at several scopes, and Raven has no trustworthy way to pick
+    the live one (the `.in_use` marker is undocumented).
+    """
+
+    state: str
+    versions: tuple[str, ...]
+    install_paths: tuple[Path, ...]
+    registry: Path
+
+
+def detect_plugin(registry: Path, plugin: str) -> PluginStatus:
+    """Read ``registry`` and report whether ``plugin`` is installed. Pure I/O + parse.
+
+    Registry keys are ``<plugin>@<marketplace>``; the marketplace name varies,
+    so the match is on the segment before the first ``@`` (a key with no ``@``
+    matches on the whole key).
+
+    Only a registry that parsed cleanly and did not mention the plugin is
+    `NOT_FOUND`. Anything Raven cannot see through -- the file absent, a
+    directory in its place, invalid JSON, or a ``plugins`` value that is not a
+    mapping -- is `UNDETERMINABLE`. On a machine where Claude Code has never
+    written a registry, "not installed" would be a confident wrong answer, and
+    the caller needs to be able to say "I could not tell" instead.
+    """
+    unknown = PluginStatus(UNDETERMINABLE, (), (), registry)
+    try:
+        raw = registry.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return unknown
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return unknown
+    if not isinstance(data, dict):
+        return unknown
+    plugins = data.get("plugins")
+    if not isinstance(plugins, dict):
+        return unknown
+
+    matched = False
+    versions: list[str] = []
+    install_paths: list[Path] = []
+    for key, records in plugins.items():
+        if not isinstance(key, str) or key.split("@", 1)[0] != plugin:
+            continue
+        matched = True
+        if not isinstance(records, list):
+            continue
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            version = record.get("version")
+            if isinstance(version, str) and version:
+                # Carried verbatim, "unknown" included: this plan compares no
+                # versions, it only reports what the registry claims.
+                versions.append(version)
+            install_path = record.get("installPath")
+            if isinstance(install_path, str) and install_path:
+                install_paths.append(Path(install_path))
+    if not matched:
+        return PluginStatus(NOT_FOUND, (), (), registry)
+    return PluginStatus(FOUND, tuple(versions), tuple(install_paths), registry)
+
+
+def _status_finding(name: str, spec: SourceSpec, status: PluginStatus) -> Finding:
+    """One status finding for a declared source, by what `detect_plugin` established.
+
+    Every wording here says "installed", never "active" or "available": a
+    plugin the registry records as installed can still be blocklisted or
+    disabled per project, and Raven reads neither of those.
+    """
+    if status.state == FOUND:
+        versions = ", ".join(status.versions) if status.versions else "version not recorded"
+        return Finding(
+            id=f"doctor.sources.{name}",
+            severity=Severity.OK,
+            category=_SOURCES,
+            title=f"{name} installed ({versions})",
+            detail=f"read from {status.registry}",
+        )
+    if status.state == NOT_FOUND:
+        return Finding(
+            id=f"doctor.sources.{name}",
+            severity=Severity.ERROR if spec.required else Severity.WARN,
+            category=_SOURCES,
+            title=f"{name} not installed",
+            detail=(
+                f"declared in .raven/config.toml as a {spec.kind} source, but "
+                f"{status.registry} records no plugin named {name}"
+            ),
+            fix=(f"install the {name} plugin, or remove [sources.{name}] from .raven/config.toml"),
+        )
+    # UNDETERMINABLE never escalates to ERROR, `required` or not: "Raven cannot
+    # tell" is a different claim from "the dependency is missing", and a
+    # machine whose registry Raven could not read must not fail a build over it.
+    return Finding(
+        id=f"doctor.sources.{name}",
+        severity=Severity.WARN,
+        category=_SOURCES,
+        title=f"{name} install state undeterminable",
+        detail=(
+            f"could not read the plugin registry at {status.registry}, so Raven "
+            f"cannot tell whether {name} is installed"
+        ),
+        fix=f"check that {status.registry} exists and is readable, then re-run",
+    )
+
+
+def collision_findings(destination: Path, statuses: dict[str, PluginStatus]) -> list[Finding]:
+    """One INFO finding per `LANE_CLAIMS` row whose two skills are both installed here.
+
+    "Installed" is the whole test, on both sides: the Raven skill directory
+    exists in the destination, and the upstream skill directory exists under at
+    least one recorded ``installPath``. No file inside either is opened,
+    `SKILL.md` included, and the destination's own `AGENTS.md` is not read --
+    which of the two a repository actually prefers is the static `prefer` field,
+    not something inferred from prose.
+
+    A row whose source is undeclared, `NOT_FOUND`, or `UNDETERMINABLE` is
+    skipped: there is no second skill to collide with, or no way to tell.
+
+    Findings follow `LANE_CLAIMS` order and are not deduplicated. Two rows
+    sharing a lane slug produce two findings with the same id, and that
+    duplicate id is the signal that the table needs fixing.
+    """
+    findings: list[Finding] = []
+    for claim in LANE_CLAIMS:
+        status = statuses.get(claim.source)
+        if status is None or status.state != FOUND:
+            continue
+        if not (destination / ".agents" / "skills" / claim.raven_skill).is_dir():
+            continue
+        upstream_installed = any(
+            (path / "skills" / claim.upstream_skill).is_dir() for path in status.install_paths
+        )
+        if not upstream_installed:
+            continue
+        findings.append(
+            Finding(
+                id=f"doctor.sources.collision.{claim.lane}",
+                severity=Severity.INFO,
+                category=_SOURCES,
+                title=(
+                    f"{claim.lane} lane: {claim.raven_skill} and "
+                    f"{claim.upstream_skill} ({claim.source}) are both installed"
+                ),
+                detail=f"prefer the {claim.prefer} skill: {claim.reason}",
+            )
+        )
+    return findings
+
+
+def sources_findings(
+    destination: Path, config: RavenConfig, *, registry: Path | None = None
+) -> list[Finding]:
+    """Report each declared `[sources.<name>]` dependency, and any skill-lane collisions.
+
+    `config` is passed in rather than re-loaded: `build_doctor_findings` has
+    already loaded it behind the config-first short-circuit, so loading it
+    again here would duplicate that read and diverge from its error handling.
+
+    The `registry` default is a ``None`` sentinel resolved in the body, never an
+    evaluated default in the signature -- the latter would freeze
+    `claude_config_dir()` at import time, which the CLI would never notice
+    (fresh process per run) while every in-process test saw the importing
+    process's environment.
+    """
+    if not config.sources:
+        return []
+    # No `.claude/` means a Codex-only install: no Claude plugin is reachable
+    # from this destination, so neither the status nor the collision half of
+    # this section has anything to say. `[components.claude]` is a table of
+    # independent per-component toggles, not one adapter-enabled boolean, so
+    # the directory itself is the test.
+    if not (destination / ".claude").is_dir():
+        return []
+    if registry is None:
+        registry = claude_config_dir() / _REGISTRY_RELATIVE
+
+    findings: list[Finding] = []
+    statuses: dict[str, PluginStatus] = {}
+    for name, spec in config.sources.items():
+        statuses[name] = detect_plugin(registry, name)
+        findings.append(_status_finding(name, spec, statuses[name]))
+    findings.extend(collision_findings(destination, statuses))
+    return findings
+
+
 def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> list[Finding]:
     """Assemble the full `raven doctor` findings list: config sanity, then every other check.
 
@@ -765,4 +979,5 @@ def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> l
     config = load_config(destination)
     if config.exists:
         findings.extend(drift_findings(destination))
+    findings.extend(sources_findings(destination, config))
     return findings
