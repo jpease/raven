@@ -93,8 +93,8 @@ for what "accept" records and when the file shows up again.
 ## `raven doctor`
 
 Read-only health check of Raven's own installation in this repository: config,
-manifest, enabled components, the `AGENTS.md` root instruction file, and the
-local toolchain.
+manifest, enabled components, the `AGENTS.md` root instruction file, declared
+external sources, and the local toolchain.
 
 ```sh
 raven doctor          # human-readable report
@@ -103,6 +103,29 @@ raven doctor --json   # machine-readable
 
 Exit `1` means at least one `error` finding. Exit `0` means only warnings or
 OK findings — a missing optional tool is a warning, not a failure.
+
+### Sources
+
+A repository can declare a skill library that is installed outside it, such as
+a Claude Code plugin:
+
+```toml
+[sources.superpowers]
+kind = "claude-plugin"
+required = false
+```
+
+Doctor reports whether that plugin is installed, reading Claude Code's own
+plugin registry, and then lists every lane where one of its skills and a Raven
+skill claim the same kind of work — naming both skills and which one Raven
+prefers. Raven neither installs nor vendors the library; declaring it only asks
+for the check.
+
+Collisions are informational and never change the exit code. `required = true`
+turns a missing source into an `error`, for a repository whose workflow depends
+on it. A registry Raven cannot read stays a warning either way, because "cannot
+tell" is a weaker claim than "not installed". A repository with no `.claude/`
+directory can reach no Claude plugin, and the whole section is skipped.
 
 ## `raven assess`
 
