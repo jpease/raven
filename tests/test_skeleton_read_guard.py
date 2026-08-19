@@ -13,6 +13,16 @@ def _module():
     return load_script_module("raven_skeleton_read_guard", GUARD_SCRIPT)
 
 
+# The gate denies only when a backend the raven-skeleton helper can use is on
+# PATH -- pointing a reader at a helper that cannot run would be worse than
+# allowing the read. Asked of the guard module rather than restated here, so
+# the two cannot drift. The end-to-end deny case therefore has a precondition
+# the machine may not meet: CI's self-check job installs neither ast-grep nor
+# ripgrep, and the test failed there on every run while passing on any
+# developer machine that happens to have one.
+HAVE_SKELETON_BACKEND = _module().skeleton_backend_available()
+
+
 class IsUnboundedReadTests(RavenTestCase):
     def test_no_offset_or_limit_is_unbounded(self):
         module = _module()
@@ -239,6 +249,7 @@ class GuardHookEndToEndTests(RavenTestCase):
             check=False,
         )
 
+    @unittest.skipUnless(HAVE_SKELETON_BACKEND, "no skeleton backend (ast-grep/rg) on PATH")
     def test_denies_large_unbounded_read_when_enabled(self):
         path = self._setup_project(gate_enabled=True, lines=2000)
         result = self._run(path)

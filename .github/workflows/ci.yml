@@ -41,6 +41,13 @@ jobs:
       - name: Install just
         run: curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
 
+      # tests/test_dev_gate.py asserts the `just test` bootstrap message names
+      # `uv sync` when uv is on PATH, and names the uv installer when it is
+      # not. Without uv here, only the second branch was ever reachable and the
+      # first assertion failed on every run.
+      - name: Install uv
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+
       - name: ruff format check
         run: python -m ruff format --check .
 
