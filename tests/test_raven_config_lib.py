@@ -72,9 +72,9 @@ class ParseConfigTextTests(unittest.TestCase):
         self.assertEqual(parsed["a"]["key"], "\"it's fine\"")
 
     def test_section_with_no_keys_still_appears(self):
-        parsed = _module().parse_config_text("[mcp_servers.semble]\n")
-        self.assertIn("mcp_servers.semble", parsed)
-        self.assertEqual(parsed["mcp_servers.semble"], {})
+        parsed = _module().parse_config_text("[mcp_servers.semgrep]\n")
+        self.assertIn("mcp_servers.semgrep", parsed)
+        self.assertEqual(parsed["mcp_servers.semgrep"], {})
 
     def test_reopened_section_merges_rather_than_resets(self):
         text = "[a]\nx = 1\n[b]\ny = 2\n[a]\nz = 3\n"

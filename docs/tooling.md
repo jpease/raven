@@ -28,8 +28,8 @@ tools over and over.
 
 ## Recommended tools
 
-`rg`, `fd`, `just`, `uvx`, Semble, GitNexus, `mcp-language-server`, ast-grep,
-Semgrep, Gitleaks, OSV-Scanner, Vale, `jq`, `yq`, and RTK.
+`rg`, `fd`, `just`, GitNexus, `mcp-language-server`, ast-grep, Semgrep,
+Gitleaks, OSV-Scanner, Vale, `jq`, `yq`, and RTK.
 
 ## Vale takes a second step
 
@@ -57,7 +57,7 @@ performs.
 
 ## Language servers over MCP
 
-Language templates ship `.mcp.json` defaults for Semble, GitNexus, and LSP.
+Language templates ship `.mcp.json` defaults for Semgrep, GitNexus, and LSP.
 For LSP, Raven uses `mcp-language-server` as the general fallback when the
 agent client does not already have a reliable native or plugin integration.
 

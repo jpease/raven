@@ -6,14 +6,6 @@
         "mcp"
       ]
     },
-    "semble": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "semble[mcp]",
-        "semble"
-      ]
-    },
     "gitnexus": {
       "command": "gitnexus",
       "args": [

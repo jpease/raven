@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from typing import ClassVar
 
 from helpers import REPO_ROOT, RavenTestCase, install_raven_config_lib, load_script_module
 from raven_lib.template import should_preserve_symlink
@@ -29,36 +30,36 @@ class CodexMcpServerNamesFromTomlTests(RavenTestCase):
 
     def test_finds_a_simple_server_name(self):
         names = self.module._codex_mcp_server_names_from_toml(
-            '[mcp_servers.semble]\ncommand = "uvx"\n'
+            '[mcp_servers.semgrep]\ncommand = "semgrep"\n'
         )
-        self.assertEqual(names, {"semble"})
+        self.assertEqual(names, {"semgrep"})
 
     def test_finds_multiple_servers(self):
-        text = '[mcp_servers.semble]\ncommand = "uvx"\n\n[mcp_servers.gitnexus]\ncommand = "gitnexus"\n'
+        text = '[mcp_servers.semgrep]\ncommand = "semgrep"\n\n[mcp_servers.gitnexus]\ncommand = "gitnexus"\n'
         self.assertEqual(
-            self.module._codex_mcp_server_names_from_toml(text), {"semble", "gitnexus"}
+            self.module._codex_mcp_server_names_from_toml(text), {"semgrep", "gitnexus"}
         )
 
     def test_excludes_nested_dotted_headers(self):
-        # [mcp_servers.semble.tools.search] is per-tool config, not a server.
-        text = '[mcp_servers.semble]\ncommand = "uvx"\n[mcp_servers.semble.tools.search]\napproval_mode = "approve"\n'
-        self.assertEqual(self.module._codex_mcp_server_names_from_toml(text), {"semble"})
+        # [mcp_servers.semgrep.tools.search] is per-tool config, not a server.
+        text = '[mcp_servers.semgrep]\ncommand = "semgrep"\n[mcp_servers.semgrep.tools.search]\napproval_mode = "approve"\n'
+        self.assertEqual(self.module._codex_mcp_server_names_from_toml(text), {"semgrep"})
 
     def test_unquotes_a_quoted_server_name(self):
         text = '[mcp_servers."my server"]\ncommand = "x"\n'
         self.assertEqual(self.module._codex_mcp_server_names_from_toml(text), {"my server"})
 
     def test_ignores_unrelated_sections(self):
-        text = "[agents]\nmax_threads = 4\n\n[mcp_servers.semble]\ncommand = \"uvx\"\n"
-        self.assertEqual(self.module._codex_mcp_server_names_from_toml(text), {"semble"})
+        text = "[agents]\nmax_threads = 4\n\n[mcp_servers.semgrep]\ncommand = \"semgrep\"\n"
+        self.assertEqual(self.module._codex_mcp_server_names_from_toml(text), {"semgrep"})
 
     def test_a_hash_in_a_value_line_does_not_disrupt_later_header_parsing(self):
         # A value containing '#' must not be misread as starting a comment
         # that swallows a later real header -- the shared parser strips
         # comments per line, quote-aware.
-        text = '[mcp_servers.semble]\ncommand = "uv#x"  # note\n\n[mcp_servers.gitnexus]\ncommand = "y"\n'
+        text = '[mcp_servers.semgrep]\ncommand = "se#mgrep"  # note\n\n[mcp_servers.gitnexus]\ncommand = "y"\n'
         self.assertEqual(
-            self.module._codex_mcp_server_names_from_toml(text), {"semble", "gitnexus"}
+            self.module._codex_mcp_server_names_from_toml(text), {"semgrep", "gitnexus"}
         )
 
     def test_empty_text_yields_no_servers(self):
@@ -69,7 +70,7 @@ class CodexMcpServerNamesFromTomlTests(RavenTestCase):
         # shipped config cannot drift.
         text = (REPO_ROOT / "python" / ".codex" / "config.toml").read_text(encoding="utf-8")
         names = self.module._codex_mcp_server_names_from_toml(text)
-        self.assertIn("semble", names)
+        self.assertIn("semgrep", names)
         self.assertIn("gitnexus", names)
         self.assertIn("lsp", names)
 
@@ -112,13 +113,13 @@ class ToolCheckTests(RavenTestCase):
         module = load_script_module("raven_tool_check_parser", TOOL_CHECK_SCRIPT)
         output = """Checking MCP server health...
 
-semble: uvx --from semble[mcp] semble - ✗ Failed to connect
+semgrep: semgrep mcp - ✗ Failed to connect
 gitnexus: gitnexus mcp - ✓ Connected
 [Conflicting scopes]
  └ [Warning] Server "gitnexus" is defined in multiple scopes
 """
 
-        self.assertIn("semble", module._configured_mcp_server_names(output))
+        self.assertIn("semgrep", module._configured_mcp_server_names(output))
         self.assertIn("gitnexus", module._configured_mcp_server_names(output))
 
     def test_claude_mcp_config_files_are_parsed_without_cli(self):
@@ -127,26 +128,39 @@ gitnexus: gitnexus mcp - ✓ Connected
         with tempfile.TemporaryDirectory() as tmp:
             config = Path(tmp) / ".claude.json"
             config.write_text(
-                json.dumps({"mcpServers": {"semble": {"command": "uvx"}}}), encoding="utf-8"
+                json.dumps({"mcpServers": {"semgrep": {"command": "semgrep"}}}), encoding="utf-8"
             )
             module._claude_mcp_config_paths = lambda _root=None: [config]
             module._claude_mcp_server_names_from_config.cache_clear()
             try:
-                self.assertEqual(module.claude_mcp_server_status("semble"), "configured")
+                self.assertEqual(module.claude_mcp_server_status("semgrep"), "configured")
             finally:
                 module._claude_mcp_server_names_from_config.cache_clear()
 
-    def test_semble_can_be_available_from_claude_mcp_config_without_cli(self):
-        module = load_script_module("raven_tool_check_semble", TOOL_CHECK_SCRIPT)
-        tool = next(tool for tool in module.TOOLS if tool["id"] == "semble")
+    #: No shipped tool sets ``claudeMcpServer``/``codexMcpServer`` any more --
+    #: every tool Raven recommends needs its CLI on PATH even when it also runs
+    #: as an MCP server. The branches stay for the next MCP-only tool, so these
+    #: two tests drive them from a synthetic entry rather than a real one.
+    MCP_ONLY_TOOL: ClassVar[dict] = {
+        "id": "mcp-only",
+        "name": "MCP Only",
+        "commands": [["mcp-only", "--version"]],
+        "purpose": "stand-in for a tool reachable only as an MCP server",
+        "install": "n/a",
+        "claudeMcpServer": "mcp-only",
+        "codexMcpServer": "mcp-only",
+    }
+
+    def test_a_tool_can_be_available_from_claude_mcp_config_without_cli(self):
+        module = load_script_module("raven_tool_check_mcp_only", TOOL_CHECK_SCRIPT)
         original_command_status = module.command_status
         original_status = module.claude_mcp_server_status
         module.command_status = lambda _command: "missing"
         module.claude_mcp_server_status = lambda name, _root=None: (
-            "configured" if name == "semble" else "not_configured"
+            "configured" if name == "mcp-only" else "not_configured"
         )
         try:
-            available, source = module.check_tool_with_source(tool)
+            available, source = module.check_tool_with_source(self.MCP_ONLY_TOOL)
         finally:
             module.command_status = original_command_status
             module.claude_mcp_server_status = original_status
@@ -154,17 +168,16 @@ gitnexus: gitnexus mcp - ✓ Connected
         self.assertTrue(available)
         self.assertEqual(source, "claude-mcp-config")
 
-    def test_semble_can_be_available_from_codex_mcp_config_without_cli(self):
-        module = load_script_module("raven_tool_check_semble_codex", TOOL_CHECK_SCRIPT)
-        tool = next(tool for tool in module.TOOLS if tool["id"] == "semble")
+    def test_a_tool_can_be_available_from_codex_mcp_config_without_cli(self):
+        module = load_script_module("raven_tool_check_mcp_only_codex", TOOL_CHECK_SCRIPT)
         original_command_status = module.command_status
         original_claude_status = module.claude_mcp_server_status
         original_codex_config = module._codex_mcp_server_names_from_config
         module.command_status = lambda _command: "missing"
         module.claude_mcp_server_status = lambda _name, _root=None: "not_configured"
-        module._codex_mcp_server_names_from_config = lambda _root=None: frozenset({"semble"})
+        module._codex_mcp_server_names_from_config = lambda _root=None: frozenset({"mcp-only"})
         try:
-            available, source = module.check_tool_with_source(tool)
+            available, source = module.check_tool_with_source(self.MCP_ONLY_TOOL)
         finally:
             module.command_status = original_command_status
             module.claude_mcp_server_status = original_claude_status
@@ -192,8 +205,8 @@ gitnexus: gitnexus mcp - ✓ Connected
         module._claude_mcp_server_names_from_cli.cache_clear()
         module._claude_mcp_config_paths = lambda _root=None: []
         try:
-            self.assertEqual(module.claude_mcp_server_status("semble"), "timed_out")
-            self.assertFalse(module.claude_mcp_server_configured("semble"))
+            self.assertEqual(module.claude_mcp_server_status("semgrep"), "timed_out")
+            self.assertFalse(module.claude_mcp_server_configured("semgrep"))
         finally:
             module._claude_mcp_server_names.cache_clear()
             module._claude_mcp_server_names_from_config.cache_clear()
@@ -252,7 +265,7 @@ class ClaudeJsonProjectScopeTests(RavenTestCase):
                     str(Path(tmp) / "other-repo-b"): {
                         "mcpServers": {"other-only-b": {"command": "y"}}
                     },
-                    str(this_repo): {"mcpServers": {"semble": {"command": "uvx"}}},
+                    str(this_repo): {"mcpServers": {"semgrep": {"command": "semgrep"}}},
                 },
             )
             module._claude_mcp_config_paths = lambda _root=None: [config]
@@ -280,13 +293,15 @@ class ClaudeJsonProjectScopeTests(RavenTestCase):
                 tmp,
                 {
                     str(Path(tmp) / "other-repo"): {"mcpServers": {"other-only": {"command": "x"}}},
-                    str(this_repo): {"mcpServers": {"semble": {"command": "uvx"}}},
+                    str(this_repo): {"mcpServers": {"semgrep": {"command": "semgrep"}}},
                 },
             )
             module._claude_mcp_config_paths = lambda _root=None: [config]
             module._claude_mcp_server_names_from_config.cache_clear()
             try:
-                self.assertEqual(module.claude_mcp_server_status("semble", this_repo), "configured")
+                self.assertEqual(
+                    module.claude_mcp_server_status("semgrep", this_repo), "configured"
+                )
                 self.assertEqual(
                     module.claude_mcp_server_status("other-only", this_repo), "not_configured"
                 )
@@ -336,14 +351,16 @@ class ClaudeJsonProjectScopeTests(RavenTestCase):
                     # The config key is spelled through the symlink and with a
                     # trailing separator; the lookup root below is the plain
                     # real path with no trailing separator.
-                    str(linked_repo) + os.sep: {"mcpServers": {"semble": {"command": "uvx"}}},
+                    str(linked_repo) + os.sep: {"mcpServers": {"semgrep": {"command": "semgrep"}}},
                     str(other_repo): {"mcpServers": {"other-only": {"command": "y"}}},
                 },
             )
             module._claude_mcp_config_paths = lambda _root=None: [config]
             module._claude_mcp_server_names_from_config.cache_clear()
             try:
-                self.assertEqual(module.claude_mcp_server_status("semble", real_repo), "configured")
+                self.assertEqual(
+                    module.claude_mcp_server_status("semgrep", real_repo), "configured"
+                )
                 self.assertEqual(
                     module.claude_mcp_server_status("other-only", real_repo), "not_configured"
                 )
@@ -351,13 +368,13 @@ class ClaudeJsonProjectScopeTests(RavenTestCase):
                 # through the symlink and carries a trailing separator, while
                 # the config key is the plain real path.
                 config.write_text(
-                    json.dumps({"projects": {str(real_repo): {"mcpServers": {"semble": {}}}}}),
+                    json.dumps({"projects": {str(real_repo): {"mcpServers": {"semgrep": {}}}}}),
                     encoding="utf-8",
                 )
                 module._claude_mcp_server_names_from_config.cache_clear()
                 trailing_symlink_root = Path(str(linked_repo) + os.sep)
                 self.assertEqual(
-                    module.claude_mcp_server_status("semble", trailing_symlink_root), "configured"
+                    module.claude_mcp_server_status("semgrep", trailing_symlink_root), "configured"
                 )
             finally:
                 module._claude_mcp_server_names_from_config.cache_clear()
@@ -381,12 +398,12 @@ class ClaudeJsonProjectScopeTests(RavenTestCase):
             },
             {
                 "projects": {
-                    this_repo_marker: {"mcpServers": ["semble"]},
+                    this_repo_marker: {"mcpServers": ["semgrep"]},
                     other_project_marker: {"mcpServers": {"leaked": {"command": "x"}}},
                 }
             },
             {
-                "mcpServers": ["semble"],
+                "mcpServers": ["semgrep"],
                 "projects": {other_project_marker: {"mcpServers": {"leaked": {"command": "x"}}}},
             },
         ]
@@ -397,7 +414,7 @@ class ClaudeJsonProjectScopeTests(RavenTestCase):
                 module._claude_mcp_config_paths = lambda _root=None, _c=config: [_c]
                 module._claude_mcp_server_names_from_config.cache_clear()
                 try:
-                    own_status = module.claude_mcp_server_status("semble", Path(this_repo_marker))
+                    own_status = module.claude_mcp_server_status("semgrep", Path(this_repo_marker))
                     leaked_status = module.claude_mcp_server_status(
                         "leaked", Path(this_repo_marker)
                     )
@@ -416,7 +433,7 @@ class ClaudeJsonProjectScopeTests(RavenTestCase):
                 module._claude_mcp_config_paths = lambda _root=None, _c=config: [_c]
                 module._claude_mcp_server_names_from_config.cache_clear()
                 try:
-                    status = module.claude_mcp_server_status("semble", Path(this_repo_marker))
+                    status = module.claude_mcp_server_status("semgrep", Path(this_repo_marker))
                 finally:
                     module._claude_mcp_server_names_from_config.cache_clear()
                 self.assertEqual(status, "not_configured")
@@ -574,32 +591,24 @@ class ProjectRootResolutionTests(RavenTestCase):
             "RAVEN_TOOL_MEMORY": str(home / "tool-memory.json"),
         }
 
-    def _missing_tool_names(self, stdout: str) -> set[str]:
-        """Tool names the session-start prompt lists as missing.
-
-        Parses the bullet lines rather than substring-matching the whole
-        prompt: an unrelated tool's purpose text also mentions Semble.
-        """
-        return {
-            line[2:].split(":", 1)[0].strip()
-            for line in stdout.splitlines()
-            if line.startswith("- ") and ":" in line
-        }
-
     def test_claude_adapter_reads_project_mcp_json_from_outside_the_worktree(self):
         project = self._install_project(".claude", TOOL_CHECK_SCRIPT)
         (project / ".mcp.json").write_text(
-            json.dumps({"mcpServers": {"semble": {"command": "uvx"}}}), encoding="utf-8"
+            json.dumps({"mcpServers": {"projectprobe": {"command": "x"}}}), encoding="utf-8"
         )
         outside = self.destination / "outside"
         outside.mkdir()
+        script = project / ".claude" / "scripts" / "raven-tool-check.py"
+        probe = (
+            "import importlib.util;"
+            f"spec = importlib.util.spec_from_file_location('prober', {json.dumps(str(script))});"
+            "mod = importlib.util.module_from_spec(spec);"
+            "spec.loader.exec_module(mod);"
+            "print(mod.claude_mcp_server_status('projectprobe'))"
+        )
 
         result = subprocess.run(
-            [
-                sys.executable,
-                str(project / ".claude" / "scripts" / "raven-tool-check.py"),
-                "--session-start",
-            ],
+            [sys.executable, "-c", probe],
             cwd=outside,
             env=self._isolated_env(),
             capture_output=True,
@@ -608,9 +617,11 @@ class ProjectRootResolutionTests(RavenTestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        missing = self._missing_tool_names(result.stdout)
-        self.assertIn("ripgrep", missing)
-        self.assertNotIn("Semble", missing)
+        # `projectprobe` is named only in <project>/.mcp.json, and HOME is
+        # isolated, so a "configured" answer is only reachable by deriving the
+        # root from the script's own install path -- cwd is outside the
+        # worktree entirely.
+        self.assertEqual(result.stdout.strip(), "configured")
 
     def test_codex_launcher_reads_project_config_from_outside_the_worktree(self):
         # The SessionStart hook now launches raven-capability-roster.py, not
@@ -619,7 +630,7 @@ class ProjectRootResolutionTests(RavenTestCase):
         project = self._install_project(".codex", CODEX_TOOL_CHECK_SCRIPT)
         shutil.copy2(CODEX_ROSTER_SCRIPT, project / ".codex" / "scripts" / CODEX_ROSTER_SCRIPT.name)
         (project / ".codex" / "config.toml").write_text(
-            '[mcp_servers.semble]\ncommand = "uvx"\n', encoding="utf-8"
+            '[mcp_servers.projectprobe]\ncommand = "x"\n', encoding="utf-8"
         )
         outside = self.destination / "outside"
         outside.mkdir()
@@ -641,15 +652,16 @@ class ProjectRootResolutionTests(RavenTestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        # ripgrep is CLI-only and absent under the isolated PATH; Semble is
-        # detected via the project's .codex/config.toml, which is only
-        # possible if the root resolved correctly from the payload cwd.
+        # ripgrep is CLI-only and absent under the isolated PATH, so the roster
+        # really did probe. `projectprobe` reaches the MCP line only from the
+        # project's .codex/config.toml, which is only readable if the root
+        # resolved correctly from the payload cwd.
         self.assertIn("ripgrep —", result.stdout)
-        self.assertNotIn("Semble —", result.stdout)
-        cli_line = next(
-            (line for line in result.stdout.splitlines() if line.strip().startswith("CLI")), ""
+        mcp_line = next(
+            (line for line in result.stdout.splitlines() if line.strip().startswith("MCP (cfg)")),
+            "",
         )
-        self.assertIn("Semble", cli_line)
+        self.assertIn("projectprobe", mcp_line)
 
 
 class AdapterDirectoryDerivationTests(RavenTestCase):

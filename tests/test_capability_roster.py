@@ -373,7 +373,7 @@ class RepoSectionTests(RavenTestCase):
                     "mcpServers": {"gitnexus": {"command": "gitnexus"}},
                     "projects": {
                         str(other_repo): {"mcpServers": {"other-only": {"command": "x"}}},
-                        str(root): {"mcpServers": {"semble": {"command": "uvx"}}},
+                        str(root): {"mcpServers": {"semgrep": {"command": "semgrep"}}},
                     },
                 }
             ),
@@ -386,7 +386,7 @@ class RepoSectionTests(RavenTestCase):
         finally:
             prober._claude_mcp_server_names_from_config.cache_clear()
 
-        self.assertIn("semble", text)
+        self.assertIn("semgrep", text)
         self.assertIn("gitnexus", text)
         self.assertNotIn("other-only", text)
 

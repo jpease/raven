@@ -51,26 +51,6 @@ TOOLS = [
         "install": "official install docs: https://github.com/sharkdp/fd#installation",
     },
     {
-        "id": "uvx",
-        "name": "uvx",
-        "commands": [["uvx", "--version"]],
-        "purpose": (
-            "running Python-packaged tools such as Semble MCP"
-            " without a permanent project dependency"
-        ),
-        "install": "official install docs: https://docs.astral.sh/uv/getting-started/installation/",
-    },
-    {
-        "id": "semble",
-        "name": "Semble",
-        "commands": [["semble", "--version"]],
-        "purpose": "intent-based code search when the owning file or symbol is unknown",
-        "install": "official install docs: https://minish.ai/packages/semble/installation/",
-        "optionalWhen": "uvx is available and Semble is configured only as an MCP server",
-        "claudeMcpServer": "semble",
-        "codexMcpServer": "semble",
-    },
-    {
         "id": "gitnexus",
         "name": "GitNexus",
         "commands": [["gitnexus", "--version"]],
@@ -734,6 +714,11 @@ def check_tool_with_source(tool: dict, root: Path | None = None) -> tuple[bool, 
     evidence; MCP config is consulted only when no command succeeds. A timeout
     anywhere in the chain is remembered but does not short-circuit the
     remaining checks, so a slow CLI probe doesn't hide a working MCP config.
+
+    No entry in ``TOOLS`` sets ``claudeMcpServer`` or ``codexMcpServer`` today:
+    every tool Raven recommends needs its CLI on PATH even when it is also run
+    as an MCP server. The branches stay because the next MCP-only tool needs
+    them and they cost nothing when the keys are absent.
     """
     timed_out = False
     for command in tool["commands"]:

@@ -12,9 +12,8 @@ Skip this agent when the relevant file or symbol was already provided and no arc
 Use this order:
 
 1. `rg` for exact terms.
-2. Semble for semantic discovery.
-3. LSP for definitions and references if available.
-4. GitNexus for architecture relationships if available.
+2. LSP for definitions and references if available.
+3. GitNexus for architecture relationships and semantic discovery if available.
 
 Return only files, symbols, relationships, confidence, unresolved questions, and recommended next reads.
 

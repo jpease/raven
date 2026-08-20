@@ -11,7 +11,6 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 | `rg` | Exact strings, symbols, error messages, config keys, exhaustive confirmation | Usually the cheapest first step. Claude Code usually includes ripgrep; install separately if search fails. |
 | `fd` | File discovery by name, extension, type, or pattern | Faster and friendlier than `find`. Use to locate files before reading them. |
 | `just` | Consistent task runner for test, lint, format, typecheck, and hook installation | Use `just --list` to discover available recipes. Prefer `just check` over invoking tools directly. |
-| Semble | Intent-based code search when the owning file or symbol is unknown | Best for "where is this behavior?" questions. Treat it as semantic retrieval, not exhaustive proof or an editing decision by itself. |
 | LSP | Definitions, references, hover/type info, diagnostics, rename safety | Best once a symbol is known. Prefer client-native LSP integrations when available; otherwise use `mcp-language-server` plus the relevant language server. |
 | GitNexus | Architecture, dependency, call-path, and blast-radius reasoning | Best for structural questions. Treat as a graph/static-analysis layer, not as a replacement for LSP. Disk footprint reaches hundreds of MB even for small repos, is gitignored (not committed), and regenerates fully on reindex rather than updating incrementally. Contributors on constrained disk may leave unconfigured and rely on the `rg`+LSP fallback documented in the retrieval ladder. |
 | ast-grep | Syntax-aware search and mechanical rewrites | Best when code shape matters more than raw text. Good for reviewable structural edits. |
@@ -30,7 +29,6 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 | `rg` | Yes | Yes | Yes | Yes |
 | `fd` | Yes | Yes | Yes | Yes |
 | `just` | Yes | Yes | Yes | Yes |
-| Semble | Likely, via Python/`uvx` | Likely, via Python/`uvx` | Likely, but validate locally | Yes |
 | `mcp-language-server` LSP bridge | Yes, requires Go and language server | Yes, requires Go and language server | Likely, validate PATH/toolchain behavior | Yes |
 | GitNexus | Validate locally | Validate locally | Validate locally | Validate locally |
 | ast-grep | Yes | Yes | Yes | Yes |
@@ -60,13 +58,12 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 
 ## Retrieval Discipline
 
-- Do not make Semble the default search path for every task.
 - Use `rg` first for exact identifiers, filenames, paths, config keys, logs, errors, and literals.
 - Use LSP for definitions, references, call hierarchy, type information, diagnostics, and rename-impact checks.
 - Use ast-grep for syntax-aware structural searches and codemod candidates.
-- Use Semble for conceptual discovery when relevant code may not share obvious names with the query.
-- After Semble returns candidate snippets, verify with `rg`, LSP, targeted file reads, or tests before editing.
-- Do not use Semble for exhaustive proof that something does not exist.
+- Use `mcp__gitnexus__query` for conceptual discovery when relevant code may not share obvious names with the query.
+- After a conceptual query returns candidate snippets, verify with `rg`, LSP, targeted file reads, or tests before editing.
+- Do not use a conceptual query for exhaustive proof that something does not exist. `rg` is what proves absence.
 - Treat token-reduction claims as retrieval-efficiency claims unless validated end-to-end in the local coding workflow.
 
 ## Verification Sources
@@ -74,7 +71,6 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 - Claude Code supports macOS, Windows, Ubuntu, Debian, Alpine, and WSL configurations; native Windows lacks sandboxing while WSL supports it.
 - Claude Code hooks support command hooks, and Node-based hook commands are the most portable cross-platform option.
 - Claude Code MCP tool search is designed to defer tool definitions until needed, which aligns with token-efficiency goals.
-- Semble describes itself as code search for agents and documents Claude Code MCP usage through `uvx --from "semble[mcp]" semble`.
 - RTK documents prebuilt binaries for Windows, Linux, and macOS and is designed to compress command output.
 - ast-grep is installable through cross-platform package managers including npm, pip, cargo, Homebrew, and Scoop.
 - Semgrep documents macOS, Linux, and Windows support, though Windows support should still be validated for team workflows.

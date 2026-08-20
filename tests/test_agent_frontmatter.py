@@ -39,7 +39,7 @@ def frontmatter_fields(path):
 class ReadOnlyAgentDisallowedToolsTests(unittest.TestCase):
     """raven-codebase-cartographer and raven-refactor-reviewer must use a
     disallowedTools denylist, not a tools: allowlist. Both agent prompts
-    instruct the agent to use Semble, LSP, and GitNexus; a tools: allowlist
+    instruct the agent to use LSP and GitNexus; a tools: allowlist
     silently drops whichever of those the list omits, so the agent is told
     to call tools it cannot reach with no error surfaced (#143).
     """
@@ -54,7 +54,7 @@ class ReadOnlyAgentDisallowedToolsTests(unittest.TestCase):
                     "tools",
                     self._fields(agent_name),
                     f"{agent_name} must not carry a tools: allowlist -- it would drop "
-                    "MCP servers (Semble, LSP, GitNexus) the agent prompt depends on",
+                    "MCP servers (LSP, GitNexus) the agent prompt depends on",
                 )
 
     def test_disallowed_tools_covers_every_write_and_rename_operation(self):

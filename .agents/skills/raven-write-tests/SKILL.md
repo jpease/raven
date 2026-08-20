@@ -59,7 +59,7 @@ A guard — a check script, lint rule, CI gate, schema validator, or invariant a
 ## Process
 
 1. Use `rg` for similar test names and fixtures.
-2. Use Semble if the relevant behavior is conceptually described but not obvious.
+2. Use `mcp__gitnexus__query` if the relevant behavior is conceptually described but not obvious.
 3. Add focused coverage for the behavior or regression.
 4. Use RTK for noisy test output when exact raw output is not required.
 

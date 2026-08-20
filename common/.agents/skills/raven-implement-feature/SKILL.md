@@ -10,7 +10,7 @@ description: Use when adding a new feature or behavior to an existing codebase.
 - The task is a one-line edit, docs-only edit, config-only change, or direct bug fix.
 - The user already identified the exact file and no new behavior or integration point is needed.
 
-AGENTS.md Retrieval Discipline and Verification State already govern batching, Semble verification, and reporting what went unverified. This skill adds only what is specific to feature work.
+AGENTS.md Retrieval Discipline and Verification State already govern batching, verifying a semantic hit before acting on it, and reporting what went unverified. This skill adds only what is specific to feature work.
 
 ## Required Constraints
 
@@ -22,7 +22,7 @@ AGENTS.md Retrieval Discipline and Verification State already govern batching, S
 
 ## Process
 
-1. Discover existing patterns with Semble or `rg`. If a similar pattern is already known, use Semble `find_related` on it for a more targeted result than a fresh search.
+1. Discover existing patterns with `rg`, or with `mcp__gitnexus__query` where an index is configured. If a similar pattern is already known, `ast-grep` its shape for a more targeted result than a fresh text search.
 2. Use LSP to inspect relevant definitions and types.
 3. Before picking an integration point, check whether the feature needs symbols from two components that do not already depend on each other. If so, resolve the dependency-direction question first — which side may legally import the other, or whether a new shared location is needed — using GitNexus or the project's dependency graph/build manifest (package config, module map, import-boundary rules). Do this before choosing where the code lives, not while writing it.
 4. Identify the smallest integration point consistent with that direction.

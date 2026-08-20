@@ -433,11 +433,10 @@ paths = [".claude/skills/raven-plan/**"]
         rule = stack / ".claude" / "rules" / "raven-dotfiles.md"
         self.assertTrue(rule.is_file())
 
-        # .mcp.json ships semgrep/semble/gitnexus but intentionally no lsp server.
+        # .mcp.json ships semgrep/gitnexus but intentionally no lsp server.
         mcp = json.loads((stack / ".mcp.json").read_text(encoding="utf-8"))
         servers = mcp["mcpServers"]
         self.assertIn("semgrep", servers)
-        self.assertIn("semble", servers)
         self.assertIn("gitnexus", servers)
         self.assertNotIn("lsp", servers)
 
