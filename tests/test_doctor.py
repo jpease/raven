@@ -23,6 +23,7 @@ from raven_lib.doctor import (
     build_doctor_findings,
     detect_plugin,
     drift_findings,
+    hook_integrity_findings,
     integrity_findings,
     sources_findings,
 )
@@ -940,6 +941,125 @@ class DoctorHookManagerTests(RavenTestCase):
         self.assertEqual(findings[0].id, "doctor.hooks.manager")
         self.assertEqual(findings[0].severity, Severity.INFO)
         self.assertIn("external-hooks-path", findings[0].title)
+
+
+class DoctorHookIntegrityTests(RavenTestCase):
+    """#222 -- doctor stayed silent when Raven's own hooks were missing or dangling."""
+
+    def _git_init(self):
+        subprocess.run(["git", "init", str(self.destination)], capture_output=True, check=True)
+
+    def _write_hook(self, name: str, content: str = "#!/bin/sh\n", executable: bool = True) -> Path:
+        src_dir = self.destination / ".raven" / "git-hooks"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        hook = src_dir / name
+        hook.write_text(content, encoding="utf-8")
+        hook.chmod(0o755 if executable else 0o644)
+        return hook
+
+    def test_empty_when_no_git_hooks_src_dir(self):
+        self._git_init()
+        self.assertEqual(hook_integrity_findings(self.destination), [])
+
+    def test_empty_when_hook_manager_owns_hooks_dir(self):
+        self._git_init()
+        (self.destination / ".husky" / "_").mkdir(parents=True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".husky/_"],
+            capture_output=True,
+            check=True,
+        )
+        self._write_hook("pre-commit")
+        self.assertEqual(hook_integrity_findings(self.destination), [])
+
+    def test_ok_when_hook_correctly_symlinked(self):
+        self._git_init()
+        hook_src = self._write_hook("pre-commit")
+        hooks_dir = self.destination / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        (hooks_dir / "pre-commit").symlink_to(os.path.relpath(hook_src, hooks_dir))
+
+        findings = hook_integrity_findings(self.destination)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].id, "doctor.hooks.pre-commit")
+        self.assertEqual(findings[0].severity, Severity.OK)
+
+    def test_warn_when_hook_missing_from_hooks_dir(self):
+        self._git_init()
+        self._write_hook("pre-commit")
+
+        findings = hook_integrity_findings(self.destination)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, Severity.WARN)
+        self.assertIn("not installed", findings[0].title)
+        self.assertEqual(findings[0].fix, "raven install")
+
+    def test_warn_when_hook_link_dangling(self):
+        self._git_init()
+        self._write_hook("pre-commit")
+        hooks_dir = self.destination / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        (hooks_dir / "pre-commit").symlink_to("../../.raven/git-hooks/does-not-exist")
+
+        findings = hook_integrity_findings(self.destination)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, Severity.WARN)
+        self.assertIn("dangling", findings[0].title)
+
+    def test_warn_when_hook_resolves_elsewhere(self):
+        self._git_init()
+        self._write_hook("pre-commit")
+        hooks_dir = self.destination / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        other = self.destination / "elsewhere.sh"
+        other.write_text("#!/bin/sh\n", encoding="utf-8")
+        other.chmod(0o755)
+        (hooks_dir / "pre-commit").symlink_to(other)
+
+        findings = hook_integrity_findings(self.destination)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, Severity.WARN)
+        self.assertIn("resolves outside", findings[0].title)
+
+    def test_warn_when_hook_replaced_by_regular_file(self):
+        self._git_init()
+        self._write_hook("pre-commit")
+        hooks_dir = self.destination / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        (hooks_dir / "pre-commit").write_text("# not raven's\n", encoding="utf-8")
+
+        findings = hook_integrity_findings(self.destination)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, Severity.WARN)
+        self.assertIn("is not Raven's hook", findings[0].title)
+
+    def test_warn_when_hook_target_not_executable(self):
+        self._git_init()
+        hook_src = self._write_hook("pre-commit", executable=False)
+        hooks_dir = self.destination / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        (hooks_dir / "pre-commit").symlink_to(os.path.relpath(hook_src, hooks_dir))
+
+        findings = hook_integrity_findings(self.destination)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, Severity.WARN)
+        self.assertIn("not executable", findings[0].title)
+
+    def test_included_in_build_doctor_findings(self):
+        self._git_init()
+        self._write_hook("pre-commit")
+        config_dir = self.destination / ".raven"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        findings = build_doctor_findings(self.destination)
+
+        self.assertTrue(any(f.id == "doctor.hooks.pre-commit" for f in findings))
 
 
 # ---------------------------------------------------------------------------

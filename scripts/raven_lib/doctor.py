@@ -29,7 +29,7 @@ from .constants import (
 from .deactivated import classify_deactivated
 from .findings import Finding, Severity
 from .gates import gate_spec_for
-from .git_hooks import detect_hook_manager, hook_manager_guidance
+from .git_hooks import detect_hook_manager, git_hooks_dir, hook_manager_guidance
 from .manifest import ManifestStatus, git_ref, validate_manifest
 from .models import RavenConfig, SourceSpec
 from .orphans import classify_orphans
@@ -714,6 +714,75 @@ def hook_manager_findings(destination: Path) -> list[Finding]:
     ]
 
 
+def hook_integrity_findings(destination: Path) -> list[Finding]:
+    """Report each hook shipped in .raven/git-hooks/ that isn't correctly wired.
+
+    Only runs in the ordinary symlink-install case -- when a hook manager or an
+    external `core.hooksPath` owns the hooks dir, `hook_manager_findings` already
+    covers it, and Raven deliberately leaves its hooks unlinked there. `.git/hooks/`
+    is per-clone and never committed, so a missing or dangling link left this
+    category silent (#222): the guardrails it protects (managed-block integrity,
+    AI-attribution) stop running with nothing in the report to say so.
+    """
+    git_hooks_src = destination / ".raven" / "git-hooks"
+    if not git_hooks_src.is_dir():
+        return []
+    if detect_hook_manager(destination) is not None:
+        return []
+    hooks_dir = git_hooks_dir(destination)
+    if hooks_dir is None:
+        return []
+    return [
+        _hook_link_finding(hook_src, hooks_dir / hook_src.name)
+        for hook_src in sorted(git_hooks_src.iterdir())
+        if not hook_src.name.startswith(".") and hook_src.is_file()
+    ]
+
+
+def _hook_link_finding(hook_src: Path, hook_link: Path) -> Finding:
+    name = hook_src.name
+    base_id = f"doctor.hooks.{name}"
+
+    def warn(title: str, detail: str, fix: str = "raven install") -> Finding:
+        return Finding(
+            id=base_id, severity=Severity.WARN, category=_HOOKS, title=title, detail=detail, fix=fix
+        )
+
+    if not hook_link.is_symlink():
+        if hook_link.exists():
+            return warn(
+                f"{name} is not Raven's hook",
+                f"{hook_link} is a regular file, not a symlink into .raven/git-hooks/",
+                fix=f"remove {hook_link} to let `raven install` manage it, or wire it manually",
+            )
+        return warn(
+            f"{name} not installed", f"{hook_link} is missing, so this guardrail does not run"
+        )
+
+    target = hook_link.readlink()
+    resolved = (hook_link.parent / target).resolve()
+    hook_src_resolved = hook_src.resolve()
+    if resolved != hook_src_resolved:
+        if not hook_link.exists():
+            return warn(
+                f"{name} is a dangling symlink",
+                f"{hook_link} -> {target}, but the target is missing",
+            )
+        return warn(
+            f"{name} resolves outside .raven/git-hooks/",
+            f"{hook_link} -> {resolved}, not {hook_src_resolved}",
+        )
+    if not resolved.stat().st_mode & 0o111:
+        return warn(f"{name} is not executable", f"{resolved} is missing the executable bit")
+    return Finding(
+        id=base_id,
+        severity=Severity.OK,
+        category=_HOOKS,
+        title=f"{name} installed",
+        detail=f"{hook_link} -> {hook_src_resolved}",
+    )
+
+
 def merge_only_tracking_findings(destination: Path) -> list[Finding]:
     """WARN when a merge-only path exists on disk but git does not track it (#216).
 
@@ -975,6 +1044,7 @@ def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> l
     integrity = integrity_findings(destination)
     findings.extend(integrity)
     findings.extend(hook_manager_findings(destination))
+    findings.extend(hook_integrity_findings(destination))
     findings.extend(merge_only_tracking_findings(destination))
     config = load_config(destination)
     if config.exists:
