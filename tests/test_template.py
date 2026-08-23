@@ -448,6 +448,49 @@ paths = [".claude/skills/raven-plan/**"]
         self.assertFalse((stack / "justfile").exists())
         self.assertFalse((stack / ".claude" / "docs" / "raven-dotfiles-quality.md").exists())
 
+    def test_generic_stack_shape(self):
+        # Issue #224 -- the common-only template. `dotfiles` is the same shape
+        # carrying one domain rules file; `generic` carries none, so a repo with
+        # no language stack (static site, docs tree, infra config) can install
+        # the shared guardrails without inheriting gates it cannot run.
+        languages = raven.list_language_templates()
+        self.assertIn("generic", languages)
+
+        stack = REPO_ROOT / "generic"
+
+        # Owns no rules file at all -- that absence is the whole point, and it
+        # is what keeps `generic` out of self-check's context-budget profiles.
+        rules = stack / ".claude" / "rules"
+        owned_rules = [p.name for p in sorted(rules.iterdir()) if not p.is_symlink()]
+        self.assertEqual(owned_rules, [], f"generic must own no rules file, found {owned_rules}")
+        self.assertFalse((rules / "raven-generic.md").exists())
+
+        # Still ships the two shared rules every tree gets, as symlinks.
+        for name in ("raven-prose.md", "raven-security.md"):
+            with self.subTest(rule=name):
+                self.assertTrue((rules / name).is_symlink())
+
+        # .mcp.json ships semgrep/gitnexus and, like dotfiles, no lsp server:
+        # there is no language to point mcp-language-server at.
+        mcp = json.loads((stack / ".mcp.json").read_text(encoding="utf-8"))
+        servers = mcp["mcpServers"]
+        self.assertIn("semgrep", servers)
+        self.assertIn("gitnexus", servers)
+        self.assertNotIn("lsp", servers)
+
+        codex_config = (stack / ".codex" / "config.toml").read_text(encoding="utf-8")
+        self.assertNotIn("mcp_servers.lsp", codex_config)
+
+        # No build system means no gate to run and no starter tool config to seed.
+        self.assertFalse((stack / "justfile").exists())
+        self.assertFalse((stack / ".claude" / "docs" / "raven-generic-quality.md").exists())
+        for starter in STARTER_TOOL_CONFIG_PATHS:
+            with self.subTest(starter=starter):
+                self.assertFalse((stack / starter).exists())
+
+        # Carries no dotfiles-domain content -- the two trees stay distinct.
+        self.assertFalse((stack / ".claude" / "rules" / "raven-dotfiles.md").exists())
+
 
 # ---------------------------------------------------------------------------
 # #177 -- a checkout made without symlink support materializes every template

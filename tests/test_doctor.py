@@ -167,6 +167,18 @@ class DoctorIntegrityTests(RavenTestCase):
         template_finding = ids.get("doctor.install.template")
         self.assertTrue(template_finding is None or template_finding.severity != Severity.ERROR)
 
+    def test_generic_template_is_not_unsupported_error(self):
+        # #224 -- same class as #187's dotfiles case. `generic` ships no gate
+        # tooling by design, so the gate table cannot be the test for whether
+        # the template name is real.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "generic"\n', encoding="utf-8"
+        )
+        ids = self._ids(integrity_findings(self.destination))
+        template_finding = ids.get("doctor.install.template")
+        self.assertTrue(template_finding is None or template_finding.severity != Severity.ERROR)
+
     def test_template_switch_mismatch_is_warn(self):
         # Issue #188 -- config.template differs from the last-applied manifest
         # template, so `raven upgrade` will refuse until
@@ -332,6 +344,22 @@ class DoctorDriftTests(RavenTestCase):
         (self.destination / ".raven").mkdir()
         (self.destination / ".raven" / "config.toml").write_text(
             'schema = 1\ntemplate = "dotfiles"\n', encoding="utf-8"
+        )
+        with (
+            mock.patch(
+                "raven_lib.doctor.classify",
+                return_value=_classification([], local_only=[], will_copy=[]),
+            ),
+            mock.patch("raven_lib.doctor.pending_merge_paths", return_value=[]),
+        ):
+            findings = {f.id: f for f in drift_findings(self.destination)}
+        self.assertFalse(any(f.severity == Severity.ERROR for f in findings.values()))
+
+    def test_generic_template_drift_is_not_error(self):
+        # #224 -- drift must still be evaluated for a gate-less template.
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "generic"\n', encoding="utf-8"
         )
         with (
             mock.patch(

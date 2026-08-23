@@ -13,6 +13,7 @@ LANGUAGE_TREES = [
     "lua",
     "ruby",
     "dotfiles",
+    "generic",
 ]
 
 CANONICAL = REPO_ROOT / "common" / ".claude" / "rules" / "raven-prose.md"

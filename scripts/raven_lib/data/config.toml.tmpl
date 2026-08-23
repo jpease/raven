@@ -9,7 +9,8 @@ schema = 1
 
 # Language template to apply by default when no language is passed on the command line.
 # Supported values are the language directories in the Raven repo, such as python, swift, rust,
-# typescript, and elixir.
+# typescript, and elixir. Use generic for a repo with no language stack: it installs the shared
+# guidance without a rules file, a just gate, or a language server.
 template = "${template}"
 
 # Include the language template README.md when applying Raven.

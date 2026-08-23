@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "semgrep": {
+      "command": "semgrep",
+      "args": [
+        "mcp"
+      ]
+    },
+    "gitnexus": {
+      "command": "gitnexus",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}

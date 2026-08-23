@@ -596,6 +596,15 @@ class TemplateGatingTests(RavenTestCase):
             f"raven-dotfiles not found in entries: {sorted(entries)[:10]}",
         )
 
+    def test_generic_template_excludes_dotfiles_skill(self):
+        # #224 -- generic is dotfiles' shape without its domain content. The
+        # template gate is what keeps the two apart at install time.
+        entries = self._skill_entries("generic")
+        self.assertFalse(
+            any("raven-dotfiles" in e for e in entries),
+            "raven-dotfiles should be excluded when template=generic",
+        )
+
     def test_python_template_excludes_dotfiles_skill(self):
         entries = self._skill_entries("python")
         self.assertFalse(

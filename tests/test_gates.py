@@ -40,6 +40,11 @@ class GatesTests(unittest.TestCase):
         # dotfiles deliberately ships no justfile and therefore no gate spec (v1).
         self.assertNotIn("dotfiles", templates_with_justfile)
         self.assertIsNone(gate_spec_for("dotfiles"))
+        # #224 -- generic is the same case: a repo with no language stack has no
+        # build system, so inventing a `check` recipe would make `just check` and
+        # `raven doctor` report a gate that does not exist.
+        self.assertNotIn("generic", templates_with_justfile)
+        self.assertIsNone(gate_spec_for("generic"))
 
     def test_python_detect_signals_include_pyproject(self):
         spec = gate_spec_for("python")

@@ -1,0 +1,14 @@
+# Raven Codex project configuration for repositories with no language stack.
+# Project-local Codex config loads only after the project .codex layer is trusted.
+
+[agents]
+max_threads = 4
+max_depth = 1
+
+[mcp_servers.semgrep]
+command = "semgrep"
+args = ["mcp"]
+
+[mcp_servers.gitnexus]
+command = "gitnexus"
+args = ["mcp"]

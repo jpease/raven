@@ -650,6 +650,7 @@ class AntipatternRegistrySymlinkTests(unittest.TestCase):
         language_dirs = [
             "dotfiles",
             "elixir",
+            "generic",
             "go",
             "lua",
             "python",

@@ -30,8 +30,10 @@ raven install python
 ```
 
 Replace `python` with `typescript`, `go`, `rust`, `swift`, `elixir`, `lua`,
-`ruby`, or `dotfiles`. Rather not touch `PATH`? Use
-`"$RAVEN_PATH/scripts/raven"` in place of `raven`.
+`ruby`, or `dotfiles`. For a repo with no language stack — a static site, a docs
+tree, an infrastructure repo — use `generic`, which installs the shared guidance
+and no gates. Rather not touch `PATH`? Use `"$RAVEN_PATH/scripts/raven"` in
+place of `raven`.
 
 To change anything before installing — say, the Claude Code adapter but not
 the Codex one — run `raven init <language>` first to write
@@ -134,6 +136,7 @@ Raven-managed paths use `raven-*` wherever possible.
 
 - `common/`: shared policy, skills, subagents, hooks, docs, rules, scripts, and MCP examples.
 - `python/`, `swift/`, `rust/`, `typescript/`, `go/`, `elixir/`, `lua/`, `ruby/`, `dotfiles/`: templates that assemble common guidance with stack-specific Raven rules.
+- `generic/`: the common-only template for repos with no language stack — shared guidance, no rules file, no gate, no language server.
 - `scripts/raven`: executable CLI wrapper for the commands above.
 - `scripts/raven.py` and `scripts/raven_lib/`: Python implementation for the CLI.
 - `tests/`: applicator tests.
