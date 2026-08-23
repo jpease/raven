@@ -623,6 +623,16 @@ class AgentsGuidanceTests(RavenTestCase):
         lowered = self.text.lower()
         self.assertIn("unconnected", lowered)
 
+    def test_api_shape_comes_from_the_installed_package(self):
+        # The retrieval table ranks rg/fd/LSP/GitNexus; the source an agent
+        # actually reaches for when writing a call into a dependency is its own
+        # recall of the API, and a name renamed a major ago still writes
+        # fluently. Nothing else in the tree says to check the installed
+        # version, and the agent writing that call has no skill loaded.
+        lowered = self.text.lower()
+        self.assertIn("installed version", lowered)
+        self.assertIn("installed package", lowered)
+
     def test_every_tool_doctor_grades_is_probed_for_the_roster(self):
         module = load_script_module(
             "raven_tool_check_parity",
