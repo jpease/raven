@@ -80,6 +80,47 @@ class CargoEvidenceTests(unittest.TestCase):
         self.assertIsNone(no_work_evidence("\nrunning 1 test\n", ""))
 
 
+class LuacheckEvidenceTests(unittest.TestCase):
+    # Verified: `luacheck .` over a tree with no Lua file prints a Total line
+    # reading "in 0 files" and exits 0.
+    def test_zero_files_checked_is_evidence(self):
+        self.assertIsNotNone(no_work_evidence("Total: 0 warnings / 0 errors in 0 files\n", ""))
+
+    def test_one_file_checked_is_not_evidence(self):
+        stdout = "Checking ok.lua    OK\n\nTotal: 0 warnings / 0 errors in 1 file\n"
+        self.assertIsNone(no_work_evidence(stdout, ""))
+
+    def test_color_codes_do_not_hide_the_signature(self):
+        # luacheck colors its counts; the runner captures output rather than
+        # attaching a tty, but a tool that colors unconditionally must not slip
+        # past for that reason alone.
+        stdout = "Total: \x1b[1m0\x1b[0m warnings / \x1b[1m0\x1b[0m errors in 0 files\n"
+        self.assertIsNotNone(no_work_evidence(stdout, ""))
+
+
+class MixEvidenceTests(unittest.TestCase):
+    # Verified: `mix test` in a project whose test directory holds no test file
+    # prints this line and exits 0.
+    def test_no_tests_to_run_is_evidence(self):
+        stdout = "Compiling 1 file (.ex)\nGenerated demo app\nThere are no tests to run\n"
+        self.assertIsNotNone(no_work_evidence(stdout, ""))
+
+    def test_a_real_mix_run_is_not_evidence(self):
+        self.assertIsNone(no_work_evidence("Finished in 0.02 seconds\n3 tests, 0 failures\n", ""))
+
+
+class VitestEvidenceTests(unittest.TestCase):
+    # Verified: `vitest run --passWithNoTests` with no test files prints this
+    # line and exits 0. Without the flag vitest exits 1, so only the flag makes
+    # this reachable -- which is exactly the configuration worth catching.
+    def test_pass_with_no_tests_is_evidence(self):
+        stdout = "RUN v4.1.11 /tmp/x\n\nNo test files found, exiting with code 0\n"
+        self.assertIsNotNone(no_work_evidence(stdout, ""))
+
+    def test_a_real_vitest_run_is_not_evidence(self):
+        self.assertIsNone(no_work_evidence("Test Files  3 passed (3)\nTests  12 passed (12)\n", ""))
+
+
 class QuietOutputTests(unittest.TestCase):
     def test_no_output_at_all_is_not_evidence(self):
         # A silent, genuinely passing gate (gofmt -l, tsc --noEmit) must stay OK:

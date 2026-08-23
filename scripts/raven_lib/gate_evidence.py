@@ -15,16 +15,31 @@ ignore the warning. Absence of a signature is never proof that work happened
 -- a silent gate stays OK.
 
 Verified (each exits 0):
-  ruff   -- `ruff check .` over a tree holding no Python file
-  pytest -- `collected 0 items` (pytest itself exits 5; the line only reaches
-            here when a recipe swallowed that code, which is the case worth
-            catching)
-  go     -- `go test ./...` where every package prints `[no test files]`
-  cargo  -- `cargo test` where every test binary prints `running 0 tests`
+  ruff     -- `ruff check .` over a tree holding no Python file
+  pytest   -- `collected 0 items` (pytest itself exits 5; the line only
+              reaches here when a recipe swallowed that code, which is the
+              case worth catching)
+  go       -- `go test ./...` where every package prints `[no test files]`
+  cargo    -- `cargo test` where every test binary prints `running 0 tests`
+  luacheck -- a `Total:` line reading `in 0 files`
+  mix      -- `There are no tests to run`
+  vitest   -- `No test files found, exiting with code 0`, which only `vitest
+              run --passWithNoTests` can reach: plain `vitest run` exits 1,
+              so the flag is what turns the gate green
 
-No detector for pyright: it prints `0 errors, 0 warnings, 0 informations` and
-exits 0 whether it analyzed five hundred files or none, so its output carries
-no evidence either way. A silent typecheck gate is graded OK by default.
+No detector, because the tool's output is the same either way: pyright prints
+`0 errors, 0 warnings, 0 informations` whether it analyzed five hundred files
+or none; `eslint`, `xcrun swift-format lint`, and `mix format
+--check-formatted` print nothing at all on success, matched files or not. A
+silent gate is graded OK.
+
+No detector needed, because the tool already fails: `tsc` exits 2 (TS18003),
+`prettier --check` exits 2, `busted` exits 1, and `go test ./...` over zero
+packages exits 1. `gate_run` reports each of those as a failing gate already.
+
+Unverified, so unwritten: rubocop, rspec, golangci-lint, credo, stylua,
+`swift test`, and jest -- none installed here. Ruby has no coverage at all as
+a result.
 """
 
 from __future__ import annotations
@@ -42,6 +57,12 @@ _GO_NO_TESTS = "[no test files]"
 # A go package that ran tests reports `ok  \t<pkg>\t0.10s` or `(cached)`.
 _GO_PASS_PREFIXES = ("ok ", "ok\t", "--- PASS", "--- FAIL", "FAIL")
 _CARGO_RUNNING_RE = re.compile(r"^running (\d+) tests?$")
+# luacheck reports its file count on a summary line; zero files is a no-op.
+_LUACHECK_TOTAL_RE = re.compile(r"^Total:.*\bin 0 files?$")
+_MIX_NO_TESTS = "There are no tests to run"
+_VITEST_NO_TESTS = "No test files found, exiting with code 0"
+# Some tools color unconditionally rather than only for a tty.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _ruff_saw_no_files(lines: list[str]) -> str | None:
@@ -87,11 +108,38 @@ def _cargo_ran_no_tests(lines: list[str]) -> str | None:
     return None
 
 
+def _luacheck_checked_no_files(lines: list[str]) -> str | None:
+    for line in lines:
+        if _LUACHECK_TOTAL_RE.match(line):
+            return "luacheck checked 0 files"
+    return None
+
+
+def _mix_had_no_tests(lines: list[str]) -> str | None:
+    return "`mix test` reported no tests to run" if _MIX_NO_TESTS in lines else None
+
+
+def _vitest_found_no_tests(lines: list[str]) -> str | None:
+    """Evidence that `--passWithNoTests` turned an empty suite green.
+
+    Without that flag vitest exits 1 on an empty suite, so this line reaching
+    a passing gate means someone asked for the pass.
+    """
+    return (
+        "vitest found no test files and was told to pass anyway"
+        if _VITEST_NO_TESTS in lines
+        else None
+    )
+
+
 _DETECTORS = (
     _ruff_saw_no_files,
     _pytest_collected_nothing,
     _go_found_no_test_files,
     _cargo_ran_no_tests,
+    _luacheck_checked_no_files,
+    _mix_had_no_tests,
+    _vitest_found_no_tests,
 )
 
 
@@ -101,7 +149,7 @@ def no_work_evidence(stdout: str, stderr: str) -> str | None:
     The phrase completes the sentence "`just test` exited 0 but ...", so it
     reads as the observation it is and points at the tool that made it.
     """
-    lines = [line.strip() for line in (stdout + "\n" + stderr).splitlines()]
+    lines = [_ANSI_RE.sub("", line).strip() for line in (stdout + "\n" + stderr).splitlines()]
     for detector in _DETECTORS:
         evidence = detector(lines)
         if evidence is not None:
