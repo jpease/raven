@@ -393,6 +393,37 @@ class PlanSkillTests(unittest.TestCase):
             "expected an explicit no-code rule during the design discussion",
         )
 
+    def test_interrogation_runs_a_pre_mortem_for_pause_and_ask_work(self):
+        # Pause And Ask names the categories to stop at; nothing asked the
+        # planner to name the failure the category stands for before choosing
+        # an approach, which is what makes the stop a judgment instead of a
+        # label match.
+        region = section_region(self.lowered, "## interrogate first")
+
+        self.assertIn(
+            "pre-mortem",
+            region,
+            "expected a pre-mortem question during interrogation",
+        )
+        self.assertIn(
+            "pause and ask",
+            region,
+            "expected the pre-mortem to be scoped to the AGENTS.md Pause And Ask "
+            "categories rather than fired on every plan",
+        )
+
+    def test_alternatives_require_one_generated_by_inverting_a_constraint(self):
+        # Alternatives filled by varying the chosen approach are one design in
+        # three costumes -- the same failure as writing them afterwards, which
+        # the section above already guards.
+        region = section_region(self.lowered, "## durable plan shape")
+
+        self.assertIn(
+            "inverting a constraint",
+            region,
+            "expected at least one alternative to come from inverting a constraint",
+        )
+
     def test_plan_shape_records_rejected_alternatives(self):
         region = section_region(self.lowered, "## durable plan shape")
 

@@ -22,7 +22,7 @@ This complements interactive planning modes. The important output is a project-l
 
 ## Interrogate First
 
-Question the request before writing anything down. Ask what the goal leaves undefined, which constraints are assumed rather than stated, and what result the user would call wrong. Keep asking until the user says the description is complete.
+Question the request before writing anything down. Ask what the goal leaves undefined, which constraints are assumed rather than stated, and what result the user would call wrong. Keep asking until the user says the description is complete. When the work falls in an AGENTS.md Pause And Ask category, add a pre-mortem to that list: assume this shipped and caused an incident, and say what the incident was. No specific answer means the category was recognized as a label rather than as a failure, which is the signal to ask rather than proceed.
 
 Propose the first approach yourself. Reacting to an approach the user proposed inherits its blind spots, and AGENTS.md Safety Rules already governs ratifying it without challenge.
 
@@ -62,7 +62,7 @@ Prose-only criteria such as "the migration is complete" or "tests are passing" a
 ## Follow-Ups
 ```
 
-Fill Alternatives during the design discussion, while the argument is live. Written afterwards it degrades to a list of approaches nobody seriously held, and the reasoning that ruled each one out is already gone.
+Fill Alternatives during the design discussion, while the argument is live. Written afterwards it degrades to a list of approaches nobody seriously held, and the reasoning that ruled each one out is already gone. Generate at least one of them by inverting a constraint rather than by varying the chosen approach — what ships if only one work item can, what the tenth-of-the-work version looks like, what the design would be if the code being changed did not exist. Three designs that differ in a parameter are one design, and a set like that records no decision.
 
 An alternative a reader would actively restore at the code — an obvious-looking simplification the plan rejected for a reason invisible at that line — also earns a comment at the site, per `raven-write-prose` on code comments. The rest stay in the plan: a rejected-alternatives note at every decision site decays into changelog commentary about a design no current reader can observe.
 
