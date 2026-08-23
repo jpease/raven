@@ -121,6 +121,39 @@ class VitestEvidenceTests(unittest.TestCase):
         self.assertIsNone(no_work_evidence("Test Files  3 passed (3)\nTests  12 passed (12)\n", ""))
 
 
+class RubocopEvidenceTests(unittest.TestCase):
+    # Verified: `rubocop` over a tree with no Ruby file prints this summary and
+    # exits 0. With one file it reads "1 file inspected".
+    def test_zero_files_inspected_is_evidence(self):
+        stdout = "Inspecting 0 files\n\n\n0 files inspected, no offenses detected\n"
+        self.assertIsNotNone(no_work_evidence(stdout, ""))
+
+    def test_one_file_inspected_is_not_evidence(self):
+        stdout = "Inspecting 1 file\n.\n\n1 file inspected, no offenses detected\n"
+        self.assertIsNone(no_work_evidence(stdout, ""))
+
+
+class MinitestEvidenceTests(unittest.TestCase):
+    # Verified: a `rake test` run over a test file that defines no test methods
+    # prints this summary and exits 0.
+    def test_zero_runs_is_evidence(self):
+        stdout = "Finished in 0.000156s\n\n0 runs, 0 assertions, 0 failures, 0 errors, 0 skips\n"
+        self.assertIsNotNone(no_work_evidence(stdout, ""))
+
+    def test_a_real_run_is_not_evidence(self):
+        stdout = "Finished in 0.0003s\n\n1 runs, 1 assertions, 0 failures, 0 errors, 0 skips\n"
+        self.assertIsNone(no_work_evidence(stdout, ""))
+
+    def test_one_empty_suite_beside_a_populated_one_is_not_evidence(self):
+        # A Rakefile that runs several suites prints one summary each; a single
+        # empty suite proves nothing about the others.
+        stdout = (
+            "0 runs, 0 assertions, 0 failures, 0 errors, 0 skips\n"
+            "12 runs, 30 assertions, 0 failures, 0 errors, 0 skips\n"
+        )
+        self.assertIsNone(no_work_evidence(stdout, ""))
+
+
 class QuietOutputTests(unittest.TestCase):
     def test_no_output_at_all_is_not_evidence(self):
         # A silent, genuinely passing gate (gofmt -l, tsc --noEmit) must stay OK:

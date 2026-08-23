@@ -26,20 +26,23 @@ Verified (each exits 0):
   vitest   -- `No test files found, exiting with code 0`, which only `vitest
               run --passWithNoTests` can reach: plain `vitest run` exits 1,
               so the flag is what turns the gate green
+  rubocop  -- `0 files inspected, no offenses detected`
+  minitest -- a `0 runs, 0 assertions` summary from `rake test`
 
 No detector, because the tool's output is the same either way: pyright prints
 `0 errors, 0 warnings, 0 informations` whether it analyzed five hundred files
 or none; `eslint`, `xcrun swift-format lint`, and `mix format
---check-formatted` print nothing at all on success, matched files or not. A
-silent gate is graded OK.
+--check-formatted` print nothing at all on success, matched files or not, and
+`rake test` over an empty `test_files` list prints nothing either -- not even
+minitest's summary, so only a test file that defines no tests leaves the
+`0 runs` evidence below. A silent gate is graded OK.
 
 No detector needed, because the tool already fails: `tsc` exits 2 (TS18003),
 `prettier --check` exits 2, `busted` exits 1, and `go test ./...` over zero
 packages exits 1. `gate_run` reports each of those as a failing gate already.
 
-Unverified, so unwritten: rubocop, rspec, golangci-lint, credo, stylua,
-`swift test`, and jest -- none installed here. Ruby has no coverage at all as
-a result.
+Unverified, so unwritten: golangci-lint, credo, stylua, `swift test`, and
+jest -- none installed here.
 """
 
 from __future__ import annotations
@@ -60,6 +63,8 @@ _CARGO_RUNNING_RE = re.compile(r"^running (\d+) tests?$")
 # luacheck reports its file count on a summary line; zero files is a no-op.
 _LUACHECK_TOTAL_RE = re.compile(r"^Total:.*\bin 0 files?$")
 _MIX_NO_TESTS = "There are no tests to run"
+_RUBOCOP_ZERO_RE = re.compile(r"^0 files inspected\b")
+_MINITEST_RUNS_RE = re.compile(r"^(\d+) runs, \d+ assertions\b")
 _VITEST_NO_TESTS = "No test files found, exiting with code 0"
 # Some tools color unconditionally rather than only for a tty.
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -132,6 +137,26 @@ def _vitest_found_no_tests(lines: list[str]) -> str | None:
     )
 
 
+def _rubocop_inspected_no_files(lines: list[str]) -> str | None:
+    for line in lines:
+        if _RUBOCOP_ZERO_RE.match(line):
+            return "rubocop inspected 0 files"
+    return None
+
+
+def _minitest_ran_no_tests(lines: list[str]) -> str | None:
+    """Evidence only when every minitest summary reports zero runs.
+
+    A Rakefile that drives several suites prints one summary each, so a single
+    empty suite says nothing about the rest -- the same rule
+    `_cargo_ran_no_tests` follows for per-binary counts.
+    """
+    counts = [int(m.group(1)) for m in (_MINITEST_RUNS_RE.match(line) for line in lines) if m]
+    if counts and not any(counts):
+        return "the test run executed 0 tests"
+    return None
+
+
 _DETECTORS = (
     _ruff_saw_no_files,
     _pytest_collected_nothing,
@@ -140,6 +165,8 @@ _DETECTORS = (
     _luacheck_checked_no_files,
     _mix_had_no_tests,
     _vitest_found_no_tests,
+    _rubocop_inspected_no_files,
+    _minitest_ran_no_tests,
 )
 
 
