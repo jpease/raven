@@ -140,6 +140,16 @@ gate actually runs. A template that keeps `test` out of `check` deliberately —
 swift does, because an Xcode UI suite is too heavy for every push — reports
 that exclusion as `info` instead of grading it as a defect.
 
+A gate that `--run` executes is graded on its output as well as its exit code.
+A tool that runs, finds nothing to look at, and exits 0 reports the same green
+as one that checked every file — so `ruff` warning that it found no Python
+files, or `go test` reporting `[no test files]` for every package, is graded
+`warn` ("passed without checking anything") rather than `ok`. The warning names
+the evidence and does not change the exit code: an inert gate is wiring to fix,
+not a failing build. Only tools whose no-work output has been verified have a
+detector; `pyright` prints `0 errors, 0 warnings, 0 informations` either way, so
+a silent gate is still graded `ok`.
+
 ```sh
 raven assess          # static wiring checks, runs nothing
 raven assess --run    # execute the lint, format, typecheck, and test gates

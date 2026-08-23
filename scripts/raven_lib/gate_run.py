@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .config import load_config
 from .findings import Finding, Severity
+from .gate_evidence import no_work_evidence
 from .gates import gate_spec_for, recipe_present
 from .runner import Runner, RunResult
 
@@ -20,6 +21,10 @@ def gate_compliance_findings(destination: Path, runner: Runner) -> list[Finding]
     otherwise falls back to the recipe's direct fallback command, if one is
     configured. A recipe with no fallback and no justfile entry is silently
     skipped rather than reported as failing.
+
+    A recipe that exits 0 is graded on its output as well as its code, so a
+    gate that ran and checked nothing does not report the same green as one
+    that checked everything (see `gate_evidence`).
     """
     config = load_config(destination)
     spec = gate_spec_for(config.template) if config.template else None
@@ -104,6 +109,20 @@ def _recipe_finding(recipe: str, command: list[str], result: RunResult) -> Findi
             fix="run the gate manually to investigate",
         )
     if result.ok:
+        evidence = no_work_evidence(result.stdout, result.stderr)
+        if evidence is not None:
+            # A gate that exits 0 having looked at nothing is indistinguishable
+            # from a gate that checked everything, so grade it apart from a real
+            # pass. WARN, not ERROR: the gate is inert, which is a wiring problem
+            # to fix rather than a defect in the code under test.
+            return Finding(
+                id=f"assess.gates.{recipe}",
+                severity=Severity.WARN,
+                category=_GATES,
+                title=f"gate '{recipe}' passed without checking anything",
+                detail=f"`{label}` exited 0 but {evidence}",
+                fix=f"point `{label}` at the files it should cover, then re-run",
+            )
         return Finding(
             id=f"assess.gates.{recipe}",
             severity=Severity.OK,

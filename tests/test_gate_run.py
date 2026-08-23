@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from helpers import RavenTestCase
-from raven_lib.findings import Severity
+from raven_lib.findings import Severity, exit_code
 from raven_lib.gate_run import gate_compliance_findings
 from raven_lib.runner import RunResult
 
@@ -108,6 +108,63 @@ class GateRunTests(RavenTestCase):
         self.assertIn("xcrun swift-format lint", " ".join(calls))
         fmt = next(f for f in findings if f.id == "assess.gates.lint-format")
         self.assertEqual(fmt.severity, Severity.OK)
+
+    def test_gate_that_exits_zero_checking_nothing_warns(self):
+        # ruff on a tree with no Python files prints "All checks passed!" and
+        # exits 0. Grading on the exit code alone reports that as a real pass.
+        self._python_config_with_justfile()
+        runner = _runner(
+            {
+                "just --version": RunResult(True, 0, "", "", True, False),
+                "just lint": RunResult(
+                    True,
+                    0,
+                    "All checks passed!\n",
+                    "warning: No Python files found under the given path(s)\n",
+                    True,
+                    False,
+                ),
+            }
+        )
+        findings = gate_compliance_findings(self.destination, runner)
+
+        lint = next(f for f in findings if f.id == "assess.gates.lint")
+        self.assertEqual(lint.severity, Severity.WARN)
+        self.assertIn("without checking anything", lint.title)
+        self.assertIn("No Python files found", lint.detail)
+        # An inert gate is a wiring problem to fix, not a failing build.
+        self.assertEqual(exit_code(findings), 0)
+
+    def test_other_gates_are_graded_independently(self):
+        # Only the recipe whose own output shows no work is downgraded.
+        self._python_config_with_justfile()
+        runner = _runner(
+            {
+                "just --version": RunResult(True, 0, "", "", True, False),
+                "just test": RunResult(True, 0, "collected 0 items\n", "", True, False),
+            }
+        )
+        findings = gate_compliance_findings(self.destination, runner)
+
+        self.assertEqual(
+            next(f for f in findings if f.id == "assess.gates.test").severity, Severity.WARN
+        )
+        self.assertEqual(
+            next(f for f in findings if f.id == "assess.gates.lint").severity, Severity.OK
+        )
+
+    def test_passing_gate_with_ordinary_output_stays_ok(self):
+        self._python_config_with_justfile()
+        runner = _runner(
+            {
+                "just --version": RunResult(True, 0, "", "", True, False),
+                "just test": RunResult(True, 0, "collected 41 items\n41 passed\n", "", True, False),
+            }
+        )
+        findings = gate_compliance_findings(self.destination, runner)
+        self.assertEqual(
+            next(f for f in findings if f.id == "assess.gates.test").severity, Severity.OK
+        )
 
     def test_successful_just_version_does_not_warn(self):
         self._python_config_with_justfile()
