@@ -30,6 +30,7 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 | "I verified this earlier in the session" | State what changed since, or re-run against the current diff. |
 | "The code explains itself" | Then say that explicitly. Silence is indistinguishable from having no reason. |
 | "I noted the other problems in a comment" | A comment is not a disposition. Each finding gets FOLD IN, FILE, or DROP per `raven-triage-discovery`. |
+| "The gates are green, so nothing needs a human" | A gate checks what someone thought to encode. Name what it cannot: a judgment call, a chosen default, a step that is hard to undo. |
 
 ## Process
 
@@ -41,7 +42,8 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
    makes sense beside this diff belongs in the commit body, not the file.
 4. **Run lint and type-check** on touched files using the project's configured tools. If no tool is configured, note it and skip.
 5. **Disposition discovered work** — enumerate anything found during this unit that falls outside the current issue's acceptance criteria, including findings returned by sub-agents, and assign each one a disposition per `raven-triage-discovery`. "None" must be stated, not implied.
-6. **State the verification summary** before handing off.
+6. **Name what needs human eyes.** Rank the parts of the diff a reviewer should actually read, and say why each one: it is hard to undo, it touches stored data or a public contract, or it rests on a judgment the gates cannot check — a chosen default, a name, a trade-off. Everything else is covered by the checks that just ran. Reviewer attention is the scarce resource; spending it evenly across the diff wastes it.
+7. **State the verification summary** before handing off.
 
 ## Integration with raven-project-lifecycle
 
@@ -56,6 +58,10 @@ On success:
 When gaps exist:
 
 > Gap: [what was not verified and why]. Residual risk: [what remains unchecked].
+
+Always:
+
+> Needs review: [the parts a human should read, most consequential first, each with the reason]. If none: `Needs review: none — the gates cover this diff.`
 
 Always:
 
