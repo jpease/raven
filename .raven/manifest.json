@@ -91,9 +91,9 @@
       "sourceSha256": "6f70a2b60de9ced20fd1bf75fa44c7026490481efe162d08ae247ca4ff80ccc9"
     },
     ".agents/skills/raven-task-complete/SKILL.md": {
-      "installedSha256": "2e2812db782331f526e537dce91dc06741f4c4b500ccb94261cb03d19bdba6d9",
+      "installedSha256": "98ef509fc1201b2abb0f45129eb0296e4857c87ce625373bdeca916e3c2a834e",
       "kind": "file",
-      "sourceSha256": "2e2812db782331f526e537dce91dc06741f4c4b500ccb94261cb03d19bdba6d9"
+      "sourceSha256": "98ef509fc1201b2abb0f45129eb0296e4857c87ce625373bdeca916e3c2a834e"
     },
     ".agents/skills/raven-tool-bootstrap/SKILL.md": {
       "installedSha256": "5f2ccdced291f462b629f1d5fd0b97b2faed4851bceb46771d4b15f0e3b4224c",
@@ -111,9 +111,9 @@
       "sourceSha256": "bc8874180251fb032c040912951d6d0cf0f6532f47f4fdc0c9227a389dd46771"
     },
     ".agents/skills/raven-write-prose/reference/genres.md": {
-      "installedSha256": "2f56ec668e0da5d0baa05c24b53e44db20337b94871011e4d386b98d18089133",
+      "installedSha256": "5fa7534c3299908b9b7b5dc1fba682405454355e6651a1ef422f94ca44d0d054",
       "kind": "file",
-      "sourceSha256": "2f56ec668e0da5d0baa05c24b53e44db20337b94871011e4d386b98d18089133"
+      "sourceSha256": "5fa7534c3299908b9b7b5dc1fba682405454355e6651a1ef422f94ca44d0d054"
     },
     ".agents/skills/raven-write-prose/reference/vale/.vale.ini": {
       "installedSha256": "7708b7adcbe43619416dacefed6cd7552464214013abf6ccdf3d7ecfe20c18b7",
@@ -457,8 +457,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "e76c2e562e01",
+  "ravenVersion": "b2d014c196b1",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-20T21:12:13.688662+00:00"
+  "updatedAt": "2026-08-23T00:27:29.460663+00:00"
 }

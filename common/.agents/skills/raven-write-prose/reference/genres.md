@@ -11,6 +11,7 @@ Read the row for what you are writing before running the tells.
 |---|---|---|---|
 | code comment | why this, over the alternative a reader would otherwise restore | the comment no longer describes the code | heading, bulletification, restating close |
 | docstring | the contract: arguments, raises, guarantees, invariants, one example | drifting into why, or promising behavior the function lacks | heading, bulletification |
+| user-facing string | what the reader has to do or know at this control | narrating edge cases the code already handles | heading, bulletification, restating close, closing flourish |
 | README | what it is, who it is for, why it exists, the first command | becoming reference material | — |
 | tutorial | a first run that works, start to finish | explaining — the lesson stops to teach the model | symmetric hedge, no specifics, bulletification |
 | how-to | one task, for a reader who already knows the subject | teaching something the task does not need | symmetric hedge, no specifics, bulletification, restating close |
@@ -47,7 +48,7 @@ Two mechanical checks answer that question cheaply:
 Then the genre rule: the code states what. The comment states why, and the test
 is whether a reader who deleted the code's non-obvious choice would put it back.
 
-Two failure shapes worth naming:
+Failure shapes worth naming:
 
 **Restating the line below.** `# increment the counter` above `counter += 1`.
 Catch it with the throat-clearing test.
@@ -56,6 +57,14 @@ Catch it with the throat-clearing test.
 the day it is written and decaying from then on, because it describes a bug no
 current reader can observe. This recurs, and can decay further into the first
 kind of error: a comment that no longer matches the code beside it.
+
+**A reference to a document that will not survive.** `// no retry here per AC
+37b in FEATURE.MD`, or a commit subject reading `PLAN-5.1.A.d.42 load bearing
+reassertion`. Plan and task files are working artifacts and get deleted, so the
+comment citing one outlives its referent and points nowhere. Test: does the
+comment name a path outside the source tree? Either state the constraint in the
+comment itself or cite something durable — a commit, an issue, a spec that
+ships.
 
 **The example nobody runs.** A worked example is checked by a doctest runner or
 by nothing, and the difference shows. One repo carried 39 examples under the two
@@ -67,6 +76,14 @@ for a function returning 3, with arithmetic beside it summing to 56 against a
 uncollected examples were already in `>>>` form, which buys nothing where
 nothing collects it. Find out what executes an example before trusting it, and
 verify by hand the ones nothing does.
+
+The changelog comment and the dangling reference share a cause. Both address a
+reader who sat through the change, assuming the diff, the conversation, and the
+files open at the time. Test the referents: strip out every phrase pointing at
+the session that produced it — "the fix above", "the approach we discussed",
+"per the plan" — and check whether a claim is left standing. Reading the file
+cold answers this better than re-reading your own draft does, which is what a
+subagent handed the file and no other context is for.
 
 What good looks like, from the same corpus: a comment naming the exact misfire
 a change would cause, with the value or version that proves it. "Listing GNU's
@@ -89,6 +106,28 @@ raises, what it panics on, and what makes it unsafe get their own section
 rather than a clause in the summary. Rust can hold C-EXAMPLE to every public
 item because rustdoc compiles and runs doc examples as tests by default — the
 same difference "The example nobody runs" above turns on, made structural.
+
+## User-facing strings
+
+Button labels, tooltips, error text, empty states, notification copy. The reader
+never saw the code and holds no model of it, which makes the dominant failure a
+leak: every case the implementation handles gets narrated to someone who was
+never going to worry about it. The reported shape is an "add" button whose label
+explains that a "delete" button exists later — true, and nobody needed telling.
+
+Ask whose problem the sentence describes. A case the code already handles is
+ours, and the reason the string does not have to mention it. What is left for
+the reader is the action and its result.
+
+Length is the other half, and a cap works here where it fails on comments. Ten
+words is a working default for a label, a tooltip, or a message. A comment can
+need twelve to name the value that proves its claim; a tooltip that needs twelve
+is usually describing the implementation.
+
+Two more things do not belong in a string. The word the code uses, where the
+reader uses a different one. And reassurance: "Dynamic scheduling" says what the
+control does, while "Don't worry — dynamic scheduling handles retries for you"
+says what we worried about.
 
 ## READMEs
 

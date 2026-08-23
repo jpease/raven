@@ -35,7 +35,10 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 
 1. **Run the narrowest test** covering the changed behavior — the single test file, test case, or command most directly relevant. If no test exists and one should, note the gap explicitly.
 2. **Check diff scope** — run `git diff` and confirm only intended files changed. Flag unintended files, config drift, or stray hunks.
-3. **Remove debug scaffolding** — scan touched files for temporary additions left during the session: `print`, `console.log`, `dbg!`, `IO.inspect`, `fmt.Println`, temporary `TODO` comments, commented-out blocks.
+3. **Remove debug scaffolding** — scan touched files for temporary additions left during the session: `print`, `console.log`, `dbg!`, `IO.inspect`, `fmt.Println`, temporary `TODO` comments, commented-out blocks. Then list the comment lines
+   the diff adds — `git diff -U0 | rg '^\+[^+]' | rg '#|//|/\*'` — and check each
+   against `raven-write-prose`'s genre rule for comments. A comment that only
+   makes sense beside this diff belongs in the commit body, not the file.
 4. **Run lint and type-check** on touched files using the project's configured tools. If no tool is configured, note it and skip.
 5. **Disposition discovered work** — enumerate anything found during this unit that falls outside the current issue's acceptance criteria, including findings returned by sub-agents, and assign each one a disposition per `raven-triage-discovery`. "None" must be stated, not implied.
 6. **State the verification summary** before handing off.
