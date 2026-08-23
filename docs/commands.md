@@ -140,6 +140,13 @@ gate actually runs. A template that keeps `test` out of `check` deliberately —
 swift does, because an Xcode UI suite is too heavy for every push — reports
 that exclusion as `info` instead of grading it as a defect.
 
+A recipe can also be unreachable in a third way: it runs the tool and throws
+the exit status away. `assess` reports a gate recipe whose body swallows failure
+— `|| true`, just's `-` line prefix, or a trailing `exit 0` — because no run can
+reveal that one, the tool prints its findings and the recipe exits 0 regardless.
+Only the template's declared gate recipes are graded, which is what keeps the
+report-only `audit` recipe, whose `exit 0` is deliberate, out of the check.
+
 A gate that `--run` executes is graded on its output as well as its exit code.
 A tool that runs, finds nothing to look at, and exits 0 reports the same green
 as one that checked every file — so `ruff` warning that it found no Python

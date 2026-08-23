@@ -585,5 +585,129 @@ class AssessBuildTests(RavenTestCase):
         self.assertIn("assess.gates.skipped", {f.id for f in findings})
 
 
+class UnfailableRecipeTests(RavenTestCase):
+    """A gate recipe whose body throws away the tool's exit status.
+
+    The third way a gate stops being a constraint, after a recipe `check`
+    never reaches and a recipe whose tool checks nothing. No output betrays
+    it: the tool prints its findings and the recipe exits 0 anyway.
+    """
+
+    def _assess(self, justfile_body):
+        (self.destination / ".raven").mkdir(exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n', encoding="utf-8"
+        )
+        (self.destination / "justfile").write_text(justfile_body, encoding="utf-8")
+        return wiring_findings(self.destination)
+
+    def _finding(self, findings, recipe):
+        return next(
+            (f for f in findings if f.id == f"assess.wiring.failable.{recipe}"),
+            None,
+        )
+
+    BASE = (
+        "lint:\n    ruff check .\n"
+        "fmt-check:\n    ruff format --check .\n"
+        "typecheck:\n    pyright\n"
+        "test:\n    python -m pytest\n"
+        "check: lint fmt-check typecheck test\n"
+    )
+
+    def test_or_true_makes_a_recipe_unfailable(self):
+        findings = self._assess(
+            self.BASE.replace("    ruff check .\n", "    ruff check . || true\n")
+        )
+        finding = self._finding(findings, "lint")
+        self.assertIsNotNone(finding)
+        assert finding is not None
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIn("|| true", finding.detail)
+
+    def test_just_ignore_error_prefix_makes_a_recipe_unfailable(self):
+        findings = self._assess(
+            self.BASE.replace("    python -m pytest\n", "    -python -m pytest\n")
+        )
+        finding = self._finding(findings, "test")
+        assert finding is not None
+        self.assertEqual(finding.severity, Severity.WARN)
+
+    def test_trailing_exit_zero_makes_a_recipe_unfailable(self):
+        findings = self._assess(self.BASE.replace("    pyright\n", "    pyright; exit 0\n"))
+        finding = self._finding(findings, "typecheck")
+        assert finding is not None
+        self.assertEqual(finding.severity, Severity.WARN)
+
+    def test_an_ordinary_recipe_is_not_flagged(self):
+        findings = self._assess(self.BASE)
+        for recipe in ("lint", "fmt-check", "typecheck", "test"):
+            self.assertIsNone(self._finding(findings, recipe))
+
+    def test_one_swallowed_line_beside_a_failable_one_is_not_flagged(self):
+        # `just` aborts a recipe at the first failing line, so a recipe stays a
+        # real gate as long as any one line can still propagate a failure.
+        findings = self._assess(
+            self.BASE.replace("    ruff check .\n", "    rm -f .cache || true\n    ruff check .\n")
+        )
+        self.assertIsNone(self._finding(findings, "lint"))
+
+    def test_an_echoed_or_true_is_not_a_swallow(self):
+        # Same tokenizer rule `_invokes_just_recipe` follows: a quoted or
+        # printed construct is text, not a command.
+        findings = self._assess(
+            self.BASE.replace(
+                "    ruff check .\n", '    echo "run: ruff check . || true"\n    ruff check .\n'
+            )
+        )
+        self.assertIsNone(self._finding(findings, "lint"))
+
+    def test_a_commented_out_swallow_is_not_a_swallow(self):
+        findings = self._assess(
+            self.BASE.replace(
+                "    ruff check .\n", "    # ruff check . || true\n    ruff check .\n"
+            )
+        )
+        self.assertIsNone(self._finding(findings, "lint"))
+
+    def test_the_audit_recipe_is_never_graded(self):
+        # Every template justfile ships an `audit` recipe that ends in `exit 0`
+        # on purpose: it is report-only and deliberately absent from
+        # GATE_DATA.recipes. Grading only declared gate recipes keeps it out.
+        findings = self._assess(
+            self.BASE
+            + "audit:\n    #!/usr/bin/env sh\n    osv-scanner scan source -r .\n    exit 0\n"
+        )
+        self.assertIsNone(self._finding(findings, "audit"))
+
+    def test_a_shebang_recipe_ending_in_exit_zero_is_unfailable(self):
+        findings = self._assess(
+            self.BASE.replace(
+                "    python -m pytest\n",
+                "    #!/usr/bin/env sh\n    python -m pytest\n    exit 0\n",
+            )
+        )
+        finding = self._finding(findings, "test")
+        assert finding is not None
+        self.assertEqual(finding.severity, Severity.WARN)
+
+    def test_a_shebang_recipe_with_set_e_is_not_flagged(self):
+        # Under `set -e` an earlier failure exits the script non-zero, so the
+        # last line no longer decides whether the recipe can fail.
+        findings = self._assess(
+            self.BASE.replace(
+                "    python -m pytest\n",
+                "    #!/usr/bin/env sh\n    set -e\n    python -m pytest\n    echo done\n",
+            )
+        )
+        self.assertIsNone(self._finding(findings, "test"))
+
+    def test_a_missing_recipe_is_not_graded_as_unfailable(self):
+        # `assess.wiring.recipe.lint` already reports the absence; a second
+        # finding about a recipe that does not exist would be noise.
+        findings = self._assess(self.BASE.replace("lint:\n    ruff check .\n", ""))
+        self.assertIsNone(self._finding(findings, "lint"))
+
+
 if __name__ == "__main__":
     unittest.main()

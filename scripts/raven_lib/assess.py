@@ -237,6 +237,112 @@ def _recipe_graph(text: str) -> dict[str, set[str]]:
     return graph
 
 
+# just's per-line body prefixes: `@` quiets the echo, `-` ignores that line's
+# exit status. Both may appear, in either order.
+_LINE_PREFIX_CHARS = "@-"
+# The right-hand side of a `||` that turns any failure into success.
+_ALWAYS_TRUE = frozenset({"true", ":"})
+
+
+def _line_tokens(line: str) -> list[str]:
+    """Tokenize one recipe body line, keeping shell operators as their own tokens.
+
+    Unlike `_command_segments`, which drops the operators after splitting on
+    them, this keeps `||` and `;` -- telling `cmd || true` from `cmd && true`
+    is the whole point here. posix-mode shlex also drops `#` comments and
+    keeps a quoted string as one token, so a printed or commented-out
+    construct is never read as a real one (the rule `_invokes_just_recipe`
+    already follows for `just check`).
+    """
+    try:
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        return list(lexer)
+    except ValueError:
+        return line.split()
+
+
+def _swallows_failure(tokens: list[str], *, ignore_prefix: bool) -> str | None:
+    """Name the construct that discards this line's exit status, or None."""
+    if ignore_prefix:
+        return "the `-` prefix"
+    for index, token in enumerate(tokens[:-1]):
+        if token == "||" and tokens[index + 1] in _ALWAYS_TRUE:
+            return f"`|| {tokens[index + 1]}`"
+    if tokens[-2:] == ["exit", "0"]:
+        return "`exit 0`"
+    return None
+
+
+def _recipe_body(text: str, recipe: str) -> list[str] | None:
+    """The body lines of one recipe, or None when the justfile does not declare it.
+
+    Same walk `_recipe_graph` uses: the body is every line after the header
+    until an unindented non-blank line, so a blank line inside a body does not
+    end it.
+    """
+    body: list[str] | None = None
+    for line in text.splitlines():
+        header = _RECIPE_HEADER_RE.match(line)
+        if header:
+            if body is not None:
+                return body
+            if header.group("name") == recipe:
+                body = []
+            continue
+        if body is None:
+            continue
+        if line.strip() and not line[:1].isspace():
+            return body
+        body.append(line)
+    return body
+
+
+def _unfailable_reason(body: list[str]) -> str | None:
+    """Name why this recipe body can never report a failure, or None if it can.
+
+    Two shapes, because `just` runs a body two different ways. An ordinary
+    recipe runs each line as its own command and aborts at the first failure,
+    so it stays a real gate as long as *any* line can still fail -- only a
+    body where every line is swallowed is inert. A shebang recipe runs as one
+    script, where the last command decides the status; `set -e` puts every
+    earlier line back in play, so a body carrying it is left alone.
+    """
+    commands: list[tuple[list[str], bool]] = []
+    shebang = False
+    for index, line in enumerate(body):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if not commands and not shebang and index == _first_content_index(body):
+            shebang = stripped.startswith("#!")
+            if shebang:
+                continue
+        rest = stripped.lstrip(_LINE_PREFIX_CHARS)
+        prefix = stripped[: len(stripped) - len(rest)]
+        tokens = _line_tokens(rest)
+        if not tokens:
+            continue
+        commands.append((tokens, "-" in prefix))
+    if not commands:
+        return None
+    if shebang:
+        if any(tokens[:2] == ["set", "-e"] for tokens, _ in commands):
+            return None
+        tokens, ignore_prefix = commands[-1]
+        return _swallows_failure(tokens, ignore_prefix=ignore_prefix)
+    reasons = [_swallows_failure(t, ignore_prefix=p) for t, p in commands]
+    return reasons[0] if all(reasons) else None
+
+
+def _first_content_index(body: list[str]) -> int:
+    """Index of the first non-blank body line, or -1 when the body is empty."""
+    for index, line in enumerate(body):
+        if line.strip():
+            return index
+    return -1
+
+
 def _recipes_reachable_from(text: str, root: str) -> set[str] | None:
     """Every recipe `just <root>` ends up running, or None when `root` is undeclared."""
     graph = _recipe_graph(text)
@@ -348,6 +454,29 @@ def wiring_findings(destination: Path) -> list[Finding]:
                 fix=None if present else f"add a `{recipe}:` recipe to the justfile",
             )
         )
+
+    # A recipe that runs the tool but throws away its exit status is a third
+    # way a gate stops being a constraint, and the only one no run can reveal:
+    # the tool prints its findings and the recipe exits 0 regardless. Graded
+    # over the template's declared gate recipes only, which is what keeps the
+    # report-only `audit` recipe every template ships -- it ends in `exit 0`
+    # deliberately -- out of this check.
+    if justfile_read:
+        for recipe in spec.recipes:
+            body = _recipe_body(text, recipe)
+            reason = _unfailable_reason(body) if body is not None else None
+            if reason is None:
+                continue
+            findings.append(
+                Finding(
+                    id=f"assess.wiring.failable.{recipe}",
+                    severity=Severity.WARN,
+                    category=_WIRING,
+                    title=f"gate recipe '{recipe}' cannot fail",
+                    detail=f"`{recipe}` discards its exit status via {reason}",
+                    fix=f"remove {reason} from the `{recipe}:` recipe",
+                )
+            )
 
     # A declared gate recipe is not yet a gate. Both hooks run `just check`, so
     # a recipe `check` never reaches is one no commit and no push can fail on --
