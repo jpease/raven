@@ -121,6 +121,23 @@ def _flattened_install_findings(destination: Path, manifest: dict) -> list[Findi
     ]
 
 
+def _shipped_relatives(manifest: dict) -> set[str]:
+    """Every relative path this install recorded, or an empty set when unrecorded."""
+    files = manifest.get("files")
+    return set(files) if isinstance(files, dict) else set()
+
+
+def _shipped_component_path(shipped: set[str], relative: str) -> bool:
+    """True when the manifest records ``relative`` itself or anything beneath it.
+
+    A `COMPONENT_PATHS` entry names either a file (`.mcp.json`) or a directory
+    (`.claude/docs`), while the manifest records individual files, so a
+    directory matches by prefix.
+    """
+    prefix = relative + "/"
+    return relative in shipped or any(key.startswith(prefix) for key in shipped)
+
+
 def integrity_findings(destination: Path) -> list[Finding]:
     """Check that a Raven install's own bookkeeping (config, template) is coherent."""
     # Checked before the config gate: a flattened Raven checkout is broken
@@ -192,10 +209,21 @@ def integrity_findings(destination: Path) -> list[Finding]:
     findings.append(_manifest_finding(manifest_status))
     findings.extend(_flattened_install_findings(destination, manifest_status.manifest))
 
+    shipped = _shipped_relatives(manifest_status.manifest)
     for name, enabled in config.components.items():
         if not enabled:
             continue
         paths = COMPONENT_PATHS.get(name, [])
+        if shipped:
+            # Grade a component against what THIS install shipped, not against
+            # the union of every template's paths. `COMPONENT_PATHS` lists all
+            # of them, so a template shipping no starter tool config could
+            # never satisfy `tool_configs` and reported a correct install as
+            # incomplete, with a fix that had no file to restore (#226).
+            # Falling back to the unscoped list when the manifest records no
+            # files keeps a genuinely broken install reportable, rather than
+            # reading an empty record as "this template ships nothing".
+            paths = [rel for rel in paths if _shipped_component_path(shipped, rel)]
         if paths and not any(_any_exists(destination / rel) for rel in paths):
             findings.append(
                 Finding(

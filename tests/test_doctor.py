@@ -1572,5 +1572,77 @@ class LaneClaimsTableTests(unittest.TestCase):
         self.assertEqual(sorted(lanes), sorted(set(lanes)))
 
 
+class ComponentScopingTests(RavenTestCase):
+    """A component check must grade what this template ships, not the union of all of them.
+
+    `COMPONENT_PATHS["tool_configs"]` lists every template's starter tool
+    config, so a template shipping none can never satisfy the check and
+    reports a correct install as incomplete with a fix that restores nothing
+    (#226).
+    """
+
+    def _install(self, language):
+        ns = argparse.Namespace(
+            destination=str(self.destination),
+            language=language,
+            args=None,
+            overrides=[],
+            dry_run=False,
+            include_readme=False,
+            adopt_claude_symlink=False,
+            platform=None,
+        )
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(raven.cmd_install(ns), 0)
+
+    def _tool_configs_finding(self):
+        return next(
+            (
+                f
+                for f in integrity_findings(self.destination)
+                if f.id == "doctor.install.component.tool_configs"
+            ),
+            None,
+        )
+
+    def test_template_shipping_no_tool_config_is_not_reported_absent(self):
+        self._install("dotfiles")
+        self.assertIsNone(self._tool_configs_finding())
+
+    def test_template_shipping_a_tool_config_is_satisfied_by_it(self):
+        self._install("python")
+        self.assertTrue((self.destination / "pyproject.toml").exists())
+        self.assertIsNone(self._tool_configs_finding())
+
+    def test_a_deleted_tool_config_is_still_reported(self):
+        # The scoping must not silence the case the check exists for: this
+        # template did ship one, and it is gone.
+        self._install("python")
+        (self.destination / "pyproject.toml").unlink()
+        finding = self._tool_configs_finding()
+        self.assertIsNotNone(finding)
+        assert finding is not None
+        self.assertEqual(finding.severity, Severity.WARN)
+
+    def test_the_detail_names_only_the_paths_this_template_ships(self):
+        self._install("python")
+        (self.destination / "pyproject.toml").unlink()
+        finding = self._tool_configs_finding()
+        assert finding is not None
+        self.assertIn("pyproject.toml", finding.detail)
+        self.assertNotIn(".rubocop.yml", finding.detail)
+
+    def test_an_empty_manifest_keeps_the_unscoped_check(self):
+        # A manifest with no file record is a broken install, not a template
+        # that ships nothing; scoping there would silence every component.
+        self._install("python")
+        (self.destination / "pyproject.toml").unlink()
+        manifest = self.destination / ".raven" / "manifest.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["files"] = {}
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        self.assertIsNotNone(self._tool_configs_finding())
+
+
 if __name__ == "__main__":
     unittest.main()
