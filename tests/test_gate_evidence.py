@@ -154,6 +154,58 @@ class MinitestEvidenceTests(unittest.TestCase):
         self.assertIsNone(no_work_evidence(stdout, ""))
 
 
+class CredoEvidenceTests(unittest.TestCase):
+    # Verified: `mix credo` over a project with no source file prints
+    # "No files found!" and an Analysis line reading "on 0 files", exit 0.
+    def test_zero_files_analyzed_is_evidence(self):
+        stdout = (
+            "No files found!\n"
+            "Analysis took 0.00 seconds (0.00s to load, 0.00s running 57 checks on 0 files)\n"
+            "0 mods/funs, found no issues.\n"
+        )
+        self.assertIsNotNone(no_work_evidence(stdout, ""))
+
+    def test_files_analyzed_is_not_evidence(self):
+        stdout = (
+            "Analysis took 0.00 seconds (0.00s to load, 0.00s running 57 checks on 2 files)\n"
+            "2 mods/funs, found no issues.\n"
+        )
+        self.assertIsNone(no_work_evidence(stdout, ""))
+
+    def test_zero_mods_funs_alone_is_not_evidence(self):
+        # credo prints "0 mods/funs" whenever the files it read define no
+        # module or function, including files it genuinely analyzed.
+        stdout = (
+            "Analysis took 0.00 seconds (0.00s to load, 0.00s running 57 checks on 1 file)\n"
+            "0 mods/funs, found no issues.\n"
+        )
+        self.assertIsNone(no_work_evidence(stdout, ""))
+
+
+class JestEvidenceTests(unittest.TestCase):
+    # Verified: `jest --passWithNoTests` with no tests prints this and exits 0.
+    # Plain `jest` prints "exiting with code 1" and exits 1.
+    def test_pass_with_no_tests_is_evidence(self):
+        self.assertIsNotNone(no_work_evidence("No tests found, exiting with code 0\n", ""))
+
+    def test_the_failing_form_is_left_to_the_exit_code(self):
+        self.assertIsNone(no_work_evidence("No tests found, exiting with code 1\n", ""))
+
+
+class SwiftTestFalsePositiveTests(unittest.TestCase):
+    def test_xctest_zero_executed_beside_a_swift_testing_pass_is_not_evidence(self):
+        # `swift test` on a package using swift-testing prints XCTest's
+        # "Executed 0 tests" *and* swift-testing's real result in the same run.
+        # Reading the first line as no-work would flag a healthy suite, which
+        # is why no detector matches it.
+        stdout = (
+            "Test Suite 'All tests' passed at 2026-08-23 11:27:01.052.\n"
+            "\t Executed 0 tests, with 0 failures (0 unexpected) in 0.000 seconds\n"
+            "Test run with 1 test in 0 suites passed after 0.001 seconds.\n"
+        )
+        self.assertIsNone(no_work_evidence(stdout, ""))
+
+
 class QuietOutputTests(unittest.TestCase):
     def test_no_output_at_all_is_not_evidence(self):
         # A silent, genuinely passing gate (gofmt -l, tsc --noEmit) must stay OK:

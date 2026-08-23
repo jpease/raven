@@ -28,21 +28,32 @@ Verified (each exits 0):
               so the flag is what turns the gate green
   rubocop  -- `0 files inspected, no offenses detected`
   minitest -- a `0 runs, 0 assertions` summary from `rake test`
+  credo    -- `No files found!` and an Analysis line reading `on 0 files`
+  jest     -- `No tests found, exiting with code 0`, the `--passWithNoTests`
+              form; plain `jest` says `code 1` and exits 1
 
 No detector, because the tool's output is the same either way: pyright prints
 `0 errors, 0 warnings, 0 informations` whether it analyzed five hundred files
-or none; `eslint`, `xcrun swift-format lint`, and `mix format
---check-formatted` print nothing at all on success, matched files or not, and
+or none; `eslint`, `xcrun swift-format lint`, `mix format
+--check-formatted`, `stylua --check`, and `gofmt -l .` print nothing at all on
+success, matched files or not, and
 `rake test` over an empty `test_files` list prints nothing either -- not even
 minitest's summary, so only a test file that defines no tests leaves the
 `0 runs` evidence below. A silent gate is graded OK.
 
 No detector needed, because the tool already fails: `tsc` exits 2 (TS18003),
-`prettier --check` exits 2, `busted` exits 1, and `go test ./...` over zero
-packages exits 1. `gate_run` reports each of those as a failing gate already.
+`prettier --check` exits 2, `busted` exits 1, `golangci-lint run` exits 5 (`no
+go files to analyze`), `swift test` over an empty `Tests` directory exits 1
+(`no tests found`), and `go test ./...` over zero packages exits 1. `gate_run`
+reports each of those as a failing gate already.
 
-Unverified, so unwritten: golangci-lint, credo, stylua, `swift test`, and
-jest -- none installed here.
+One string that looks like evidence and is not: `swift test` on a package
+using swift-testing prints XCTest's `Executed 0 tests, with 0 failures` in the
+same run where swift-testing reports the tests it actually ran. Matching it
+would flag a healthy suite, so nothing does -- see the test pinning that.
+
+Everything the templates run has now been probed against a tree with nothing
+to check. Nothing is left unverified.
 """
 
 from __future__ import annotations
@@ -65,6 +76,10 @@ _LUACHECK_TOTAL_RE = re.compile(r"^Total:.*\bin 0 files?$")
 _MIX_NO_TESTS = "There are no tests to run"
 _RUBOCOP_ZERO_RE = re.compile(r"^0 files inspected\b")
 _MINITEST_RUNS_RE = re.compile(r"^(\d+) runs, \d+ assertions\b")
+# credo's Analysis line: "... running 57 checks on 0 files)". The file count is
+# the reliable half -- its "0 mods/funs" line also appears for files it did read.
+_CREDO_ZERO_RE = re.compile(r"\bchecks on 0 files\b")
+_JEST_NO_TESTS = "No tests found, exiting with code 0"
 _VITEST_NO_TESTS = "No test files found, exiting with code 0"
 # Some tools color unconditionally rather than only for a tty.
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -137,6 +152,22 @@ def _vitest_found_no_tests(lines: list[str]) -> str | None:
     )
 
 
+def _credo_analyzed_no_files(lines: list[str]) -> str | None:
+    for line in lines:
+        if _CREDO_ZERO_RE.search(line):
+            return "credo analyzed 0 files"
+    return None
+
+
+def _jest_found_no_tests(lines: list[str]) -> str | None:
+    """Evidence that `--passWithNoTests` turned an empty jest suite green.
+
+    Plain `jest` prints the same sentence ending in `code 1` and exits 1, so
+    only the flag brings this line to a passing gate.
+    """
+    return "jest found no tests and was told to pass anyway" if _JEST_NO_TESTS in lines else None
+
+
 def _rubocop_inspected_no_files(lines: list[str]) -> str | None:
     for line in lines:
         if _RUBOCOP_ZERO_RE.match(line):
@@ -167,6 +198,8 @@ _DETECTORS = (
     _vitest_found_no_tests,
     _rubocop_inspected_no_files,
     _minitest_ran_no_tests,
+    _credo_analyzed_no_files,
+    _jest_found_no_tests,
 )
 
 
