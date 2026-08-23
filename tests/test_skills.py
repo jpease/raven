@@ -187,6 +187,21 @@ class ImplementFeatureSkillTests(unittest.TestCase):
             "raven-implement-feature/SKILL.md should stay skimmable, under ~50 lines",
         )
 
+    def test_hand_rolling_a_solved_category_requires_a_stated_reason(self):
+        # raven-debloat gates the opposite move (bespoke code -> library) behind
+        # Pause And Ask three times over. Nothing asked for a reason in this
+        # direction, which left hand-rolling the silent default.
+        lowered = self.content.lower()
+
+        self.assertIn("hand-rolls", lowered)
+        self.assertIn("why not the library", lowered)
+        self.assertIn(
+            "not an approval gate",
+            lowered,
+            "expected the stated reason to be distinguished from raven-debloat's "
+            "Pause And Ask gate on adding a dependency",
+        )
+
     def test_scope_ceiling_is_declared_before_the_implementation_step(self):
         lowered = self.content.lower()
         ceiling_index = lowered.find("scope ceiling")

@@ -30,6 +30,7 @@ AGENTS.md Retrieval Discipline and Verification State already govern batching, v
    - the observable behavior change, in one or two sentences
    - the acceptance criteria you will verify against
    - the scope ceiling: what you will not touch, build, or generalize
+   - when the change hand-rolls something in a category with a standard solution (crypto, auth, date/time arithmetic, parsing, retry and backoff), one sentence on why not the library. This is a stated reason, not an approval gate — adding a dependency stays gated by AGENTS.md Pause And Ask, and the point is that hand-rolling stops being the silent default.
 6. Add or update tests for the behavior change before implementing, per `raven-write-tests`.
 7. Run them and confirm they fail for the behavior they assert, per `raven-write-tests`.
 8. Implement using existing conventions.
