@@ -30,7 +30,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=608106c42c1fab9493f27ce248dbcf2a633c87cb1ec1eb5d74cc0185a150c293 -->
+<!-- RAVEN:BEGIN sha256=a051121dbb40a322da9137b38fdf6f50ea54e19df7c0816e0525d0ead2b65090 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -116,6 +116,8 @@ Pause and ask before work that is ambiguous or could create durable harm:
 ## Safety Rules
 
 - Do not run destructive commands without explicit approval.
+- Before offering to run a destructive command, check whether approval can lift the block. A hard deny cannot be granted in chat.
+- Do not substitute an equivalent-effect command when a guardrail blocks one. A block denies the outcome, not the command string: report it and hand the command to the user.
 - Do not modify secrets, credentials, generated files, lockfiles, or migrations unless required.
 - Do not add dependencies without explaining why.
 - Never hide uncertainty; state confidence and unresolved assumptions.

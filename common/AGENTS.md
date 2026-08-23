@@ -83,6 +83,8 @@ Pause and ask before work that is ambiguous or could create durable harm:
 ## Safety Rules
 
 - Do not run destructive commands without explicit approval.
+- Before offering to run a destructive command, check whether approval can lift the block. A hard deny cannot be granted in chat.
+- Do not substitute an equivalent-effect command when a guardrail blocks one. A block denies the outcome, not the command string: report it and hand the command to the user.
 - Do not modify secrets, credentials, generated files, lockfiles, or migrations unless required.
 - Do not add dependencies without explaining why.
 - Never hide uncertainty; state confidence and unresolved assumptions.

@@ -195,7 +195,12 @@ def validate_context_budget() -> None:
     """
     # always-loaded tier — raise thresholds only with deliberate justification
     THRESHOLDS: dict[str, int] = {
-        "common/AGENTS.md": 1110,
+        # Raised 1110 -> 1140 deliberately: two Safety Rules bullets on what to
+        # do when a guardrail blocks a command. A downstream agent hit a hard
+        # deny on `git reset --hard`, asked for approval a deny cannot grant,
+        # then reached the same outcome with an allowed equivalent. Only
+        # always-loaded guidance is in context at the moment that choice is made.
+        "common/AGENTS.md": 1140,
         # language-specific rules files
         "python/.claude/rules/raven-python.md": 760,
         "elixir/.claude/rules/raven-elixir.md": 890,
