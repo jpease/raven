@@ -49,7 +49,7 @@ Use these rules when writing project-specific agent instructions:
 
 - Write operational instructions for agents, not broad human-facing documentation.
 - Place guidance at the most specific directory that fully owns it; move it upward only when genuinely shared.
-- Keep instructions concise. Every always-loaded line must earn its place.
+- Keep instructions concise. Every always-loaded line must earn its place by citing the failure it was observed to prevent — a correction someone had to make, a guardrail an agent worked around — never a failure it might prevent.
 - Use descriptive, search-friendly prose and stable names instead of brittle path-heavy references.
 - Keep content text-only and easy to search. Avoid diagrams, binary content, and formatting that interferes with parsing.
 - Prefer default-no: if most tasks in the scope do not need the information, move it to a skill, scoped rule, or reference document.

@@ -193,7 +193,11 @@ def validate_context_budget() -> None:
     Every always-loaded rules file must have a threshold entry -- a new one
     with no entry fails loudly rather than silently going unbudgeted.
     """
-    # always-loaded tier — raise thresholds only with deliberate justification
+    # Always-loaded tier. Raise a threshold only for a failure someone observed -- a
+    # correction that had to be made, a guardrail an agent worked around -- and record
+    # that event in the comment beside the raise. An anticipated failure mode reads as
+    # justification too, which is how a context window fills with plausible guidance
+    # nobody measured. Same standard as `.claude/docs/raven-namespace.md`.
     THRESHOLDS: dict[str, int] = {
         # Raised 1110 -> 1140 deliberately: two Safety Rules bullets on what to
         # do when a guardrail blocks a command. A downstream agent hit a hard

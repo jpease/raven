@@ -521,5 +521,29 @@ class ProseStyleValidationTests(unittest.TestCase):
         )
 
 
+class EvidenceStandardTests(unittest.TestCase):
+    """What earns a line in the always-loaded tier, and what earns a raise.
+
+    Both files said "must earn its place" / "deliberate justification" without
+    saying what counts, so an anticipated failure mode and an observed
+    correction both read as justification. The two raises recorded in
+    THRESHOLDS cite events that happened; the standard is now written where the
+    next raise will be made.
+    """
+
+    def test_threshold_comment_requires_an_observed_failure(self):
+        source = (REPO_ROOT / "scripts" / "self-check.py").read_text(encoding="utf-8")
+        header = source[: source.index("THRESHOLDS: dict[str, int]")]
+
+        self.assertIn("observed", header.lower())
+
+    def test_namespace_doc_states_what_earns_an_always_loaded_line(self):
+        doc = (REPO_ROOT / "common" / ".claude" / "docs" / "raven-namespace.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("observed to prevent", doc)
+
+
 if __name__ == "__main__":
     unittest.main()
