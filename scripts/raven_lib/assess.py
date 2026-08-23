@@ -34,6 +34,17 @@ _TRANSPARENT_WRAPPERS = frozenset({"exec", "command", "env", "sudo", "time", "ni
 
 _ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
+# A just recipe header sits at column 0 and every body line is indented, so the
+# pattern is anchored there: `recipe_present`'s looser `^\s*` tolerance would
+# read a body line holding a colon (`echo "note: x"`) as a recipe declaration,
+# which would corrupt the dependency graph below. `(?!=)` keeps `alias t := x`
+# and `set shell := [...]` out.
+_RECIPE_HEADER_RE = re.compile(r"^@?(?P<name>[A-Za-z0-9_-]+)(?:\s+[^:=]*?)?:(?!=)(?P<deps>.*)$")
+_RECIPE_NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
+# `just <recipe>` in a recipe body -- the other way one recipe reaches another
+# when it is not declared as a dependency.
+_JUST_CALL_RE = re.compile(r"\bjust\s+(?:-\S+\s+)*([A-Za-z][A-Za-z0-9_-]*)")
+
 
 def _command_segments(text: str) -> list[list[str]]:
     """Split hook text into simple-command segments of tokens.
@@ -198,6 +209,49 @@ def _hook_finding(
     )
 
 
+def _recipe_graph(text: str) -> dict[str, set[str]]:
+    """Map each justfile recipe to the recipes it reaches.
+
+    A recipe reaches its declared dependencies plus anything its body runs as
+    `just <recipe>`. Tokens inside a parameterized dependency (`(build mode)`)
+    are collected too; a name that matches no recipe only adds an unreachable
+    node, and callers ask about membership rather than reading the set back.
+    """
+    graph: dict[str, set[str]] = {}
+    current: str | None = None
+    for line in text.splitlines():
+        header = _RECIPE_HEADER_RE.match(line)
+        if header:
+            name = header.group("name")
+            current = name
+            graph.setdefault(name, set()).update(_RECIPE_NAME_RE.findall(header.group("deps")))
+            continue
+        if current is None:
+            continue
+        if line.strip() and not line[:1].isspace():
+            # An unindented non-header line (a setting, an alias, an export)
+            # ends the body; anything after it belongs to no recipe.
+            current = None
+            continue
+        graph[current].update(_JUST_CALL_RE.findall(line))
+    return graph
+
+
+def _recipes_reachable_from(text: str, root: str) -> set[str] | None:
+    """Every recipe `just <root>` ends up running, or None when `root` is undeclared."""
+    graph = _recipe_graph(text)
+    if root not in graph:
+        return None
+    seen: set[str] = set()
+    queue = [root]
+    while queue:
+        for dep in graph.get(queue.pop(), ()):
+            if dep not in seen:
+                seen.add(dep)
+                queue.append(dep)
+    return seen
+
+
 def wiring_findings(destination: Path) -> list[Finding]:
     """Check that pre-commit/pre-push hooks invoke the template's canonical gate recipes."""
     config = load_config(destination)
@@ -245,6 +299,7 @@ def wiring_findings(destination: Path) -> list[Finding]:
 
     justfile = destination / "justfile"
     text = ""
+    justfile_read = False
     if not justfile.is_file():
         findings.append(
             Finding(
@@ -259,6 +314,7 @@ def wiring_findings(destination: Path) -> list[Finding]:
     else:
         try:
             text = justfile.read_text(encoding="utf-8")
+            justfile_read = True
             findings.append(
                 Finding(
                     id="assess.wiring.justfile",
@@ -290,6 +346,66 @@ def wiring_findings(destination: Path) -> list[Finding]:
                 title=f"gate recipe '{recipe}' {'defined' if present else 'missing'}",
                 detail=f"justfile recipe `{recipe}`",
                 fix=None if present else f"add a `{recipe}:` recipe to the justfile",
+            )
+        )
+
+    # A declared gate recipe is not yet a gate. Both hooks run `just check`, so
+    # a recipe `check` never reaches is one no commit and no push can fail on --
+    # the state a suite is in when every recipe above grades OK and nothing
+    # enforces any of them.
+    declared = [recipe for recipe in spec.recipes if recipe_present(text, recipe)]
+    reachable = _recipes_reachable_from(text, "check") if justfile_read else set()
+    if justfile_read and reachable is None:
+        findings.append(
+            Finding(
+                id="assess.wiring.check",
+                severity=Severity.WARN,
+                category=_WIRING,
+                title="no `check` recipe",
+                detail="the pre-push hook runs `just check`, which this justfile does not declare",
+                fix="add a `check:` recipe depending on the gate recipes",
+            )
+        )
+    elif justfile_read and declared and reachable is not None:
+        ungated = [recipe for recipe in declared if recipe not in reachable]
+        findings.append(
+            Finding(
+                id="assess.wiring.check",
+                severity=Severity.WARN if ungated else Severity.OK,
+                category=_WIRING,
+                title=f"`check` runs {len(declared) - len(ungated)} of "
+                f"{len(declared)} declared gate recipes",
+                detail=(
+                    "declared but never run by `check`: " + ", ".join(f"`{r}`" for r in ungated)
+                    if ungated
+                    else "every declared gate recipe runs at push time"
+                ),
+                fix=(
+                    "add " + ", ".join(f"`{r}`" for r in ungated) + " to the `check:` dependencies"
+                    if ungated
+                    else None
+                ),
+            )
+        )
+    # `test` outside the template's gate recipes is a deliberate exclusion (the
+    # swift template keeps an Xcode UI suite off every push). Report it anyway:
+    # a repo whose tests cannot fail a push should know that from the report
+    # rather than from the first regression that ships.
+    if (
+        justfile_read
+        and "test" not in spec.recipes
+        and recipe_present(text, "test")
+        and reachable is not None
+        and "test" not in reachable
+    ):
+        findings.append(
+            Finding(
+                id="assess.wiring.check.test",
+                severity=Severity.INFO,
+                category=_WIRING,
+                title="`test` is defined but the push gate never runs it",
+                detail=f"template {config.template!r} keeps `test` out of `check` by design",
+                fix=None,
             )
         )
 

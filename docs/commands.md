@@ -133,6 +133,13 @@ Grades the project against its template's quality-gate expectations: justfile
 recipe wiring, tool-config signals, the pre-commit hook, and template fit.
 Static checks only unless you pass `--run`.
 
+A declared recipe is graded separately from a gated one. Both hooks run `just
+check`, so a recipe `check` never reaches is one no commit and no push can fail
+on, and `assess.wiring.check` reports how many declared gate recipes the push
+gate actually runs. A template that keeps `test` out of `check` deliberately —
+swift does, because an Xcode UI suite is too heavy for every push — reports
+that exclusion as `info` instead of grading it as a defect.
+
 ```sh
 raven assess          # static wiring checks, runs nothing
 raven assess --run    # execute the lint, format, typecheck, and test gates

@@ -9,14 +9,17 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from helpers import RavenTestCase
+from helpers import REPO_ROOT, RavenTestCase
 from raven_lib.assess import (
     _invokes_just_recipe,
+    _recipe_graph,
+    _recipes_reachable_from,
     build_assess_findings,
     template_fit_findings,
     wiring_findings,
 )
 from raven_lib.findings import Severity
+from raven_lib.gates import load_gate_specs, recipe_present
 
 
 class InvokesJustRecipeTests(unittest.TestCase):
@@ -192,6 +195,148 @@ class AssessWiringTests(RavenTestCase):
         findings = wiring_findings(self.destination)
         match = next(f for f in findings if f.id == "assess.wiring.config.pyproject.toml")
         self.assertEqual(match.severity, Severity.ERROR)
+
+
+class RecipeGraphTests(unittest.TestCase):
+    """Unit tests for the justfile recipe graph `check` reachability is read from.
+
+    The header pattern is anchored at column 0 because a recipe body line can
+    hold a colon; if such a line parsed as a declaration, the recipe it sits in
+    would lose the rest of its body and `check` would look like it reaches less
+    than it does.
+    """
+
+    def test_dependencies_and_body_invocations_both_count(self):
+        text = "check: check-fast\n    just test\ncheck-fast: lint\nlint:\n    ruff check .\n"
+        self.assertEqual(_recipes_reachable_from(text, "check"), {"check-fast", "lint", "test"})
+
+    def test_absent_root_is_none_not_an_empty_set(self):
+        # None ("no `check` recipe") and set() ("`check` runs nothing") are
+        # different findings, so the caller must be able to tell them apart.
+        self.assertIsNone(_recipes_reachable_from("lint:\n    ruff check .\n", "check"))
+        self.assertEqual(_recipes_reachable_from("check:\n    true\n", "check"), set())
+
+    def test_body_colons_and_assignments_are_not_recipe_headers(self):
+        text = (
+            'set shell := ["bash", "-c"]\n'
+            "alias t := test\n"
+            "# check: not a recipe\n"
+            "check: lint\n"
+            '    echo "note: still the check body"\n'
+            "    just test\n"
+        )
+        graph = _recipe_graph(text)
+        self.assertEqual(sorted(graph), ["check"])
+        self.assertEqual(graph["check"], {"lint", "test"})
+
+
+class AssessCheckReachTests(RavenTestCase):
+    """A declared gate recipe that `just check` never reaches enforces nothing.
+
+    `assess.wiring.recipe.<name>` grades whether a recipe exists; both git hooks
+    run `just check`, so existence alone leaves a suite that no commit and no
+    push can fail on graded as fully wired.
+    """
+
+    def _config(self, template: str) -> None:
+        (self.destination / ".raven").mkdir(exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_text(
+            f'schema = 1\ntemplate = "{template}"\n', encoding="utf-8"
+        )
+
+    def _justfile(self, text: str) -> None:
+        (self.destination / "justfile").write_text(text, encoding="utf-8")
+
+    _PYTHON_RECIPES = (
+        "lint:\n    ruff check .\n"
+        "fmt-check:\n    ruff format --check .\n"
+        "typecheck:\n    pyright\n"
+        "test:\n    python -m pytest\n"
+    )
+
+    def test_every_declared_gate_recipe_reachable_is_ok(self):
+        self._config("python")
+        self._justfile(
+            self._PYTHON_RECIPES + "check-fast: lint fmt-check\ncheck: check-fast typecheck test\n"
+        )
+        match = next(f for f in wiring_findings(self.destination) if f.id == "assess.wiring.check")
+        self.assertEqual(match.severity, Severity.OK)
+        self.assertIn("4 of 4", match.title)
+
+    def test_declared_but_ungated_recipe_warns_and_is_named(self):
+        self._config("python")
+        self._justfile(self._PYTHON_RECIPES + "check-fast: lint fmt-check\ncheck: check-fast\n")
+        match = next(f for f in wiring_findings(self.destination) if f.id == "assess.wiring.check")
+        self.assertEqual(match.severity, Severity.WARN)
+        self.assertIn("2 of 4", match.title)
+        self.assertIn("`test`", match.detail)
+        self.assertIn("`typecheck`", match.detail)
+
+    def test_missing_check_recipe_warns(self):
+        self._config("python")
+        self._justfile(self._PYTHON_RECIPES)
+        match = next(f for f in wiring_findings(self.destination) if f.id == "assess.wiring.check")
+        self.assertEqual(match.severity, Severity.WARN)
+        self.assertIn("check", match.title)
+
+    def test_no_justfile_reports_nothing_here(self):
+        # `assess.wiring.justfile` already warns; a second finding saying the
+        # missing file declares no `check` is noise, not information.
+        self._config("python")
+        ids = {f.id for f in wiring_findings(self.destination)}
+        self.assertNotIn("assess.wiring.check", ids)
+
+    def test_test_excluded_by_the_template_is_info_not_warn(self):
+        # The swift template keeps `test` out of `check` deliberately (an Xcode
+        # UI suite is too heavy for every push), so the exclusion is reported
+        # rather than graded as a defect -- but it is reported.
+        self._config("swift")
+        self._justfile(
+            "lint-format:\n    xcrun swift-format lint .\n"
+            "lint:\n    swiftlint lint\n"
+            "build:\n    swift build\n"
+            "test:\n    swift test\n"
+            "check-fast: lint-format lint\ncheck: check-fast build\n"
+        )
+        ids = {f.id: f for f in wiring_findings(self.destination)}
+        self.assertEqual(ids["assess.wiring.check"].severity, Severity.OK)
+        self.assertEqual(ids["assess.wiring.check.test"].severity, Severity.INFO)
+
+    def test_gated_test_reports_no_exclusion_finding(self):
+        self._config("python")
+        self._justfile(
+            self._PYTHON_RECIPES + "check-fast: lint fmt-check\ncheck: check-fast typecheck test\n"
+        )
+        ids = {f.id for f in wiring_findings(self.destination)}
+        self.assertNotIn("assess.wiring.check.test", ids)
+
+
+class ShippedJustfileGateReachTests(unittest.TestCase):
+    """Every shipped template must gate the gate recipes it declares.
+
+    This is the check the assess finding performs, run against the templates
+    Raven itself ships: a template whose `check` stops reaching `test` would
+    otherwise ship a repo whose tests cannot fail a push.
+    """
+
+    def test_every_gate_recipe_is_reachable_from_check(self):
+        specs = load_gate_specs()
+        # A walk that finds nothing passes every per-template assertion below,
+        # so the count is asserted against the roster's floor first.
+        self.assertGreaterEqual(len(specs), 8, sorted(specs))
+        for template, spec in sorted(specs.items()):
+            justfile = REPO_ROOT / template / "justfile"
+            with self.subTest(template=template):
+                self.assertTrue(justfile.is_file(), f"{template} ships no justfile")
+                text = justfile.read_text(encoding="utf-8")
+                reachable = _recipes_reachable_from(text, "check")
+                self.assertIsNotNone(reachable, f"{template}/justfile declares no `check` recipe")
+                ungated = [
+                    recipe
+                    for recipe in spec.recipes
+                    if recipe_present(text, recipe) and recipe not in (reachable or set())
+                ]
+                self.assertEqual(ungated, [], f"{template}: `check` never runs {ungated}")
 
 
 class AssessHookPathTests(RavenTestCase):
