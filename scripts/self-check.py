@@ -198,6 +198,14 @@ def validate_context_budget() -> None:
     # that event in the comment beside the raise. An anticipated failure mode reads as
     # justification too, which is how a context window fills with plausible guidance
     # nobody measured. Same standard as `.claude/docs/raven-namespace.md`.
+    #
+    # Removals carry the same bar, and this gate cannot enforce it: it only ever
+    # says "too big", so a raise needs documented evidence while a trim needs
+    # none. Deleting always-loaded guidance is the cheapest way to pass, and the
+    # deleted line is the one no longer in context when an agent needs it. Say
+    # what the removed guidance was for and why it stopped earning its place.
+    # Lower the threshold in the same commit when a trim opens real headroom --
+    # a limit nothing is near has stopped constraining anything.
     THRESHOLDS: dict[str, int] = {
         # Raised 1110 -> 1140 deliberately: two Safety Rules bullets on what to
         # do when a guardrail blocks a command. A downstream agent hit a hard
