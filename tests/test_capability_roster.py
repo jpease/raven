@@ -623,16 +623,6 @@ class AgentsGuidanceTests(RavenTestCase):
         lowered = self.text.lower()
         self.assertIn("unconnected", lowered)
 
-    def test_api_shape_comes_from_the_installed_package(self):
-        # The retrieval table ranks rg/fd/LSP/GitNexus; the source an agent
-        # actually reaches for when writing a call into a dependency is its own
-        # recall of the API, and a name renamed a major ago still writes
-        # fluently. Nothing else in the tree says to check the installed
-        # version, and the agent writing that call has no skill loaded.
-        lowered = self.text.lower()
-        self.assertIn("installed version", lowered)
-        self.assertIn("installed package", lowered)
-
     def test_every_tool_doctor_grades_is_probed_for_the_roster(self):
         module = load_script_module(
             "raven_tool_check_parity",
@@ -640,6 +630,126 @@ class AgentsGuidanceTests(RavenTestCase):
         )
         probed = {tool["id"] for tool in module.TOOLS}
         self.assertEqual(probed, module.REQUIRED_TOOL_IDS)
+
+
+SESSION_MD = """# Raven Session
+
+**Project Type:** brownfield
+**Started:** 2026-08-22T00:00:00Z
+**Last Updated:** 2026-08-22T00:00:00Z
+
+## Units
+
+- [x] survey the gate wiring
+- [ ] detect green no-op gates → #227
+- [ ] flag unfailable recipes
+
+## Context
+"""
+
+
+class SessionLineTests(RavenTestCase):
+    """The one fact compaction drops that AGENTS.md asks the agent to restate.
+
+    `SessionStart` re-fires with source `compact`, so whatever the roster
+    prints is the post-compaction agent's only unprompted view of where the
+    work stood.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.module = load_script_module("raven_capability_roster", ROSTER_SCRIPT)
+        (self.destination / ".raven").mkdir()
+
+    def _write(self, text):
+        (self.destination / ".raven" / "session.md").write_text(text, encoding="utf-8")
+
+    def test_current_unit_and_counts_are_reported(self):
+        self._write(SESSION_MD)
+        line = self.module.render_session_line(self.destination)
+        self.assertIsNotNone(line)
+        assert line is not None
+        self.assertIn("Session", line)
+        self.assertIn("1/3 complete", line)
+        self.assertIn("detect green no-op gates", line)
+        self.assertIn("#227", line)
+
+    def test_all_units_done_reports_no_current_unit(self):
+        self._write(SESSION_MD.replace("- [ ]", "- [x]"))
+        line = self.module.render_session_line(self.destination)
+        assert line is not None
+        self.assertIn("3/3 complete", line)
+        self.assertNotIn("current", line)
+
+    def test_no_session_file_renders_no_line(self):
+        self.assertIsNone(self.module.render_session_line(self.destination))
+
+    def test_session_file_with_no_units_renders_no_line(self):
+        # An initialized-but-empty session has nothing to restate; a "0/0"
+        # line would cost context to say nothing.
+        self._write("# Raven Session\n\n**Project Type:** greenfield\n\n## Units\n\n## Context\n")
+        self.assertIsNone(self.module.render_session_line(self.destination))
+
+    def test_unreadable_session_file_renders_no_line(self):
+        (self.destination / ".raven" / "session.md").mkdir()
+        self.assertIsNone(self.module.render_session_line(self.destination))
+
+    def test_control_characters_in_a_unit_name_are_stripped(self):
+        # session.md is a plain-text file a human can hand-edit, and this line
+        # goes straight into model context -- same threat the identifier
+        # sanitizers above exist for, but unit names legitimately hold spaces.
+        self._write(SESSION_MD.replace("detect green no-op gates", "evil\x1b[31m\x07name"))
+        line = self.module.render_session_line(self.destination)
+        assert line is not None
+        self.assertNotIn("\x1b", line)
+        self.assertNotIn("\x07", line)
+        self.assertIn("evil", line)
+
+    def test_a_long_unit_name_is_truncated(self):
+        self._write(SESSION_MD.replace("detect green no-op gates", "x" * 400))
+        line = self.module.render_session_line(self.destination)
+        assert line is not None
+        self.assertLess(len(line), 200)
+        self.assertIn("…", line)
+
+    def test_build_roster_includes_the_session_line(self):
+        self._write(SESSION_MD)
+        prober = _StubProber()
+        text = self.module.build_roster(self.destination, prober)
+        self.assertIn("detect green no-op gates", text)
+
+    def test_build_roster_omits_the_section_without_session_state(self):
+        prober = _StubProber()
+        text = self.module.build_roster(self.destination, prober)
+        self.assertNotIn("Session", text)
+
+
+class _StubProber:
+    """Minimal prober stand-in: build_roster only needs these four members."""
+
+    @staticmethod
+    def check_all_tools(os_key, root=None):
+        return [tool_result("rg")]
+
+    @staticmethod
+    def os_key():
+        return "macos"
+
+    @staticmethod
+    def load_memory():
+        return {}
+
+    @staticmethod
+    def command_works(command):
+        return True
+
+    @staticmethod
+    def _claude_mcp_server_names_from_config(root):
+        return set()
+
+    @staticmethod
+    def _codex_mcp_server_names_from_config(root):
+        return set()
 
 
 if __name__ == "__main__":

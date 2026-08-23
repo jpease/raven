@@ -28,10 +28,14 @@ from pathlib import Path
 from typing import Any
 
 PROBER_FILENAME = "raven-tool-check.py"
+SESSION_FILENAME = "raven-session.py"
 INDENT = "  "
 LABEL_WIDTH = 9
 
 SAFE_IDENTIFIER = re.compile(r"\A[A-Za-z0-9._-]{1,64}\Z")
+# Control characters, including the ESC that starts an ANSI escape sequence.
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+MAX_FREE_TEXT = 60
 SAFE_SHA = re.compile(r"\A[0-9a-f]{7,40}\Z")
 MAX_ROSTER_BYTES = 4096
 
@@ -40,24 +44,30 @@ TRACKER_CLIS = {"github": "gh", "gitlab": "glab"}
 GIT_TIMEOUT_SECONDS = 5
 
 
+def _load_sibling(module_name: str, path: Path) -> Any:
+    """Import a Raven script from an explicit path under a private module name.
+
+    The loader is passed explicitly so an extensionless or hyphenated script
+    loads too, which ``spec_from_file_location`` alone will not do.
+    """
+    spec = importlib.util.spec_from_file_location(
+        module_name, path, loader=SourceFileLoader(module_name, str(path))
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_prober(scripts_dir: Path) -> Any:
     """Import the sibling tool-check script for its probe primitives.
 
     Uses ``__file__``-relative resolution, never ``sys.argv[0]``: the Codex
     launcher invokes hooks through ``runpy.run_path`` with a relative path.
     """
-    path = scripts_dir / PROBER_FILENAME
-    spec = importlib.util.spec_from_file_location(
-        "raven_tool_check_for_roster",
-        path,
-        loader=SourceFileLoader("raven_tool_check_for_roster", str(path)),
-    )
-    if spec is None or spec.loader is None:
-        raise ImportError(f"could not load prober from {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return _load_sibling("raven_tool_check_for_roster", scripts_dir / PROBER_FILENAME)
 
 
 def load_raven_config(scripts_dir: Path) -> Any:
@@ -73,17 +83,7 @@ def load_raven_config(scripts_dir: Path) -> Any:
     without needing a full install alongside it).
     """
     path = scripts_dir.parent.parent / ".raven" / "git-hooks" / "lib" / "raven_config.py"
-    spec = importlib.util.spec_from_file_location(
-        "raven_config_for_roster",
-        path,
-        loader=SourceFileLoader("raven_config_for_roster", str(path)),
-    )
-    if spec is None or spec.loader is None:
-        raise ImportError(f"could not load raven_config from {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return _load_sibling("raven_config_for_roster", path)
 
 
 def resolve_repo_root_for_payload(payload: dict | None, start: Path) -> Path | None:
@@ -159,6 +159,68 @@ def sanitize_sha(value: object) -> str | None:
     if not isinstance(value, str):
         return None
     return value if SAFE_SHA.match(value) else None
+
+
+def sanitize_free_text(value: object) -> str | None:
+    """Clean a free-text field for the roster, or None when nothing survives.
+
+    Unlike `sanitize_identifier`, which drops anything unexpected, this keeps
+    the value: a unit name legitimately holds spaces and punctuation, and
+    dropping it would hide the state the line exists to report. Control
+    characters go (an ANSI sequence would paint the roster), runs of
+    whitespace collapse to one space, and the result is capped so a long name
+    cannot crowd out the rest of the roster.
+    """
+    if not isinstance(value, str):
+        return None
+    cleaned = " ".join(_CONTROL_CHARS.sub("", value).split())
+    if not cleaned:
+        return None
+    if len(cleaned) > MAX_FREE_TEXT:
+        cleaned = cleaned[:MAX_FREE_TEXT].rstrip() + "…"
+    return cleaned
+
+
+def read_session_units(root: Path, scripts_dir: Path) -> list | None:
+    """Parse `.raven/session.md` into unit dicts, or None when there is nothing to report.
+
+    Reuses `raven-session.py`'s own parser as a sibling module rather than
+    re-deriving session.md's line shapes here -- the same reason this script
+    loads the prober instead of copying its probes. Any failure (no session,
+    unreadable file, a `raven-session.py` that will not import) yields None:
+    a SessionStart hook that cannot read optional state must stay quiet.
+    """
+    try:
+        text = (root / ".raven" / "session.md").read_text(encoding="utf-8")
+        manager = _load_sibling("raven_session_for_roster", scripts_dir / SESSION_FILENAME)
+        units = manager._parse_session(text)["units"]
+    except Exception:  # noqa: BLE001 -- optional state; see main()'s boundary
+        return None
+    return units or None
+
+
+def render_session_line(root: Path, scripts_dir: Path | None = None) -> str | None:
+    """Render the in-progress unit of work, or None when no session is tracked.
+
+    Compaction keeps the narrative of a session and drops its bookkeeping, yet
+    `AGENTS.md` asks the agent to restate the current goal after compaction.
+    `SessionStart` re-fires with source `compact`, so this line is where that
+    fact comes back -- and it costs nothing in a repo that tracks no session.
+    """
+    units = read_session_units(root, scripts_dir or Path(__file__).resolve().parent)
+    if units is None:
+        return None
+    done = sum(1 for unit in units if unit.get("done"))
+    value = f"{done}/{len(units)} complete"
+    pending = [unit for unit in units if not unit.get("done")]
+    if pending:
+        name = sanitize_free_text(pending[0].get("name"))
+        issue = sanitize_identifier(str(pending[0].get("issue") or "").lstrip("#"))
+        if name:
+            value += f" · current: {name}"
+            if issue:
+                value += f" → #{issue}"
+    return _line("Session", value)
 
 
 def cap_roster(text: str) -> str:
@@ -323,6 +385,7 @@ def render_roster(
     tracker_line: str | None = None,
     gates_line: str | None = None,
     index_line: str | None = None,
+    session_line: str | None = None,
 ) -> str:
     """Format the roster. Pure: no I/O, no probing."""
     available = [r for r in tool_results if r.get("available")]
@@ -344,6 +407,8 @@ def render_roster(
         lines.append(tracker_line)
     if index_line:
         lines.append(index_line)
+    if session_line:
+        lines.append(session_line)
 
     if not do_not_remind:
         if required_absent:
@@ -407,6 +472,7 @@ def build_roster(root: Path | None, prober: Any) -> str:
     tracker_line = None
     gates_line = None
     index_line = None
+    session_line = None
     if root is not None:
         keys = read_config_keys(root)
         template = keys["template"]
@@ -424,6 +490,7 @@ def build_roster(root: Path | None, prober: Any) -> str:
         if meta is not None:
             verdict = index_staleness(root, meta, run_git=lambda args: run_git(root, args))
             index_line = render_index_line(meta, verdict)
+        session_line = render_session_line(root)
 
     return render_roster(
         probed_on=probed_on,
@@ -434,6 +501,7 @@ def build_roster(root: Path | None, prober: Any) -> str:
         tracker_line=tracker_line,
         gates_line=gates_line,
         index_line=index_line,
+        session_line=session_line,
     )
 
 
