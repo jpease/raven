@@ -16,6 +16,7 @@ description: Use for renames, shared abstraction changes, API changes, moved cod
 - Capture reference or dependency evidence before editing public or shared symbols.
 - Before editing a shared constant or list, also check for an import-free guarded duplicate: GitNexus impact analysis only walks CALLS/IMPORTS/EXTENDS edges, so a copy kept in sync by convention and a test — not an import, because the two files can't import each other — has no edge for it to find. Grep near the symbol for duplicate-language markers (`mirrors`, `duplicates`, `pinned against`, `guarded against drift`), and `rg` its literal *value* rather than its name, since the copy rarely reuses the name.
 - Use syntax-aware tools for broad mechanical changes when available.
+- Add a required new member to every implementer before adding it to the shared interface, protocol, or abstract base — stash the declaration if you drafted it first. Declaration-first leaves the tree uncompilable for the whole sweep, so every test run in between returns the same build or import error whatever else the edit broke. `raven-write-tests` covers finding the implementers; this is the order to edit them in.
 - Verify textual leftovers with `rg` after renames, moves, or API changes. Do not scope the sweep with extension filters (`--include`/`-t`/`-g '*.ext'`) — extensionless build and config files (`Dockerfile`, `Makefile`, `Rakefile`, `Fastfile`, `Vagrantfile`, `Jenkinsfile`) are invisible to them and are common places for a stale reference to survive.
 - Stop and ask or delegate when ownership, references, or blast radius remain unclear after targeted retrieval.
 - Do not reformat unrelated files.
@@ -29,6 +30,7 @@ description: Use for renames, shared abstraction changes, API changes, moved cod
 | "It's a small rename, nothing will break" | Small renames break silently in strings, configs, and docs. Verify with `rg` after. |
 | "I already have blast-radius context from earlier" | Re-check if the target, scope, or codebase changed since. |
 | "No tests cover this path, so it's probably safe" | Missing coverage raises risk — note the gap, don't treat silence as a pass. |
+| "I'll add the interface member first, then fix the implementers" | That leaves the tree uncompilable for the whole sweep. Every test run in between reports the same error whatever else you broke. |
 | "GitNexus impact analysis found no callers, so nothing depends on this" | A call graph only sees CALLS/IMPORTS/EXTENDS edges. A constant duplicated across a boundary that can't import back has no edge to find — grep for duplicate-language markers and `rg` the literal value too. |
 
 ## Process
@@ -36,10 +38,11 @@ description: Use for renames, shared abstraction changes, API changes, moved cod
 1. Identify public surface area.
 2. Use LSP references before editing. If similar implementations may exist elsewhere, use `ast-grep` for the pattern's shape or `rg` for its distinctive literals to find them too.
 3. Use GitNexus (`mcp__gitnexus__impact`) for dependency and blast-radius analysis. For a shared constant or list, that only walks CALLS/IMPORTS/EXTENDS edges — also grep near it for duplicate-language markers (`mirrors`, `duplicates`, `pinned against`, `guarded against drift`) and `rg` its literal value, since an import-free textual duplicate has no edge to walk.
-4. Use ast-grep or Semgrep for mechanical syntax-aware rewrites.
-5. Use `rg` to verify no textual leftovers.
-6. Run targeted tests.
-7. Summarize contract changes.
+4. Take a rollback point before the first broad edit — commit the green state, or stash it when the change is not ready to be a commit. Backing out of a direction that fails then costs one command rather than a hand reconstruction.
+5. Use ast-grep or Semgrep for mechanical syntax-aware rewrites.
+6. Use `rg` to verify no textual leftovers.
+7. Run targeted tests.
+8. Summarize contract changes.
 
 ## When To Stop
 
