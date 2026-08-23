@@ -30,7 +30,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=aedf4d95778300be8f525ea0d2b0e9b7a2e44391581b65b93d5ca4c2764e5813 -->
+<!-- RAVEN:BEGIN sha256=a051121dbb40a322da9137b38fdf6f50ea54e19df7c0816e0525d0ead2b65090 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -55,7 +55,6 @@ Use the cheapest adequate source before reading full files.
 | Exact string, symbol, config key, or error | `rg` |
 | File discovery by name, type, or extension | `fd` |
 | Definition, references, type info, diagnostics | LSP |
-| Third-party API shape or signature | LSP against the installed package |
 | "How does X work?" / conceptual flow discovery | `mcp__gitnexus__query` |
 | Blast-radius before editing a symbol | `mcp__gitnexus__impact` |
 | Syntax-aware pattern or mechanical rewrite | ast-grep or Semgrep |
@@ -65,7 +64,6 @@ Use the cheapest adequate source before reading full files.
 - `rg` skips hidden files and directories by default. Raven's own content sits under `.agents/` and `.claude/`, so `rg pattern common/` finds nothing and reads as clean. Use `--hidden` or `git grep` when searching shipped guidance.
 - Batch independent reads, searches, and inspections per turn.
 - Skeleton-first: for a large or unfamiliar file, get a symbol map (LSP document symbols, or `ast-grep`/`rg`) before reading, then read only the ranges you need — read a full file only when it is small or the whole structure matters.
-- Take a third-party API's shape from the installed version, not from memory. Confirm the symbol with LSP against the package in the environment before calling it — a name renamed a major ago still writes fluently from training and fails at runtime.
 - Return concise findings before editing.
 - When two literal `rg` guesses miss, switch tools rather than iterating term variations. `mcp__gitnexus__query` is the conceptual-discovery step where an index is configured — it returns execution paths grouped by process, not just file locations. It is not proof: verify with `rg`, LSP, targeted reads, or tests before changing code.
 - GitNexus tools are spelled `mcp__gitnexus__<tool>`. Vendor-generated GitNexus content uses shorter labels (`impact()`, `gitnexus_query`) for the same tools — read them as the MCP tools, and take parameter names from the tool schema, not from the skill prose. No MCP grant? A subagent with Bash but no MCP access can reach the same operations via the CLI: `gitnexus query|context|impact|trace|detect-changes`.

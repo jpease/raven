@@ -17,6 +17,7 @@ AGENTS.md Retrieval Discipline and Verification State already govern batching, v
 - Identify the existing pattern or integration point before editing.
 - Prefer existing abstractions and conventions.
 - Do not introduce dependencies or new architecture patterns by default.
+- Take a third-party API's shape from the installed version, not from memory. Confirm the symbol with LSP against the installed package before calling it — a name renamed a major ago still writes fluently from training and fails at runtime.
 - Run at least one relevant verification command when the project has an applicable test or check.
 - Work that exceeds the stated scope ceiling requires stopping and asking per AGENTS.md Pause And Ask, not silent expansion.
 

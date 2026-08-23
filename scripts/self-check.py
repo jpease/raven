@@ -212,13 +212,7 @@ def validate_context_budget() -> None:
         # deny on `git reset --hard`, asked for approval a deny cannot grant,
         # then reached the same outcome with an allowed equivalent. Only
         # always-loaded guidance is in context at the moment that choice is made.
-        #
-        # Raised 1140 -> 1200 for the same reason: a Retrieval Discipline row and
-        # bullet on taking a third-party API's shape from the installed package.
-        # The table ranked every source except the one an agent reaches for when
-        # writing a call into a dependency -- its own recall of the API -- and the
-        # agent writing that call has no skill loaded to correct it.
-        "common/AGENTS.md": 1200,
+        "common/AGENTS.md": 1140,
         # language-specific rules files
         "python/.claude/rules/raven-python.md": 760,
         "elixir/.claude/rules/raven-elixir.md": 890,
@@ -371,13 +365,7 @@ def validate_aggregate_budget() -> None:
         "go": (2078, "go/.claude/rules/raven-go.md"),
         "lua": (1918, "lua/.claude/rules/raven-lua.md"),
         "ruby": (2088, "ruby/.claude/rules/raven-ruby.md"),
-        # Raised 1752 -> 1812 to carry the AGENTS.md per-file raise above.
-        # dotfiles is the profile with the least headroom, so it is the only
-        # one the 60 words push over; the other eight still pass unchanged and
-        # are left alone rather than loosened in sympathy. Still 43 words under
-        # the 1855-word sum of its per-file thresholds, so it stays the tighter
-        # constraint the docstring above describes.
-        "dotfiles": (1812, "dotfiles/.claude/rules/raven-dotfiles.md"),
+        "dotfiles": (1752, "dotfiles/.claude/rules/raven-dotfiles.md"),
     }
     print("==> validate aggregate context budget per language profile")
 

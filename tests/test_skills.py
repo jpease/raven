@@ -187,6 +187,17 @@ class ImplementFeatureSkillTests(unittest.TestCase):
             "raven-implement-feature/SKILL.md should stay skimmable, under ~50 lines",
         )
 
+    def test_api_shape_comes_from_the_installed_package(self):
+        # Lives here rather than in always-loaded AGENTS.md: the failure mode is
+        # real but unobserved in this tree, and `raven-namespace.md` requires a
+        # cited observation before a line is loaded into every session. A
+        # promotion earns its raise the day something here writes against a
+        # renamed API.
+        lowered = self.content.lower()
+
+        self.assertIn("installed version", lowered)
+        self.assertIn("installed package", lowered)
+
     def test_hand_rolling_a_solved_category_requires_a_stated_reason(self):
         # raven-debloat gates the opposite move (bespoke code -> library) behind
         # Pause And Ask three times over. Nothing asked for a reason in this
