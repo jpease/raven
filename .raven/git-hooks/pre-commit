@@ -7,7 +7,15 @@ cd "$repo_root" || exit 0
 # a failure blocks the commit. The slower type-check and test suite run once in
 # pre-push, not here, to keep the commit loop quick. If `just` is not installed,
 # skip rather than hard-failing.
-if command -v just >/dev/null 2>&1; then
+#
+# The justfile has to be there too, not just the binary (issue #225). The
+# `dotfiles` and `generic` templates ship no justfile by design, so on a machine
+# that has `just` installed `just check-fast` printed "error: no justfile found"
+# and exited 1 -- which this hook turned into a refused commit, every time. We
+# have already cd-ed to repo_root, so the bare names are repo-root relative:
+# a justfile in some *parent* directory is deliberately not this repo's gate.
+# JUST_JUSTFILE wins when set, since that is how `just` itself resolves.
+if command -v just >/dev/null 2>&1 && { [ -n "$JUST_JUSTFILE" ] || [ -f justfile ] || [ -f Justfile ] || [ -f .justfile ]; }; then
     just check-fast || exit 1
 fi
 

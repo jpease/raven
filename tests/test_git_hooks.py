@@ -62,6 +62,20 @@ class GitHookInstallerTests(unittest.TestCase):
         env["PATH"] = os.pathsep.join([str(bin_dir), "/usr/bin", "/bin"])
         return env
 
+    def _write_justfile(self) -> None:
+        """Give the fixture repo the justfile a real install would ship.
+
+        Since #225 the hooks skip the `just` gate when no justfile resolves, so
+        a fixture that means to exercise the gate has to have one. The fake
+        `just` on PATH is still what runs, so these recipe bodies never execute.
+        Deliberately not written in setUp: the with-verified-cache.sh tests
+        commit with --allow-empty and assert a clean tree, which an untracked
+        justfile would spoil.
+        """
+        (self.destination / "justfile").write_text(
+            "check-fast:\n    @true\n\ncheck:\n    @true\n", encoding="utf-8"
+        )
+
     def _prepare_verified_repo(self, just_exit: int):
         # Make an initial commit so HEAD resolves, and put the fake `git`/`just`
         # in a bin dir OUTSIDE the repo so they do not show up as untracked files
@@ -73,6 +87,7 @@ class GitHookInstallerTests(unittest.TestCase):
         # would -- materialize and commit it here (before HEAD is captured) so
         # a real (just_exit=0) hook run can find and execute it without an
         # untracked file dirtying the tree it is about to check as clean.
+        self._write_justfile()
         lib_dir = self.git_hooks_src / "lib"
         lib_dir.mkdir(parents=True, exist_ok=True)
         cache_script = lib_dir / "with-verified-cache.sh"
@@ -542,6 +557,7 @@ class GitHookInstallerTests(unittest.TestCase):
         bin_dir = self.destination / "bin"
         bin_dir.mkdir()
         (bin_dir / "git").symlink_to(git_path)
+        self._write_justfile()
         # A `just` that fails must abort the commit -- the whole point of running
         # `just check` in the hook.
         fake_just = bin_dir / "just"
@@ -623,6 +639,7 @@ class GitHookInstallerTests(unittest.TestCase):
         bin_dir = self.destination / "bin"
         bin_dir.mkdir()
         (bin_dir / "git").symlink_to(git_path)
+        self._write_justfile()
         # A failing `just check` must abort the push -- the last gate before code
         # leaves the machine.
         fake_just = bin_dir / "just"

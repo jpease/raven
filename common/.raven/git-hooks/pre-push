@@ -103,7 +103,10 @@ fi
 # so it is never committed and is wiped on re-clone. Skip the wrapper
 # entirely (falling back to a plain, uncached run) if the lib script is
 # missing (a stale/partial install) rather than hard-failing.
-if command -v just >/dev/null 2>&1; then
+# The justfile presence test matches pre-commit's (issue #225): a template that
+# ships no justfile must skip this gate, not have every push refused by
+# `just check` failing with "error: no justfile found".
+if command -v just >/dev/null 2>&1 && { [ -n "$JUST_JUSTFILE" ] || [ -f justfile ] || [ -f Justfile ] || [ -f .justfile ]; }; then
     cache_script="$repo_root/.raven/git-hooks/lib/with-verified-cache.sh"
     if [ -f "$cache_script" ]; then
         if [ "$refs_match_head" -eq 1 ]; then

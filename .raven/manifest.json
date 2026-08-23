@@ -422,14 +422,14 @@
       "sourceSha256": "0958fee682fb6bea3b56e0ee2c503a799e44f2d481c73f881d088d188cb4ae56"
     },
     ".raven/git-hooks/pre-commit": {
-      "installedSha256": "225c51e3731ae0902c7094dd8dd1df0e3683bba7c66e871f4812831088f39a07",
+      "installedSha256": "0fa5e8b8fca6f66e7a6761fcf03af16628f2a5a79da57d63da5a28ed6714d5fc",
       "kind": "file",
-      "sourceSha256": "225c51e3731ae0902c7094dd8dd1df0e3683bba7c66e871f4812831088f39a07"
+      "sourceSha256": "0fa5e8b8fca6f66e7a6761fcf03af16628f2a5a79da57d63da5a28ed6714d5fc"
     },
     ".raven/git-hooks/pre-push": {
-      "installedSha256": "2c8ed6c60377606be8147c33c620516545a4d56839e2f2264df03038a0eca4a0",
+      "installedSha256": "f9448103195160f35dcad749ec3c3feaea1fc678f495a9bb003723695ca9a792",
       "kind": "file",
-      "sourceSha256": "2c8ed6c60377606be8147c33c620516545a4d56839e2f2264df03038a0eca4a0"
+      "sourceSha256": "f9448103195160f35dcad749ec3c3feaea1fc678f495a9bb003723695ca9a792"
     },
     "AGENTS.md": {
       "installedSha256": "e4cff8aba675a33698d8e2f5c2b2be5178f2240cb9dd351c098bce618a325f0c",
@@ -457,8 +457,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "b2d014c196b1",
+  "ravenVersion": "671a3f2f5445",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-23T00:27:29.460663+00:00"
+  "updatedAt": "2026-08-23T01:28:12.612978+00:00"
 }
