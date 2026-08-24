@@ -69,8 +69,9 @@ TOOLS = [
         "name": "mcp-language-server",
         "commands": [["mcp-language-server", "--help"]],
         "purpose": (
-            "general-purpose LSP-over-MCP bridge for definitions, references, hover/type info, "
-            "diagnostics, and rename safety"
+            "LSP-over-MCP bridge for definitions, references, hover/type info, diagnostics, "
+            "and rename safety; required by Codex for every language, and by Claude Code only "
+            "where no official LSP plugin covers the language"
         ),
         "install": {
             "darwin": (

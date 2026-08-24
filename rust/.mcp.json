@@ -11,15 +11,6 @@
       "args": [
         "mcp"
       ]
-    },
-    "lsp": {
-      "command": "mcp-language-server",
-      "args": [
-        "--workspace",
-        ".",
-        "--lsp",
-        "rust-analyzer"
-      ]
     }
   }
 }

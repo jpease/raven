@@ -14,6 +14,7 @@ from helpers import (
     LSP_DEFAULTS,
     REPO_ROOT,
     RavenTestCase,
+    claude_lsp_plugin,
     install_ns,
     lsp_doc_command,
     lsp_mcp_args,
@@ -347,10 +348,36 @@ paths = [".claude/skills/raven-plan/**"]
                             broken.append(candidate.relative_to(template).as_posix())
                 self.assertEqual(broken, [])
 
-    def test_language_templates_define_specific_lsp_mcp_defaults(self):
-        expected = {language: lsp_mcp_args(language) for language in LSP_DEFAULTS}
+    def test_claude_mcp_config_omits_a_server_an_official_plugin_already_launches(self):
+        # Claude Code's official marketplace LSP plugins launch the language
+        # server themselves. Shipping the `mcp-language-server` bridge as well
+        # runs that server twice -- two processes, two indexes, for one repo.
+        # Swift is where the bill shows: every `sourcekit-lsp` client gets a
+        # private `SourceKitService` (measured 0.3-6.5 GB), and none of them is
+        # shared with the one Xcode is already running.
+        for language in LSP_DEFAULTS:
+            plugin = claude_lsp_plugin(language)
+            if plugin is None:
+                continue
+            with self.subTest(language=language, plugin=plugin):
+                servers = json.loads(
+                    (REPO_ROOT / language / ".mcp.json").read_text(encoding="utf-8")
+                )["mcpServers"]
 
-        for language, args in expected.items():
+                self.assertNotIn(
+                    "lsp",
+                    servers,
+                    f"{language}/.mcp.json duplicates the language server that the "
+                    f"{plugin} plugin already launches",
+                )
+
+    def test_claude_mcp_config_keeps_the_bridge_where_no_plugin_covers_the_language(self):
+        # The flip side: drop the bridge for a language Claude Code does not
+        # cover and the harness is left with no LSP at all.
+        covered = [lang for lang in LSP_DEFAULTS if claude_lsp_plugin(lang) is None]
+        self.assertTrue(covered, "no uncovered language left to guard this direction")
+
+        for language in covered:
             with self.subTest(language=language):
                 config = json.loads(
                     (REPO_ROOT / language / ".mcp.json").read_text(encoding="utf-8")
@@ -358,7 +385,7 @@ paths = [".claude/skills/raven-plan/**"]
                 lsp = config["mcpServers"]["lsp"]
 
                 self.assertEqual(lsp["command"], "mcp-language-server")
-                self.assertEqual(lsp["args"], args)
+                self.assertEqual(lsp["args"], lsp_mcp_args(language))
 
     def test_language_templates_define_specific_codex_lsp_mcp_defaults(self):
         expected = {language: lsp_mcp_args(language) for language in LSP_DEFAULTS}
@@ -396,7 +423,7 @@ paths = [".claude/skills/raven-plan/**"]
         doc = (REPO_ROOT / "common" / ".claude" / "docs" / "raven-lsp-mcp.md").read_text(
             encoding="utf-8"
         )
-        for language, (server, _) in LSP_DEFAULTS.items():
+        for language, (server, _, _plugin) in LSP_DEFAULTS.items():
             with self.subTest(language=language):
                 self.assertIn(
                     server,

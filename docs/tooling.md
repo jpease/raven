@@ -57,22 +57,38 @@ performs.
 
 ## Language servers over MCP
 
-Language templates ship `.mcp.json` defaults for Semgrep, GitNexus, and LSP.
-For LSP, Raven uses `mcp-language-server` as the general fallback when the
-agent client does not already have a reliable native or plugin integration.
+Language templates ship `.mcp.json` defaults for Semgrep and GitNexus. Which
+of them also ships an `lsp` server depends on the harness, because the two
+harnesses do not start language servers the same way.
 
-| Template   | LSP command in `.mcp.json`           |
-| ---------- | ------------------------------------ |
-| Python     | `pyright-langserver --stdio`         |
-| TypeScript | `typescript-language-server --stdio` |
-| Go         | `gopls`                              |
-| Rust       | `rust-analyzer`                      |
-| Swift      | `sourcekit-lsp`                      |
-| Elixir     | `expert --stdio`                     |
-| Lua        | `lua-language-server`                |
-| Ruby       | `ruby-lsp`                           |
+Claude Code has official marketplace LSP plugins that launch the language
+server themselves. Where one exists, Raven's `.mcp.json` ships no `lsp` server:
+running the plugin and the `mcp-language-server` bridge together starts the
+same server twice, and a language server is not a cheap process to duplicate.
+Swift is the clearest case. Every `sourcekit-lsp` client gets a private
+`SourceKitService` — measured between 0.3 GB and 6.5 GB, with no sharing
+between clients and none with the instance Xcode already runs.
 
-Raven ships the `.mcp.json` command shape but does not install anything. Get
+Codex has no LSP integration of its own, so `.codex/config.toml` keeps the
+`mcp-language-server` bridge for every language.
+
+| Template   | Language server                      | Claude Code                | Codex  |
+| ---------- | ------------------------------------ | -------------------------- | ------ |
+| Python     | `pyright-langserver --stdio`         | `pyright-lsp` plugin       | bridge |
+| TypeScript | `typescript-language-server --stdio` | `typescript-lsp` plugin    | bridge |
+| Go         | `gopls`                              | `gopls-lsp` plugin         | bridge |
+| Rust       | `rust-analyzer`                      | `rust-analyzer-lsp` plugin | bridge |
+| Swift      | `sourcekit-lsp`                      | `swift-lsp` plugin         | bridge |
+| Elixir     | `expert --stdio`                     | bridge (no plugin)         | bridge |
+| Lua        | `lua-language-server`                | `lua-lsp` plugin           | bridge |
+| Ruby       | `ruby-lsp`                           | `ruby-lsp` plugin          | bridge |
+
+Install the plugin with `/plugin install <name>@claude-plugins-official`. The
+plugins are opt-in, so on Claude Code a template whose row says "plugin" has
+no language server until you install it. Nothing in Raven detects that gap
+yet; check `/plugin` if LSP tools come back empty.
+
+Raven ships the command shape but does not install anything. Get
 `mcp-language-server` and the language server for your template from their
 own documentation. After installation, `.claude/docs/raven-lsp-mcp.md` in the
 destination repository has the official links and the per-template command

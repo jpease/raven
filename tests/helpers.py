@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RAVEN_PATH = REPO_ROOT / "scripts" / "raven.py"
@@ -117,22 +117,38 @@ def push_plan_line(ref: str, local_sha: str, remote_sha: str) -> str:
 # consistency check until the templates and docs are updated to match. Validate
 # a new default against upstream maintainer docs first (see CLAUDE.md).
 #
-# language -> (server command, whether mcp-language-server forwards `-- --stdio`)
+# language -> (server command, whether mcp-language-server forwards `-- --stdio`,
+#              official Claude Code LSP plugin shipping the same server, or None)
+#
+# The third field decides which harness gets the `mcp-language-server` bridge.
+# Claude Code's official marketplace LSP plugins launch the language server
+# themselves, and a language server started twice is two full instances: two
+# indexes, two resident processes. `sourcekit-lsp` makes the cost impossible to
+# ignore -- each client gets its own `SourceKitService`, measured here between
+# 0.3 GB and 6.5 GB, on top of the one Xcode already runs. So a language with a
+# plugin ships no `lsp` server in `.mcp.json`. Codex has no LSP integration of
+# its own (verified against codex-cli 0.149.1), so `.codex/config.toml` keeps
+# the bridge for every language.
 LSP_DEFAULTS = {
-    "python": ("pyright-langserver", True),
-    "typescript": ("typescript-language-server", True),
-    "go": ("gopls", False),
-    "rust": ("rust-analyzer", False),
-    "swift": ("sourcekit-lsp", False),
-    "elixir": ("expert", True),
-    "lua": ("lua-language-server", False),
-    "ruby": ("ruby-lsp", False),
+    "python": ("pyright-langserver", True, "pyright-lsp"),
+    "typescript": ("typescript-language-server", True, "typescript-lsp"),
+    "go": ("gopls", False, "gopls-lsp"),
+    "rust": ("rust-analyzer", False, "rust-analyzer-lsp"),
+    "swift": ("sourcekit-lsp", False, "swift-lsp"),
+    "elixir": ("expert", True, None),
+    "lua": ("lua-language-server", False, "lua-lsp"),
+    "ruby": ("ruby-lsp", False, "ruby-lsp"),
 }
+
+
+def claude_lsp_plugin(language: str) -> Optional[str]:
+    """The official Claude Code LSP plugin for `language`, or None if there is none."""
+    return LSP_DEFAULTS[language][2]
 
 
 def lsp_mcp_args(language: str) -> list[str]:
     """The `mcp-language-server` argv a template's MCP config must declare."""
-    server, forwards_stdio = LSP_DEFAULTS[language]
+    server, forwards_stdio, _ = LSP_DEFAULTS[language]
     args = ["--workspace", ".", "--lsp", server]
     if forwards_stdio:
         args += ["--", "--stdio"]
@@ -141,7 +157,7 @@ def lsp_mcp_args(language: str) -> list[str]:
 
 def lsp_doc_command(language: str) -> str:
     """How a doc table spells the server, e.g. `pyright-langserver --stdio`."""
-    server, forwards_stdio = LSP_DEFAULTS[language]
+    server, forwards_stdio, _ = LSP_DEFAULTS[language]
     return f"{server} --stdio" if forwards_stdio else server
 
 
