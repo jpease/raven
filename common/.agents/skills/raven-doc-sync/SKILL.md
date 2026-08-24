@@ -23,9 +23,20 @@ Use this skill after a feature, behavior change, template change, workflow chang
 - Agent guidance and skills mention new workflow expectations.
 - Changelog or release notes are updated when the project expects them.
 - Managed-template output is regenerated when template sources changed.
+- Facts stated in prose are ones no config file, gate, or the filesystem itself can answer.
 
 ## Avoid
 
 - Do not rewrite unrelated docs for style.
 - Do not document behavior that was not implemented.
 - Do not update generated files by hand when the repo provides a generator.
+- Do not restate a value a config file owns. State why the value is what it is, and point at the file that pins it.
+
+## Config-Owned Values
+
+A value a config file owns and a gate enforces does not belong in prose too — a wrong copy fails the build on its own, so point at the pin instead of repeating it.
+
+State the value anyway when:
+
+- it is a fact no config knows: why the constraint exists, what external thing imposes it, or which directories are off limits and why.
+- it is part of a hard-linked fact set — a host version, a platform release, and a language version that move together by design. Naming two of the three sends the reader hunting for the pin that holds the last one, even though a config file also holds it. Coinciding with a pin by intent is not the same as being derivable from it.

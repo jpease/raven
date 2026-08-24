@@ -1,11 +1,13 @@
 import argparse
 import contextlib
+import hashlib
 import io
 import json
 import subprocess
 import unittest
+from typing import ClassVar
 
-from helpers import RavenTestCase, install_ns, raven, upgrade_ns
+from helpers import REPO_ROOT, RavenTestCase, install_ns, raven, upgrade_ns
 
 
 class ManifestTests(RavenTestCase):
@@ -293,3 +295,69 @@ class ManifestBlockPreservationTests(RavenTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RepoBaselineDriftTests(unittest.TestCase):
+    """Assert every installed file still hashes to the baseline the manifest records (#232).
+
+    `raven upgrade` only compares a destination file whose *template* side also
+    changed, so a file edited in place stays invisible until someone touches
+    its source under `common/`. Upgrade then reads the destination as
+    user-customized, writes a guided merge, and fails an unrelated commit with
+    `UNCONVERGED`.
+
+    Three commits did exactly that. b2d014c196b1 (docs(doc-sync): tell authors
+    not to restate config-owned values, 2026-08-20) and e76c2e562e01
+    (docs(agent-compat): note config.toml pins are deliberate, not overhead,
+    2026-08-20) each added real guidance to an installed copy and never to the
+    template, so every downstream project was missing it. 5bce264b1b54
+    (Formatting, 2026-06-19) repadded a Markdown table in a third, which
+    surfaced two months later on a commit that had nothing to do with it.
+
+    Checking the whole manifest at once fails in the commit that breaks it,
+    which is the only commit whose author knows what the edit was for.
+    """
+
+    #: The three paths that legitimately diverge, each for a stated reason.
+    #: Two mirror `self-check.py`'s `_APPROVED_CUSTOMIZATION`; `AGENTS.md` is
+    #: managed only between its RAVEN:BEGIN/RAVEN:END markers, so the
+    #: project-specific instructions above the block are drift by design.
+    ALLOWED: ClassVar[dict[str, str]] = {
+        "AGENTS.md": "managed only inside the RAVEN block; project instructions sit above it",
+        "justfile": "carries repo-only recipes (`hygiene`, `relaxation`) no template ships",
+        "pyproject.toml": "this repo's own project config, richer than the starter template",
+    }
+
+    def test_every_installed_file_matches_its_recorded_baseline(self):
+        manifest = json.loads((REPO_ROOT / ".raven" / "manifest.json").read_text(encoding="utf-8"))
+        drifted: list[str] = []
+
+        def walk(node: object) -> None:
+            if not isinstance(node, dict):
+                return
+            for key, value in node.items():
+                if not isinstance(value, dict):
+                    continue
+                recorded = value.get("installedSha256")
+                if not isinstance(recorded, str):
+                    walk(value)
+                    continue
+                path = REPO_ROOT / key
+                # A symlink's target is tracked at its own canonical path, and
+                # a path the manifest lists but that is absent is a different
+                # failure (`raven doctor` reports it as missing, not drifted).
+                if not path.is_file() or path.is_symlink():
+                    continue
+                actual = hashlib.sha256(path.read_bytes()).hexdigest()
+                if actual != recorded and key not in self.ALLOWED:
+                    drifted.append(key)
+
+        walk(manifest)
+        self.assertEqual(
+            sorted(drifted),
+            [],
+            "installed file(s) no longer match .raven/manifest.json. Reconcile before "
+            "committing: promote the destination's content into common/ if the edit "
+            "belongs in the template, or restore the destination if it does not, then "
+            "run scripts/self-check.py and `raven accept`.",
+        )

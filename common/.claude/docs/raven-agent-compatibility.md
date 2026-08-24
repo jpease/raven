@@ -48,7 +48,7 @@ harnesses behave differently for no stated reason.
 
 Codex-specific files:
 
-- `.codex/config.toml`: Codex project config, including subagent concurrency defaults and MCP servers.
+- `.codex/config.toml`: Codex project config, including subagent concurrency defaults and MCP servers. `max_threads`/`max_depth` are pinned to their current Codex defaults deliberately, so Raven's behavior stays stable across Codex releases instead of drifting silently if Codex changes its own defaults — not an oversight to "clean up" as redundant.
 - `.codex/agents/raven-*.toml`: Codex custom agents.
 - `.codex/hooks.json`: Codex hook wiring.
 - `.codex/hooks/raven-*.py`: Codex hook scripts.

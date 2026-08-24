@@ -631,7 +631,7 @@ def warn_stale_docs() -> None:
 # An issue reference plus an opt-in strict mode gives accountability without
 # the time bomb.
 _APPROVED_CUSTOMIZATION: dict[str, str] = {
-    "justfile": ("carries a repo-only recipe (`hygiene`) the template does not ship."),
+    "justfile": ("carries repo-only recipes (`hygiene`, `relaxation`) the template does not ship."),
     "pyproject.toml": (
         "this repo's own project config, necessarily richer than the starter "
         "config the template ships."
