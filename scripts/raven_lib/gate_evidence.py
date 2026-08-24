@@ -31,11 +31,18 @@ Verified (each exits 0):
   credo    -- `No files found!` and an Analysis line reading `on 0 files`
   jest     -- `No tests found, exiting with code 0`, the `--passWithNoTests`
               form; plain `jest` says `code 1` and exits 1
+  pyright  -- `Total files checked: 0`. Plain `pyright` prints the same
+              `0 errors, 0 warnings, 0 informations` whether it analyzed five
+              hundred files or none, so the python template's `typecheck`
+              recipe runs `pyright --stats` to make the count observable
+  swift    -- the swift template's own `lint` and `build` recipes echo a skip
+              line when no Swift file is tracked and when neither
+              `Package.swift` nor an Xcode project exists. Raven writes those
+              strings, so unlike every other entry here they cannot drift
 
-No detector, because the tool's output is the same either way: pyright prints
-`0 errors, 0 warnings, 0 informations` whether it analyzed five hundred files
-or none; `eslint`, `xcrun swift-format lint`, `mix format
---check-formatted`, `stylua --check`, and `gofmt -l .` print nothing at all on
+No detector, because the tool's output is the same either way: `eslint`,
+`xcrun swift-format lint`, `mix format --check-formatted`, `stylua --check`,
+`cargo fmt --check`, `cargo clippy`, and `gofmt -l .` print nothing at all on
 success, matched files or not, and
 `rake test` over an empty `test_files` list prints nothing either -- not even
 minitest's summary, so only a test file that defines no tests leaves the
@@ -80,6 +87,22 @@ _MINITEST_RUNS_RE = re.compile(r"^(\d+) runs, \d+ assertions\b")
 # the reliable half -- its "0 mods/funs" line also appears for files it did read.
 _CREDO_ZERO_RE = re.compile(r"\bchecks on 0 files\b")
 _JEST_NO_TESTS = "No tests found, exiting with code 0"
+# `pyright --stats` reports its file count; plain `pyright` does not, which is
+# why the python template's `typecheck` recipe passes the flag.
+_PYRIGHT_ZERO_RE = re.compile(r"^Total files checked: 0$")
+# Two skips the swift template's own recipes print. Unlike every other entry
+# here these strings are Raven's, so they cannot drift under us -- and a
+# recipe that skips is the same green no-op as a tool that finds no files.
+_SWIFT_SKIPS = (
+    (
+        "No Swift files tracked; skipping swiftlint.",
+        "no Swift files are tracked, so `just lint` skipped swiftlint",
+    ),
+    (
+        "No Package.swift or Xcode project found yet; skipping build.",
+        "no Package.swift or Xcode project exists yet, so `just build` skipped",
+    ),
+)
 _VITEST_NO_TESTS = "No test files found, exiting with code 0"
 # Some tools color unconditionally rather than only for a tty.
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -188,6 +211,28 @@ def _minitest_ran_no_tests(lines: list[str]) -> str | None:
     return None
 
 
+def _pyright_checked_nothing(lines: list[str]) -> str | None:
+    """Evidence from `pyright --stats`, which plain `pyright` cannot give.
+
+    Plain `pyright` prints `0 errors, 0 warnings, 0 informations` whether it
+    analyzed every file or none, so the python template runs it with `--stats`
+    for the `Total files checked:` line this reads.
+    """
+    for line in lines:
+        if _PYRIGHT_ZERO_RE.match(line):
+            return "pyright checked 0 files"
+    return None
+
+
+def _swift_recipe_skipped(lines: list[str]) -> str | None:
+    """Evidence that a swift gate recipe skipped its tool instead of running it."""
+    for line in lines:
+        for marker, evidence in _SWIFT_SKIPS:
+            if marker in line:
+                return evidence
+    return None
+
+
 _DETECTORS = (
     _ruff_saw_no_files,
     _pytest_collected_nothing,
@@ -200,6 +245,8 @@ _DETECTORS = (
     _minitest_ran_no_tests,
     _credo_analyzed_no_files,
     _jest_found_no_tests,
+    _pyright_checked_nothing,
+    _swift_recipe_skipped,
 )
 
 

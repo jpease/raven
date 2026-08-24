@@ -769,3 +769,95 @@ class AssessGateConfigTests(RavenTestCase):
         # already covered by the `config_signals` check above.
         self._python_project()
         self.assertEqual(self._config_findings(), [])
+
+
+class ProjectSourceTests(RavenTestCase):
+    """A gate with no project source of its own language checks nothing.
+
+    This is the gap `gate_evidence` cannot close from tool output. Most gate
+    tools are silent either way, and `ruff` warns about finding no Python only
+    when none exists on disk -- it says nothing when every file it would have
+    read was excluded, which is precisely the state the python template's
+    `extend-exclude` creates. Asking the filesystem is both cheaper and more
+    reliable, and it needs no `--run`.
+    """
+
+    def _config(self, template="python"):
+        (self.destination / ".raven").mkdir(exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_text(
+            f'schema = 1\ntemplate = "{template}"\n', encoding="utf-8"
+        )
+
+    def _source_finding(self):
+        """The source finding, or None when the template declares no gated language."""
+        return next(
+            (f for f in wiring_findings(self.destination) if f.id == "assess.wiring.sources"), None
+        )
+
+    def _severity(self):
+        """The source finding's severity, failing loudly when the finding is missing."""
+        finding = self._source_finding()
+        self.assertIsNotNone(finding, "expected an assess.wiring.sources finding")
+        assert finding is not None  # narrows for the type checker
+        return finding.severity
+
+    def test_no_project_source_warns(self):
+        self._config()
+        self.assertEqual(self._severity(), Severity.WARN)
+
+    def test_project_source_is_ok(self):
+        self._config()
+        (self.destination / "app.py").write_text("x = 1\n", encoding="utf-8")
+        self.assertEqual(self._severity(), Severity.OK)
+
+    def test_ravens_own_installed_python_does_not_count(self):
+        # The whole point: a fresh `raven install python` writes ~22 .py files
+        # under .claude/, .codex/ and .raven/. Counting them would report every
+        # empty repository as having a live python gate.
+        self._config()
+        for owned in (".claude/scripts", ".codex/hooks", ".raven/git-hooks/lib"):
+            path = self.destination / owned
+            path.mkdir(parents=True, exist_ok=True)
+            (path / "raven-thing.py").write_text("x = 1\n", encoding="utf-8")
+        self.assertEqual(self._severity(), Severity.WARN)
+
+    def test_agents_tree_does_not_count_either(self):
+        self._config()
+        skill = self.destination / ".agents" / "skills" / "raven-x"
+        skill.mkdir(parents=True)
+        (skill / "helper.py").write_text("x = 1\n", encoding="utf-8")
+        self.assertEqual(self._severity(), Severity.WARN)
+
+    def test_a_nested_source_file_counts(self):
+        self._config()
+        nested = self.destination / "src" / "pkg"
+        nested.mkdir(parents=True)
+        (nested / "mod.py").write_text("x = 1\n", encoding="utf-8")
+        self.assertEqual(self._severity(), Severity.OK)
+
+    def test_a_stub_file_counts_as_python_source(self):
+        self._config()
+        (self.destination / "types.pyi").write_text("x: int\n", encoding="utf-8")
+        self.assertEqual(self._severity(), Severity.OK)
+
+    def test_another_languages_source_does_not_satisfy_a_python_gate(self):
+        self._config()
+        (self.destination / "main.go").write_text("package main\n", encoding="utf-8")
+        self.assertEqual(self._severity(), Severity.WARN)
+
+    def test_a_template_with_no_gates_is_not_graded_on_absence(self):
+        # dotfiles and generic ship no gate recipes and no source_suffixes, so
+        # there is no language whose absence would mean anything.
+        self._config("dotfiles")
+        self.assertIsNone(self._source_finding())
+
+    def test_every_gated_template_declares_source_suffixes(self):
+        # A template that gained gate recipes but no suffixes would silently
+        # opt out of this check rather than fail.
+        for name, spec in load_gate_specs().items():
+            with self.subTest(template=name):
+                self.assertTrue(
+                    spec.source_suffixes, f"{name} declares gate recipes but no source_suffixes"
+                )
+                for suffix in spec.source_suffixes:
+                    self.assertTrue(suffix.startswith("."), f"{name}: {suffix!r} is not a suffix")

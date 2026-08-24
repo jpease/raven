@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from raven_lib.gate_evidence import no_work_evidence
+from raven_lib.gate_evidence import _SWIFT_SKIPS, no_work_evidence
 
 
 class RuffEvidenceTests(unittest.TestCase):
@@ -215,3 +215,62 @@ class QuietOutputTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PyrightEvidenceTests(unittest.TestCase):
+    """`pyright --stats` reports its file count; plain `pyright` does not.
+
+    The python template's `typecheck` recipe passes `--stats` for exactly this
+    reason -- without it a typecheck gate pointed at nothing prints the same
+    `0 errors, 0 warnings, 0 informations` as one that checked the whole tree.
+    Verified against pyright 1.1.x in a directory holding no Python file.
+    """
+
+    def test_zero_files_checked_is_evidence(self):
+        self.assertEqual(
+            no_work_evidence("Total files checked: 0\n0 errors, 0 warnings, 0 informations", ""),
+            "pyright checked 0 files",
+        )
+
+    def test_files_checked_is_not_evidence(self):
+        self.assertIsNone(no_work_evidence("Total files checked: 412", ""))
+
+    def test_a_zero_inside_a_larger_count_is_not_evidence(self):
+        self.assertIsNone(no_work_evidence("Total files checked: 10", ""))
+
+    def test_the_plain_pyright_summary_alone_is_not_evidence(self):
+        # Without --stats there is nothing to read, and a silent gate stays OK
+        # rather than being guessed at.
+        self.assertIsNone(no_work_evidence("0 errors, 0 warnings, 0 informations", ""))
+
+
+class SwiftRecipeSkipEvidenceTests(unittest.TestCase):
+    """The swift template's own recipes skip green when there is nothing to check.
+
+    `just lint` and `just build` each print a skip line and exit 0 when the
+    project has no Swift files / no Package.swift yet. Raven writes those
+    strings itself, so unlike every other detector here they cannot drift when
+    a third-party tool changes its wording.
+    """
+
+    def test_swiftlint_skip_is_evidence(self):
+        self.assertEqual(
+            no_work_evidence("No Swift files tracked; skipping swiftlint.", ""),
+            "no Swift files are tracked, so `just lint` skipped swiftlint",
+        )
+
+    def test_build_skip_is_evidence(self):
+        self.assertEqual(
+            no_work_evidence("No Package.swift or Xcode project found yet; skipping build.", ""),
+            "no Package.swift or Xcode project exists yet, so `just build` skipped",
+        )
+
+    def test_a_real_swiftlint_run_is_not_evidence(self):
+        self.assertIsNone(no_work_evidence("Linting Sources/App.swift (1/12)\nDone linting!", ""))
+
+    def test_the_skip_strings_still_match_the_shipped_justfile(self):
+        # A reworded recipe would silently disable both detectors above, so the
+        # markers are pinned against the template that prints them.
+        justfile = (Path(__file__).resolve().parents[1] / "swift" / "justfile").read_text()
+        for marker, _ in _SWIFT_SKIPS:
+            self.assertIn(marker, justfile, f"swift/justfile no longer prints {marker!r}")

@@ -592,7 +592,63 @@ def wiring_findings(destination: Path) -> list[Finding]:
         findings.append(_hook_finding(destination, hook_path, name, expected, accept))
 
     findings.extend(_gate_config_findings(destination, spec))
+    findings.extend(_project_source_findings(destination, spec))
     return findings
+
+
+#: Trees Raven installs into. A gate that only sees these is checking Raven's
+#: own shipped code, not the project's, so they never count as project source.
+_RAVEN_OWNED_ROOTS = (".claude", ".codex", ".raven", ".agents")
+
+
+def _project_source_findings(destination: Path, spec: GateSpec) -> list[Finding]:
+    """Report a gate set that has no project source of its own language to check.
+
+    The last gap `gate_evidence` cannot close from tool output. Most gate tools
+    say nothing distinguishable when they find no files -- and `ruff` warns only
+    when no Python exists on disk at all, staying silent when every file it
+    would have read was excluded. So the reliable place to ask "is there
+    anything here to check?" is the filesystem, statically, before any gate runs.
+
+    Raven installs its own Python under `.claude/`, `.codex/`, and `.raven/`;
+    counting those would report every fresh install as a live python gate.
+    """
+    if not spec.source_suffixes:
+        return []
+    suffixes = set(spec.source_suffixes)
+    found = 0
+    for path in destination.rglob("*"):
+        if path.suffix not in suffixes or not path.is_file():
+            continue
+        rel = path.relative_to(destination)
+        if rel.parts and (rel.parts[0] == ".git" or rel.parts[0] in _RAVEN_OWNED_ROOTS):
+            continue
+        found += 1
+        break
+    listed = ", ".join(sorted(suffixes))
+    if found:
+        return [
+            Finding(
+                id="assess.wiring.sources",
+                severity=Severity.OK,
+                category=_WIRING,
+                title="gates have project source to check",
+                detail=f"found at least one {listed} file outside Raven-owned paths",
+            )
+        ]
+    return [
+        Finding(
+            id="assess.wiring.sources",
+            severity=Severity.WARN,
+            category=_WIRING,
+            title="gates have no project source to check",
+            detail=(
+                f"no {listed} file exists outside {', '.join(_RAVEN_OWNED_ROOTS)}; "
+                "every gate for this template passes without inspecting project code"
+            ),
+            fix="add the project's source, or switch to a template that matches it",
+        )
+    ]
 
 
 def _gate_config_findings(destination: Path, spec: GateSpec) -> list[Finding]:

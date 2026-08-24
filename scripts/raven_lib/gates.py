@@ -26,6 +26,7 @@ class GateSpec:
     config_signals: tuple[tuple[str, str | None], ...]
     detect_signals: tuple[str, ...]
     fallback_commands: Mapping[str, tuple[str, ...]]
+    source_suffixes: tuple[str, ...]
 
 
 def _str_tuple(value: object) -> tuple[str, ...]:
@@ -56,6 +57,7 @@ def _build_spec(raw: dict[str, object]) -> GateSpec:
         config_signals=tuple(config_signals),
         detect_signals=_str_tuple(raw.get("detect_signals")),
         fallback_commands=MappingProxyType(fallback),
+        source_suffixes=_str_tuple(raw.get("source_suffixes")),
     )
 
 

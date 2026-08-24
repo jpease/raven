@@ -23,12 +23,18 @@ Field shapes (consumed by ``raven_lib.gates._build_spec``):
   config_signals:  list[[file, required_substring]]; substring "" means
                    "file must merely exist"
   fallback_commands: dict[recipe, list[str]] -- the non-just command to run
+  source_suffixes: list[str] -- file extensions that count as this
+                   language's own source. `assess` uses them to tell a gate
+                   with real files to check from one pointed at nothing;
+                   Raven-owned trees are excluded from that scan, so Raven's
+                   own installed Python never makes a python gate look live
 """
 
 from __future__ import annotations
 
 GATE_DATA: dict[str, dict[str, object]] = {
     "python": {
+        "source_suffixes": [".py", ".pyi"],
         "recipes": ["lint", "fmt-check", "typecheck", "test"],
         "tools": ["ruff", "pyright"],
         "detect_signals": ["pyproject.toml", "setup.py", "setup.cfg"],
@@ -36,11 +42,12 @@ GATE_DATA: dict[str, dict[str, object]] = {
         "fallback_commands": {
             "lint": ["ruff", "check", "."],
             "fmt-check": ["ruff", "format", "--check", "."],
-            "typecheck": ["pyright"],
+            "typecheck": ["pyright", "--stats"],
             "test": ["python", "-m", "pytest"],
         },
     },
     "go": {
+        "source_suffixes": [".go"],
         "recipes": ["fmt-check", "vet", "lint", "test"],
         "tools": ["golangci-lint", "gofmt"],
         "detect_signals": ["go.mod", "go.sum"],
@@ -53,6 +60,7 @@ GATE_DATA: dict[str, dict[str, object]] = {
         },
     },
     "rust": {
+        "source_suffixes": [".rs"],
         "recipes": ["lint", "fmt-check", "typecheck", "test"],
         "tools": ["cargo"],
         "detect_signals": ["Cargo.toml", "Cargo.lock"],
@@ -65,6 +73,7 @@ GATE_DATA: dict[str, dict[str, object]] = {
         },
     },
     "typescript": {
+        "source_suffixes": [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"],
         "recipes": ["lint", "fmt-check", "typecheck", "test"],
         "tools": ["npx"],
         "detect_signals": ["package.json", "tsconfig.json"],
@@ -77,6 +86,7 @@ GATE_DATA: dict[str, dict[str, object]] = {
         },
     },
     "swift": {
+        "source_suffixes": [".swift"],
         # `check-fast` runs `lint-format` then `lint`; `check` adds `build` only --
         # `test` is deliberately excluded (an Xcode app's UI test suite is too
         # heavy for every push; see swift/README.md). `lint-format` (Apple
@@ -103,6 +113,7 @@ GATE_DATA: dict[str, dict[str, object]] = {
         },
     },
     "elixir": {
+        "source_suffixes": [".ex", ".exs"],
         "recipes": ["lint", "fmt-check", "typecheck", "test"],
         "tools": ["mix"],
         "detect_signals": ["mix.exs"],
@@ -115,6 +126,7 @@ GATE_DATA: dict[str, dict[str, object]] = {
         },
     },
     "lua": {
+        "source_suffixes": [".lua"],
         "recipes": ["fmt-check", "lint", "test"],
         "tools": ["luacheck", "stylua", "busted"],
         "detect_signals": [".luacheckrc", ".busted"],
@@ -126,6 +138,7 @@ GATE_DATA: dict[str, dict[str, object]] = {
         },
     },
     "ruby": {
+        "source_suffixes": [".rb", ".rake"],
         "recipes": ["lint", "test"],
         "tools": ["rubocop", "ruby"],
         "detect_signals": ["Gemfile", ".rubocop.yml"],

@@ -1,6 +1,14 @@
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+# Raven installs its own Python under `.claude/`, `.codex/`, and `.raven/`.
+# Those files are linted at their source (the Raven repository), and leaving
+# them in scope here has two costs: this project's gates go red on code no one
+# here wrote whenever the rule selection below is tightened, and `ruff` never
+# reports "No Python files found" in a project that has none of its own -- so
+# `raven assess --run` cannot tell a live lint gate from an inert one.
+# Narrow, and never a substitute for excluding your own code from a gate.
+extend-exclude = [".claude", ".codex", ".raven"]  # raven-hygiene: allow
 
 [tool.ruff.lint]
 select = [
@@ -22,3 +30,5 @@ quote-style = "preserve"
 pythonVersion = "3.10"
 typeCheckingMode = "standard"
 reportMissingTypeStubs = false
+# Same reasoning as ruff's `extend-exclude` above.
+exclude = [".claude", ".codex", ".raven", "**/node_modules", "**/__pycache__"]  # raven-hygiene: allow
