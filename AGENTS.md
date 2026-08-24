@@ -39,7 +39,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=a051121dbb40a322da9137b38fdf6f50ea54e19df7c0816e0525d0ead2b65090 -->
+<!-- RAVEN:BEGIN sha256=feb48e6ab46f383ec8c8d7b39391baa150ab2188494dc6bf3188bc1c9f4733cc -->
 # AGENTS.md
 
 ## Primary Objective
@@ -121,6 +121,13 @@ Pause and ask before work that is ambiguous or could create durable harm:
 - If you lose track of what was verified, re-verify before editing further or claiming completion.
 - Do not claim broad success from narrow checks; state exactly what ran and what remains unverified.
 - After context compaction or a long interruption, restate the current goal and verified state before continuing risky edits.
+
+## Convergence
+
+- A task ends in success, progression (one blocker removed, the next isolated with evidence), or stop. Progression is an acceptable end state; report it plainly.
+- Stop and report when the same test has failed after three consecutive fixes aimed at it, when a fix needs code the task did not scope, or when the diff grows while the failing signal does not change.
+- Do not keep patching once the work stops converging. Partial work leaves the codebase more legible than it was.
+- `raven-task-complete` states the test for each of the three states; `raven-debug-failure`'s `When To Stop` covers the narrower case where ownership was never found.
 
 ## Safety Rules
 

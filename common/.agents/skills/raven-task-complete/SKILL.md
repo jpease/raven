@@ -20,6 +20,18 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 - If a verification step fails, address it before proceeding.
 - State design intent that is not derivable from the diff: the constraint that forced this design, the alternative rejected, or a non-obvious behavior. If nothing forced a decision, say so explicitly rather than padding.
 
+## Terminal States
+
+A unit of work ends in one of three states. Name which one before handing off.
+
+| State | What it means | Test |
+|---|---|---|
+| Success | The capability works on the real path, and the case that motivated the work behaves differently now. | Run what was asked for and show the output. |
+| Progression | One blocker is removed and the next is isolated. This is a success condition, not a partial failure. An agent with no way to report it plainly is the one that tries a fifth patch. | The report carries the blocker removed, the next blocker, and the evidence isolating it: a failing command, a stack frame, a diff that moves the symptom. |
+| Stop | Further work needs scope the task does not have, a patch over the cause instead of a fix, or logic that can no longer be followed. | One trip condition holds: the same test failed after three consecutive fixes aimed at it; a fix needs code the task did not scope; the diff grows while the failing signal does not change. |
+
+Stop producing patches once the work stops converging. Partial work leaves the codebase more legible than it found it: scaffolding deleted, the narrowing test kept, what was ruled out written down.
+
 ## Rationalization Check
 
 | Thought | Reality |
@@ -30,6 +42,7 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 | "I verified this earlier in the session" | State what changed since, or re-run against the current diff. |
 | "The code explains itself" | Then say that explicitly. Silence is indistinguishable from having no reason. |
 | "I noted the other problems in a comment" | A comment is not a disposition. Each finding gets FOLD IN, FILE, or DROP per `raven-triage-discovery`. |
+| "One more patch will fix it" | Count them. Three consecutive fixes aimed at the same failing signal is a Stop trip condition; report the state instead of trying a fourth. |
 | "The gates are green, so nothing needs a human" | A gate checks what someone thought to encode. Name what it cannot: a judgment call, a chosen default, a step that is hard to undo. |
 
 ## Process
@@ -50,6 +63,10 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 When using `raven-project-lifecycle`, run this skill immediately before calling `raven-session.py --complete <unit>` (`.claude/scripts/` for Claude Code, `.codex/scripts/` for Codex). The checkpoint hook enforces completion criteria; this skill ensures you meet them before invoking it.
 
 ## Output
+
+Always:
+
+> State: [Success | Progression | Stop] — [the test from `Terminal States` that puts it there].
 
 On success:
 

@@ -80,6 +80,13 @@ Pause and ask before work that is ambiguous or could create durable harm:
 - Do not claim broad success from narrow checks; state exactly what ran and what remains unverified.
 - After context compaction or a long interruption, restate the current goal and verified state before continuing risky edits.
 
+## Convergence
+
+- A task ends in success, progression (one blocker removed, the next isolated with evidence), or stop. Progression is an acceptable end state; report it plainly.
+- Stop and report when the same test has failed after three consecutive fixes aimed at it, when a fix needs code the task did not scope, or when the diff grows while the failing signal does not change.
+- Do not keep patching once the work stops converging. Partial work leaves the codebase more legible than it was.
+- `raven-task-complete` states the test for each of the three states; `raven-debug-failure`'s `When To Stop` covers the narrower case where ownership was never found.
+
 ## Safety Rules
 
 - Do not run destructive commands without explicit approval.

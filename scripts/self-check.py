@@ -212,7 +212,19 @@ def validate_context_budget() -> None:
         # deny on `git reset --hard`, asked for approval a deny cannot grant,
         # then reached the same outcome with an allowed equivalent. Only
         # always-loaded guidance is in context at the moment that choice is made.
-        "common/AGENTS.md": 1140,
+        #
+        # Raised 1140 -> 1255 deliberately (#230): the Convergence section, 111
+        # words. The file had one approved exit from hard work -- the
+        # retrieval-failure stop in `raven-debug-failure`, for when ownership is
+        # never found -- and none for the case where ownership is known, the
+        # cause is understood, and successive patches are not converging. With
+        # only "keep patching" or "declare success" available, `Verification
+        # State` above governs how honestly the second one is reported and
+        # nothing offers the first way out. The trip conditions are countable on
+        # purpose, and the decision to stop is made from what is already in
+        # context at that moment, which is why they are here and not only in the
+        # skill.
+        "common/AGENTS.md": 1255,
         # language-specific rules files
         "python/.claude/rules/raven-python.md": 760,
         "elixir/.claude/rules/raven-elixir.md": 890,
@@ -365,15 +377,22 @@ def validate_aggregate_budget() -> None:
         # could read, agree with, and then edit the config anyway; the
         # observable form is what makes the rule checkable, and it is only
         # useful in the file that is already loaded when the edit is made.
-        "python": (2017, "python/.claude/rules/raven-python.md"),
-        "elixir": (2128, "elixir/.claude/rules/raven-elixir.md"),
-        "rust": (2058, "rust/.claude/rules/raven-rust.md"),
-        "swift": (1898, "swift/.claude/rules/raven-swift.md"),
-        "typescript": (1918, "typescript/.claude/rules/raven-typescript.md"),
-        "go": (2078, "go/.claude/rules/raven-go.md"),
-        "lua": (1918, "lua/.claude/rules/raven-lua.md"),
-        "ruby": (2088, "ruby/.claude/rules/raven-ruby.md"),
-        "dotfiles": (1752, "dotfiles/.claude/rules/raven-dotfiles.md"),
+        #
+        # Every profile then rose again by the same 111 words (#230):
+        # `common/AGENTS.md` is shared by all of them and gained the
+        # Convergence section, so the raise is one event, not nine. Each
+        # figure below is the measured total plus ten words of headroom, and
+        # each still sits under the sum of its per-file thresholds, which is
+        # what keeps this the tighter of the two caps.
+        "python": (2128, "python/.claude/rules/raven-python.md"),
+        "elixir": (2162, "elixir/.claude/rules/raven-elixir.md"),
+        "rust": (2085, "rust/.claude/rules/raven-rust.md"),
+        "swift": (1955, "swift/.claude/rules/raven-swift.md"),
+        "typescript": (1978, "typescript/.claude/rules/raven-typescript.md"),
+        "go": (2111, "go/.claude/rules/raven-go.md"),
+        "lua": (1979, "lua/.claude/rules/raven-lua.md"),
+        "ruby": (2112, "ruby/.claude/rules/raven-ruby.md"),
+        "dotfiles": (1864, "dotfiles/.claude/rules/raven-dotfiles.md"),
     }
     print("==> validate aggregate context budget per language profile")
 

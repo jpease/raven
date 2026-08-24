@@ -745,10 +745,18 @@ class TaskCompleteSkillTests(unittest.TestCase):
         # taking the file from 58 to 64 -- inside the old ceiling by a single
         # line, which is no headroom at all. Headroom here is one iteration,
         # not a budget to spend.
+        #
+        # Raised 75 -> 95 for the Terminal States section (#230). The skill had
+        # exactly one terminal state -- verified and done -- so an agent whose
+        # work stopped converging could either keep patching or declare success,
+        # and the whole Rationalization Check below addresses only the second.
+        # The section is a three-row table plus its trip conditions, deliberately
+        # the most compact form that still states a test per state; the ceiling
+        # is the measured 89 plus one iteration, same standard as the raise above.
         self.assertLess(
             len(self.content.splitlines()),
-            75,
-            "raven-task-complete/SKILL.md should stay under ~75 lines",
+            95,
+            "raven-task-complete/SKILL.md should stay under ~95 lines",
         )
 
     def test_process_requires_dispositioning_discovered_work(self):
