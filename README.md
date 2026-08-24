@@ -108,10 +108,18 @@ removal of dropped files, template switching, and line-ending handling.
 
 ## Optional Tooling
 
-Raven's templates recommend tools like `rg`, `fd`, `just`, ast-grep, Semgrep,
-Vale, and a language server over MCP, but require none of them. Run
-`raven doctor` after installing; its Toolchain section reports which ones you
-have. Details and the per-language LSP defaults are in
+Raven's templates recommend `rg`, `fd`, `just`, GitNexus, ast-grep, Semgrep,
+Gitleaks, OSV-Scanner, Vale, `jq`, `yq`, RTK, and a language server over MCP,
+but require none of them. Run `raven doctor` after installing; its Toolchain
+section reports which ones you have.
+
+Two of those are named directly in the guidance Raven installs, so it is worth
+knowing what they are before you read `AGENTS.md` and wonder: **RTK** is a CLI
+proxy that compresses noisy command output before it reaches the model, and
+**GitNexus** indexes the repository so an agent can ask what a change would
+break. Both are optional. Without RTK the hint that suggests it stays silent;
+without a GitNexus index the guidance that leans on it does not apply. Install
+commands and the per-language LSP defaults are in
 [docs/tooling.md](docs/tooling.md).
 
 ## External Skill Libraries

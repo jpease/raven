@@ -1482,7 +1482,8 @@ class NoisyCommandMatchingTests(unittest.TestCase):
 
     HOOK = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-post-bash-summarize.py"
 
-    def _hint(self, command: str) -> str:
+    def _run(self, command: str, path: str) -> str:
+        env = dict(os.environ, PATH=path)
         result = subprocess.run(
             [sys.executable, str(self.HOOK)],
             input=json.dumps(
@@ -1494,9 +1495,39 @@ class NoisyCommandMatchingTests(unittest.TestCase):
             ),
             capture_output=True,
             text=True,
+            env=env,
         )
         self.assertEqual(result.returncode, 0)
         return result.stdout
+
+    def _hint(self, command: str) -> str:
+        """Run the hook with RTK present, which is what these matching tests are about.
+
+        RTK is stubbed rather than assumed: the hook now stays silent when RTK
+        is not on PATH, so inheriting the developer's PATH would make every
+        assertion below depend on whether that machine happens to have it.
+        """
+        stub_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, stub_dir, True)
+        stub = Path(stub_dir) / "rtk"
+        stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        stub.chmod(0o755)
+        return self._run(command, stub_dir)
+
+    def test_no_hint_when_rtk_is_not_installed(self):
+        """A hint pointing at a tool the reader cannot run is pure context cost.
+
+        The hook fires on every noisy command, in a system whose stated first
+        objective is preserving context -- so an un-actionable nudge is worse
+        than silence. `brew install rtk` turns it back on with no Raven change.
+        """
+        empty = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, empty, True)
+        self.assertEqual(self._run("pytest -q", empty), "")
+
+    def test_the_hint_returns_once_rtk_is_installed(self):
+        """The negative control for the test above: same command, RTK present."""
+        self.assertIn("RTK", self._hint("pytest -q"))
 
     def test_a_word_inside_another_word_is_not_a_tool(self):
         """Word-boundary matching fixes substring collisions, and only those.

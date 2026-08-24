@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import sys
+from functools import lru_cache
 
 # Commands noisy enough to be worth compressing. Every entry is matched as a
 # whole word (see _NOISY_COMMAND): plain substring matching flagged any command
@@ -26,6 +28,20 @@ _NOISY_COMMANDS = (
 )
 
 _NOISY_COMMAND = re.compile(r"\b(?:" + "|".join(_NOISY_COMMANDS) + r")\b")
+
+
+@lru_cache(maxsize=1)
+def _rtk_installed() -> bool:
+    """True when `rtk` is on PATH.
+
+    RTK is optional, and a hint pointing at a tool the reader cannot run is
+    pure context cost on every noisy command -- in a hook whose whole purpose
+    is spending less of it. Advisory output that cannot be acted on is the
+    fastest way to teach people to ignore hook output, so a project without
+    RTK gets silence instead. `brew install rtk` (or https://www.rtk-ai.app/)
+    turns the hint back on with no Raven change.
+    """
+    return shutil.which("rtk") is not None
 
 
 def _load_payload() -> dict | None:
@@ -57,7 +73,11 @@ def main() -> int:
     if not command:
         return 0
 
-    if not command.lstrip().startswith("rtk ") and _NOISY_COMMAND.search(command):
+    if (
+        _rtk_installed()
+        and not command.lstrip().startswith("rtk ")
+        and _NOISY_COMMAND.search(command)
+    ):
         hint = (
             f"Consider running noisy commands through RTK when exact raw output"
             f" is not required: {command}"

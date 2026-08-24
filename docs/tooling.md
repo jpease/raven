@@ -31,6 +31,18 @@ tools over and over.
 `rg`, `fd`, `just`, GitNexus, `mcp-language-server`, ast-grep, Semgrep,
 Gitleaks, OSV-Scanner, Vale, `jq`, `yq`, and RTK.
 
+None is required. Two are worth a word because the installed `AGENTS.md` names
+them by name, which makes them look mandatory when they are not:
+
+| Tool | What it is | Install |
+|---|---|---|
+| RTK | A CLI proxy that compresses noisy command output before it reaches the model. `AGENTS.md` routes test, build, and log commands through it. | `brew install rtk` — [rtk-ai.app](https://www.rtk-ai.app/) |
+| GitNexus | Indexes the repository into a call graph so an agent can ask what a change breaks. `AGENTS.md` treats its impact analysis as mandatory *where an index is configured*, and silent everywhere else. | `npx gitnexus analyze` |
+
+Skip either one and nothing breaks. The RTK hint is emitted by a hook that
+checks `PATH` first and says nothing when RTK is absent, and the GitNexus
+guidance is scoped to repositories that have an index.
+
 ## Vale takes a second step
 
 Installing the binary is not enough. The `raven-write-prose` skill ships a
