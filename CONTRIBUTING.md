@@ -45,6 +45,7 @@ This validates the installed shape, runs `upgrade --dry-run`, applies `upgrade`,
 | `scripts/raven.py` | The installer and upgrade engine |
 | `scripts/self-check.py` | Self-test harness for this repo |
 | `tests/` | Unit tests |
+| `evals/`, `scripts/eval.py` | On-demand behavioral evaluation of the shipped guidance (see `docs/evaluation.md`) |
 | `project-skills/` | Maintenance skills for working in this repo (not shipped to users) |
 
 ### Template composition (symlinks)

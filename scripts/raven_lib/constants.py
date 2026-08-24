@@ -131,7 +131,10 @@ CODEX_COMPONENT_PATHS = {
     "subagents": [".codex/agents"],
     "rules": [".codex/rules"],
 }
-NON_TEMPLATE_DIRS = {"common", "scripts", "tests", "docs", "project-skills"}
+#: Top-level directories that are part of Raven itself rather than an
+#: installable template. `list_language_templates` walks the repo root, so a
+#: new directory here is offered as a language until it is listed.
+NON_TEMPLATE_DIRS = {"common", "docs", "evals", "project-skills", "scripts", "tests"}
 KIND_FILE = "file"
 KIND_SYMLINK = "symlink"
 # Every symlink the template tree under `common/` ships, as `common/`-relative

@@ -21,6 +21,7 @@ from helpers import (
     raven,
     upgrade_ns,
 )
+from raven_lib.cli import list_language_templates
 from raven_lib.constants import EXPECTED_TEMPLATE_SYMLINKS, STARTER_TOOL_CONFIG_PATHS
 from raven_lib.template import broken_template_symlinks, should_preserve_symlink
 
@@ -756,3 +757,42 @@ class NoSymlinkCheckoutPreflightTests(RavenTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TemplateRosterTests(unittest.TestCase):
+    """`list_language_templates` walks the repo root, so a new directory is a language.
+
+    Adding `evals/` made it appear in the roster, and `install evals` got far
+    enough to fail on a missing `.mcp.json`. The roster is an allow-by-default
+    list, which means every non-template directory has to be named.
+    """
+
+    def test_the_roster_is_exactly_the_installable_templates(self):
+        self.assertEqual(
+            set(list_language_templates()),
+            {
+                "dotfiles",
+                "elixir",
+                "generic",
+                "go",
+                "lua",
+                "python",
+                "ruby",
+                "rust",
+                "swift",
+                "typescript",
+            },
+        )
+
+    def test_no_ravens_own_directory_is_offered_as_a_language(self):
+        for name in ("common", "docs", "evals", "project-skills", "scripts", "tests"):
+            with self.subTest(directory=name):
+                self.assertNotIn(name, list_language_templates())
+
+    def test_every_offered_template_has_the_files_install_needs(self):
+        # The failure mode the roster bug produced: a directory that lists fine
+        # and then dies partway through `install`.
+        for name in list_language_templates():
+            with self.subTest(template=name):
+                root = REPO_ROOT / name
+                self.assertTrue((root / "AGENTS.md").exists(), f"{name} ships no AGENTS.md")

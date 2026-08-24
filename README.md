@@ -162,6 +162,7 @@ Raven-managed paths use `raven-*` wherever possible.
 - `scripts/raven`: executable CLI wrapper for the commands above.
 - `scripts/raven.py` and `scripts/raven_lib/`: Python implementation for the CLI.
 - `tests/`: applicator tests.
+- `evals/` and `scripts/eval.py`: on-demand behavioral evaluation of the shipped guidance.
 - `project-skills/`: maintenance-only skills for this repository; not copied into destination repos.
 
 ## Developing Raven
@@ -182,6 +183,12 @@ group into your own interpreter (`python -m pip install --group dev`, pip 25.1
 or newer) and
 override the launcher: `RAVEN_PYTHON=python just test` or
 `just PYTHON='python' test`.
+
+`scripts/eval.py` is the other half, and the one the unit tests cannot cover:
+it runs task scenarios through the local `claude` or `codex` CLI, once with
+Raven installed and once without, and grades what each run left behind. It
+costs real model calls, so it is on-demand and never part of a gate. See
+[docs/evaluation.md](docs/evaluation.md) for the method and its limits.
 
 Use `scripts/self-check.py` for the dogfood workflow: it validates this repo's
 installed Raven shape, runs self-upgrade dry-run/apply, and then runs the unit

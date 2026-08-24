@@ -1,0 +1,347 @@
+#!/usr/bin/env python3
+"""Run Raven's behavioral scenarios against a local agent CLI and record the results.
+
+Not part of any gate. It costs real model calls, it is not deterministic, and a
+single run of it proves nothing on its own -- which is exactly why it is a
+command someone chooses to run rather than something `just check` does. Use the
+local `claude` or `codex` CLI and whatever subscription is already logged in;
+this script never handles a key.
+
+    python scripts/eval.py --agent claude --trials 3
+    python scripts/eval.py --agent codex --scenario gate-relaxation
+    python scripts/eval.py --agent claude --trials 5 --out docs/evaluation/
+
+Every scenario runs twice per trial in identical throwaway repositories: one
+with Raven installed, one without. The number worth reading is the difference
+between the two columns, not either column alone.
+
+Exit codes: 0 (the run completed), 1 (nothing ran -- unknown agent, missing
+CLI, or no scenario matched), 2 (a tooling problem stopped the run).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from evals.scenarios import SCENARIOS, Result, Scenario  # noqa: E402 -- needs the path inserts
+
+#: How long one agent run may take before the harness gives up on it. A hung
+#: run is a failed trial, never a hung harness.
+TIMEOUT_SECONDS = 600
+
+
+@dataclass
+class TrialOutcome:
+    """One scenario, one arm, one trial."""
+
+    scenario: str
+    arm: str
+    trial: int
+    passed: bool
+    evidence: str
+    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Agents
+# ---------------------------------------------------------------------------
+
+
+def _claude_command(task: str) -> list[str]:
+    return [
+        "claude",
+        "-p",
+        task,
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--permission-mode",
+        "bypassPermissions",
+    ]
+
+
+def _codex_command(task: str) -> list[str]:
+    return [
+        "codex",
+        "exec",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--skip-git-repo-check",
+        "--json",
+        task,
+    ]
+
+
+AGENTS = {"claude": _claude_command, "codex": _codex_command}
+
+
+# ---------------------------------------------------------------------------
+# Fixture construction
+# ---------------------------------------------------------------------------
+
+
+def _clean_git_env() -> dict:
+    """The current environment with every ``GIT_*`` variable removed.
+
+    A fixture is a throwaway repository built with `git init`, and an inherited
+    `GIT_DIR`, `GIT_WORK_TREE`, or `GIT_INDEX_FILE` silently redirects those
+    commands at whatever repository set them -- the fixture then looks
+    committed when nothing was, or worse, the caller's repository takes the
+    commit. Nothing here needs anything from git's environment, so all of it
+    goes.
+    """
+    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+
+
+def _shell(cwd: Path, command: str) -> None:
+    """Run one fixture-setup command.
+
+    `shell=True` is deliberate and safe here: every command it ever receives is
+    a literal authored in `evals/scenarios.py`, never anything the agent, the
+    environment, or a caller supplies. Scenario setup wants shell semantics
+    (`&&`, `>>`), so the alternative would be re-implementing them.
+    """
+    subprocess.run(
+        command,
+        cwd=str(cwd),
+        shell=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+        env=_clean_git_env(),
+    )
+
+
+def build_fixture(scenario: Scenario, root: Path, *, with_raven: bool) -> None:
+    """Write one arm's throwaway repository.
+
+    Both arms get the identical fixture and the identical git history. The only
+    difference is the Raven install, which is the whole point: anything else
+    that differed would be a confound the results could not separate out.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    _shell(root, "git init -q")
+    _shell(root, "git config user.email eval@example.invalid")
+    _shell(root, "git config user.name 'Raven Eval'")
+    # `git commit` forks `gc --auto`, which keeps writing into
+    # `.git/objects/pack` after the commit returns. The fixture is deleted the
+    # moment the trial ends, so that background write races the delete and
+    # surfaces as `OSError: Directory not empty: 'pack'` -- a traceback from a
+    # trial that otherwise went fine. A throwaway repository has nothing worth
+    # packing.
+    _shell(root, "git config gc.auto 0")
+    _shell(root, "git config maintenance.auto false")
+    for relative, content in scenario.files.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    if with_raven:
+        subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "raven.py"), "install", scenario.template],
+            cwd=str(root),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            env=_clean_git_env(),
+        )
+
+    # Setup runs last so a scenario that wants an initial commit gets one that
+    # includes whatever its arm installed -- otherwise the Raven arm would
+    # start with a dirty tree and the control arm would not.
+    for command in scenario.setup:
+        _shell(root, command)
+
+
+# ---------------------------------------------------------------------------
+# Running
+# ---------------------------------------------------------------------------
+
+
+def run_one(scenario: Scenario, agent: str, *, with_raven: bool, trial: int) -> TrialOutcome:
+    """Build a fixture, run the agent in it once, and grade what it left behind."""
+    arm = "raven" if with_raven else "control"
+    with tempfile.TemporaryDirectory(prefix=f"raven-eval-{scenario.name}-") as tmp:
+        root = Path(tmp) / "repo"
+        try:
+            build_fixture(scenario, root, with_raven=with_raven)
+        except OSError as exc:
+            return TrialOutcome(scenario.name, arm, trial, False, "fixture failed", str(exc))
+
+        try:
+            completed = subprocess.run(
+                AGENTS[agent](scenario.task),
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                timeout=TIMEOUT_SECONDS,
+                check=False,
+            )
+            transcript = completed.stdout
+        except subprocess.TimeoutExpired:
+            return TrialOutcome(
+                scenario.name, arm, trial, False, "agent timed out", f"> {TIMEOUT_SECONDS}s"
+            )
+        except OSError as exc:
+            return TrialOutcome(scenario.name, arm, trial, False, "agent failed to start", str(exc))
+
+        try:
+            result: Result = scenario.verdict(root, transcript)
+        except Exception as exc:  # noqa: BLE001 -- a broken verdict must not end the run
+            return TrialOutcome(scenario.name, arm, trial, False, "verdict raised", repr(exc))
+        return TrialOutcome(scenario.name, arm, trial, result.passed, result.evidence)
+
+
+def run(scenarios: list[Scenario], agent: str, trials: int) -> list[TrialOutcome]:
+    """Every scenario, both arms, ``trials`` times, reporting progress as it goes."""
+    outcomes: list[TrialOutcome] = []
+    for scenario in scenarios:
+        for trial in range(1, trials + 1):
+            for with_raven in (False, True):
+                outcome = run_one(scenario, agent, with_raven=with_raven, trial=trial)
+                mark = "pass" if outcome.passed else "FAIL"
+                print(
+                    f"  {scenario.name:22} {outcome.arm:8} trial {trial}  {mark}  {outcome.evidence}",
+                    flush=True,
+                )
+                outcomes.append(outcome)
+    return outcomes
+
+
+# ---------------------------------------------------------------------------
+# Reporting
+# ---------------------------------------------------------------------------
+
+
+def _rate(outcomes: list[TrialOutcome], scenario: str, arm: str) -> tuple[int, int]:
+    subset = [o for o in outcomes if o.scenario == scenario and o.arm == arm]
+    return sum(1 for o in subset if o.passed), len(subset)
+
+
+def render_markdown(outcomes: list[TrialOutcome], agent: str, trials: int, stamp: str) -> str:
+    """The results table, written so a reader can tell a real difference from noise."""
+    lines = [
+        f"# Raven behavioral evaluation -- {agent}",
+        "",
+        f"Run {stamp} against the local `{agent}` CLI, {trials} trial(s) per arm.",
+        "",
+        "Each scenario runs twice in identical throwaway repositories: `control`",
+        "has no Raven installed, `raven` does. Only the difference between the two",
+        "columns says anything about the guidance.",
+        "",
+        "| Scenario | Measures | control | raven |",
+        "|---|---|---|---|",
+    ]
+    names = list(dict.fromkeys(o.scenario for o in outcomes))
+    by_name = {s.name: s for s in SCENARIOS}
+    for name in names:
+        control_pass, control_n = _rate(outcomes, name, "control")
+        raven_pass, raven_n = _rate(outcomes, name, "raven")
+        measures = by_name[name].measures if name in by_name else ""
+        lines.append(
+            f"| `{name}` | {measures} | {control_pass}/{control_n} | {raven_pass}/{raven_n} |"
+        )
+    lines += [
+        "",
+        "## Evidence",
+        "",
+        "What each run actually left behind, which is what the verdicts read.",
+        "",
+    ]
+    for name in names:
+        lines.append(f"### `{name}`")
+        lines.append("")
+        for outcome in [o for o in outcomes if o.scenario == name]:
+            mark = "pass" if outcome.passed else "**FAIL**"
+            suffix = f" ({outcome.error})" if outcome.error else ""
+            lines.append(
+                f"- {outcome.arm} trial {outcome.trial}: {mark} -- {outcome.evidence}{suffix}"
+            )
+        lines.append("")
+    lines += [
+        "## Reading this honestly",
+        "",
+        f"{trials} trial(s) per arm is a sample, not a measurement. A one-run",
+        "difference is an anecdote; a scenario both arms pass measures nothing",
+        "about Raven and should be replaced with a harder one. Two scenarios",
+        "(`destructive-command`, `narrowest-test-first`) read the transcript",
+        "rather than the tree, so a transcript format change shows up as a",
+        "failure in both arms rather than a silent pass.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def main() -> int:
+    """Parse argv, run the selected scenarios, and write the results."""
+    parser = argparse.ArgumentParser(
+        description="Run Raven's behavioral scenarios against a local agent CLI.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--agent", choices=sorted(AGENTS), required=True)
+    parser.add_argument("--trials", type=int, default=1, help="runs per arm (default 1)")
+    parser.add_argument("--scenario", action="append", help="run only these (repeatable)")
+    parser.add_argument("--out", help="directory to write the results file into")
+    parser.add_argument("--json", action="store_true", help="also print raw outcomes as JSON")
+    parser.add_argument(
+        "--stamp",
+        default="an unrecorded date",
+        help="date string for the report header; pass one for a reproducible file",
+    )
+    args = parser.parse_args()
+
+    if shutil.which(args.agent) is None:
+        print(f"error: `{args.agent}` is not on PATH.", file=sys.stderr)
+        return 1
+
+    scenarios = list(SCENARIOS)
+    if args.scenario:
+        wanted = set(args.scenario)
+        scenarios = [s for s in scenarios if s.name in wanted]
+        unknown = wanted - {s.name for s in SCENARIOS}
+        if unknown:
+            print(f"error: unknown scenario(s): {', '.join(sorted(unknown))}", file=sys.stderr)
+            return 1
+    if not scenarios:
+        print("error: no scenarios selected.", file=sys.stderr)
+        return 1
+    if args.trials < 1:
+        print("error: --trials must be at least 1.", file=sys.stderr)
+        return 1
+
+    print(f"raven eval: {args.agent}, {len(scenarios)} scenario(s), {args.trials} trial(s) per arm")
+    outcomes = run(scenarios, args.agent, args.trials)
+
+    report = render_markdown(outcomes, args.agent, args.trials, args.stamp)
+    if args.out:
+        out_dir = Path(args.out)
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            path = out_dir / f"results-{args.agent}.md"
+            path.write_text(report, encoding="utf-8")
+        except OSError as exc:
+            print(f"error: could not write results: {exc}", file=sys.stderr)
+            return 2
+        print(f"\nWrote {path}")
+    else:
+        print()
+        print(report)
+
+    if args.json:
+        print(json.dumps([o.__dict__ for o in outcomes], indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
