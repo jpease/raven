@@ -51,5 +51,5 @@ Pause before adding a new dependency, changing license-sensitive packages, accep
 ## Avoid
 
 - Do not update unrelated dependencies to reduce diff noise.
-- Do not weaken audit, integrity, or lockfile checks just to make an update pass.
+- Do not weaken audit, integrity, or lockfile checks just to make an update pass. No gate reads this one, so the check is the diff: a dropped `--frozen-lockfile`, a raised audit level, a `--no-verify`, or a lockfile regenerated in the same commit as the version bump.
 - Do not copy package code into the repo without explicit approval and license review.

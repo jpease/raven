@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import subprocess
 import sys
@@ -711,3 +713,59 @@ class UnfailableRecipeTests(RavenTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AssessGateConfigTests(RavenTestCase):
+    """`assess` grades the linter configs the declared gates read (issue #229).
+
+    The sibling of the wiring checks above: a gate can be declared, reachable
+    from `check`, and able to fail, and still report nothing because its own
+    configuration was edited to stop looking.
+    """
+
+    def _python_project(self, pyproject: str | None = None):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n', encoding="utf-8"
+        )
+        (self.destination / "justfile").write_text(
+            "lint:\n    ruff check .\nfmt-check:\n    ruff format --check .\n"
+            "typecheck:\n    pyright\ntest:\n    python -m pytest\n"
+            "check: lint fmt-check typecheck test\n",
+            encoding="utf-8",
+        )
+        if pyproject is not None:
+            (self.destination / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+
+    def _config_findings(self):
+        return [
+            f
+            for f in wiring_findings(self.destination)
+            if f.id.startswith("assess.wiring.gateconfig")
+        ]
+
+    def test_a_healthy_config_grades_ok(self):
+        self._python_project(
+            '[tool.ruff.lint]\nselect = ["B", "D"]\nignore = ["D203"]\n'
+            '\n[tool.pyright]\ntypeCheckingMode = "standard"\n'
+        )
+        findings = self._config_findings()
+        self.assertEqual([f.severity for f in findings], [Severity.OK])
+
+    def test_a_selected_and_wholly_ignored_family_warns(self):
+        self._python_project('[tool.ruff.lint]\nselect = ["B", "F"]\nignore = ["B"]\n')
+        findings = self._config_findings()
+        self.assertEqual([f.id for f in findings], ["assess.wiring.gateconfig.ruff.cancelled"])
+        self.assertEqual(findings[0].severity, Severity.WARN)
+        self.assertIn("B", findings[0].detail)
+
+    def test_a_type_check_gate_below_the_template_floor_warns(self):
+        self._python_project('[tool.pyright]\ntypeCheckingMode = "off"\n')
+        ids = [f.id for f in self._config_findings()]
+        self.assertIn("assess.wiring.gateconfig.pyright.mode", ids)
+
+    def test_no_readable_config_reports_nothing_here(self):
+        # Absence is not a finding: a project with no linter config at all is
+        # already covered by the `config_signals` check above.
+        self._python_project()
+        self.assertEqual(self._config_findings(), [])

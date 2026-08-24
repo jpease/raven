@@ -30,7 +30,7 @@ Guardrails are checks and procedures that make agent work more reliable. Prefer 
 | Native (`permissions.deny`) | Claude Code host, before the tool call is even dispatched | Glob/prefix matching only | Claude only — Codex has no `permissions` equivalent |
 | Hook (`raven-pre-bash-guard.py`, `raven-pre-edit-guard.py`) | A Python process Claude Code and Codex both spawn per tool call | Tokenizes the command: normalizes option clusters, resolves wrappers, follows nested payloads | Both hosts |
 
-**Do not remove or weaken the hooks in favor of the native rules.** Two reasons:
+**Do not remove or weaken the hooks in favor of the native rules.** `raven assess` grades both of them: a hook whose body does nothing reports as not installed, and one that never reaches `check` reports as ungated. Two reasons:
 
 1. **Codex has no `permissions` equivalent.** Its hook coverage (Bash, `apply_patch`, MCP calls) is the *only* enforcement it gets; `permissions.deny` is Claude-only.
 2. **The hooks are more precise than a glob can be.** `raven-pre-bash-guard.py` tokenizes a command, normalizes option clusters (`-rf`, `-fr`, `--recursive --force` all reduce to the same intent), skips the value operand of an option that takes one (`git -c core.pager=cat clean -fdx` still reads as `clean`), and matches at the program position rather than anywhere in the text. A `Bash(...)` glob rule cannot do any of that.

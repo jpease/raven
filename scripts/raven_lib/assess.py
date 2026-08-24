@@ -13,8 +13,9 @@ from pathlib import Path
 
 from .config import ConfigError, load_config
 from .findings import Finding, Severity
+from .gate_config import gutting_reasons, read_project_settings
 from .gate_run import gate_compliance_findings
-from .gates import gate_spec_for, load_gate_specs, recipe_present
+from .gates import GateSpec, gate_spec_for, load_gate_specs, recipe_present
 from .git_hooks import git_hooks_dir
 from .runner import Runner, gate_runner
 from .template import is_known_template
@@ -589,7 +590,48 @@ def wiring_findings(destination: Path) -> list[Finding]:
     for name, expected, accept in hook_specs:
         hook_path = resolve_manager_hook(hooks_dir, name)
         findings.append(_hook_finding(destination, hook_path, name, expected, accept))
+
+    findings.extend(_gate_config_findings(destination, spec))
     return findings
+
+
+def _gate_config_findings(destination: Path, spec: GateSpec) -> list[Finding]:
+    """Grade the linter configs the declared gates read, not just the recipes that run them.
+
+    The last way a gate stops being a constraint: it is wired, `check` reaches
+    it, it can fail, and it inspects real files -- and its own configuration
+    has been edited so the rule it existed to enforce no longer reports. See
+    `gate_config` for which settings count as gutting and why only ruff,
+    pyright, and mypy have rules.
+
+    Silent when the template's configs hold nothing this can read, so a
+    template with no readable linter config is never graded on absence.
+    """
+    settings = read_project_settings(destination)
+    if not settings:
+        return []
+    reasons = gutting_reasons(settings, spec.tools, spec.recipes)
+    if not reasons:
+        return [
+            Finding(
+                id="assess.wiring.gateconfig",
+                severity=Severity.OK,
+                category=_WIRING,
+                title="gate tool configs still enforce their rules",
+                detail="no linter setting disables the substance of a declared gate",
+            )
+        ]
+    return [
+        Finding(
+            id=f"assess.wiring.gateconfig.{suffix}",
+            severity=Severity.WARN,
+            category=_WIRING,
+            title=title,
+            detail=detail,
+            fix=fix,
+        )
+        for suffix, title, detail, fix in reasons
+    ]
 
 
 def template_fit_findings(destination: Path) -> list[Finding]:

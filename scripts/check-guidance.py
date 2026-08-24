@@ -46,7 +46,7 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from raven_lib.cli import build_parser  # noqa: E402
+from raven_lib.cli import build_parser  # noqa: E402 -- needs the sys.path insert above
 
 #: One finding: (repo-relative file path, 1-indexed line number, message).
 Finding = tuple[str, int, str]

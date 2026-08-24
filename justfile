@@ -70,8 +70,16 @@ typecheck:
 hygiene:
     ./scripts/check-staged-hygiene.py
 
+# Scan staged content for a change that relaxes a quality gate: an
+# unexplained suppression comment, a linter config edited to check less, or a
+# test removed or switched off (see AGENTS.md's "Gate Relaxation" section).
+# Repo-only for the same reason as `hygiene`: it enforces Raven's own policy
+# on Raven's own commits, and is not part of the shipped python/justfile.
+relaxation:
+    ./scripts/check-staged-relaxation.py
+
 # Fast static checks for the pre-commit hook (no type check, no tests)
-check-fast: lint fmt-check hygiene
+check-fast: lint fmt-check hygiene relaxation
 
 # Run the standard local verification set (also runs in the pre-push hook).
 # A successful run credits the pre-push stamp too, so a manual `just check`

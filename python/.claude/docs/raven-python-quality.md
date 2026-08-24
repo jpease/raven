@@ -17,7 +17,7 @@ For changes that touch security-sensitive boundaries, run the `raven-security-re
 ## Types And Invariants
 
 - Use type hints on all new functions and classes in typed codebases.
-- Do not weaken `mypy` or `pyright` configuration to satisfy a type error. Fix the code instead.
+- Do not weaken `mypy` or `pyright` configuration to satisfy a type error. Fix the code instead. `raven assess` reports a `typecheck` gate configured below the template's floor, so a lowered `typeCheckingMode` shows up in the report rather than only in review.
 - Avoid `Any`; use `object` or a narrower type. Parse and validate before narrowing.
 - Use `TypedDict`, `dataclass`, or a validation library (e.g., Pydantic, attrs) for structured data. Avoid raw `dict[str, Any]` as a domain object.
 - Use `NewType` or single-field dataclasses for important domain identifiers where mixing raw primitives would create bugs.
@@ -90,7 +90,7 @@ Domain code must not import infrastructure modules. Violations make the domain u
 ### Regression Tests
 
 - Add a regression test for every bug fix when the failure can be reproduced deterministically.
-- Do not delete or weaken existing tests to make a change pass.
+- Do not delete or weaken existing tests to make a change pass. A diff that removes more test functions than it adds, or that adds an unconditional skip, is the observable form of both.
 
 ## Dependency And License Hygiene
 

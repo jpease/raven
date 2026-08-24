@@ -50,7 +50,7 @@ Two closely related evasions are also covered:
   This is an accepted, permanent gap; what *does* get checked is the
   binary file's own *path*, per the path-scanning behavior above.
 
-Path discovery (`_iter_changed_paths`) reads `git diff --cached
+Path discovery (`iter_changed_paths`) reads `git diff --cached
 --name-status -z`, not `diff --git a/X b/Y` header text: `-z`'s
 NUL-delimited output is immune to path quoting, so a path holding a
 non-ASCII byte, an embedded `"`, or any other character git would
@@ -87,9 +87,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-#: Literal token that suppresses hygiene findings for the line it appears on.
-#: Single-line scope only -- deliberately no file- or directory-level escape.
-ALLOW_MARKER = "raven-hygiene: allow"
+from staged_diff import (
+    ALLOW_MARKER,
+    iter_added_lines,
+    iter_changed_paths,
+    staged_diff,
+)
 
 #: Tracked paths this check does not scan even though they hold staged text.
 #: Kept tiny and explicit: excluding docs/specs/plans is exactly what the
@@ -142,19 +145,6 @@ _HOME_PATH_RE = re.compile(
 # case-insensitively. This is a narrow, explicit skip-list, not a general
 # "is this really a home path" heuristic -- see the module docstring.
 _KNOWN_SHARED_SEGMENTS = frozenset({"shared", "public"})
-
-#: Matches a standard unified-diff hunk header, e.g. `@@ -1,2 +1,3 @@`
-#: (an optional trailing function-context suffix like ` def foo():` is fine
-#: -- `.match` only anchors the start). Deliberately does NOT match a git
-#: "combined diff" header (`@@@ -a,b -c,d +e,f @@@`, emitted when a
-#: diff-generating command shows a merge -- see `_iter_added_lines`): no
-#: known real invocation of `git diff --cached` (what this script actually
-#: runs) produces that shape, and parsing multi-parent combined-diff line
-#: prefixes correctly is real complexity for a case this script cannot
-#: observe in practice (#193). A hunk header this pattern doesn't match is
-#: therefore treated as unscannable, not silently skipped -- see
-#: `_iter_added_lines`.
-_HUNK_HEADER_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
 #: One offending line or path: (path, line number in the new file, content,
 #: reason). `line_no == 0` is a sentinel meaning "the path itself, not a
@@ -301,137 +291,6 @@ def load_denylist() -> Denylist | None:
     return Denylist(names=names, pattern=pattern)
 
 
-def _iter_added_lines(diff_text: str):
-    """Yield (path, line_no, content) for each added line of a staged diff.
-
-    Only lines git marks with a leading `+` (excluding the `+++` file
-    header) are yielded. Removed (`-`) and context lines are tracked only to
-    keep the new-file line numbering correct -- this is what makes "a
-    removed line never fails the commit that removes it" true by
-    construction rather than by a special case.
-
-    A hunk header that does not match the standard unified-diff shape
-    `_HUNK_HEADER_RE` expects (in practice: only a git "combined diff"
-    header, `@@@ ... @@@`, though no known real `git diff --cached`
-    invocation produces one -- see `_HUNK_HEADER_RE`) is never silently
-    treated as "nothing to scan under it": it is yielded once as
-    `(path, None, raw_header_line)` so `find_findings` can raise an explicit
-    "could not scan" finding instead of every added line under that hunk
-    simply vanishing from the scan the way it used to (#193).
-    """
-    path: str | None = None
-    line_no: int | None = None
-    for raw in diff_text.splitlines():
-        if raw.startswith("diff --git "):
-            path = None
-            line_no = None
-        elif raw.startswith("+++ "):
-            target = raw[len("+++ ") :]
-            if target == "/dev/null":
-                path = None
-            elif target.startswith("b/"):
-                path = target[2:]
-            else:
-                path = target
-        elif raw.startswith("@@"):
-            match = _HUNK_HEADER_RE.match(raw)
-            if match:
-                line_no = int(match.group(1))
-            else:
-                line_no = None
-                if path is not None:
-                    yield path, None, raw
-        elif path is None or line_no is None:
-            continue
-        elif raw.startswith("+"):
-            yield path, line_no, raw[1:]
-            line_no += 1
-        elif raw.startswith("-"):
-            continue
-        elif raw.startswith("\\"):
-            continue  # "\ No newline at end of file"
-        else:
-            line_no += 1  # context line (present if diff.context != 0)
-
-
-def _changed_paths_raw() -> bytes:
-    """Raw NUL-delimited output of `git diff --cached --name-status -z`.
-
-    `-z` disables path quoting entirely, unlike the default `diff --git a/X
-    b/Y` header this module used to parse for path discovery: that header
-    quotes X/Y (as a C-style backslash-escaped string wrapped in `"..."`)
-    whenever a path holds a byte >= 0x80 (subject to `core.quotePath`;
-    true is the default) or a literal `"`/backslash/control character
-    (always, regardless of `core.quotePath` -- the header syntax needs it
-    to stay unambiguous). A path holding only a plain space is never
-    quoted either way, but was already handled correctly by the old
-    parsing; the quoted forms were not (#193) -- `-z` sidesteps the whole
-    class of gap by never quoting anything. `--name-status` also reports a
-    status letter (`A`/`M`/`D`/`R100`/`C100`/...) directly, which is what
-    lets `_iter_changed_paths` drop a pure deletion without a second pass
-    scanning the diff body for a `deleted file mode` line.
-    """
-    result = subprocess.run(
-        ["git", "diff", "--cached", "--no-color", "--name-status", "-z"],
-        capture_output=True,
-        check=True,
-    )
-    return result.stdout
-
-
-def _iter_changed_paths():
-    r"""Yield the destination path of every staged entry that is not a pure deletion.
-
-    Parses `git diff --cached --name-status -z` (see `_changed_paths_raw`
-    for why) rather than `diff --git a/X b/Y` headers out of the full diff
-    text. Each record is NUL-delimited: `status\\0path\\0` for an add,
-    modify, or delete; `status\\0old_path\\0new_path\\0` for a rename or
-    copy (status `R.../C...`), from which only `new_path` is yielded --
-    this is the *same* path a rename/copy header's `b/Y` used to give,
-    including a 100%-similarity rename, which has no `+++`/hunk body at
-    all and would otherwise be invisible to `_iter_added_lines`. A
-    deletion (status `D`) is never yielded, matching "removing something
-    is never a reason to block" (see `_iter_added_lines`, #181).
-    """
-    fields = _changed_paths_raw().decode("utf-8", errors="replace").split("\0")
-    i = 0
-    n = len(fields)
-    while i < n:
-        status = fields[i]
-        if not status:
-            i += 1
-            continue
-        code = status[0]
-        if code in ("R", "C"):
-            if i + 2 >= n:
-                break
-            path = fields[i + 2]
-            i += 3
-        else:
-            if i + 1 >= n:
-                break
-            path = fields[i + 1]
-            i += 2
-        if code != "D":
-            yield path
-
-
-def _staged_diff() -> str:
-    """The staged diff (`git diff --cached`), tolerant of non-UTF-8 bytes.
-
-    `--src-prefix=a/ --dst-prefix=b/` pins the canonical `a/`/`b/` prefixes
-    the `+++` parsing below expects, regardless of a contributor's local
-    `diff.mnemonicPrefix` setting (which would otherwise rewrite them to
-    `i/`/`w/`/`c/` and break the path extraction).
-    """
-    result = subprocess.run(
-        ["git", "diff", "--cached", "--no-color", "--src-prefix=a/", "--dst-prefix=b/"],
-        capture_output=True,
-        check=True,
-    )
-    return result.stdout.decode("utf-8", errors="replace")
-
-
 def find_findings(diff_text: str, denylist: Denylist | None) -> list[Finding]:
     """Return every offending added line or changed path in `diff_text`.
 
@@ -441,8 +300,8 @@ def find_findings(diff_text: str, denylist: Denylist | None) -> list[Finding]:
     `Denylist`).
 
     Three passes: changed *paths* (new files, modified files, renames --
-    see `_iter_changed_paths`), reported with the `line_no == 0` sentinel;
-    a hunk header `_iter_added_lines` could not parse, reported once per
+    see `iter_changed_paths`), reported with the `line_no == 0` sentinel;
+    a hunk header `iter_added_lines` could not parse, reported once per
     path with the `line_no == -1` sentinel rather than silently dropping
     every added line under it (#193); then added *lines*, each checked
     alone and, when it is immediately adjacent to the previous added line
@@ -454,7 +313,7 @@ def find_findings(diff_text: str, denylist: Denylist | None) -> list[Finding]:
     """
     findings: list[Finding] = []
 
-    for path in _iter_changed_paths():
+    for path in iter_changed_paths():
         if path in EXCLUDED_PATHS:
             continue
         if _home_path_hit(path):
@@ -465,7 +324,7 @@ def find_findings(diff_text: str, denylist: Denylist | None) -> list[Finding]:
 
     prev: tuple[str, int, str, bool] | None = None
     unscannable_hunk_paths: set[str] = set()
-    for path, line_no, content in _iter_added_lines(diff_text):
+    for path, line_no, content in iter_added_lines(diff_text):
         if line_no is None:
             prev = None
             if path not in EXCLUDED_PATHS and path not in unscannable_hunk_paths:
@@ -568,7 +427,7 @@ def _report(findings: list[Finding]) -> None:
 def main() -> int:
     """Scan the staged diff, report findings on stderr, and return an exit code."""
     try:
-        diff_text = _staged_diff()
+        diff_text = staged_diff()
     except (subprocess.CalledProcessError, OSError) as exc:
         print(f"error: raven-hygiene: could not read the staged diff: {exc}", file=sys.stderr)
         return 2

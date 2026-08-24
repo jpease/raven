@@ -161,7 +161,7 @@ def _raven_config_module():
     return module
 
 
-def _load_payload() -> dict | None:  # type: ignore[type-arg]
+def _load_payload() -> dict | None:  # type: ignore[type-arg] -- host JSON, shape varies
     try:
         payload = json.load(sys.stdin)
     except (ValueError, OSError):
@@ -173,18 +173,18 @@ def _load_payload() -> dict | None:  # type: ignore[type-arg]
     return payload if isinstance(payload, dict) else None
 
 
-def _extract_command(payload: dict) -> str:  # type: ignore[type-arg]
+def _extract_command(payload: dict) -> str:  # type: ignore[type-arg] -- host JSON, shape varies
     tool_input = payload.get("tool_input") or {}
     if not isinstance(tool_input, dict):
         tool_input = {}
     return tool_input.get("command") or payload.get("command") or ""
 
 
-def _is_codex_hook(payload: dict) -> bool:  # type: ignore[type-arg]
+def _is_codex_hook(payload: dict) -> bool:  # type: ignore[type-arg] -- host JSON, shape varies
     return "hook_event_name" in payload or "tool_name" in payload
 
 
-def _deny(message: str, payload: dict) -> int:  # type: ignore[type-arg]
+def _deny(message: str, payload: dict) -> int:  # type: ignore[type-arg] -- host JSON, shape varies
     if _is_codex_hook(payload):
         print(
             json.dumps(

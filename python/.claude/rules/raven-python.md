@@ -30,7 +30,7 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 ## Python Safety
 
 - Use type hints consistently with surrounding code. Do not introduce untyped signatures into typed codebases.
-- Do not weaken mypy or pyright configuration to satisfy a type error. Fix the code instead.
+- Do not weaken mypy or pyright configuration to satisfy a type error. Fix the code instead. `raven assess` reports a `typecheck` gate whose config sits below the template's floor — `typeCheckingMode` at `basic` or `off`, or mypy's `ignore_errors` turned on.
 - Avoid `Any` in typed codebases. Use `object` or a narrower type; parse/validate before narrowing.
 - Prefer `T | None` over `Optional[T]` in codebases already using modern syntax.
 - Use `TypedDict`, `dataclass`, or `pydantic`-style models for structured data rather than raw `dict[str, Any]`.
@@ -62,7 +62,7 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Use `pytest` fixtures and parametrize rather than duplicating setup across tests.
 - Write behavior-focused tests; avoid over-mocking internals.
 - Add regression tests for bug fixes when the failure can be reproduced deterministically.
-- Do not delete or weaken tests to make a change pass unless explicitly requested.
+- Do not delete or weaken tests to make a change pass unless explicitly requested. The observable form is a diff that ends with fewer test functions in a file than it started with, or an unconditional skip added to one; name the replacement, or say the coverage is gone.
 - Broaden to the repository's standard test or quality command only after targeted tests pass.
 - Avoid brittle sleeps, timing assumptions, and oversized snapshots unless the codebase already relies on them.
 
@@ -81,5 +81,5 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Run the repository's documented final quality gate before handoff when code changed.
 - If no final gate exists, run formatter check, lint, type check, and tests at minimum.
 - Fix formatter, lint, and type-checking failures in touched code.
-- Do not add broad `# noqa` or `# type: ignore` comments. Prefer fixing the code or using the narrowest scoped suppression with a reason comment.
+- Do not add broad `# noqa` or `# type: ignore` comments. Prefer fixing the code or using the narrowest scoped suppression with a reason comment. A rule code with no reason reads the same as a shortcut to the next person who finds it; `.claude/scripts/raven-capability-roster.py` shows the shape that passes — one code, then why.
 

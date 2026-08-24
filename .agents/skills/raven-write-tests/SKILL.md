@@ -23,7 +23,7 @@ description: Use when adding, fixing, or reviewing tests.
 - If a shared test double's fidelity gap blocks an assertion, prefer asserting on the observable call sequence over widening the double. Widening changes behavior for every other test that depends on it; a narrow assertion doesn't.
 - Run only the new or changed tests first.
 - Broaden test scope only after narrow tests pass.
-- Do not delete, weaken, or over-mock tests just to make a change pass.
+- Do not delete, weaken, or over-mock tests just to make a change pass. Deletion and weakening each have an observable form: a diff ending with fewer test functions in a file than it started with, and an unconditional skip (`@pytest.mark.skip`, `@unittest.skip`, `self.skipTest`). A conditional `skipif`/`skipUnless` is different in kind — it states the environment in which the test does not apply.
 
 ## Rationalization Check
 

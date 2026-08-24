@@ -357,7 +357,15 @@ def validate_aggregate_budget() -> None:
     ]
     PROFILES: dict[str, tuple[int, str]] = {
         # language: (aggregate word budget, language rules file)
-        "python": (1998, "python/.claude/rules/raven-python.md"),
+        # Raised 1998 -> 2017 deliberately (#229): three cross-references in
+        # `raven-python.md`, each naming what the mechanical check actually
+        # observes -- a `typecheck` gate below the template's floor, a diff
+        # that ends with fewer test functions than it started with, a rule
+        # code with no reason beside it. The rules file was prose an agent
+        # could read, agree with, and then edit the config anyway; the
+        # observable form is what makes the rule checkable, and it is only
+        # useful in the file that is already loaded when the edit is made.
+        "python": (2017, "python/.claude/rules/raven-python.md"),
         "elixir": (2128, "elixir/.claude/rules/raven-elixir.md"),
         "rust": (2058, "rust/.claude/rules/raven-rust.md"),
         "swift": (1898, "swift/.claude/rules/raven-swift.md"),
