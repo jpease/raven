@@ -106,6 +106,20 @@ outright instead, and asks for consent rather than writing a merge artifact.
 See [docs/upgrading.md](docs/upgrading.md) for the full rules, including
 removal of dropped files, template switching, and line-ending handling.
 
+## More Than One Repository
+
+Every command above runs inside one repository. `raven fleet` is the exception:
+it runs from anywhere and reports every repository Raven has been installed
+into, which template each uses, and which are behind this checkout.
+
+```sh
+raven fleet
+```
+
+`install` and `upgrade` record the repository they ran in, so the list builds
+itself. It stores paths only -- everything else is read live from each
+repository's manifest. See [docs/commands.md](docs/commands.md#raven-fleet).
+
 ## Optional Tooling
 
 Raven's templates recommend `rg`, `fd`, `just`, GitNexus, ast-grep, Semgrep,

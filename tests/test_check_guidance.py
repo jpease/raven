@@ -497,7 +497,10 @@ class BuildParserContractTests(unittest.TestCase):
 
     def test_subcommands_match_measured_ground_truth(self) -> None:
         subcommands, _, _, _ = self.module._parser_maps(self.parser)
-        self.assertEqual(subcommands, {"accept", "assess", "doctor", "init", "install", "upgrade"})
+        self.assertEqual(
+            subcommands,
+            {"accept", "assess", "doctor", "fleet", "init", "install", "upgrade"},
+        )
 
     def test_flags_match_measured_ground_truth(self) -> None:
         _, per_command, global_flags, _ = self.module._parser_maps(self.parser)
@@ -516,6 +519,7 @@ class BuildParserContractTests(unittest.TestCase):
                 "--include-readme",
                 "--json",
                 "--platform",
+                "--prune",
                 "--run",
             },
         )

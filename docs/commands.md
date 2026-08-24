@@ -127,6 +127,36 @@ on it. A registry Raven cannot read stays a warning either way, because "cannot
 tell" is a weaker claim than "not installed". A repository with no `.claude/`
 directory can reach no Claude plugin, and the whole section is skipped.
 
+## `raven fleet`
+
+Reports every repository Raven has been installed into, and which of them are
+behind this checkout.
+
+```sh
+raven fleet          # human-readable report
+raven fleet --json   # machine-readable
+raven fleet --prune  # forget paths that no longer hold a Raven install
+```
+
+Unlike every other command here, `fleet` does not run from inside a Raven
+repository -- it runs from anywhere. `install` and `upgrade` record the
+repository they ran in, in `~/.raven/repos.json`, and `fleet` reads that list.
+Set `RAVEN_HOME` to move the file.
+
+The registry stores paths and nothing else. Template, pinned sha, and
+staleness are read live from each repository's own `.raven/manifest.json`, so
+the only thing it can be wrong about is which directories to look in --
+`--prune` fixes that, and a registered path that has gone away is reported as
+a warning rather than silently dropped.
+
+`fleet` never upgrades anything. A repository that is behind reports the
+command to run and where to run it; which of them is safe to touch right now
+is not a question this command can answer. Being behind is a report, not a
+broken install, so like `doctor` it exits non-zero only on an `error` finding.
+
+A repository installed before this command existed is not in the registry
+until its next `install` or `upgrade`.
+
 ## `raven assess`
 
 Grades the project against its template's quality-gate expectations: justfile

@@ -45,6 +45,7 @@ from .cli import (
     _run,
     cmd_accept,
     cmd_doctor,
+    cmd_fleet,
     cmd_init,
     cmd_install,
     cmd_upgrade,
@@ -96,6 +97,7 @@ from .constants import (
 )
 from .doctor import build_doctor_findings, merge_only_tracking_findings
 from .findings import Finding, Severity, exit_code, summarize
+from .fleet import build_fleet_findings, load_registry, register, registry_path
 from .gates import gate_spec_for
 from .git_hooks import detect_hook_manager, git_hooks_dir, hook_manager_guidance, install_git_hooks
 from .hashing import (
@@ -259,6 +261,7 @@ __all__ = [
     "cmd_upgrade",
     "cmd_accept",
     "cmd_doctor",
+    "cmd_fleet",
     "main",
     # findings
     "Finding",
@@ -271,6 +274,11 @@ __all__ = [
     # doctor / assess
     "build_doctor_findings",
     "build_assess_findings",
+    # fleet
+    "build_fleet_findings",
+    "load_registry",
+    "register",
+    "registry_path",
     "merge_only_tracking_findings",
     "untracked_merge_only_paths",
 ]

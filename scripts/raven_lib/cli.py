@@ -55,6 +55,14 @@ from .constants import (
 from .deactivated import classify_deactivated
 from .doctor import build_doctor_findings
 from .findings import exit_code
+from .fleet import (
+    build_fleet_findings,
+    load_registry,
+    register,
+    registry_path,
+    save_registry,
+    stale_paths,
+)
 from .git_hooks import detect_hook_manager, git_hooks_dir, hook_manager_guidance, install_git_hooks
 from .manifest import load_manifest, update_manifest
 from .models import ApplyPlan, Classification, RavenConfig, TemplateEntry
@@ -745,7 +753,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         def write_config() -> int:
             return _create_config(destination, language, platform, include_readme)
 
-    return _run(
+    rc = _run(
         destination,
         config,
         template_name,
@@ -758,6 +766,19 @@ def cmd_install(args: argparse.Namespace) -> int:
         platform_override=platform,
         write_config=write_config,
     )
+    _register_for_fleet(destination, rc, args.dry_run)
+    return rc
+
+
+def _register_for_fleet(destination: Path, rc: int, dry_run: bool) -> None:
+    """Record a successful, non-dry-run apply in the fleet registry.
+
+    Deliberately silent either way. A registry is a convenience for `raven
+    fleet`, and a home directory that cannot be written must not turn a
+    successful install into a failure or print noise the reader cannot act on.
+    """
+    if rc == 0 and not dry_run:
+        register(destination)
 
 
 def cmd_upgrade(args: argparse.Namespace) -> int:
@@ -779,7 +800,7 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     if template_name is None:
         return 2
     include_readme = args.include_readme or config.include_readme
-    return _run(
+    rc = _run(
         destination,
         config,
         template_name,
@@ -790,6 +811,8 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
         adopt_settings_json_requested=getattr(args, "adopt_settings_json", False),
         confirm_template_switch_requested=getattr(args, "confirm_template_switch", False),
     )
+    _register_for_fleet(destination, rc, args.dry_run)
+    return rc
 
 
 @dataclass
@@ -1005,6 +1028,38 @@ def cmd_assess(args: argparse.Namespace) -> int:
         render_json("assess", _os_name(), findings)
         if args.json
         else render_human("assess", _os_name(), findings, ascii_marks=_ascii_marks_needed())
+    )
+    print(output)
+    return exit_code(findings)
+
+
+def cmd_fleet(args: argparse.Namespace) -> int:
+    """``raven fleet``: report every registered Raven install and whether it is behind.
+
+    Read-only apart from ``--prune``, which forgets registered paths that no
+    longer hold an install. It never upgrades: which repository is safe to
+    touch right now is the reader's call, not this command's.
+    """
+    if args.prune:
+        stale = stale_paths()
+        if not stale:
+            print("Nothing to prune: every registered repository still has a Raven install.")
+        else:
+            remaining = [p for p in load_registry() if p not in set(stale)]
+            if save_registry(remaining):
+                print("Forgot:")
+                for path in stale:
+                    print(f"  {path}")
+            else:
+                print(f"error: could not write {registry_path()}", file=sys.stderr)
+                return 2
+        return 0
+
+    findings = build_fleet_findings()
+    output = (
+        render_json("fleet", _os_name(), findings)
+        if args.json
+        else render_human("fleet", _os_name(), findings, ascii_marks=_ascii_marks_needed())
     )
     print(output)
     return exit_code(findings)
@@ -1331,6 +1386,23 @@ template as its source, then removes the merge artifacts.
     )
     assess_parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
 
+    fleet_parser = subparsers.add_parser(
+        "fleet",
+        usage="raven fleet [OPTIONS]",
+        help="report every repository Raven is installed in and which are behind",
+        description=(
+            "Read-only view across every repository `install` or `upgrade` has run in.\n"
+            "Template, pinned sha, and staleness are read live from each manifest."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    fleet_parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
+    fleet_parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="forget registered paths that no longer hold a Raven install",
+    )
+
     return parser
 
 
@@ -1343,6 +1415,8 @@ def main() -> int:
         return cmd_init(args)
     if args.command == "install":
         return cmd_install(args)
+    if args.command == "fleet":
+        return cmd_fleet(args)
     if args.command == "upgrade":
         return cmd_upgrade(args)
     if args.command == "accept":
