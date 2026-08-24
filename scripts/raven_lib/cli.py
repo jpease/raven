@@ -47,6 +47,7 @@ from .constants import (
     REPO_ROOT,
     SETTINGS_JSON_BACKUP_PATH,
     SETTINGS_JSON_PATH,
+    STARTER_TOOL_CONFIG_PATHS,
     SYMLINK_CHECKOUT_FIX,
     VALID_PLATFORMS,
     _any_exists,
@@ -69,7 +70,7 @@ from .plan import (
     settings_json_adoption_conflict,
 )
 from .report import render_human, render_json, supports_unicode_marks
-from .template import broken_template_symlinks, entries_for_destination
+from .template import broken_template_symlinks, entries_for_destination, iter_template_entries
 from .tracking import untracked_merge_only_paths
 
 
@@ -884,6 +885,25 @@ def cmd_accept(args: argparse.Namespace) -> int:
         neutral_entry = neutral_entries.get(relative)
         if neutral_entry is not None:
             entries[relative] = neutral_entry
+
+    # A starter tool config (pyproject.toml, .rubocop.yml, ...) is dropped from
+    # `entries_for_destination` the moment the destination has one, because
+    # install and upgrade must never re-copy over a project's own config. That
+    # is right for them and wrong here: `doctor` still reports an edited
+    # starter config as drift and tells the reader to run `raven accept`, which
+    # would then refuse it as "not a Raven-managed template file". Recording a
+    # deliberately diverged file as the baseline is the one thing accept is
+    # for, so resolve just this set from the same policy-neutral map the gated
+    # paths above use. Nothing is copied either way.
+    starter_candidates = {
+        entry.relative: entry
+        for entry in iter_template_entries(template, excludes, None)
+        if entry.relative in STARTER_TOOL_CONFIG_PATHS
+    }
+    for relative, starter_entry in starter_candidates.items():
+        if relative in entries or not _any_exists(destination / relative):
+            continue
+        entries[relative] = starter_entry
 
     requested = (
         [normalize_override(path) for path in args.paths]

@@ -443,22 +443,22 @@
       "target": "AGENTS.md"
     },
     "justfile": {
-      "installedSha256": "b1d3f8f52089d4a121cc27537050c4b39debd6af24c883fdb5333168f6f3e50f",
+      "installedSha256": "ded03ac2dadd5a14f43de13c82b868f8cba9738bf5f3b1109dfc6560019d4577",
       "kind": "file",
-      "sourceSha256": "b1d3f8f52089d4a121cc27537050c4b39debd6af24c883fdb5333168f6f3e50f"
+      "sourceSha256": "c36c59126f21541fd66c31109c4133cf41b193ada7ee5948cf73472fbfdfe902"
     },
     "pyproject.toml": {
-      "installedSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611",
+      "installedSha256": "4288130caaf1fdc5691be73e516f68443222a064d13eea1d780007a48915d712",
       "kind": "file",
-      "sourceSha256": "b80f08d7da013bfb353f2311c5fd513aca2dd2e892fad350bcae930a9f024611"
+      "sourceSha256": "753fbf98675efe88d8b29cc4a4bedb29a3586a9c537b4c32beeb4853f9164974"
     }
   },
   "gateTools": [
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "4c5c6b888209",
+  "ravenVersion": "09a8f0801db5",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-24T23:05:00.632830+00:00"
+  "updatedAt": "2026-08-24T23:08:55.940833+00:00"
 }

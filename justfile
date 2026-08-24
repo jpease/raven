@@ -58,9 +58,15 @@ format:
 fmt-check:
     ruff format --check .
 
-# Run type checks
+# Run type checks.
+#
+# `--stats` is deliberate: plain `pyright` prints `0 errors, 0 warnings,
+# 0 informations` whether it checked every file or none of them, so a
+# typecheck gate pointed at nothing is indistinguishable from a passing
+# one. `--stats` adds a `Total files checked: N` line that says which it
+# was, for a human reading the output and for `raven assess --run`.
 typecheck:
-    pyright
+    pyright --stats
 
 # Scan staged content for home-directory absolute paths and (if a local
 # denylist is configured) private repository names. Repo-only: this is

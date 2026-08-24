@@ -7,6 +7,7 @@ from pathlib import Path
 
 from helpers import RavenTestCase, raven
 from raven_lib.cli import classify_accept_requests
+from raven_lib.doctor import build_doctor_findings
 
 
 class AcceptCommandTests(RavenTestCase):
@@ -353,3 +354,107 @@ class ClassifyAcceptRequestsTests(RavenTestCase):
         )
 
         self.assertEqual(result.accepted, ["AGENTS.md"])
+
+
+class AcceptStarterToolConfigTests(RavenTestCase):
+    """A starter tool config a project has edited must be acceptable.
+
+    `entries_for_destination` drops a starter config the moment the destination
+    has one, so install and upgrade never re-copy over a project's own config.
+    Reusing that map in `accept` meant `doctor` could report an edited
+    `pyproject.toml` as drift and name a fix -- `raven accept` -- that then
+    refused the file as "not a Raven-managed template file". Recording a
+    deliberately diverged file as the baseline is exactly what accept is for.
+    """
+
+    def _ns(self, paths=None, dry_run=False):
+        return argparse.Namespace(
+            destination=str(self.destination),
+            paths=paths or [],
+            dry_run=dry_run,
+            include_readme=False,
+        )
+
+    def _install(self):
+        config_path = self.destination / ".raven" / "config.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(raven.default_config_text("python", False, "none"), encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+    def _accept(self, paths):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            rc = raven.cmd_accept(self._ns(paths=paths))
+        return rc, buffer.getvalue()
+
+    def _manifest_entry(self, relative):
+        manifest = json.loads(
+            (self.destination / ".raven" / "manifest.json").read_text(encoding="utf-8")
+        )
+        return manifest["files"].get(relative)
+
+    def test_an_edited_starter_config_can_be_accepted(self):
+        self._install()
+        pyproject = self.destination / "pyproject.toml"
+        pyproject.write_text("[tool.ruff]\nline-length = 120\n", encoding="utf-8")
+
+        rc, output = self._accept(["pyproject.toml"])
+
+        self.assertEqual(rc, 0)
+        self.assertNotIn("not a Raven-managed template file", output)
+        entry = self._manifest_entry("pyproject.toml")
+        self.assertIsNotNone(entry)
+        assert entry is not None
+        fingerprint = raven.destination_fingerprint(pyproject)
+        assert fingerprint is not None
+        self.assertEqual(entry["installedSha256"], fingerprint.sha256)
+
+    def test_accepting_clears_the_drift_doctor_reported(self):
+        """The end-to-end shape of the bug: doctor warns, its named fix works.
+
+        Editing the file alone is only `local_only` -- informational, because
+        nothing upstream moved. The WARN doctor emits, and whose fix line says
+        `raven accept`, needs the template to have moved on as well, which is
+        what the rewritten `sourceSha256` below stands in for.
+        """
+        self._install()
+        pyproject = self.destination / "pyproject.toml"
+        pyproject.write_text("[tool.ruff]\nline-length = 120\n", encoding="utf-8")
+        manifest_path = self.destination / ".raven" / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"]["pyproject.toml"]["sourceSha256"] = "0" * 64
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        def modified():
+            findings = build_doctor_findings(self.destination)
+            return [
+                f
+                for f in findings
+                if f.id == "doctor.drift.modified" and "pyproject.toml" in (f.detail or "")
+            ]
+
+        self.assertTrue(modified(), "expected doctor to report the edited starter config first")
+        rc, output = self._accept(["pyproject.toml"])
+        self.assertEqual(rc, 0)
+        self.assertNotIn("not a Raven-managed template file", output)
+        self.assertFalse(modified(), "accept did not clear the drift doctor named it for")
+
+    def test_a_starter_config_the_destination_lacks_is_still_skipped(self):
+        # Nothing on disk to record: the "no such file" path, not a silent pass.
+        self._install()
+        (self.destination / "pyproject.toml").unlink()
+        rc, output = self._accept(["pyproject.toml"])
+        self.assertEqual(rc, 0)
+        self.assertIn("no such file in destination", output)
+
+    def test_a_genuinely_unmanaged_path_is_still_refused(self):
+        # The widening covers starter tool configs only; an arbitrary file the
+        # template never ships must still be rejected.
+        self._install()
+        (self.destination / "not-ravens.txt").write_text("local\n", encoding="utf-8")
+        rc, output = self._accept(["not-ravens.txt"])
+        self.assertEqual(rc, 0)
+        self.assertIn("not a Raven-managed template file", output)
