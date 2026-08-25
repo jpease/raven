@@ -62,8 +62,14 @@ a git "combined diff" `@@@ ... @@@` header, which no known real `git diff
 it is reported as its own finding ("could not be scanned"), not swallowed.
 
 A line carrying the literal marker `raven-hygiene: allow` anywhere on it is
-exempt from both checks. There is no file- or directory-level suppression --
-only this single-line, diff-visible marker (see AGENTS.md's escape-hatch
+exempt from both checks. In a `.py` file a marker on a line holding only
+closing brackets and commas also covers back to the line its outermost
+bracket opened on (`marker_covered_lines`): `ruff format` splits a call that
+ran past the line length and carries the trailing marker down to the closing
+bracket, which used to leave the marker on a line with nothing to suppress
+and the commit blocked on text someone had already marked (#237). Reach
+stops at that construct; there is still no file- or directory-level
+suppression, only this diff-visible marker (see AGENTS.md's escape-hatch
 rationale). A path-level finding, and an unparseable-hunk finding, each have
 no single line to carry that marker; the former requires renaming the path,
 the latter requires manual verification before committing.
@@ -89,6 +95,7 @@ from pathlib import Path
 
 from staged_diff import (
     ALLOW_MARKER,
+    covered_index_lines,
     iter_added_lines,
     iter_changed_paths,
     staged_diff,
@@ -310,6 +317,11 @@ def find_findings(diff_text: str, denylist: Denylist | None) -> list[Finding]:
     consecutive added lines (#181). A line that already fired on its own is
     not also reported via a join, to avoid a triplicate finding for the
     same leak.
+
+    A line a marker covers without carrying one -- the middle of a call
+    `ruff format` split, see `marker_covered_lines` -- breaks the join chain
+    exactly as a marked line does. Letting it stay in the chain would report
+    the leak the marker was written for as half of a two-line join instead.
     """
     findings: list[Finding] = []
 
@@ -324,6 +336,7 @@ def find_findings(diff_text: str, denylist: Denylist | None) -> list[Finding]:
 
     prev: tuple[str, int, str, bool] | None = None
     unscannable_hunk_paths: set[str] = set()
+    covered_cache: dict[str, frozenset[int]] = {}
     for path, line_no, content in iter_added_lines(diff_text):
         if line_no is None:
             prev = None
@@ -342,7 +355,11 @@ def find_findings(diff_text: str, denylist: Denylist | None) -> list[Finding]:
                 )
             continue
 
-        if path in EXCLUDED_PATHS or ALLOW_MARKER in content:
+        if (
+            path in EXCLUDED_PATHS
+            or ALLOW_MARKER in content
+            or line_no in covered_index_lines(path, covered_cache)
+        ):
             prev = None
             continue
 

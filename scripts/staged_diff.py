@@ -15,13 +15,33 @@ project from this template never pulls it in.
 
 from __future__ import annotations
 
+import io
 import re
 import subprocess
+import tokenize
 
 #: Literal token that suppresses a finding for the line it appears on.
 #: Single-line scope only -- deliberately no file- or directory-level escape,
-#: so every suppression stays visible in the diff a reviewer reads.
+#: so every suppression stays visible in the diff a reviewer reads. In a
+#: `.py` file the line a marker sits on can reach back over the construct a
+#: closing bracket ends; see `marker_covered_lines`.
 ALLOW_MARKER = "raven-hygiene: allow"
+
+#: Token types that say nothing about what a line holds: comments, both
+#: newline forms, and the block-structure tokens carrying an empty string.
+_UNINFORMATIVE_TOKENS = frozenset(
+    {
+        tokenize.COMMENT,
+        tokenize.NL,
+        tokenize.NEWLINE,
+        tokenize.INDENT,
+        tokenize.DEDENT,
+        tokenize.ENDMARKER,
+    }
+)
+
+_OPENING_BRACKETS = "([{"
+_CLOSING_BRACKETS = ")]}"
 
 #: Matches a standard unified-diff hunk header, e.g. `@@ -1,2 +1,3 @@`
 #: (an optional trailing function-context suffix like ` def foo():` is fine
@@ -238,6 +258,104 @@ def index_blob(path: str) -> str | None:
 def head_blob(path: str) -> str | None:
     """The committed content of `path` at HEAD, or None on an unborn branch or new file."""
     return _show(f"HEAD:{path}")
+
+
+def marker_covered_lines(text: str, path: str) -> set[int]:
+    """1-based line numbers a `raven-hygiene: allow` marker covers in `text`.
+
+    A marked line always covers itself. In a `.py` file a marker on a line
+    holding nothing but closing brackets and commas also covers back to the
+    line its outermost bracket opened on: `ruff format` splits a call that
+    ran past the line length and carries the trailing marker down to the
+    closing bracket, stranding the text the marker was written for on a line
+    of its own (#237). Reach stops at that construct -- a marker on `)` says
+    nothing about the line after it.
+
+    Bracket pairing runs over `tokenize`'s `OP` tokens rather than a
+    backwards scan of the characters, so a bracket inside a string literal
+    or a comment never pairs with a real one. A marker that silently covered
+    the wrong range would be worse than one that covered nothing. When
+    `tokenize` cannot read the text (a syntax error, a file staged
+    mid-merge) or the path is not Python, only the marked lines themselves
+    come back -- the behavior every caller had before this expansion, which
+    can only ever under-suppress.
+    """
+    covered = {
+        line_no for line_no, line in enumerate(text.splitlines(), start=1) if ALLOW_MARKER in line
+    }
+    if not covered or not path.endswith(".py"):
+        return covered
+    scan = _scan_brackets(text)
+    if scan is None:
+        return covered
+    opener_of, bracket_only = scan
+    for line_no in sorted(covered):
+        opener = opener_of.get(line_no)
+        if opener is None or opener >= line_no or line_no not in bracket_only:
+            continue
+        covered.update(range(opener, line_no))
+    return covered
+
+
+def _scan_brackets(text: str):
+    """Pair closing brackets with their openers, or None if `text` will not tokenize.
+
+    Returns two things: the line each closing-bracket line's outermost
+    bracket opened on, and the set of lines holding only closing brackets
+    and commas. "Outermost" is the earliest opener among the brackets that
+    close on that line, so a marker on `))` covers the outer call, not just
+    the inner one.
+
+    A line is bracket-only when every token on it is `)`, `]`, `}`, or `,`.
+    An opening bracket, a name, or a `:` on the same line disqualifies it:
+    `) + second(` continues the statement, so a marker there covers its own
+    line and nothing above it.
+    """
+    opener_of: dict[int, int] = {}
+    closing_lines: set[int] = set()
+    other_lines: set[int] = set()
+    stack: list[int] = []
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, SyntaxError, ValueError):
+        return None
+    for token in tokens:
+        if token.type in _UNINFORMATIVE_TOKENS:
+            continue
+        start_line = token.start[0]
+        if token.type == tokenize.OP and token.string in _CLOSING_BRACKETS:
+            if stack:
+                opener = stack.pop()
+                known = opener_of.get(start_line)
+                if known is None or opener < known:
+                    opener_of[start_line] = opener
+            closing_lines.add(start_line)
+            continue
+        if token.type == tokenize.OP and token.string == ",":
+            closing_lines.add(start_line)
+            continue
+        if token.type == tokenize.OP and token.string in _OPENING_BRACKETS:
+            stack.append(start_line)
+        other_lines.update(range(start_line, token.end[0] + 1))
+    return opener_of, closing_lines - other_lines
+
+
+def covered_index_lines(path: str, cache: dict[str, frozenset[int]]) -> frozenset[int]:
+    """Lines of staged `path` a marker covers, reading its blob at most once.
+
+    The expansion in `marker_covered_lines` needs the whole staged file, not
+    the added lines of a diff: a marker can sit on a closing bracket the
+    commit never touched while the line it covers is the one being added.
+    Only a `.py` path is read for it, since no other path can expand, which
+    keeps the extra `git show` off binary blobs and off every doc in a
+    commit. `cache` is the caller's dict, held across one scan.
+    """
+    if path not in cache:
+        text = index_blob(path) if path.endswith(".py") else None
+        cache[path] = (
+            frozenset(marker_covered_lines(text, path)) if text is not None else frozenset()
+        )
+    return cache[path]
 
 
 def _show(spec: str) -> str | None:

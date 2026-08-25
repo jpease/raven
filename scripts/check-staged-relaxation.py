@@ -60,7 +60,10 @@ possible without a file- or directory-level exclusion that would hide the
 next one. For a config file the marker is applied before parsing, so a
 marked line is simply not part of the comparison. A test-count finding has
 no line of its own to mark; a marker on any added line in the same file
-suppresses it.
+suppresses it. For detector 3 the marker also reaches back over a construct
+a closing bracket ends (`marker_covered_lines`), because `ruff format`
+splits a long skip decorator and carries the trailing marker down to the
+bracket, away from the line the detector reports (#237).
 
 This script is repo-owned, not shipped: it lives in `scripts/`, not
 `common/` or `.raven/git-hooks/`, so installing or upgrading a downstream
@@ -92,6 +95,7 @@ from raven_lib.gate_config import (  # noqa: E402 -- needs the sys.path insert a
 )
 from staged_diff import (  # noqa: E402 -- needs the sys.path insert above
     ALLOW_MARKER,
+    covered_index_lines,
     head_blob,
     index_blob,
     iter_added_lines,
@@ -311,17 +315,28 @@ def _without_marked_lines(text: str) -> str:
 
 
 def _test_findings(diff_text: str) -> list[Finding]:
-    """Report an added unconditional skip, and a file that net-loses test functions."""
+    """Report an added unconditional skip, and a file that net-loses test functions.
+
+    A marker's reach comes from `marker_covered_lines`, not from the added
+    line alone: `ruff format` splits a long `@pytest.mark.skip(reason=...)`
+    and leaves the marker on the closing bracket, two lines below the
+    decorator reported here (#237). `marked_files`, which suppresses the
+    file-level test-count finding, is still filled only where a marker was
+    actually written -- that escape hatch has no bracket to reach back from.
+    """
     findings: list[Finding] = []
     added_tests: dict[str, int] = {}
     removed_tests: dict[str, list[str]] = {}
     marked_files: set[str] = set()
+    covered_cache: dict[str, frozenset[int]] = {}
 
     for path, line_no, content in iter_added_lines(diff_text):
         if line_no is None or not _is_test_file(path):
             continue
         if ALLOW_MARKER in content:
             marked_files.add(path)
+            continue
+        if line_no in covered_index_lines(path, covered_cache):
             continue
         definition = _TEST_DEF_RE.match(content)
         if definition:

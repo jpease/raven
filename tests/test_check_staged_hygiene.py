@@ -165,6 +165,122 @@ class CheckStagedHygieneTests(unittest.TestCase):
         suppressed = "/Users/exampleuser/Developer/thing"  # raven-hygiene: allow
         self.assertNotIn(suppressed, result.stderr)
 
+    # -- a marker the formatter carried to a closing bracket (#237) --------
+
+    def test_marker_on_a_closing_bracket_covers_the_call_it_closes(self):
+        # Verbatim `ruff format` output for the one-line call
+        # `load_fixture(fixture="...", mode="strict")  # raven-hygiene: allow`
+        # once it ran past the line length: the marker is now four lines
+        # below the path it was written for.
+        self._stage(
+            "tests/test_thing.py",
+            "def test_a():\n"
+            "    load_fixture(\n"
+            '        fixture="/Users/exampleuser/Developer/nested/fixture.json", mode="s"\n'  # raven-hygiene: allow
+            "    )  # raven-hygiene: allow\n",
+        )
+
+        result = self._run_checker()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_the_same_reflowed_call_without_the_marker_still_blocks(self):
+        self._stage(
+            "tests/test_thing.py",
+            "def test_a():\n"
+            "    load_fixture(\n"
+            '        fixture="/Users/exampleuser/Developer/nested/fixture.json", mode="s"\n'  # raven-hygiene: allow
+            "    )\n",
+        )
+
+        result = self._run_checker()
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("tests/test_thing.py:3:", result.stderr)
+
+    def test_marker_on_a_closing_bracket_covers_the_outermost_construct(self):
+        # `))` closes both calls. The path sits between the outer opener and
+        # the inner one, so it is covered only if the marker reaches back to
+        # `load_fixture(` rather than stopping at `wrap(`.
+        self._stage(
+            "tests/test_thing.py",
+            "def test_a():\n"
+            "    load_fixture(\n"
+            '        "/Users/exampleuser/Developer/nested/fixture.json",\n'  # raven-hygiene: allow
+            "        wrap(\n"
+            '            "x"\n'
+            "        ))  # raven-hygiene: allow\n",
+        )
+
+        result = self._run_checker()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_marker_on_a_closing_bracket_does_not_reach_outside_the_construct(self):
+        self._stage(
+            "tests/test_thing.py",
+            "def test_a():\n"
+            "    load_fixture(\n"
+            '        "/Users/exampleuser/Developer/nested/fixture.json"\n'  # raven-hygiene: allow
+            "    )  # raven-hygiene: allow\n"
+            '    other = "/Users/otheruser/Developer/nested/thing"\n',  # raven-hygiene: allow
+        )
+
+        result = self._run_checker()
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("tests/test_thing.py:5:", result.stderr)
+        suppressed = "/Users/exampleuser/Developer/nested/fixture.json"  # raven-hygiene: allow
+        self.assertNotIn(suppressed, result.stderr)
+
+    def test_a_closing_bracket_line_holding_real_content_does_not_expand(self):
+        # `) + second(` is not a line of closing brackets and commas, so the
+        # marker on it covers only itself.
+        self._stage(
+            "tests/test_thing.py",
+            "value = first(\n"
+            '    "/Users/exampleuser/Developer/nested/one"\n'  # raven-hygiene: allow
+            ") + second(  # raven-hygiene: allow\n"
+            '    "x"\n'
+            ")\n",
+        )
+
+        result = self._run_checker()
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("tests/test_thing.py:2:", result.stderr)
+
+    def test_a_closing_bracket_marker_does_not_expand_in_a_non_python_file(self):
+        self._stage(
+            "docs/notes.md",
+            "config(\n"
+            "  path = /Users/exampleuser/Developer/nested/thing\n"  # raven-hygiene: allow
+            ")  <!-- raven-hygiene: allow -->\n",
+        )
+
+        result = self._run_checker()
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("docs/notes.md:2:", result.stderr)
+
+    def test_a_python_file_that_will_not_tokenize_falls_back_to_the_marked_line(self):
+        # The trailing `[` leaves a bracket open at EOF, which `tokenize`
+        # refuses. Falling back to marked-line-only under-suppresses, which
+        # is the pre-#237 behavior and blocks rather than waving through.
+        self._stage(
+            "tests/test_thing.py",
+            "def test_a():\n"
+            "    load_fixture(\n"
+            '        "/Users/exampleuser/Developer/nested/fixture.json"\n'  # raven-hygiene: allow
+            "    )  # raven-hygiene: allow\n"
+            "    unclosed = [\n",
+        )
+
+        result = self._run_checker()
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("tests/test_thing.py:3:", result.stderr)
+
     # -- absent denylist: skipped, not an error ---------------------------
 
     def test_absent_denylist_skips_name_check_silently(self):

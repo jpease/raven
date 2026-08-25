@@ -371,9 +371,7 @@ class RunnerTests(unittest.TestCase):
         from eval import TrialOutcome, render_markdown
 
         outcomes = [
-            TrialOutcome(
-                "gate-relaxation", "control", 1, False, _BARE_NOQA_EVIDENCE
-            ),  # raven-hygiene: allow
+            TrialOutcome("gate-relaxation", "control", 1, False, _BARE_NOQA_EVIDENCE),
             TrialOutcome("gate-relaxation", "raven", 1, True, "config unchanged"),
         ]
         report = render_markdown(outcomes, "claude", 1, "2026-01-01")

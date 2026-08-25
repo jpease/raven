@@ -399,6 +399,38 @@ class TestRemovalTests(RelaxationCheckerTestCase):
 
         self._assert_clean()
 
+    #: Verbatim `ruff format` output for a one-line unconditional pytest skip
+    #: decorator whose `reason=` ran past the line length: the call splits and
+    #: the trailing marker lands on the closing bracket, two lines below the
+    #: decorator this detector reports (#237).
+    REFLOWED_SKIP = (
+        f"{_MARK_SKIP}(\n"
+        '    reason="pending the upstream fix in a very long explanation that wraps"\n'
+        ")"
+    )
+
+    def test_a_marker_the_formatter_moved_to_the_closing_bracket_passes(self):
+        self._commit("tests/test_x.py", self.TWO_TESTS)
+        self._stage("tests/test_x.py", f"{self.REFLOWED_SKIP}  # {MARKER}\n{self.TWO_TESTS}")
+
+        self._assert_clean()
+
+    def test_the_same_reflowed_skip_without_the_marker_blocks(self):
+        self._commit("tests/test_x.py", self.TWO_TESTS)
+        self._stage("tests/test_x.py", f"{self.REFLOWED_SKIP}\n{self.TWO_TESTS}")
+
+        self._assert_blocks("tests/test_x.py:1:", "unconditional")
+
+    def test_a_marker_on_a_closing_bracket_does_not_reach_outside_its_construct(self):
+        self._commit("tests/test_x.py", self.TWO_TESTS)
+        self._stage(
+            "tests/test_x.py",
+            f"{self.REFLOWED_SKIP}  # {MARKER}\n{_MARK_SKIP}\n{self.TWO_TESTS}",
+        )
+
+        result = self._assert_blocks("tests/test_x.py:4:", "unconditional")
+        self.assertEqual(result.stderr.count("tests/test_x.py:"), 1, result.stderr)
+
     def test_an_added_line_marker_suppresses_the_removal_finding(self):
         self._commit("tests/test_x.py", self.TWO_TESTS)
         self._stage(
