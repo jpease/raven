@@ -87,3 +87,10 @@ reportMissingTypeStubs = false
 reportUnnecessaryTypeIgnoreComment = true
 # Tests import the installer package from scripts/ after a sys.path insert.
 extraPaths = ["scripts"]
+# `just typecheck` invokes the standalone `pyright` binary directly, not
+# through `uv run`, so it has no active VIRTUAL_ENV to inherit and needs an
+# explicit pointer to the uv-managed dev venv -- otherwise a file that
+# imports a dev-only dependency (e.g. `pytest` itself, in tests/conftest.py)
+# reports a false reportMissingImports.
+venvPath = "."
+venv = ".venv"
