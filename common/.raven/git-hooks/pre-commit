@@ -36,6 +36,15 @@ if [ -f "$block_check" ]; then
     python3 "$block_check" || exit 1
 fi
 
+# Block a staged change that adds a blanket lint suppression -- one that names
+# no rule, so it silences the gate rather than one finding. Dispatched by file
+# extension, so a polyglot repo gets the right detector per file. Skip if the
+# lib script is missing (a stale/partial install) rather than hard-failing.
+relaxation_check="$repo_root/.raven/git-hooks/lib/check-gate-relaxation.py"
+if [ -f "$relaxation_check" ]; then
+    python3 "$relaxation_check" || exit 1
+fi
+
 # Optional secret scan for staged changes; a detected leak blocks the commit.
 if command -v gitleaks >/dev/null 2>&1; then
     # gitleaks added the `git` subcommand in 8.19 and deprecated `protect`;

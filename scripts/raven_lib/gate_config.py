@@ -26,6 +26,13 @@ RuboCop, credo, luacheck, and SwiftLint have no rules yet -- their config
 formats are YAML or executable JavaScript, which this stdlib-only,
 Python 3.9-floor runtime cannot read without either a dependency or a parser
 whose failure mode is a false accusation.
+
+Those five languages are not unguarded, only unguarded *here*: a suppression
+is comment syntax and needs no config parser, so
+`common/.raven/git-hooks/lib/check-gate-relaxation.py` reports a blanket one
+in each of them at commit time (#231). What is missing is the standing-config
+half above. `tsconfig.json` is JSON and `Cargo.toml`'s `[lints]` is TOML, both
+readable by the parsers already here; issue #245 owns adding them.
 """
 
 from __future__ import annotations

@@ -406,6 +406,11 @@
       "kind": "file",
       "sourceSha256": "361e354a55500c86b5512683ecf25f47e579c02149ce012b1dda6286e8b263c0"
     },
+    ".raven/git-hooks/lib/check-gate-relaxation.py": {
+      "installedSha256": "05d85100add9ea4a4904a1e1cc95a43c6b29b4526c341e73db4f73c868964739",
+      "kind": "file",
+      "sourceSha256": "05d85100add9ea4a4904a1e1cc95a43c6b29b4526c341e73db4f73c868964739"
+    },
     ".raven/git-hooks/lib/check-managed-block-integrity.py": {
       "installedSha256": "5f864f75c9c4eeb1943ce0f0c5ed3c1d6281dcd5854c3f746aa263ed2ecc028c",
       "kind": "file",
@@ -422,9 +427,9 @@
       "sourceSha256": "0958fee682fb6bea3b56e0ee2c503a799e44f2d481c73f881d088d188cb4ae56"
     },
     ".raven/git-hooks/pre-commit": {
-      "installedSha256": "0fa5e8b8fca6f66e7a6761fcf03af16628f2a5a79da57d63da5a28ed6714d5fc",
+      "installedSha256": "dc51109d23648081ae207e548f1600c5a27a22826e542a4b635a42ac1f3c90b5",
       "kind": "file",
-      "sourceSha256": "0fa5e8b8fca6f66e7a6761fcf03af16628f2a5a79da57d63da5a28ed6714d5fc"
+      "sourceSha256": "dc51109d23648081ae207e548f1600c5a27a22826e542a4b635a42ac1f3c90b5"
     },
     ".raven/git-hooks/pre-push": {
       "installedSha256": "f9448103195160f35dcad749ec3c3feaea1fc678f495a9bb003723695ca9a792",
@@ -457,8 +462,8 @@
     "ruff",
     "pyright"
   ],
-  "ravenVersion": "df2897d02f47",
+  "ravenVersion": "bf0847a93a05",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-08-25T04:25:43.382121+00:00"
+  "updatedAt": "2026-08-25T05:07:00.120980+00:00"
 }

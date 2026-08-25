@@ -108,7 +108,7 @@ class GitattributesShippedCoverageTests(unittest.TestCase):
             "common/.gitattributes",
         )
 
-    def test_scan_finds_exactly_the_three_entry_points_and_three_lib_files(self):
+    def test_scan_finds_exactly_the_three_entry_points_and_four_lib_files(self):
         # Pins the scan's own result, not the .gitattributes coverage (the two
         # tests above already assert that) -- so a change to the shipped
         # git-hooks tree that this scan silently stops seeing (a bug in the
@@ -125,6 +125,7 @@ class GitattributesShippedCoverageTests(unittest.TestCase):
             _lib_python_relatives(GIT_HOOKS_DIR / "lib"),
             [
                 ".raven/git-hooks/lib/check-ai-attribution-content.py",
+                ".raven/git-hooks/lib/check-gate-relaxation.py",
                 ".raven/git-hooks/lib/check-managed-block-integrity.py",
                 ".raven/git-hooks/lib/raven_config.py",
             ],

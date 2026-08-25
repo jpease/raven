@@ -14,6 +14,34 @@ import sys
 from enum import Enum
 from pathlib import Path
 
+#: Filename of the shipped blanket-suppression checker under
+#: ``.raven/git-hooks/lib/``, and the file extensions it has a detector for.
+#: Deliberately a second copy of that script's own ``COVERED_SUFFIXES`` rather
+#: than an import: the script ships into a destination repository, so reading
+#: its table would mean importing destination code into the installer's own
+#: process. ``test_doctor_copy_of_the_suffix_table_matches_the_shipped_one``
+#: pins the two together, the same way the AI-attribution scanner's copied
+#: patterns are pinned. `doctor.gate_relaxation_findings` is the only reader.
+GATE_RELAXATION_SCRIPT = "check-gate-relaxation.py"
+GATE_RELAXATION_SUFFIXES = (
+    ".cts",
+    ".ex",
+    ".exs",
+    ".go",
+    ".js",
+    ".jsx",
+    ".lua",
+    ".mts",
+    ".py",
+    ".pyi",
+    ".rake",
+    ".rb",
+    ".rs",
+    ".swift",
+    ".ts",
+    ".tsx",
+)
+
 
 def clean_git_env() -> dict[str, str]:
     """Environment with GIT_* removed.

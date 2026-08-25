@@ -29,7 +29,13 @@ from .constants import (
 from .deactivated import classify_deactivated
 from .findings import Finding, Severity
 from .gates import gate_spec_for
-from .git_hooks import detect_hook_manager, git_hooks_dir, hook_manager_guidance
+from .git_hooks import (
+    GATE_RELAXATION_SCRIPT,
+    GATE_RELAXATION_SUFFIXES,
+    detect_hook_manager,
+    git_hooks_dir,
+    hook_manager_guidance,
+)
 from .manifest import ManifestStatus, git_ref, validate_manifest
 from .models import RavenConfig, SourceSpec
 from .orphans import classify_orphans
@@ -811,6 +817,70 @@ def _hook_link_finding(hook_src: Path, hook_link: Path) -> Finding:
     )
 
 
+def _uncovered_gate_suffixes(suffixes: tuple[str, ...]) -> tuple[str, ...]:
+    """The template's source extensions the shipped relaxation checker cannot read."""
+    return tuple(s for s in suffixes if s not in GATE_RELAXATION_SUFFIXES)
+
+
+def gate_relaxation_findings(destination: Path) -> list[Finding]:
+    """Report the shipped blanket-suppression checker, and any language it misses (#231).
+
+    A checker that runs, exits 0, and has checked nothing is the failure
+    `gate_evidence` exists to catch, so a template whose own source extensions
+    have no detector is named here rather than left to look clean. Only the
+    configured template's extensions are compared: the detectors dispatch per
+    file, so a Go file in a Python repo is still covered, but what the report
+    can promise is the language the project declared.
+    """
+    git_hooks_src = destination / ".raven" / "git-hooks"
+    if not git_hooks_src.is_dir():
+        return []
+    checker = git_hooks_src / "lib" / GATE_RELAXATION_SCRIPT
+    if not checker.is_file():
+        return [
+            Finding(
+                id="doctor.hooks.gate_relaxation",
+                severity=Severity.WARN,
+                category=_HOOKS,
+                title="blanket-suppression check not installed",
+                detail=f"{checker} is missing, so a staged blanket suppression is not reported",
+                fix="raven upgrade",
+            )
+        ]
+    spec = gate_spec_for(load_config(destination).template or "")
+    if spec is None or not spec.source_suffixes:
+        return [
+            Finding(
+                id="doctor.hooks.gate_relaxation",
+                severity=Severity.OK,
+                category=_HOOKS,
+                title="blanket-suppression check installed",
+                detail="this template declares no gate, so no source extension needs a detector",
+            )
+        ]
+    uncovered = _uncovered_gate_suffixes(spec.source_suffixes)
+    if uncovered:
+        return [
+            Finding(
+                id="doctor.hooks.gate_relaxation",
+                severity=Severity.WARN,
+                category=_HOOKS,
+                title="blanket-suppression check covers only part of this template",
+                detail=f"no detector for {', '.join(uncovered)}; those files are never reported",
+                fix="open an issue: this template's language needs a verified detector",
+            )
+        ]
+    return [
+        Finding(
+            id="doctor.hooks.gate_relaxation",
+            severity=Severity.OK,
+            category=_HOOKS,
+            title="blanket-suppression check installed",
+            detail=f"detectors cover {', '.join(spec.source_suffixes)}",
+        )
+    ]
+
+
 def merge_only_tracking_findings(destination: Path) -> list[Finding]:
     """WARN when a merge-only path exists on disk but git does not track it (#216).
 
@@ -1074,6 +1144,7 @@ def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> l
     findings.extend(integrity)
     findings.extend(hook_manager_findings(destination))
     findings.extend(hook_integrity_findings(destination))
+    findings.extend(gate_relaxation_findings(destination))
     findings.extend(merge_only_tracking_findings(destination))
     config = load_config(destination)
     if config.exists:

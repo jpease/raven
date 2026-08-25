@@ -151,6 +151,13 @@ strip_ai_attribution = true
 # commit message trailers.
 block_ai_attribution_content = true
 
+# Block a staged change that adds a blanket lint suppression -- one naming no
+# rule, so it silences the gate rather than one finding. Runs in pre-commit,
+# with a detector per language chosen by each staged file's extension. A
+# suppression that names its rule passes, and a reviewed blanket one passes
+# with a trailing `raven-hygiene: allow` comment on its line.
+block_gate_relaxation = true
+
 # [sources.superpowers]
 # An externally-installed agent-skill library this repository depends on.
 # Raven neither installs nor vendors one: `raven doctor` checks that the

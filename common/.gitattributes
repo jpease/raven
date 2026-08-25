@@ -13,3 +13,4 @@
 .raven/git-hooks/lib/raven_config.py text eol=lf
 .raven/git-hooks/lib/check-managed-block-integrity.py text eol=lf
 .raven/git-hooks/lib/check-ai-attribution-content.py text eol=lf
+.raven/git-hooks/lib/check-gate-relaxation.py text eol=lf
