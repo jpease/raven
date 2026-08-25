@@ -55,14 +55,18 @@ What this deliberately does NOT do, relative to Raven's own repo-only
 smaller parser:
 
 * **No config-file comparison.** ``gate_config`` reads ``pyproject.toml``,
-  ``ruff.toml``, ``pyrightconfig.json``, ``mypy.ini`` and ``setup.cfg`` and
-  reports a widened ``ignore`` or a lowered ``typeCheckingMode``. All five are
-  Python. The gate configs the other seven templates read are YAML
-  (``.golangci.yml``, ``.swiftlint.yml``, ``.rubocop.yml``), executable source
-  (``.credo.exs``, ``.luacheckrc``), or formats with no rule keys yet
-  (``tsconfig.json``, ``Cargo.toml``); a stdlib-only runtime on a 3.9 floor
-  cannot read the first two without a dependency or a parser whose failure
-  mode is a false accusation. Issue #245 owns the two free ones.
+  ``ruff.toml``, ``pyrightconfig.json``, ``mypy.ini``, ``setup.cfg``,
+  ``tsconfig.json``, and ``Cargo.toml``, and reports a widened ``ignore``, a
+  lowered ``typeCheckingMode``, a disabled ``strict``/``noImplicitAny``/
+  ``strictNullChecks``, or a Cargo lint moved to ``warn``/``allow`` (#245).
+  This shipped checker still does none of that for any language, deliberately
+  -- config comparison stays repo-only, in ``gate_config.py``. What has no
+  rules at all, in that module or here, is ESLint (a JS file, not a static
+  config) and whichever of the other six templates' gate config is YAML
+  (``.golangci.yml``, ``.swiftlint.yml``, ``.rubocop.yml``) or executable
+  source (``.credo.exs``, ``.luacheckrc``); a stdlib-only runtime on a 3.9
+  floor cannot read the first without a dependency or a parser whose failure
+  mode is a false accusation, and the second means running it.
 * **No test-deletion detector.** ``def test_`` is Python. The equivalent for
   eight toolchains is its own piece of work (#231's own "out of scope").
 * **No reason requirement.** The repo-owned checker also reports a suppression

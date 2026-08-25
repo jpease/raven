@@ -29,6 +29,10 @@ from raven_lib.gate_config import (
 
 PYTHON_TOOLS = ("ruff", "pyright")
 PYTHON_RECIPES = ("lint", "fmt-check", "typecheck", "test")
+TYPESCRIPT_TOOLS = ("npx",)
+TYPESCRIPT_RECIPES = ("lint", "fmt-check", "typecheck", "test")
+RUST_TOOLS = ("cargo",)
+RUST_RECIPES = ("lint", "fmt-check", "typecheck", "test")
 
 
 class ParseTomlLikeTests(unittest.TestCase):
@@ -86,6 +90,21 @@ class NormalizationTests(unittest.TestCase):
     def test_a_nested_path_still_resolves_the_file_name(self):
         self.assertTrue(is_known_config("sub/project/pyproject.toml"))
         self.assertFalse(is_known_config("package.json"))
+
+    def test_tsconfig_and_cargo_toml_are_known_configs(self):
+        # #245
+        self.assertTrue(is_known_config("tsconfig.json"))
+        self.assertTrue(is_known_config("sub/project/tsconfig.json"))
+        self.assertTrue(is_known_config("Cargo.toml"))
+        self.assertTrue(is_known_config("sub/project/Cargo.toml"))
+
+    def test_tsconfig_compiler_options_are_namespaced(self):
+        settings = read_config_text('{"compilerOptions": {"strict": true}}', "tsconfig.json")
+        self.assertEqual(settings["tsconfig.compilerOptions.strict"], "true")
+
+    def test_cargo_toml_lints_need_no_prefix(self):
+        settings = read_config_text('[lints.clippy]\nall = "warn"\n', "Cargo.toml")
+        self.assertEqual(settings["lints.clippy.all"], "warn")
 
     def test_an_unknown_config_name_parses_to_nothing(self):
         self.assertEqual(read_config_text("[lint]\nignore = []\n", ".eslintrc"), {})
@@ -178,6 +197,75 @@ class RelaxationTests(unittest.TestCase):
         self.assertEqual(found, [])
 
 
+class TsconfigAndCargoRelaxationTests(unittest.TestCase):
+    """#245: tsconfig.json's strict flags and Cargo.toml's lint levels."""
+
+    def _tsconfig_pair(self, before: str, after: str):
+        return relaxations(
+            read_config_text(before, "tsconfig.json"), read_config_text(after, "tsconfig.json")
+        )
+
+    def _cargo_pair(self, before: str, after: str):
+        return relaxations(
+            read_config_text(before, "Cargo.toml"), read_config_text(after, "Cargo.toml")
+        )
+
+    def test_turning_off_strict_reports(self):
+        found = self._tsconfig_pair(
+            '{"compilerOptions": {"strict": true}}', '{"compilerOptions": {"strict": false}}'
+        )
+        self.assertEqual(len(found), 1)
+        self.assertIn("turns off", found[0][1])
+
+    def test_turning_on_strict_reports_nothing(self):
+        found = self._tsconfig_pair(
+            '{"compilerOptions": {"strict": false}}', '{"compilerOptions": {"strict": true}}'
+        )
+        self.assertEqual(found, [])
+
+    def test_turning_off_no_implicit_any_reports(self):
+        found = self._tsconfig_pair(
+            '{"compilerOptions": {"noImplicitAny": true}}',
+            '{"compilerOptions": {"noImplicitAny": false}}',
+        )
+        self.assertEqual(len(found), 1)
+
+    def test_turning_off_strict_null_checks_reports(self):
+        found = self._tsconfig_pair(
+            '{"compilerOptions": {"strictNullChecks": true}}',
+            '{"compilerOptions": {"strictNullChecks": false}}',
+        )
+        self.assertEqual(len(found), 1)
+
+    def test_an_unrelated_tsconfig_setting_reports_nothing(self):
+        found = self._tsconfig_pair(
+            '{"compilerOptions": {"target": "ES2020"}}', '{"compilerOptions": {"target": "ES2022"}}'
+        )
+        self.assertEqual(found, [])
+
+    def test_moving_a_clippy_lint_from_deny_to_warn_reports(self):
+        found = self._cargo_pair('[lints.clippy]\nall = "deny"\n', '[lints.clippy]\nall = "warn"\n')
+        self.assertEqual(len(found), 1)
+        self.assertIn("lowers", found[0][1])
+
+    def test_moving_a_clippy_lint_from_deny_to_allow_reports(self):
+        found = self._cargo_pair(
+            '[lints.clippy]\nall = "deny"\n', '[lints.clippy]\nall = "allow"\n'
+        )
+        self.assertEqual(len(found), 1)
+
+    def test_moving_a_rust_lint_from_warn_to_deny_reports_nothing(self):
+        # Tightening -- the same direction ruff's select/ignore never reports.
+        found = self._cargo_pair(
+            '[lints.rust]\nunused = "warn"\n', '[lints.rust]\nunused = "deny"\n'
+        )
+        self.assertEqual(found, [])
+
+    def test_an_unrelated_cargo_setting_reports_nothing(self):
+        found = self._cargo_pair('[package]\nversion = "0.1.0"\n', '[package]\nversion = "0.2.0"\n')
+        self.assertEqual(found, [])
+
+
 class GuttingReasonTests(unittest.TestCase):
     def _reasons(self, text: str, name: str = "pyproject.toml"):
         return gutting_reasons(read_config_text(text, name), PYTHON_TOOLS, PYTHON_RECIPES)
@@ -251,6 +339,93 @@ class GuttingReasonTests(unittest.TestCase):
         # `D203`/`D401` ignored. Scoping inside a family is not gutting it.
         reasons = self._reasons(
             '[tool.ruff.lint]\nselect = ["D"]\nignore = ["D203", "D401"]\n',
+        )
+        self.assertEqual(reasons, [])
+
+
+class TsconfigAndCargoGuttingReasonTests(unittest.TestCase):
+    """#245: the standing-state judgment `raven assess` reports."""
+
+    def test_a_healthy_tsconfig_reports_nothing(self):
+        reasons = gutting_reasons(
+            read_config_text(
+                '{"compilerOptions": {"strict": true, "noImplicitAny": true, '
+                '"strictNullChecks": true}}',
+                "tsconfig.json",
+            ),
+            TYPESCRIPT_TOOLS,
+            TYPESCRIPT_RECIPES,
+        )
+        self.assertEqual(reasons, [])
+
+    def test_strict_false_reports(self):
+        reasons = gutting_reasons(
+            read_config_text('{"compilerOptions": {"strict": false}}', "tsconfig.json"),
+            TYPESCRIPT_TOOLS,
+            TYPESCRIPT_RECIPES,
+        )
+        self.assertEqual([r[0] for r in reasons], ["tsconfig.strict"])
+        self.assertIn("strict", reasons[0][2])
+
+    def test_no_implicit_any_false_reports_even_with_strict_true(self):
+        # TypeScript lets an explicit flag override the `strict` umbrella, so
+        # `strict: true` must not mask a `noImplicitAny: false` sitting beside it.
+        reasons = gutting_reasons(
+            read_config_text(
+                '{"compilerOptions": {"strict": true, "noImplicitAny": false}}', "tsconfig.json"
+            ),
+            TYPESCRIPT_TOOLS,
+            TYPESCRIPT_RECIPES,
+        )
+        self.assertEqual([r[0] for r in reasons], ["tsconfig.strict"])
+        self.assertIn("noImplicitAny", reasons[0][2])
+
+    def test_a_template_declaring_no_typecheck_recipe_is_not_graded_on_tsconfig(self):
+        reasons = gutting_reasons(
+            read_config_text('{"compilerOptions": {"strict": false}}', "tsconfig.json"),
+            TYPESCRIPT_TOOLS,
+            ("lint",),
+        )
+        self.assertEqual(reasons, [])
+
+    def test_a_healthy_cargo_toml_reports_nothing(self):
+        reasons = gutting_reasons(
+            read_config_text('[lints.clippy]\nall = "warn"\n', "Cargo.toml"),
+            RUST_TOOLS,
+            RUST_RECIPES,
+        )
+        self.assertEqual(reasons, [])
+
+    def test_clippy_all_set_to_allow_reports(self):
+        reasons = gutting_reasons(
+            read_config_text('[lints.clippy]\nall = "allow"\n', "Cargo.toml"),
+            RUST_TOOLS,
+            RUST_RECIPES,
+        )
+        self.assertEqual([r[0] for r in reasons], ["cargo.lints-allow-all"])
+        self.assertIn("clippy.all", reasons[0][2])
+
+    def test_a_single_clippy_lint_set_to_allow_reports_nothing(self):
+        # Allowing one specific lint is an ordinary, scoped choice -- not the
+        # whole-family shape `clippy::all`/`warnings` set to `allow` is.
+        reasons = gutting_reasons(
+            read_config_text('[lints.clippy]\nmodule_name_repetitions = "allow"\n', "Cargo.toml"),
+            RUST_TOOLS,
+            RUST_RECIPES,
+        )
+        self.assertEqual(reasons, [])
+
+    def test_rust_warnings_set_to_allow_reports(self):
+        reasons = gutting_reasons(
+            read_config_text('[lints.rust]\nwarnings = "allow"\n', "Cargo.toml"),
+            RUST_TOOLS,
+            RUST_RECIPES,
+        )
+        self.assertEqual([r[0] for r in reasons], ["cargo.lints-allow-all"])
+
+    def test_a_template_declaring_no_lint_recipe_is_not_graded_on_cargo_toml(self):
+        reasons = gutting_reasons(
+            read_config_text('[lints.clippy]\nall = "allow"\n', "Cargo.toml"), RUST_TOOLS, ("test",)
         )
         self.assertEqual(reasons, [])
 

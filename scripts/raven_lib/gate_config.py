@@ -16,23 +16,28 @@ Two consumers, one rule table:
 * `gutted_gate_findings(destination)` judges a config's *current* state on its
   own, with no history, and is what `raven assess` reports.
 
-Only `ruff`, `pyright`, and `mypy` have rules here, and only in the formats
-Raven's python template actually ships (`pyproject.toml`, `ruff.toml`,
-`pyrightconfig.json`, `mypy.ini`, `setup.cfg`). That is the same discipline
-`gate_evidence` states for its detectors: a rule whose loosening direction has
-been checked against the tool's documented semantics earns a place; a guessed
-one warns on healthy projects and teaches people to ignore the warning. ESLint,
-RuboCop, credo, luacheck, and SwiftLint have no rules yet -- their config
-formats are YAML or executable JavaScript, which this stdlib-only,
-Python 3.9-floor runtime cannot read without either a dependency or a parser
-whose failure mode is a false accusation.
+`ruff`, `pyright`, `mypy`, `tsconfig.json`, and `Cargo.toml`'s `[lints]` have
+rules here (#245), and only in formats a Raven-shipped template's own tool
+config actually uses (`pyproject.toml`, `ruff.toml`, `pyrightconfig.json`,
+`mypy.ini`, `setup.cfg`, `tsconfig.json`, `Cargo.toml`) -- close to free for
+the last two, since JSON and TOML parsers already exist here for the others,
+and `strict`/`noImplicitAny`/`strictNullChecks` and a lint moved to `warn` or
+`allow` are the same shape as `typeCheckingMode` and a widened `ignore`. That
+is the same discipline `gate_evidence` states for its detectors: a rule whose
+loosening direction has been checked against the tool's documented semantics
+earns a place; a guessed one warns on healthy projects and teaches people to
+ignore the warning. SwiftLint (`.swiftlint.yml`), RuboCop (`.rubocop.yml`) and
+golangci (`.golangci.yml`) have no rules and stay out: they are YAML, and this
+stdlib-only, Python 3.9-floor runtime cannot read YAML without either a
+dependency or a hand-rolled parser whose failure mode is a false accusation.
+Credo (`.credo.exs`) and luacheck (`.luacheckrc`) are executable source in
+their own languages; reading them means running them.
 
 Those five languages are not unguarded, only unguarded *here*: a suppression
 is comment syntax and needs no config parser, so
 `common/.raven/git-hooks/lib/check-gate-relaxation.py` reports a blanket one
-in each of them at commit time (#231). What is missing is the standing-config
-half above. `tsconfig.json` is JSON and `Cargo.toml`'s `[lints]` is TOML, both
-readable by the parsers already here; issue #245 owns adding them.
+in each of them at commit time (#231). The standing-config half above stays
+missing for exactly those five, for the reasons just given.
 """
 
 from __future__ import annotations
@@ -186,7 +191,12 @@ def parse_json_config(text: str) -> dict:
 #: Config files this module knows how to read, and the tool namespace each
 #: one's keys belong to. `pyproject.toml` already namespaces its own tables
 #: (`[tool.ruff.lint]`), so it needs no prefix; `ruff.toml` and `mypy.ini`
-#: do not, so their bare `[lint]`/`[mypy]` keys get one added.
+#: do not, so their bare `[lint]`/`[mypy]` keys get one added. `tsconfig.json`
+#: is JSON with no self-namespacing (`compilerOptions.strict` says nothing
+#: about which tool it belongs to), so it gets a `tsconfig` prefix the same
+#: way `pyrightconfig.json` gets `pyright`. `Cargo.toml`'s `[lints.clippy]`
+#: and `[lints.rust]` tables are already unambiguous, like `pyproject.toml`'s
+#: own tables, so neither needs one.
 CONFIG_FILES: tuple = (
     ("pyproject.toml", "toml", None),
     ("ruff.toml", "toml", "ruff"),
@@ -195,6 +205,8 @@ CONFIG_FILES: tuple = (
     ("mypy.ini", "toml", None),
     (".mypy.ini", "toml", None),
     ("setup.cfg", "toml", None),
+    ("tsconfig.json", "json", "tsconfig"),
+    ("Cargo.toml", "toml", None),
 )
 
 
@@ -265,19 +277,29 @@ _LIST_LOOSENS_BY_ADDING = (
 _LIST_LOOSENS_BY_REMOVING = (re.compile(r"^ruff(?:\.lint)?\.(?:select|extend-select)$"),)
 
 #: Ordered strictest-to-loosest scales. A move rightward is a relaxation; a
-#: value absent from the scale is unranked and never reported.
+#: value absent from the scale is unranked and never reported. Cargo's lint
+#: levels (https://doc.rust-lang.org/cargo/reference/manifest.html#the-lints-section)
+#: apply to any key under `[lints.clippy]` or `[lints.rust]` -- matched by
+#: prefix, since a lint's own name is an open set this module cannot enumerate.
 _LEVELS = (
     (re.compile(r"^pyright\.typeCheckingMode$"), ("strict", "standard", "basic", "off")),
     (re.compile(r"^pyright\.report"), ("error", "warning", "information", "none")),
     (re.compile(r"^mypy\.follow_imports$"), ("normal", "silent", "skip")),
+    (re.compile(r"^lints\.(?:clippy|rust)\."), ("forbid", "deny", "warn", "allow")),
 )
 
 #: Boolean settings whose `true` is the strict state, matched by prefix or
 #: exact name. mypy spells strictness both ways round, so both lists exist.
+#: tsconfig's three each independently narrow type-checking when true --
+#: `strict` turns the whole family on, `noImplicitAny`/`strictNullChecks` can
+#: still be flipped off individually even with `strict: true` set, since
+#: TypeScript lets an explicit flag override the umbrella setting
+#: (https://www.typescriptlang.org/tsconfig/#strict).
 _TRUE_IS_STRICT = (
     re.compile(r"^mypy\.(?:strict|strict_equality|no_implicit_optional)$"),
     re.compile(r"^mypy\.(?:warn_|disallow_|check_)"),
     re.compile(r"^pyright\.strict"),
+    re.compile(r"^tsconfig\.compilerOptions\.(?:strict|noImplicitAny|strictNullChecks)$"),
 )
 _TRUE_IS_LOOSE = (
     re.compile(r"^mypy\.(?:ignore_errors|ignore_missing_imports)$"),
@@ -496,6 +518,44 @@ def gutting_reasons(settings: dict, tools: tuple, recipes: tuple) -> list:
                 "remove `ignore_errors`, or scope it to a `[mypy-<module>]` section",
             )
         )
+    if "npx" in tools and "typecheck" in recipes:
+        disabled = sorted(
+            key.rsplit(".", 1)[-1]
+            for key in (
+                "tsconfig.compilerOptions.strict",
+                "tsconfig.compilerOptions.noImplicitAny",
+                "tsconfig.compilerOptions.strictNullChecks",
+            )
+            if settings.get(key) in _BOOL_FALSE
+        )
+        if disabled:
+            reasons.append(
+                (
+                    "tsconfig.strict",
+                    "the `typecheck` gate runs with strict checks off",
+                    "tsconfig.json sets " + ", ".join(f"`{k}: false`" for k in disabled),
+                    "remove the false setting(s) and fix the reported types",
+                )
+            )
+    if "cargo" in tools and "lint" in recipes:
+        # clippy::all and the rustc "warnings" group are each a single key
+        # that stands for its whole lint family -- the Cargo.toml shape of
+        # ruff's `ignore = ["ALL"]` above, not an ordinary per-lint choice.
+        whole_family = sorted(
+            key
+            for key in ("lints.clippy.all", "lints.rust.warnings")
+            if isinstance(settings.get(key), str) and settings[key].lower() == "allow"
+        )
+        if whole_family:
+            reasons.append(
+                (
+                    "cargo.lints-allow-all",
+                    "the `lint` gate allows an entire lint family",
+                    "Cargo.toml's `[lints]` sets "
+                    + ", ".join(f"`{k}` to `allow`" for k in whole_family),
+                    "remove the blanket `allow`, or narrow it to the specific lints",
+                )
+            )
     return reasons
 
 

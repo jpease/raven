@@ -349,6 +349,31 @@ class ConfigRelaxationTests(RelaxationCheckerTestCase):
 
         self._assert_clean()
 
+    def test_turning_off_tsconfig_strict_blocks(self):
+        # #245
+        self._commit("tsconfig.json", '{"compilerOptions": {"strict": true}}')
+        self._stage("tsconfig.json", '{"compilerOptions": {"strict": false}}')
+
+        self._assert_blocks("tsconfig.json:", "tsconfig.compilerOptions.strict")
+
+    def test_turning_on_tsconfig_strict_passes(self):
+        self._commit("tsconfig.json", '{"compilerOptions": {"strict": false}}')
+        self._stage("tsconfig.json", '{"compilerOptions": {"strict": true}}')
+
+        self._assert_clean()
+
+    def test_moving_a_cargo_lint_from_deny_to_allow_blocks(self):
+        self._commit("Cargo.toml", '[lints.clippy]\nall = "deny"\n')
+        self._stage("Cargo.toml", '[lints.clippy]\nall = "allow"\n')
+
+        self._assert_blocks("Cargo.toml:", "lints.clippy.all")
+
+    def test_moving_a_cargo_lint_from_warn_to_deny_passes(self):
+        self._commit("Cargo.toml", '[lints.rust]\nunused = "warn"\n')
+        self._stage("Cargo.toml", '[lints.rust]\nunused = "deny"\n')
+
+        self._assert_clean()
+
 
 class TestRemovalTests(RelaxationCheckerTestCase):
     TWO_TESTS = "def test_a():\n    pass\n\n\ndef test_b():\n    pass\n"
