@@ -9,8 +9,9 @@ suppression -- in the python rules file, the python quality doc,
 Prose an agent can read, agree with, and then edit around. This is the part
 that runs at commit time, where an agent cannot route around it.
 
-Nine detectors, one per language Raven declares gates for, each dispatched by
-the staged file's own extension:
+Nine detectors across the eight languages Raven declares gates for, each
+dispatched by the staged file's own extension. Python has two, since its
+file-level blankets have no narrow form and its line-level ones do:
 
 ===========  ==========================================================
 ``.py``      a ruff/flake8, mypy, or pyright suppression naming no rule

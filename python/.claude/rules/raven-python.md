@@ -81,5 +81,5 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - Run the repository's documented final quality gate before handoff when code changed.
 - If no final gate exists, run formatter check, lint, type check, and tests at minimum.
 - Fix formatter, lint, and type-checking failures in touched code.
-- Do not add broad `# noqa` or `# type: ignore` comments. Prefer fixing the code or using the narrowest scoped suppression with a reason comment. A rule code with no reason reads the same as a shortcut to the next person who finds it; `.claude/scripts/raven-capability-roster.py` shows the shape that passes — one code, then why.
+- Do not add broad `# noqa` or `# type: ignore` comments. Prefer fixing the code or using the narrowest scoped suppression with a reason comment. A suppression naming no rule code is blocked at commit time by `.raven/git-hooks/lib/check-gate-relaxation.py`; a rule code with no reason still commits, and only review catches it. `.claude/scripts/raven-capability-roster.py` shows the shape that passes — one code, then why.
 

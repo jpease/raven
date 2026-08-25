@@ -20,6 +20,23 @@ Guardrails are checks and procedures that make agent work more reliable. Prefer 
 - `.claude/hooks/raven-post-bash-summarize.py` nudges noisy commands toward RTK when exact raw output is not required.
 - `.claude/hooks/raven-post-edit-format.py` runs cheap formatters when available.
 - `.claude/settings.json`'s `permissions.deny` block adds a native, host-enforced layer over the same blocked-tier surface as the two guard hooks above (issue #199) — see "Two-Layer Enforcement" below.
+- `.raven/git-hooks/lib/check-gate-relaxation.py` blocks a commit that stages a suppression naming no rule — a bare `# noqa`, `@ts-ignore`, `//nolint`, `#[allow(warnings)]`, `rubocop:disable all` — in the eight languages Raven ships gates for. See "Blanket Suppressions" below.
+
+## Blanket Suppressions At Commit Time
+
+A blanket suppression turns a gate off for a line, a file, or a whole crate without naming a rule. It is the cheapest way to make a red gate green, and until issue #231 every Raven site asking for the narrowest scoped suppression instead — `.claude/rules/raven-python.md`, `.claude/docs/raven-python-quality.md`, `raven-write-tests`, `raven-dependency-update`, this file — was prose an agent could read, agree with, and then edit around.
+
+Each of the nine detectors was run against the real linter before it shipped, on a fixture violating two rules: the narrow form leaves one reporting, the blanket form silences both. A syntax the linter proved harmless got no detector. A bare `rubocop:disable` names no cop, suppresses nothing, and still reports the offence, so flagging it would be a false accusation.
+
+For each staged file the committed and staged blobs are each reduced to a multiset of the suppressions that would report, and only a staged one with no committed counterpart is a finding. A suppression that moved, was reindented, or travelled through a rename matches itself and stays silent; a second copy of one does not. Reading added diff lines instead would make a whitespace-only reformat report every suppression the file already had. A line carrying `raven-hygiene: allow` is passed over on the committed side as well as the staged one, so deleting the marker from a still-blanket suppression starts reporting it.
+
+What it leaves alone, and where each is caught instead:
+
+- **A rule code with no reason beside it.** Only Python has a settled place to put one, and requiring a reason in eight languages would mean eight guesses about what a reason looks like. Review catches this; `.claude/scripts/raven-capability-roster.py` shows the shape that passes.
+- **A linter config edited to check less.** `raven assess` reports the standing state — a ruff family selected and then wholly ignored, a `per-file-ignores` keyed on `*`, an `exclude` covering the tree, a `typeCheckingMode` below the `standard` floor. All five configs it parses are Python's; the other seven templates keep their gate config in YAML, in executable source, or in a format with no rule keys yet, and a stdlib-only runtime on a 3.9 floor cannot read the first two without a dependency or a parser whose failure mode is a false accusation.
+- **A deleted or unconditionally skipped test.** `def test_` is Python; the equivalent for eight toolchains is separate work. The observable form is a diff ending with fewer test functions in a file than it started with.
+
+`[git_hooks] block_gate_relaxation = false` in `.raven/config.toml` turns the check off, the same shape `block_ai_attribution_content` uses. That is a repository-level decision made in the open and reviewed as a config change — not a step in landing a suppression the check just refused.
 
 ## Two-Layer Enforcement: Native `permissions.deny` + Guard Hooks
 
