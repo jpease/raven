@@ -3,6 +3,19 @@
 Every command runs from the root of the repository you are installing Raven
 into. See the [README](../README.md) for setup and `PATH` notes.
 
+## Running against another repository
+
+`-d`/`--destination` is a global option, placed before the subcommand, that
+points any command at a repository other than the current directory:
+
+```sh
+raven --destination /path/to/other-repo doctor
+raven -d /path/to/other-repo install python
+```
+
+Defaults to `.`. `raven fleet` is the one command this does not apply to --
+it never runs against a single repository; see below.
+
 ## `raven init <language>`
 
 Writes `.raven/config.toml` and nothing else.
@@ -16,6 +29,11 @@ when you want to change something before installation, such as installing the
 Claude Code adapter but not the Codex one.
 
 Omit the language and Raven prompts for it.
+
+`--platform {github,gitlab,none}` sets `[issue_tracker].platform` in the
+config this writes, which gates which skills get installed (default: `none`).
+The same flag on `install` updates it in an existing config too. Without it,
+edit `.raven/config.toml` by hand.
 
 `.raven/config.toml` documents its own options inline. One worth knowing up
 front: Raven installs starter formatter and linter config files when the
@@ -37,11 +55,17 @@ raven install python --dry-run   # list every file first
 raven install python
 ```
 
-The language argument is optional once `.raven/config.toml` exists.
+The language argument is optional once `.raven/config.toml` exists. `--platform`
+works the same way it does on `init`, above.
 
 Files that already exist are not overwritten. Depending on the file, Raven
 either leaves it alone and writes a merge artifact, or asks to adopt it — see
 [Upgrading and Merges](upgrading.md).
+
+`--include-readme` installs the language template's own `README.md`, which is
+excluded by default. It also works on `upgrade` and `accept`, below; on
+`accept` it only changes which template entries are recognized as
+Raven-managed, since `accept` never copies files.
 
 ## `raven upgrade`
 

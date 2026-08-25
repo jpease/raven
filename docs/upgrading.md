@@ -8,12 +8,18 @@ exists, and how to settle a conflict for good. For command syntax, see
 
 `raven upgrade --dry-run` sorts every file into one of these buckets:
 
-- New Raven files to be copied
-- Unmodified Raven files that will be upgraded
-- Raven files already up to date
-- Locally modified Raven files needing a manual merge
-- File name conflicts needing a manual merge
-- Excluded template or configured files
+- Will copy new Raven files
+- Will upgrade unchanged Raven-managed files
+- Already up to date; will not copy
+- Manual merge required (locally modified Raven-managed files; will be left
+  untouched)
+- Manual merge required (existing files Raven does not manage; template ships
+  its own version)
+- Locally customized; template unchanged, so left untouched (no merge needed)
+- Needs consent to adopt as Raven-managed (existing file Raven does not yet
+  own; left untouched, no merge artifact -- see `--adopt-settings-json`)
+
+The last two only appear when there is something to report in them.
 
 Raven overwrites two things and nothing else: paths you named explicitly on
 the command line, and managed files whose current content still matches the
