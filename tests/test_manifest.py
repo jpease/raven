@@ -6,8 +6,44 @@ import json
 import subprocess
 import unittest
 from typing import ClassVar
+from unittest import mock
 
 from helpers import REPO_ROOT, RavenTestCase, install_ns, raven, upgrade_ns
+
+
+def _completed(returncode, stdout=""):
+    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout)
+
+
+class GitRefTests(unittest.TestCase):
+    """#243 -- git_ref must mark a manifest recorded from an uncommitted
+    checkout, so fleet and doctor never treat it as the clean commit it
+    shares a sha with.
+    """
+
+    def test_clean_checkout_returns_bare_sha(self):
+        with mock.patch(
+            "raven_lib.manifest.subprocess.run",
+            side_effect=[_completed(0, "1588b719ad69\n"), _completed(0, "")],
+        ):
+            self.assertEqual(raven.git_ref(), "1588b719ad69")
+
+    def test_dirty_checkout_appends_dirty_suffix(self):
+        with mock.patch(
+            "raven_lib.manifest.subprocess.run",
+            side_effect=[
+                _completed(0, "1588b719ad69\n"),
+                _completed(0, " M scripts/raven_lib/manifest.py\n"),
+            ],
+        ):
+            self.assertEqual(raven.git_ref(), "1588b719ad69-dirty")
+
+    def test_outside_a_git_repo_is_unknown_and_skips_status_check(self):
+        with mock.patch(
+            "raven_lib.manifest.subprocess.run", side_effect=[_completed(128, "")]
+        ) as run:
+            self.assertEqual(raven.git_ref(), "unknown")
+            self.assertEqual(run.call_count, 1)
 
 
 class ManifestTests(RavenTestCase):

@@ -105,7 +105,14 @@ def load_manifest(destination: Path) -> dict:
 
 
 def git_ref() -> str:
-    """Short HEAD sha of this Raven checkout, or ``"unknown"`` outside a git repo."""
+    """Short HEAD sha of this Raven checkout, or ``"unknown"`` outside a git repo.
+
+    Suffixed with ``-dirty`` when the checkout has uncommitted changes, so a
+    manifest recorded from a locally modified template checkout is never
+    mistaken for the clean commit it shares a sha with (#243) -- installing
+    from a dirty checkout is normal while developing Raven itself, and the
+    committed content at that sha is not what actually got installed.
+    """
     result = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "rev-parse", "--short=12", "HEAD"],
         stdout=subprocess.PIPE,
@@ -113,9 +120,19 @@ def git_ref() -> str:
         text=True,
         check=False,
     )
-    if result.returncode == 0:
-        return result.stdout.strip()
-    return "unknown"
+    if result.returncode != 0:
+        return "unknown"
+    sha = result.stdout.strip()
+    status = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "status", "--porcelain"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    if status.returncode == 0 and status.stdout.strip():
+        return f"{sha}-dirty"
+    return sha
 
 
 def save_manifest(destination: Path, manifest: dict) -> None:

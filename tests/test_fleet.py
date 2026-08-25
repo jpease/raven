@@ -110,6 +110,19 @@ class FleetFindingTests(FleetTestCase):
         with mock.patch.object(fleet, "git_ref", return_value="deadbeef1234"):
             self.assertEqual(self._severity_for("current"), Severity.OK)
 
+    def test_a_dirty_recorded_install_warns_even_if_it_string_matches_current(self):
+        # #243: a manifest recorded from an uncommitted Raven checkout has no
+        # commit whose content it actually matches. It must never read as
+        # "current", even in the coincidental case where the live checkout is
+        # still dirty at the same sha and the strings match exactly.
+        repo = self._repo("dirty", version="deadbeef1234-dirty")
+        fleet.register(repo)
+        with mock.patch.object(fleet, "git_ref", return_value="deadbeef1234-dirty"):
+            finding = next(f for f in self._findings() if "uncommitted checkout" in f.title)
+            self.assertEqual(finding.severity, Severity.WARN)
+            self.assertTrue(finding.id.startswith("fleet.dirty."))
+            self.assertIn("raven upgrade", finding.fix or "")
+
     def test_a_repo_behind_the_current_sha_warns(self):
         repo = self._repo("old", version="111111111111")
         fleet.register(repo)

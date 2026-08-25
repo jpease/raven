@@ -190,6 +190,23 @@ def build_fleet_findings() -> list[Finding]:
                     detail="this Raven checkout is not a git repository, so there is nothing to compare against",
                 )
             )
+        elif installed.endswith("-dirty"):
+            # #243: a dirty sha was never committed, so its content exists in
+            # no commit -- there is nothing trustworthy to compare it to, even
+            # on the rare occasion it happens to string-match `current`.
+            findings.append(
+                Finding(
+                    id=f"fleet.dirty.{label}",
+                    severity=Severity.WARN,
+                    category=_FLEET,
+                    title=f"{label} ({template}) was installed from an uncommitted checkout",
+                    detail=(
+                        f"records {installed}; that content exists in no commit, "
+                        "so staleness is unknown"
+                    ),
+                    fix=f"run `raven upgrade` in {label} to re-record it",
+                )
+            )
         elif installed == current:
             findings.append(
                 Finding(
