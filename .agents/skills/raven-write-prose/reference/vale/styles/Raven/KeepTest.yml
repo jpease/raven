@@ -18,12 +18,21 @@ ignorecase: true
 # stay: `surfaced` and `surfacing` have no noun sense, and `surfaces` is a verb
 # in most uses. The plural noun ("security-sensitive surfaces") still trips it,
 # which is why this rule is a suggestion rather than a warning.
+#
+# `load-bearing` is a figure of speech people are used to seeing in print, which
+# is Orwell's rule 1. It entered this repo on 2026-06-14 and reached eight prose
+# files, two of them shipped templates, within ten weeks; rewriting one shipped
+# use when this rule landed brought that to six and one. Four code and test
+# files use it in comments, which neither count includes. Its keep-test
+# asks whether the sentence names what depends on the detail. Most uses here do,
+# so this prompts a check rather than a rewrite.
 tokens:
   - canonical(ly)?
   - canonicality
   - durabl\w*
   - posture
   - materiall\w*
+  - load-bearing
   - surfaced
   - surfaces
   - surfacing

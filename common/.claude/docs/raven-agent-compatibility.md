@@ -85,8 +85,8 @@ trees — all three are deliberate.
 The `.codex/` entries are symlinks spelled to climb back in through `common/`, e.g.
 `common/.codex/scripts/raven-session.py -> ../../../common/.claude/scripts/raven-session.py`.
 
-That spelling is load-bearing. `should_preserve_symlink` in `scripts/raven_lib/template.py`
-dereferences a symlink — copying real content into the destination — only when its target
+That spelling is what `should_preserve_symlink` in `scripts/raven_lib/template.py` reads: it
+dereferences a symlink — copying real content into the destination — only when the target
 matches `(\.\./)+common/`. Any other spelling is preserved *as a symlink* at the
 destination. Because `.claude/scripts` and `.codex/scripts` are independently toggleable
 components (`[components.claude] scripts = false`), a destination-level link from one
