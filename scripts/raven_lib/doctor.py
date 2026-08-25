@@ -22,6 +22,7 @@ from .constants import (
     KIND_SYMLINK,
     LANE_CLAIMS,
     REPO_ROOT,
+    STARTER_TOOL_CONFIG_PATHS,
     SYMLINK_CHECKOUT_FIX,
     _any_exists,
     claude_config_dir,
@@ -40,7 +41,12 @@ from .manifest import ManifestStatus, git_ref, validate_manifest
 from .models import RavenConfig, SourceSpec
 from .orphans import classify_orphans
 from .runner import Runner, probe_runner
-from .template import broken_template_symlinks, is_known_template
+from .template import (
+    broken_template_symlinks,
+    entries_for_destination,
+    is_known_template,
+    iter_template_entries,
+)
 from .tracking import untracked_merge_only_paths
 
 _INTEGRITY = "Install integrity"
@@ -388,8 +394,26 @@ def drift_findings(destination: Path) -> list[Finding]:
     # inside classify) and lets an unusable manifest block a "no drift" claim.
     manifest_status = validate_manifest(destination)
     manifest = manifest_status.manifest
+    entries = entries_for_destination(template, set(DEFAULT_EXCLUDES), config, destination)
+    # entries_for_destination drops a starter tool config the moment the
+    # destination has one, so install/upgrade never overwrite a project's own
+    # file. That drop is keyed on filesystem existence alone, which after a
+    # normal install is always true -- Raven's own copy is sitting right
+    # there. Re-add any such path the manifest already tracks (installed by
+    # Raven, or later `raven accept`ed), so classify keeps evaluating drift on
+    # it instead of silently dropping it from every future doctor run (#239).
+    manifest_files = manifest.get("files", {})
+    tracked_starter_configs = STARTER_TOOL_CONFIG_PATHS & manifest_files.keys() - entries.keys()
+    if tracked_starter_configs:
+        all_entries = {
+            entry.relative: entry
+            for entry in iter_template_entries(template, set(DEFAULT_EXCLUDES), config)
+        }
+        for relative in tracked_starter_configs:
+            if relative in all_entries:
+                entries[relative] = all_entries[relative]
     classification = classify(
-        template, destination, set(DEFAULT_EXCLUDES), config, manifest=manifest
+        template, destination, set(DEFAULT_EXCLUDES), config, manifest=manifest, entries=entries
     )
     orphans = classify_orphans(template, destination, manifest)
     deactivated = classify_deactivated(template, destination, manifest, config)

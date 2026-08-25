@@ -260,6 +260,36 @@ class DoctorDriftTests(RavenTestCase):
         ids = {f.id for f in findings}
         self.assertIn("doctor.drift.modified", ids)
 
+    def test_preexisting_starter_tool_config_is_not_reported_as_drift(self):
+        # #239 -- entries_for_destination drops a starter tool config (e.g.
+        # pyproject.toml) the moment the destination already has one, since
+        # install never copies over a project's own config. drift_findings
+        # must classify against the same entry set install used, or the
+        # file it deliberately left alone comes back as "locally modified".
+        (self.destination / "pyproject.toml").write_text(
+            '[project]\nname = "mine"\nversion = "0.1.0"\n', encoding="utf-8"
+        )
+        _install(self)
+        finding = {f.id: f for f in drift_findings(self.destination)}["doctor.drift.modified"]
+        self.assertEqual(finding.severity, Severity.OK)
+        self.assertNotIn("pyproject.toml", finding.detail)
+
+    def test_preexisting_real_skills_dir_is_not_reported_as_drift(self):
+        # #239 -- when .claude/skills already exists as a real directory (not
+        # Raven's usual symlink), entries_for_destination replaces the symlink
+        # entry with per-file copies. drift_findings must use that same
+        # rewrite, or the directory install deliberately left alone shows up
+        # as Raven-owned drift with no valid fix.
+        skills_dir = self.destination / ".claude" / "skills" / "my-project-skill"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text(
+            "---\nname: my-project-skill\ndescription: mine\n---\nbody\n", encoding="utf-8"
+        )
+        _install(self)
+        finding = {f.id: f for f in drift_findings(self.destination)}["doctor.drift.modified"]
+        self.assertEqual(finding.severity, Severity.OK)
+        self.assertNotIn(".claude/skills", finding.detail)
+
     def test_missing_files_reported_and_suppress_ok(self):
         # will_copy holds template entries absent from the destination -- i.e.
         # individually deleted managed files. They must surface as drift, not be
