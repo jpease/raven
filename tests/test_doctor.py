@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from helpers import RavenTestCase, raven
-from raven_lib.config import _update_config_platform
+from raven_lib.config import _update_config_platform, load_config
 from raven_lib.constants import CONFIG_PATH, LANE_CLAIMS, claude_config_dir
 from raven_lib.doctor import (
     FOUND,
@@ -843,6 +843,106 @@ class DoctorToolchainTests(RavenTestCase):
                     "Tool-check script unavailable",
                     f"Failed for {description}",
                 )
+
+
+class MissingGateToolsTests(RavenTestCase):
+    """#242 -- `missing_gate_tools` is the probe `raven install`/`raven upgrade`
+    reuse to warn before the push gate they just wired up finds a missing
+    tool the hard way.
+    """
+
+    def _config(self, template="python"):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            f'schema = 1\ntemplate = "{template}"\n', encoding="utf-8"
+        )
+        return load_config(self.destination)
+
+    def test_all_tools_present_reports_none_missing(self):
+        from raven_lib.doctor import missing_gate_tools
+
+        config = self._config()
+
+        def runner(command, cwd):
+            return RunResult(
+                ok=True, code=0, stdout="1.0\n", stderr="", found=True, timed_out=False
+            )
+
+        self.assertEqual(missing_gate_tools(config, self.destination, runner), [])
+
+    def test_a_tool_absent_from_path_is_reported_missing(self):
+        # The exact shape #242 observed: pytest resolves on no PATH at all,
+        # not merely a failing invocation.
+        from raven_lib.doctor import missing_gate_tools
+
+        config = self._config()
+
+        def runner(command, cwd):
+            if command[0] == "pytest":
+                return RunResult(
+                    ok=False, code=127, stdout="", stderr="", found=False, timed_out=False
+                )
+            return RunResult(
+                ok=True, code=0, stdout="1.0\n", stderr="", found=True, timed_out=False
+            )
+
+        self.assertEqual(missing_gate_tools(config, self.destination, runner), ["pytest"])
+
+    def test_a_tool_found_but_erroring_is_reported_missing(self):
+        # #242's actual observed shape on a machine where a version manager's
+        # shim resolves the name but exits non-zero because nothing is
+        # actually installed for the active version (shutil.which alone would
+        # have missed this).
+        from raven_lib.doctor import missing_gate_tools
+
+        config = self._config()
+
+        def runner(command, cwd):
+            if command[0] == "pytest":
+                return RunResult(
+                    ok=False,
+                    code=127,
+                    stdout="",
+                    stderr="pyenv: pytest: command not found",
+                    found=True,
+                    timed_out=False,
+                )
+            return RunResult(
+                ok=True, code=0, stdout="1.0\n", stderr="", found=True, timed_out=False
+            )
+
+        self.assertEqual(missing_gate_tools(config, self.destination, runner), ["pytest"])
+
+    def test_gofmt_present_is_not_missing_despite_unsupported_version_flag(self):
+        from raven_lib.doctor import missing_gate_tools
+
+        config = self._config(template="go")
+
+        def runner(command, cwd):
+            if command[0] == "gofmt":
+                return RunResult(
+                    ok=False,
+                    code=2,
+                    stdout="",
+                    stderr="flag provided but not defined: -version",
+                    found=True,
+                    timed_out=False,
+                )
+            return RunResult(
+                ok=True, code=0, stdout="1.0\n", stderr="", found=True, timed_out=False
+            )
+
+        self.assertNotIn("gofmt", missing_gate_tools(config, self.destination, runner))
+
+    def test_template_with_no_gate_spec_reports_no_missing_tools(self):
+        from raven_lib.doctor import missing_gate_tools
+
+        config = self._config(template="dotfiles")
+
+        def runner(command, cwd):
+            return RunResult(ok=False, code=127, stdout="", stderr="", found=False, timed_out=False)
+
+        self.assertEqual(missing_gate_tools(config, self.destination, runner), [])
 
 
 class DoctorProberPathTests(RavenTestCase):

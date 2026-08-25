@@ -673,6 +673,29 @@ def _tool_check_results(
     return results if isinstance(results, list) else None
 
 
+def _gate_tool_found(tool: str, runner: Runner, destination: Path) -> bool:
+    """Whether ``tool`` (one of `GateSpec.tools`) is usable, probed the way gates run it."""
+    probe = runner([tool, "--version"], destination)
+    if tool in _NO_VERSION_FLAG:
+        return probe.found
+    return probe.found and probe.ok
+
+
+def missing_gate_tools(
+    config: RavenConfig, destination: Path, runner: Runner = probe_runner
+) -> list[str]:
+    """Names of the configured template's gate tools not found on PATH.
+
+    Reuses the same probe `toolchain_findings` performs for `doctor.gate-tool.*`
+    findings, so `raven install`/`raven upgrade` can warn the moment they wire
+    up a push gate instead of leaving the first push to find out (#242).
+    """
+    spec = gate_spec_for(config.template) if config.template else None
+    if spec is None:
+        return []
+    return [tool for tool in spec.tools if not _gate_tool_found(tool, runner, destination)]
+
+
 def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list[Finding]:
     """Report tool-check results (found/missing recommended tools), or warn if the script failed."""
     findings: list[Finding] = []
@@ -735,11 +758,7 @@ def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list
         for tool in spec.tools:
             if tool in seen_ids:
                 continue
-            probe = runner([tool, "--version"], destination)
-            if tool in _NO_VERSION_FLAG:
-                severity = Severity.OK if probe.found else Severity.WARN
-            else:
-                severity = Severity.OK if probe.found and probe.ok else Severity.WARN
+            severity = Severity.OK if _gate_tool_found(tool, runner, destination) else Severity.WARN
             findings.append(
                 Finding(
                     id=f"doctor.gate-tool.{tool}",

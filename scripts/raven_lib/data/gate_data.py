@@ -36,7 +36,7 @@ GATE_DATA: dict[str, dict[str, object]] = {
     "python": {
         "source_suffixes": [".py", ".pyi"],
         "recipes": ["lint", "fmt-check", "typecheck", "test"],
-        "tools": ["ruff", "pyright"],
+        "tools": ["ruff", "pyright", "pytest"],
         "detect_signals": ["pyproject.toml", "setup.py", "setup.cfg"],
         "config_signals": [["pyproject.toml", "[tool.ruff]"]],
         "fallback_commands": {
@@ -140,7 +140,7 @@ GATE_DATA: dict[str, dict[str, object]] = {
     "ruby": {
         "source_suffixes": [".rb", ".rake"],
         "recipes": ["lint", "test"],
-        "tools": ["rubocop", "ruby"],
+        "tools": ["rubocop", "ruby", "rake"],
         "detect_signals": ["Gemfile", ".rubocop.yml"],
         "config_signals": [[".rubocop.yml", ""]],
         "fallback_commands": {

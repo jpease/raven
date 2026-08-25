@@ -207,7 +207,7 @@ class ManifestGateToolsTests(RavenTestCase):
     def test_apply_records_resolved_gate_tools(self):
         raven.cli.cmd_install(install_ns(self.destination, "python"))
         manifest = json.loads((self.destination / ".raven" / "manifest.json").read_text("utf-8"))
-        self.assertEqual(manifest["gateTools"], ["ruff", "pyright"])
+        self.assertEqual(manifest["gateTools"], ["ruff", "pyright", "pytest"])
 
     def test_recorded_tools_match_the_gate_spec(self):
         # Derived from GATE_DATA, never hand-listed, so a gate change here
@@ -226,7 +226,7 @@ class ManifestGateToolsTests(RavenTestCase):
         path.write_text(json.dumps(manifest), encoding="utf-8")
         raven.cli.cmd_upgrade(upgrade_ns(self.destination))
         refreshed = json.loads(path.read_text("utf-8"))
-        self.assertEqual(refreshed["gateTools"], ["ruff", "pyright"])
+        self.assertEqual(refreshed["gateTools"], ["ruff", "pyright", "pytest"])
 
 
 class ManifestBlockPreservationTests(RavenTestCase):

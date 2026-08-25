@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from helpers import (
     attribution_line,
@@ -1712,6 +1713,64 @@ class HookManagerNoticeTests(unittest.TestCase):
         )
         output = self._run_cmd(raven.cmd_install, install_ns(self.destination, dry_run=True))
         self.assertNotIn("Hook manager detected", output)
+
+
+class MissingGateToolNoticeTests(unittest.TestCase):
+    """#242 -- the pre-push hook `install`/`upgrade` just wired up starts
+    gating every push immediately. A missing gate tool must be named before
+    that first push, not discovered from a raw tool error naming neither
+    Raven nor the fix.
+    """
+
+    def setUp(self):
+        for var in [k for k in os.environ if k.startswith("GIT_")]:
+            self.addCleanup(os.environ.__setitem__, var, os.environ[var])
+            del os.environ[var]
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.destination = Path(self.tmp.name)
+        subprocess.run(["git", "init", str(self.destination)], capture_output=True, check=True)
+
+    def _run_cmd(self, command, namespace) -> str:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            rc = command(namespace)
+        self.assertEqual(rc, 0, out.getvalue())
+        return out.getvalue()
+
+    def test_install_names_a_missing_gate_tool(self):
+        with mock.patch("raven_lib.cli.missing_gate_tools", return_value=["pytest"]):
+            output = self._run_cmd(raven.cmd_install, install_ns(self.destination))
+        self.assertIn("gate tool(s) not installed", output)
+        self.assertIn("pytest", output)
+        self.assertIn("git push", output)
+
+    def test_install_is_silent_when_all_gate_tools_are_present(self):
+        with mock.patch("raven_lib.cli.missing_gate_tools", return_value=[]):
+            output = self._run_cmd(raven.cmd_install, install_ns(self.destination))
+        self.assertNotIn("gate tool(s) not installed", output)
+
+    def test_upgrade_also_names_a_missing_gate_tool(self):
+        with mock.patch("raven_lib.cli.missing_gate_tools", return_value=[]):
+            self._run_cmd(raven.cmd_install, install_ns(self.destination))
+        with mock.patch("raven_lib.cli.missing_gate_tools", return_value=["pyright"]):
+            output = self._run_cmd(raven.cmd_upgrade, upgrade_ns(self.destination))
+        self.assertIn("gate tool(s) not installed", output)
+        self.assertIn("pyright", output)
+
+    def test_no_notice_when_a_hook_manager_owns_the_hooks_dir(self):
+        # Raven's own pre-push never runs here, so there is nothing for a
+        # missing gate tool to block yet -- warning would misattribute a gate
+        # this install did not wire up.
+        (self.destination / ".husky" / "_").mkdir(parents=True)
+        subprocess.run(
+            ["git", "-C", str(self.destination), "config", "core.hooksPath", ".husky/_"],
+            capture_output=True,
+            check=True,
+        )
+        with mock.patch("raven_lib.cli.missing_gate_tools", return_value=["pytest"]):
+            output = self._run_cmd(raven.cmd_install, install_ns(self.destination))
+        self.assertNotIn("gate tool(s) not installed", output)
 
 
 class HookLinkActionTests(unittest.TestCase):

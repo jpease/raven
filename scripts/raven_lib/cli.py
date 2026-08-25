@@ -53,7 +53,7 @@ from .constants import (
     _any_exists,
 )
 from .deactivated import classify_deactivated
-from .doctor import build_doctor_findings
+from .doctor import build_doctor_findings, missing_gate_tools
 from .findings import exit_code
 from .fleet import (
     build_fleet_findings,
@@ -613,6 +613,19 @@ def _run(
         except ValueError:
             hooks_label = hooks_dir
         print_section("Installed git hooks:", [f"{hooks_label}/{h}" for h in git_hooks_installed])
+        # #242: the pre-push hook just wired up runs the template's gates on
+        # every push starting now. A gate tool absent from PATH fails that
+        # push with a raw tool error naming neither Raven nor the fix; warn
+        # here, while there is still a reader to warn, instead of leaving the
+        # first push to find out.
+        missing_tools = missing_gate_tools(config, destination)
+        if missing_tools:
+            print()
+            print_section(
+                f"! {len(missing_tools)} gate tool(s) not installed -- `git push` will fail "
+                "until these are:",
+                missing_tools,
+            )
     else:
         _print_hook_manager_notice(destination)
 
