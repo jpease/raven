@@ -59,6 +59,26 @@ git rm --cached -r . && git reset --hard
 
 Raven does not run this for you.
 
+### `.ignore` and searchable guidance
+
+`.ignore` is append-only on the same terms. `rg`, `fd` and `ast-grep` read it
+through the same `ignore` crate, and all three skip a dot-directory unless
+something un-hides it — so without this file the `.agents/`, `.claude/`,
+`.codex/` and `.raven/` guidance Raven just installed is invisible to the tools
+`AGENTS.md` tells an agent to reach for first, and the search comes back empty
+rather than reporting that it skipped anything.
+
+Raven appends one `!` negation per directory and nothing else. A negation can
+only un-ignore, so the merge cannot hide a path you were already searching, and
+a negation for a directory you do not have is inert. Git does not read
+`.ignore` at all. Delete the lines if you want them gone; the only effect is
+that the guidance stops turning up in a default search.
+
+The home directory itself is the one destination Raven skips: there
+`.claude/` is Claude Code's runtime state rather than shipped guidance, and
+un-hiding it would pull gigabytes of transcripts and caches into every search
+from `$HOME`. A repository *under* your home directory is unaffected.
+
 ## When a file already exists
 
 Two different things can happen, depending on the file.

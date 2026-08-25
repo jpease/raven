@@ -1,5 +1,7 @@
-# ripgrep/fd: Raven ships guidance under dot-directories. Without these
-# negations `rg pattern common/` silently skips all of it (rg hides dotfiles).
+# ripgrep/fd/ast-grep: Raven ships guidance under dot-directories, and all
+# three tools share the same `ignore` crate, which skips them. Without these
+# negations `rg pattern common/` silently skips all of it. The same file is
+# shipped to installed projects as common/.ignore (#238).
 !.agents/
 !.claude/
 !.codex/

@@ -18,6 +18,7 @@ from .apply import (
 )
 from .blocks import (
     ensure_gitattributes_lines,
+    ensure_ignore_lines,
     ensure_settings_local_gitignored,
     write_guided_merge_artifacts,
 )
@@ -629,6 +630,14 @@ def apply_plan(
     # lines for hooks it never installed.
     if not component_disabled(GITATTRIBUTES_PATH, config):
         ensure_gitattributes_lines(destination)
+
+    # `.ignore` merges on every apply for the same reason, and ungated (#238):
+    # its negations cover `.agents/`, `.claude/`, `.codex/` and `.raven/`, which
+    # span every component rather than belonging to one, and `.raven/` exists in
+    # any installation regardless of what a config turns off. A repo that
+    # declined a component keeps a negation for a directory it does not have,
+    # which costs nothing -- an ignore rule for an absent path is inert.
+    ensure_ignore_lines(destination)
 
     failed_orphans: list[str] = []
     removed_orphans = remove_orphans(destination, orphans.will_remove, failed_orphans)

@@ -19,6 +19,7 @@ from typing import Literal
 
 from .constants import (
     GITATTRIBUTES_PATH,
+    IGNORE_PATH,
     MERGE_DIR,
     RAVEN_BLOCK_BEGIN_RE,
     RAVEN_BLOCK_END,
@@ -704,6 +705,112 @@ def ensure_gitattributes_lines(destination: Path) -> None:
         f"# Raven: normalize shipped hook/script line endings (see README.md)\n{body}\n"
     )
     with gitattributes.open("a", encoding="utf-8") as f:
+        f.write(block)
+
+
+def _ignore_required_lines() -> list[str]:
+    """Non-comment, non-blank lines from the shipped ``common/.ignore`` template.
+
+    Read from ``common/`` via ``REPO_ROOT`` for the same reason
+    ``_gitattributes_required_lines`` is: a merge-only path is excluded from
+    the template walk, so no language tree carries a copy or a symlink to read
+    instead. Returns an empty list -- a silent no-op for
+    ``ensure_ignore_lines`` -- if ``common/.ignore`` is missing, rather than
+    raising, since a caller might reasonably run against a stripped-down
+    ``common/`` in a test fixture.
+    """
+    source = REPO_ROOT / "common" / IGNORE_PATH
+    if not source.exists():
+        return []
+    lines = []
+    for raw in source.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        lines.append(line)
+    return lines
+
+
+def _is_home_directory(destination: Path) -> bool:
+    """Whether ``destination`` is the user's home directory itself.
+
+    Both sides are resolved, so a path that reaches home by a different
+    spelling still matches. ``Path.home()`` raises when no home can be
+    determined (no ``HOME`` set); that is answered False -- "not home" -- since
+    the caller's fail-safe direction is to write the file, and refusing to
+    install over a missing environment variable would be worse than the risk
+    the check exists for.
+
+    Exact equality only. A *subdirectory* of home is the normal case -- nearly
+    every repository lives under one -- and must keep getting the file.
+    """
+    try:
+        home = Path.home().resolve()
+    except (RuntimeError, OSError):
+        return False
+    try:
+        return destination.resolve() == home
+    except OSError:
+        return False
+
+
+def ensure_ignore_lines(destination: Path) -> None:
+    """Idempotently append Raven's required ``.ignore`` negations under a labeled header.
+
+    ripgrep, fd and ast-grep all read ``.ignore`` through the same ``ignore``
+    crate, and all three skip a dot-directory unless something un-hides it. The
+    guidance Raven installs lives entirely under ``.agents/``, ``.claude/``,
+    ``.codex/`` and ``.raven/``, so an installed project cannot search its own
+    instructions with the tools Raven's retrieval ladder names first -- the
+    search returns nothing and reads as clean (#238).
+
+    Writes nothing when ``destination`` is the home directory itself. The
+    ``dotfiles`` template's target "may be ``~/.config``, a ``dotfiles/``
+    repository, or any home-directory config layout", so ``$HOME`` is a
+    reachable destination -- and there ``.claude/`` is not shipped guidance but
+    Claude Code's runtime state: conversation transcripts, job output,
+    plugins, security data, file history, caches, measured in gigabytes.
+    Un-hiding it would make every search from the home directory drag through
+    all of it. Negating only Raven's own subpaths does not help: the
+    hidden-file filter drops ``.claude/`` before its children are considered,
+    so ``!.claude/docs/`` alone matches nothing. A user who does want this at
+    ``$HOME`` should add the negations by hand, scoped to the directories they
+    actually want searchable. Only ``$HOME`` exactly is skipped -- a
+    subdirectory of home is the ordinary case and still gets the file.
+
+    Same merge shape as ``ensure_gitattributes_lines``: required lines read
+    from the shipped template, exact-line dedup, append-only, never touching or
+    reordering what the destination already had. Safer than that merge in one
+    respect -- every shipped line begins with ``!``, and a negation can only
+    un-ignore, so appending here cannot hide a path the destination was
+    searching before Raven arrived.
+    """
+    if _is_home_directory(destination):
+        return
+    required = _ignore_required_lines()
+    if not required:
+        return
+    ignore_file = destination / IGNORE_PATH
+    existing = ignore_file.read_text(encoding="utf-8") if ignore_file.exists() else ""
+    # `.ignore` uses gitignore syntax, so `_existing_ignore_patterns` reads it
+    # with the right semantics rather than by coincidence.
+    existing_patterns = _existing_ignore_patterns(existing)
+    missing = [line for line in required if line not in existing_patterns]
+    if not missing:
+        return
+    # Both newlines conditional, as in `ensure_gitattributes_lines` (#217):
+    # `terminator` closes an existing final line lacking its own "\n",
+    # `separator` detaches Raven's block from what precedes it, and neither
+    # applies when the file is created from nothing.
+    terminator = "" if not existing or existing.endswith("\n") else "\n"
+    separator = "\n" if existing else ""
+    body = "\n".join(missing)
+    block = (
+        f"{terminator}{separator}"
+        "# Raven: rg/fd/ast-grep skip dot-directories; these keep installed "
+        f"guidance searchable (see README.md)\n{body}\n"
+    )
+    with ignore_file.open("a", encoding="utf-8") as f:
         f.write(block)
 
 

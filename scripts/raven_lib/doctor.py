@@ -828,10 +828,11 @@ def merge_only_tracking_findings(destination: Path) -> list[Finding]:
             category=_INTEGRITY,
             title=f"merge-only path not tracked by git: {listed}",
             detail=(
-                "Raven wrote this into the repository but git does not track it. Git "
-                "honors it in this working tree, so it looks correct here while reaching "
-                "no other clone -- the eol=lf rules that exist to protect a Windows "
-                "checkout protect only the clone that generated them."
+                "Raven wrote this into the repository but git does not track it. It "
+                "applies in this working tree, so it looks correct here while reaching "
+                "no other clone -- the .gitattributes eol=lf rules that exist to protect "
+                "a Windows checkout, and the .ignore negations that make installed "
+                "guidance searchable, both cover only the clone that generated them."
             ),
             fix=f"git add {listed}, then commit",
         )

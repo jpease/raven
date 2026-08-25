@@ -74,6 +74,7 @@ Reusable agent guidance, plus the state needed to upgrade it safely:
 - `.agents/skills/`: canonical reusable skills.
 - `.claude/settings.json`: managed like any other template file, upgraded in place. `.claude/settings.local.json` is your own local-overrides layer — Raven never manages it.
 - `.gitattributes`: append-only. Raven adds the `eol=lf` lines its shipped hooks and scripts need and leaves everything else alone.
+- `.ignore`: append-only. Raven adds a `!` negation for each directory it installs guidance into, so `rg`, `fd` and `ast-grep` — which skip dot-directories by default — search the guidance without `--hidden`. Removing the lines only makes that guidance harder to find; it hides nothing else. Skipped when the destination is your home directory itself, where `.claude/` is Claude Code's runtime state rather than shipped guidance.
 - Claude Code and Codex adapter files when enabled in `.raven/config.toml`.
 - Starter tool configuration files when the language template ships them and the destination path does not already exist.
 

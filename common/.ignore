@@ -1,0 +1,12 @@
+# Raven: un-hide the directories Raven installs guidance into. ripgrep, fd and
+# ast-grep share the same `ignore` crate, which skips dot-directories unless a
+# negation says otherwise, so without these lines the first search an agent
+# runs over its own instructions comes back empty and reads as clean (#238).
+# Only the negation lines below are merged into a destination's own .ignore --
+# see blocks.ensure_ignore_lines and common/.claude/docs/raven-namespace.md for
+# how this file is merged (append-only, never a whole-file copy) rather than
+# installed like most of common/.
+!.agents/
+!.claude/
+!.codex/
+!.raven/
