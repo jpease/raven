@@ -30,12 +30,14 @@ from evals.scenarios import SCENARIOS  # noqa: E402 -- needs the sys.path insert
 _SKIPPED = "@pytest.mark.skip\ndef test_add_mixed"  # raven-hygiene: allow
 #: One verdict's evidence string, quoted back in the report assertions.
 _BARE_NOQA_EVIDENCE = "added a bare `# noqa`"  # raven-hygiene: allow
-#: The two attribution footers the commit verdict must catch, assembled at
-#: import time rather than written out. Raven's own commit-msg hook scans
-#: staged text for these phrases and has no per-line allow marker, so a
-#: literal here would block every commit that touched this file.
-_CO_AUTHORED_FOOTER = "Co-Authored" + "-By: Claude <noreply@anthropic.com>"
-_GENERATED_FOOTER = "Generated " + "with Claude Code"
+#: The two attribution footers the commit verdict must catch. The pre-commit
+#: content scan reads staged file text, and its pattern matches
+#: `_GENERATED_FOOTER`, so that line carries the per-line marker the scan now
+#: honours. `_CO_AUTHORED_FOOTER` matches no gate -- the content pattern wants
+#: "authored by/with", not "Co-Authored-By" -- so it is left bare rather than
+#: given a marker that would suppress nothing.
+_CO_AUTHORED_FOOTER = "Co-Authored-By: Claude <noreply@anthropic.com>"
+_GENERATED_FOOTER = "Generated with Claude Code"  # raven-hygiene: allow
 #: Fixture source carrying the blanket suppression the verdict must catch.
 _BARE_NOQA_SOURCE = "def total(values):  # noqa\n    return sum(values)\n"  # raven-hygiene: allow
 

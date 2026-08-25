@@ -31,6 +31,10 @@ so the hook can forward Git's plan byte-for-byte without re-quoting it in POSIX
 sh. Reading stdin is opt-in via --push-plan, which keeps the bare `outbound`
 invocation (used by hand and by this repo's tests) from blocking on a terminal.
 
+A content line that must name the phrase can carry `ALLOW_MARKER` to be passed
+over; commit *messages* have no such escape, having nowhere to put a marker
+that is not itself published.
+
 Fail-open by design: this gate gates pushes, so anything it cannot evaluate
 (unresolvable object, absent plan, failing git invocation) is skipped rather
 than treated as a finding. A hook that blocks every push on an internal error
@@ -66,6 +70,20 @@ _MESSAGE_PATTERN = re.compile(
     r"|^claude-session:\s+\S+",
     re.IGNORECASE,
 )
+
+
+#: Per-line escape for a content hit, matched as a substring anywhere on the
+#: added line. Deliberately a copy of `scripts/staged_diff.py`'s `ALLOW_MARKER`
+#: literal rather than an import, for the same reason `_MESSAGE_PATTERN` copies
+#: commit-msg's `_AI_TRAILER`: that module is Raven's own repo-only tooling and
+#: never ships into an installed project, so importing it would name a file no
+#: fresh install puts on disk. `test_allow_marker_matches_the_staged_diff_marker`
+#: pins the two together so they cannot drift.
+#:
+#: Substring only. staged_diff additionally extends a marker on a closing
+#: bracket back over the call it closes (#237); porting that here would be a
+#: second copy of real logic kept in sync by hand, which issue #231 owns.
+ALLOW_MARKER = "raven-hygiene: allow"
 
 
 def _raven_config_module():
@@ -152,7 +170,19 @@ def _added_lines(diff_text: str) -> list[str]:
 
 
 def _scan(added_lines: list[str], label: str) -> int:
-    hits = [line for line in added_lines if _CONTENT_PATTERN.search(line)]
+    """Report added lines naming an AI tool as the author, skipping marked ones.
+
+    A line carrying `ALLOW_MARKER` is passed over. Some text has to name the
+    phrase to do its job -- this rule's own documentation, a test fixture
+    asserting the scan works, a prose file describing the pattern -- and the
+    only other escape is `block_ai_attribution_content = false`, which turns
+    the gate off for the whole repository. The marker is visible in the diff
+    and scoped to one line, so a reviewer sees each exemption where it was
+    taken.
+    """
+    hits = [
+        line for line in added_lines if _CONTENT_PATTERN.search(line) and ALLOW_MARKER not in line
+    ]
     if not hits:
         return 0
     print(f"Forbidden AI attribution content found in {label}:", file=sys.stderr)

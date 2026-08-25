@@ -16,6 +16,12 @@ from helpers import (
     trailer_line,
 )
 
+#: The per-line escape a hit may carry to be skipped. Spelled out here rather
+#: than imported so a drifted hook copy fails the marker tests instead of
+#: silently agreeing with itself; the two production copies are pinned to each
+#: other by `test_allow_marker_matches_the_staged_diff_marker`.
+ALLOW_MARKER = "raven-hygiene: allow"
+
 
 class AiAttributionContentHookTests(unittest.TestCase):
     SCRIPT_PATH = (
@@ -562,6 +568,92 @@ class AiAttributionContentHookTests(unittest.TestCase):
 
         self.assertEqual(rc, 1, err)
         self.assertNotIn("no remote baseline", err)
+
+    def _marked(self, line: str) -> str:
+        """Append the per-line allow marker as a trailing comment."""
+        return line.rstrip("\n") + f"  # {ALLOW_MARKER}\n"
+
+    def test_staged_line_with_the_allow_marker_is_allowed(self):
+        # The other two staged gates (check-staged-hygiene, check-staged-
+        # relaxation) already honour this marker; before #236 this hook's only
+        # escape was the repo-wide config flag.
+        self._commit("README.md", "# repo\n")
+        self._stage("notes.py", self._marked(attribution_line("Claude")) + "print('hi')\n")
+
+        rc, err = self._run("staged")
+
+        self.assertEqual(rc, 0, err)
+
+    def test_the_same_staged_line_without_the_marker_still_blocks(self):
+        # Paired negative control for the test above: same line, marker removed.
+        self._commit("README.md", "# repo\n")
+        self._stage("notes.py", attribution_line("Claude") + "print('hi')\n")
+
+        rc, err = self._run("staged")
+
+        self.assertEqual(rc, 1)
+        self.assertIn("staged diff", err)
+
+    def test_marker_suppresses_only_the_line_carrying_it(self):
+        self._commit("README.md", "# repo\n")
+        self._stage(
+            "notes.py",
+            self._marked(attribution_line("Claude"))
+            + attribution_line("Codex", verb="Written", prep="with"),
+        )
+
+        rc, err = self._run("staged")
+
+        self.assertEqual(rc, 1)
+        self.assertIn("Codex", err)
+        self.assertNotIn("Claude", err)
+
+    def test_outbound_content_scan_honours_the_marker(self):
+        self._commit("README.md", "# repo\n")
+        self._set_remote_ref("origin/main", self._head_sha())
+        self._commit("notes.py", self._marked(attribution_line("Claude")) + "print('hi')\n")
+
+        rc, err = self._run("outbound")
+
+        self.assertEqual(rc, 0, err)
+
+    def test_push_plan_content_scan_honours_the_marker(self):
+        self._commit("README.md", "# repo\n")
+        base = self._rev_parse()
+        self._git("update-ref", "refs/remotes/origin/main", base)
+        self._commit("notes.py", self._marked(attribution_line("Claude")) + "print('hi')\n")
+
+        rc, err = self._run_plan(push_plan_line("refs/heads/main", self._rev_parse(), base))
+
+        self.assertEqual(rc, 0, err)
+
+    def test_marker_in_a_commit_message_does_not_excuse_a_trailer(self):
+        # `_scan_messages` is deliberately untouched by #236: a commit message
+        # has no comment syntax, so there is nowhere for a marker to live that
+        # is not itself part of the published message.
+        self._commit("README.md", "# repo\n")
+        base = self._rev_parse()
+        self._git("update-ref", "refs/remotes/origin/main", base)
+        self._commit(
+            "notes.py",
+            "print('hi')\n",
+            message="feat: thing\n\n" + trailer_line().rstrip("\n") + f"  {ALLOW_MARKER}\n",
+        )
+
+        rc, err = self._run_plan(push_plan_line("refs/heads/main", self._rev_parse(), base))
+
+        self.assertEqual(rc, 1, err)
+        self.assertIn("commit message", err)
+
+    def test_allow_marker_matches_the_staged_diff_marker(self):
+        # One spelling across every gate that honours it. This hook ships into
+        # installed projects and scripts/staged_diff.py does not, so the literal
+        # is copied rather than imported; this pins the copy.
+        lib = load_script_module("ai_attribution_content_lib_for_marker_check", self.SCRIPT_PATH)
+        staged_diff = load_script_module(
+            "staged_diff_for_marker_check", REPO_ROOT / "scripts" / "staged_diff.py"
+        )
+        self.assertEqual(lib.ALLOW_MARKER, staged_diff.ALLOW_MARKER)
 
     def test_message_pattern_matches_the_commit_msg_hook_pattern(self):
         # The two gates must agree on what a forbidden trailer is. They are
