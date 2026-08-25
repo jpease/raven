@@ -39,7 +39,7 @@ description: Use for renames, shared abstraction changes, API changes, moved cod
 2. Use LSP references before editing. If similar implementations may exist elsewhere, use `ast-grep` for the pattern's shape or `rg` for its distinctive literals to find them too.
 3. Use GitNexus (`mcp__gitnexus__impact`) for dependency and blast-radius analysis. For a shared constant or list, that only walks CALLS/IMPORTS/EXTENDS edges — also grep near it for duplicate-language markers (`mirrors`, `duplicates`, `pinned against`, `guarded against drift`) and `rg` its literal value, since an import-free textual duplicate has no edge to walk.
 4. Take a rollback point before the first broad edit — commit the green state, or stash it when the change is not ready to be a commit. Backing out of a direction that fails then costs one command rather than a hand reconstruction.
-5. Use ast-grep or Semgrep for mechanical syntax-aware rewrites.
+5. Use ast-grep or Semgrep for mechanical syntax-aware rewrites. Run `ast-grep run -p '<pattern>' -r '<fix>'` without `-U` first — it prints the diff and writes nothing — read that diff, then re-run with `-U` to apply. Reaching for `-U` on the first attempt rewrites every matching file in the tree unreviewed, the kind of destructive command AGENTS.md Safety Rules require approval for. Leave `-i` to a human at a terminal: it opens a full-screen TUI that stalls a non-interactive agent session.
 6. Use `rg` to verify no textual leftovers.
 7. Run targeted tests.
 8. Summarize contract changes.
