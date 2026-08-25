@@ -62,6 +62,13 @@ Files that already exist are not overwritten. Depending on the file, Raven
 either leaves it alone and writes a merge artifact, or asks to adopt it — see
 [Upgrading and Merges](upgrading.md).
 
+Also installs three git hooks — `commit-msg`, `pre-commit`, `pre-push` — as
+symlinks into git's effective hooks directory. From then on, every commit and
+push is gated: `pre-commit` runs `just check-fast`, `pre-push` runs `just
+check`, either blocks on failure, and `commit-msg` strips AI-agent attribution
+trailers. See [What Raven Installs](../README.md#what-raven-installs) for the
+full breakdown, including how to remove them.
+
 `--include-readme` installs the language template's own `README.md`, which is
 excluded by default. It also works on `upgrade` and `accept`, below; on
 `accept` it only changes which template entries are recognized as

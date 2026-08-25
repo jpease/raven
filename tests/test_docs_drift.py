@@ -1,11 +1,15 @@
-"""Cross-checks between docs/commands.md, docs/upgrading.md, and what the CLI
-actually does (#244).
+"""Cross-checks between docs/commands.md, docs/upgrading.md, README.md, and
+what the CLI actually does (#244, #241).
 
 `docs/commands.md` bills itself as the full reference but silently omitted
 three real flags, and `docs/upgrading.md` hand-copied `render_dry_run_summary`'s
 bucket list once and let it drift. The bucket-list check follows the same
 scan-the-real-source pattern as `test_gitattributes.py`'s shipped-coverage
 tests: derive the truth from code, not from a second hand-maintained copy.
+
+README.md also never said that `install` writes git hooks that gate every
+commit and push -- that one is a plain presence check, since "does this doc
+name the three hooks" has no single source of truth in code to scan instead.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from raven_lib.plan import render_dry_run_summary
 
 COMMANDS_DOC = REPO_ROOT / "docs" / "commands.md"
 UPGRADING_DOC = REPO_ROOT / "docs" / "upgrading.md"
+README_DOC = REPO_ROOT / "README.md"
 
 
 class CommandsDocMentionsEveryFlagTests(unittest.TestCase):
@@ -33,6 +38,24 @@ class CommandsDocMentionsEveryFlagTests(unittest.TestCase):
 
     def test_mentions_include_readme(self):
         self.assertIn("--include-readme", self.text)
+
+
+class GitHooksAreDocumentedTests(unittest.TestCase):
+    """#241 -- install silently starts gating every commit and push; both
+    docs must say so, name the three hooks, and say .gitignore is touched.
+    """
+
+    def test_readme_names_all_three_hooks_and_gitignore(self):
+        text = README_DOC.read_text(encoding="utf-8")
+        for hook in ("commit-msg", "pre-commit", "pre-push"):
+            self.assertIn(hook, text)
+        self.assertIn(".gitignore", text)
+
+    def test_commands_doc_install_section_mentions_git_hooks(self):
+        text = COMMANDS_DOC.read_text(encoding="utf-8")
+        install_section = text.split("## `raven install")[1].split("\n## ")[0]
+        self.assertIn("git hooks", install_section)
+        self.assertIn("pre-push", install_section)
 
 
 def _doc_dry_run_buckets() -> list[str]:
