@@ -224,7 +224,18 @@ def validate_context_budget() -> None:
         # purpose, and the decision to stop is made from what is already in
         # context at that moment, which is why they are here and not only in the
         # skill.
-        "common/AGENTS.md": 1255,
+        #
+        # Raised 1255 -> 1301 deliberately (#234): the hidden-directory bullet
+        # was factually wrong -- it claimed `rg pattern common/` "finds nothing
+        # and reads as clean", which this repo's own `.ignore` has made false
+        # for some time, and it named a path no installed project has. Its
+        # replacement scopes the hazard to the two trees #238's `.ignore` does
+        # not reach, and a second bullet gives ast-grep's invocation form and
+        # the check that separates an empty result from a wrong pattern. Both
+        # are read at the moment a search comes back empty, which is why the
+        # compact form is here; `raven-tool-assessment.md` carries the exit
+        # code, `--inspect summary`, and the `--no-ignore` value list.
+        "common/AGENTS.md": 1301,
         # language-specific rules files
         "python/.claude/rules/raven-python.md": 760,
         "elixir/.claude/rules/raven-elixir.md": 890,
@@ -384,15 +395,21 @@ def validate_aggregate_budget() -> None:
         # figure below is the measured total plus ten words of headroom, and
         # each still sits under the sum of its per-file thresholds, which is
         # what keeps this the tighter of the two caps.
-        "python": (2128, "python/.claude/rules/raven-python.md"),
-        "elixir": (2162, "elixir/.claude/rules/raven-elixir.md"),
-        "rust": (2085, "rust/.claude/rules/raven-rust.md"),
-        "swift": (1955, "swift/.claude/rules/raven-swift.md"),
-        "typescript": (1978, "typescript/.claude/rules/raven-typescript.md"),
-        "go": (2111, "go/.claude/rules/raven-go.md"),
-        "lua": (1979, "lua/.claude/rules/raven-lua.md"),
-        "ruby": (2112, "ruby/.claude/rules/raven-ruby.md"),
-        "dotfiles": (1864, "dotfiles/.claude/rules/raven-dotfiles.md"),
+        #
+        # Every profile then rose again by the same 46 words (#234), again one
+        # event rather than nine: `common/AGENTS.md` traded a wrong `rg`
+        # hidden-files bullet for a correct one and gained an ast-grep bullet
+        # covering the invocation form and the empty-result check. The 46 is
+        # the net of the rewrite and the addition, not the addition alone.
+        "python": (2174, "python/.claude/rules/raven-python.md"),
+        "elixir": (2208, "elixir/.claude/rules/raven-elixir.md"),
+        "rust": (2131, "rust/.claude/rules/raven-rust.md"),
+        "swift": (2001, "swift/.claude/rules/raven-swift.md"),
+        "typescript": (2024, "typescript/.claude/rules/raven-typescript.md"),
+        "go": (2157, "go/.claude/rules/raven-go.md"),
+        "lua": (2025, "lua/.claude/rules/raven-lua.md"),
+        "ruby": (2158, "ruby/.claude/rules/raven-ruby.md"),
+        "dotfiles": (1910, "dotfiles/.claude/rules/raven-dotfiles.md"),
     }
     print("==> validate aggregate context budget per language profile")
 

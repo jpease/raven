@@ -39,7 +39,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=feb48e6ab46f383ec8c8d7b39391baa150ab2188494dc6bf3188bc1c9f4733cc -->
+<!-- RAVEN:BEGIN sha256=b4eaaa122f9776b24a91cd697d32fee400ec42c24d21ff93dd350265b9c40354 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -70,7 +70,8 @@ Use the cheapest adequate source before reading full files.
 | Build, test, or log output | RTK-wrapped shell command |
 
 - `rg` is recursive by default; never pass `-r` for recursion. `-r` is ripgrep's `--replace` and takes an argument — unlike grep's `-r`, which means `--recursive`.
-- `rg` skips hidden files and directories by default. Raven's own content sits under `.agents/` and `.claude/`, so `rg pattern common/` finds nothing and reads as clean. Use `--hidden` or `git grep` when searching shipped guidance.
+- `rg`, `fd`, and `ast-grep` skip dot-directories by default. Raven's `.ignore` re-admits `.agents/`, `.claude/`, `.codex/`, and `.raven/` in a tree Raven installed into. Elsewhere — an uninstalled tree, or `$HOME`, which Raven deliberately skips — an empty result proves nothing until you re-run with `--hidden` (`--no-ignore hidden` for ast-grep) or `git grep`.
+- Run ast-grep by full name as `ast-grep --lang <lang> -p '<pattern>'`, never the `sg` alias. An empty result is not absence until `--debug-query=ast` shows the pattern parsed as intended.
 - Batch independent reads, searches, and inspections per turn.
 - Skeleton-first: for a large or unfamiliar file, get a symbol map (LSP document symbols, or `ast-grep`/`rg`) before reading, then read only the ranges you need — read a full file only when it is small or the whole structure matters.
 - Return concise findings before editing.

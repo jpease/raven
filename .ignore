@@ -1,7 +1,10 @@
 # ripgrep/fd/ast-grep: Raven ships guidance under dot-directories, and all
-# three tools share the same `ignore` crate, which skips them. Without these
-# negations `rg pattern common/` silently skips all of it. The same file is
-# shipped to installed projects as common/.ignore (#238).
+# three tools share the same `ignore` crate, which skips them. These negations
+# cover this repository's own installed `.agents/`, `.claude/`, `.codex/` and
+# `.raven/` at the root. `common/.ignore` is a separate file with the same
+# lines, shipped to installed projects (#238); because the tools read an
+# `.ignore` per directory, it also covers the template sources beneath
+# `common/` on its own.
 !.agents/
 !.claude/
 !.codex/

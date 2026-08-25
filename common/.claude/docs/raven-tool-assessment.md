@@ -1,6 +1,6 @@
 # Tool Assessment
 
-Last verified: 2026-06-14
+Last verified: 2026-08-24
 
 This template intentionally separates tool roles. No single retrieval tool should replace all others.
 
@@ -61,6 +61,10 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 - Use `rg` first for exact identifiers, filenames, paths, config keys, logs, errors, and literals.
 - Use LSP for definitions, references, call hierarchy, type information, diagnostics, and rename-impact checks.
 - Use ast-grep for syntax-aware structural searches and codemod candidates.
+- Invoke ast-grep by its full name, as `ast-grep --lang <lang> -p '<pattern>'`. Never the `sg` alias: on some Linux systems `/usr/bin/sg` is the unrelated setgroups utility, which is why `.claude/scripts/raven-tool-check.py` refuses to probe that name.
+- `ast-grep run` exits 1 on zero matches, the grep convention. Read that as "ran fine, matched nothing" — not as a failed command, and not as proof the shape is absent. `rg` is what proves absence.
+- Before believing an empty ast-grep result, print the parse with `--debug-query=ast`. It requires `--lang` explicitly and hard-errors without it: `error: the following required arguments were not provided: --lang <LANG>`. Add `--inspect summary` for scanned and skipped file counts on stderr, which changes no results.
+- `rg`, `fd`, and ast-grep all skip dot-directories by default, and Raven's installed `.ignore` re-admits `.agents/`, `.claude/`, `.codex/`, and `.raven/`. Two trees it does not cover: one Raven never installed into, and `$HOME`, where the installer deliberately writes nothing because `.claude/` there is Claude Code's runtime state rather than shipped guidance. In those, pass `--hidden`, or `--no-ignore hidden` for ast-grep. Its other `--no-ignore` values are `dot`, `exclude`, `global`, `parent`, and `vcs`; `dot` does not affect dot-name filtering.
 - Use `mcp__gitnexus__query` for conceptual discovery when relevant code may not share obvious names with the query.
 - After a conceptual query returns candidate snippets, verify with `rg`, LSP, targeted file reads, or tests before editing.
 - Do not use a conceptual query for exhaustive proof that something does not exist. `rg` is what proves absence.
