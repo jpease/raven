@@ -78,19 +78,21 @@ def changed_paths_raw() -> bytes:
     return result.stdout
 
 
-def iter_changed_paths():
-    r"""Yield the destination path of every staged entry that is not a pure deletion.
+def iter_changed_entries():
+    r"""Yield (status, old_path, new_path) for every staged entry, deletions included.
 
     Parses `git diff --cached --name-status -z` (see `changed_paths_raw` for
     why) rather than `diff --git a/X b/Y` headers out of the full diff text.
     Each record is NUL-delimited: `status\0path\0` for an add, modify, or
     delete; `status\0old_path\0new_path\0` for a rename or copy (status
-    `R.../C...`), from which only `new_path` is yielded -- this is the *same*
-    path a rename/copy header's `b/Y` used to give, including a
-    100%-similarity rename, which has no `+++`/hunk body at all and would
-    otherwise be invisible to `iter_added_lines`. A deletion (status `D`) is
-    never yielded, matching "removing something is never a reason to block"
-    (see `iter_added_lines`, #181).
+    `R.../C...`). For every status but those two the old and new paths are
+    the same value.
+
+    A caller that compares a staged file against its committed self needs the
+    old path: after a rename, HEAD holds the content at the path the file
+    used to have, and reading HEAD at the new path finds nothing. Callers that
+    only need somewhere to look for a finding want the new path and use
+    `iter_changed_paths`.
     """
     fields = changed_paths_raw().decode("utf-8", errors="replace").split("\0")
     i = 0
@@ -100,18 +102,30 @@ def iter_changed_paths():
         if not status:
             i += 1
             continue
-        code = status[0]
-        if code in ("R", "C"):
+        if status[0] in ("R", "C"):
             if i + 2 >= n:
                 break
-            path = fields[i + 2]
+            yield status, fields[i + 1], fields[i + 2]
             i += 3
         else:
             if i + 1 >= n:
                 break
-            path = fields[i + 1]
+            yield status, fields[i + 1], fields[i + 1]
             i += 2
-        if code != "D":
+
+
+def iter_changed_paths():
+    r"""Yield the destination path of every staged entry that is not a pure deletion.
+
+    For a rename or copy only `new_path` is yielded -- this is the *same* path
+    a rename/copy header's `b/Y` used to give, including a 100%-similarity
+    rename, which has no `+++`/hunk body at all and would otherwise be
+    invisible to `iter_added_lines`. A deletion (status `D`) is never yielded,
+    matching "removing something is never a reason to block" (see
+    `iter_added_lines`, #181).
+    """
+    for status, _old_path, path in iter_changed_entries():
+        if status[0] != "D":
             yield path
 
 

@@ -185,6 +185,97 @@ class SuppressionCommentTests(RelaxationCheckerTestCase):
         self._assert_clean()
 
 
+class SuppressionComparisonTests(RelaxationCheckerTestCase):
+    """The suppression detector compares the staged file against its committed self.
+
+    Walking the diff's added lines instead reported every suppression a file
+    already held the moment anything moved it -- a reformat, a reindent, a
+    rename -- so adopting the checker on a codebase that has any suppressions
+    was impossible (issue #233).
+    """
+
+    TWO_SUPPRESSED = f"x=1  # {_TYPE_IGNORE}[arg-type]\ny=2  # {_TYPE_IGNORE}[arg-type]\n"
+    TWO_REFORMATTED = f"x = 1  # {_TYPE_IGNORE}[arg-type]\ny = 2  # {_TYPE_IGNORE}[arg-type]\n"
+
+    #: Filler the rename cases need: git's similarity detection reports `D`
+    #: plus `A` rather than `R` when the pair is only a couple of lines long,
+    #: which would test the new-file path instead of the rename path.
+    PADDING = "".join(f"pad_{n} = {n}\n" for n in range(12))
+
+    def test_a_whitespace_only_reformat_passes(self):
+        self._commit("app.py", self.TWO_SUPPRESSED)
+        self._stage("app.py", self.TWO_REFORMATTED)
+
+        self._assert_clean()
+
+    def test_a_reformat_that_adds_one_suppression_reports_only_the_new_line(self):
+        self._commit("app.py", self.TWO_SUPPRESSED)
+        self._stage("app.py", self.TWO_REFORMATTED + f"z = 3  # {_TYPE_IGNORE}[arg-type]\n")
+
+        result = self._assert_blocks("app.py:3:")
+        self.assertEqual(result.stderr.count("app.py:"), 1, result.stderr)
+
+    def test_deleting_the_reason_from_a_suppression_blocks(self):
+        self._commit("app.py", f"x = 1  # {_NOQA}: E501 -- vendored URL, one line\n")
+        self._stage("app.py", f"x = 1  # {_NOQA}: E501\n")
+
+        self._assert_blocks("app.py:1:", "no reason")
+
+    def test_moving_a_suppression_to_another_line_passes(self):
+        # Moved far enough that git renders it as a removal and an addition,
+        # not as context that happened to shift.
+        body = "".join(f"pad_{n} = {n}\n" for n in range(6))
+        self._commit("app.py", f"a = 1  # {_NOQA}: E501\n{body}")
+        self._stage("app.py", f"{body}a = 1  # {_NOQA}: E501\n")
+
+        self._assert_clean()
+
+    def test_deleting_the_allow_marker_from_a_reasonless_suppression_blocks(self):
+        # The marker is dropped from the committed side too, so a line that
+        # was only exempt because of it starts reporting again.
+        self._commit("app.py", f"x = 1  # {_NOQA}  {MARKER} -- reviewed\n")
+        self._stage("app.py", f"x = 1  # {_NOQA}\n")
+
+        self._assert_blocks("app.py:1:", "no rule code")
+
+    def test_a_new_file_reports_every_suppression_it_introduces(self):
+        self._commit("README.md", "start\n")
+        self._stage("app.py", self.TWO_SUPPRESSED)
+
+        result = self._assert_blocks("app.py:1:", "app.py:2:")
+        self.assertEqual(result.stderr.count("app.py:"), 2, result.stderr)
+
+    def test_a_second_copy_of_an_existing_suppression_blocks(self):
+        self._commit("app.py", self.TWO_SUPPRESSED)
+        self._stage("app.py", self.TWO_SUPPRESSED + f"z=3  # {_TYPE_IGNORE}[arg-type]\n")
+
+        result = self._assert_blocks("app.py:3:")
+        self.assertEqual(result.stderr.count("app.py:"), 1, result.stderr)
+
+    def test_renaming_and_reformatting_a_file_keeps_its_suppressions_silent(self):
+        # The committed content sits at the old path, so the comparison has to
+        # read HEAD there; reading it at the new path finds nothing and reports
+        # every suppression the file already had.
+        self._commit("app.py", self.PADDING + self.TWO_SUPPRESSED)
+        self._git("mv", "app.py", "lib.py")
+        self._stage("lib.py", self.PADDING + self.TWO_REFORMATTED)
+        status = self._git("diff", "--cached", "--name-status")
+        self.assertTrue(status.startswith("R"), status)
+
+        self._assert_clean()
+
+    def test_a_suppression_added_while_renaming_blocks(self):
+        self._commit("app.py", self.PADDING + self.TWO_SUPPRESSED)
+        self._git("mv", "app.py", "lib.py")
+        self._stage(
+            "lib.py",
+            self.PADDING + self.TWO_SUPPRESSED + f"z=3  # {_TYPE_IGNORE}[arg-type]\n",
+        )
+
+        result = self._assert_blocks("lib.py:15:")
+        self.assertEqual(result.stderr.count("lib.py:"), 1, result.stderr)
+
+
 class ConfigRelaxationTests(RelaxationCheckerTestCase):
     def test_widening_ruff_ignore_blocks_and_names_the_rule(self):
         self._commit("pyproject.toml", _BASE_PYPROJECT)

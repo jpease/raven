@@ -26,7 +26,15 @@ Three detectors run over the staged index:
    `.claude/scripts/raven-capability-roster.py` shows the shape that passes:
    a single code followed by why. File-level blanket forms
    (`ruff: noqa` with no code, `mypy: ignore-errors`) are always reported --
-   there is no narrow version of them.
+   there is no narrow version of them. Like detector 2, this compares the
+   committed and staged versions of the same file: each side is reduced to a
+   multiset of the suppressions that would report, and only a staged one with
+   no committed counterpart is a finding. Reading added diff lines instead
+   meant a whitespace-only reformat reported every suppression the file
+   already had, which made adopting the checker on a codebase that has any
+   impossible (#233). A suppression that only moved, or was reindented, or
+   travelled through a rename matches itself and stays silent; a second copy
+   of one, or one that lost its reason, does not.
 
 2. **A linter config edit that loosens the gate**, found by parsing the
    committed and staged versions of the same file and comparing them through
@@ -69,6 +77,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -86,6 +95,7 @@ from staged_diff import (  # noqa: E402 -- needs the sys.path insert above
     head_blob,
     index_blob,
     iter_added_lines,
+    iter_changed_entries,
     iter_changed_paths,
     iter_removed_lines,
     staged_diff,
@@ -96,6 +106,12 @@ from staged_diff import (  # noqa: E402 -- needs the sys.path insert above
 #: comparison or a test count -- and has no single line to point at, so its
 #: `hint` says where the escape marker goes instead.
 Finding = tuple[str, int, str, str, str]
+
+#: What a suppression is, for the purpose of matching a staged one against a
+#: committed one: which form it takes, the rule codes it names, and whether it
+#: carries a reason. Nothing positional, so the same suppression on a
+#: different line -- or in a renamed file -- is still the same suppression.
+SuppressionRecord = tuple[str, tuple[str, ...], bool]
 
 #: Where to put the marker for a finding that has no line of its own.
 _CONFIG_HINT = (
@@ -167,28 +183,108 @@ def _is_test_file(path: str) -> bool:
     )
 
 
-def _suppression_reason(content: str) -> str | None:
-    """Why this line's suppression comment is a finding, or None when it is fine.
+def _normalized_codes(raw: str | None) -> tuple[str, ...]:
+    """The rule codes a suppression names, order- and case-insensitive."""
+    if not raw:
+        return ()
+    return tuple(sorted(code.strip().lower() for code in raw.split(",") if code.strip()))
+
+
+def _offending_suppression(content: str) -> tuple[SuppressionRecord, str] | None:
+    """A line's suppression record and why it is a finding, or None when it is fine.
 
     Two triggers, both from `raven-python.md`'s "narrowest scoped suppression
     with a reason comment": no rule code means the line is silenced wholesale,
     and no reason means the next reader cannot tell a considered exception
-    from a shortcut.
+    from a shortcut. A line carrying no suppression, or one narrow enough to
+    pass, returns None and never enters the comparison -- it could not be
+    reported either way, so tracking it would add state without changing an
+    outcome.
     """
     for pattern, label in _FILE_BLANKETS:
         if pattern.search(content):
-            return f"{label}, which no rule code can narrow"
+            return (label, (), False), f"{label}, which no rule code can narrow"
 
     for pattern, label in _SUPPRESSIONS:
         match = pattern.search(content)
         if match is None:
             continue
-        if not (match.group("codes") or "").strip():
-            return f"a blanket {label} with no rule code"
-        if len(match.group("rest").strip(_REASON_LEAD).strip()) < _MIN_REASON_LENGTH:
-            return f"a {label} with a rule code but no reason"
+        raw_codes = (match.group("codes") or "").strip()
+        codes = _normalized_codes(raw_codes)
+        has_reason = len(match.group("rest").strip(_REASON_LEAD).strip()) >= _MIN_REASON_LENGTH
+        if not raw_codes:
+            return (label, codes, has_reason), f"a blanket {label} with no rule code"
+        if not has_reason:
+            return (label, codes, has_reason), f"a {label} with a rule code but no reason"
         return None
     return None
+
+
+def _offending_suppressions(text: str):
+    """Yield (line_no, content, record, reason) for each reportable line of `text`.
+
+    A line carrying the escape marker is dropped, on the committed side as
+    well as the staged one: deleting a marker from a still-reasonless
+    suppression has to start reporting it again, which only happens if the
+    committed side never counted it either.
+    """
+    for line_no, content in enumerate(text.splitlines(), start=1):
+        if ALLOW_MARKER in content:
+            continue
+        found = _offending_suppression(content)
+        if found is not None:
+            record, reason = found
+            yield line_no, content, record, reason
+
+
+def _suppression_findings() -> list[Finding]:
+    """Compare each staged `.py` file's suppressions against its committed self.
+
+    The committed side becomes a multiset of records. Walking the staged file
+    in line order, a suppression the multiset still holds is spent against it
+    and stays silent; one it does not hold is reported at the line it sits on
+    in the staged file. A file with no committed version -- a new file, or one
+    `index_blob` finds and HEAD does not -- starts from an empty multiset, so
+    every suppression it introduces reports.
+
+    A staged file holding no reportable suppression cannot produce a finding
+    whatever HEAD says, so its committed blob is never read: that keeps the
+    added `git show` to the few files in a commit that carry one.
+    """
+    findings: list[Finding] = []
+    for path, source_path in sorted(_changed_python_paths()):
+        after_text = index_blob(path)
+        if after_text is None:
+            continue
+        staged = list(_offending_suppressions(after_text))
+        if not staged:
+            continue
+        committed: Counter[SuppressionRecord] = Counter(
+            record
+            for _line_no, _content, record, _reason in _offending_suppressions(
+                head_blob(source_path) or ""
+            )
+        )
+        for line_no, content, record, reason in staged:
+            if committed[record] > 0:
+                committed[record] -= 1
+                continue
+            findings.append((path, line_no, content, reason, _LINE_HINT))
+    return findings
+
+
+def _changed_python_paths():
+    """Yield (staged path, committed path) for each changed `.py` file.
+
+    The two differ only for a staged rename or copy, where the committed
+    content is at the old path. Without that, `git mv` plus any edit would
+    report every suppression the file already carried -- the same adoption
+    problem #233 is about, in a form a reformat does not reach.
+    """
+    for status, old_path, path in iter_changed_entries():
+        if status[0] == "D" or not _is_python(path):
+            continue
+        yield path, old_path
 
 
 def _config_findings() -> list[Finding]:
@@ -263,13 +359,7 @@ def _test_findings(diff_text: str) -> list[Finding]:
 
 def find_findings(diff_text: str) -> list[Finding]:
     """Every relaxation the staged diff introduces, across all three detectors."""
-    findings: list[Finding] = []
-    for path, line_no, content in iter_added_lines(diff_text):
-        if line_no is None or not _is_python(path) or ALLOW_MARKER in content:
-            continue
-        reason = _suppression_reason(content)
-        if reason is not None:
-            findings.append((path, line_no, content, reason, _LINE_HINT))
+    findings: list[Finding] = _suppression_findings()
     findings.extend(_config_findings())
     findings.extend(_test_findings(diff_text))
     return findings
