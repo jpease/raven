@@ -360,6 +360,70 @@ class VerdictTests(unittest.TestCase):
         self.assertFalse(sc._verdict_commit_attribution(self.root, "").passed)
 
 
+class UsageExtractionTests(unittest.TestCase):
+    """Token usage read from each agent's own JSON transcript shape."""
+
+    def _claude_result(self, **usage):
+        import json
+
+        event = {
+            "type": "result",
+            "total_cost_usd": 0.05,
+            "usage": {
+                "input_tokens": 4,
+                "cache_creation_input_tokens": 100,
+                "cache_read_input_tokens": 200,
+                "output_tokens": 50,
+                **usage,
+            },
+        }
+        return json.dumps(event)
+
+    def _codex_turn(self, **usage):
+        import json
+
+        event = {
+            "type": "turn.completed",
+            "usage": {
+                "input_tokens": 10,
+                "cached_input_tokens": 20,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 5,
+                **usage,
+            },
+        }
+        return json.dumps(event)
+
+    def test_claude_usage_sums_input_cache_and_output(self):
+        from eval import _claude_usage
+
+        total, output, cost = _claude_usage(self._claude_result())
+        self.assertEqual(total, 4 + 100 + 200 + 50)
+        self.assertEqual(output, 50)
+        self.assertEqual(cost, 0.05)
+
+    def test_claude_usage_none_without_a_result_event(self):
+        from eval import _claude_usage
+
+        self.assertIsNone(_claude_usage('{"type": "assistant", "message": {}}'))
+
+    def test_codex_usage_sums_across_every_turn(self):
+        from eval import _codex_usage
+
+        transcript = "\n".join(
+            [self._codex_turn(input_tokens=10), self._codex_turn(input_tokens=30)]
+        )
+        total, output, cost = _codex_usage(transcript)
+        self.assertEqual(total, (10 + 20 + 0 + 5) + (30 + 20 + 0 + 5))
+        self.assertEqual(output, 10)
+        self.assertIsNone(cost)
+
+    def test_codex_usage_none_without_a_turn_completed_event(self):
+        from eval import _codex_usage
+
+        self.assertIsNone(_codex_usage('{"type": "thread.started"}'))
+
+
 class RunnerTests(unittest.TestCase):
     def test_a_verdict_that_raises_becomes_a_failed_trial_not_a_dead_run(self):
         from eval import run_one
@@ -401,6 +465,26 @@ class RunnerTests(unittest.TestCase):
             [TrialOutcome("x", "control", 1, True, "e")], "claude", 1, "2026-01-01"
         )
         self.assertIn("sample, not a measurement", report)
+
+    def test_report_includes_a_token_usage_table_when_tokens_are_known(self):
+        from eval import TrialOutcome, render_markdown
+
+        outcomes = [
+            TrialOutcome("x", "control", 1, True, "e", total_tokens=1000, output_tokens=50),
+            TrialOutcome("x", "raven", 1, True, "e", total_tokens=1500, output_tokens=60),
+        ]
+        report = render_markdown(outcomes, "claude", 1, "2026-01-01")
+        self.assertIn("## Token usage", report)
+        self.assertIn("| `x` | 1,000 | 1,500 |", report)
+        self.assertIn("1,000 tokens", report)
+
+    def test_report_omits_the_token_table_when_no_trial_reports_tokens(self):
+        from eval import TrialOutcome, render_markdown
+
+        report = render_markdown(
+            [TrialOutcome("x", "control", 1, True, "e")], "claude", 1, "2026-01-01"
+        )
+        self.assertNotIn("## Token usage", report)
 
 
 if __name__ == "__main__":

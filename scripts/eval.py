@@ -52,6 +52,13 @@ class TrialOutcome:
     passed: bool
     evidence: str
     error: str | None = None
+    #: Every token the model processed this trial (fresh + cached input, plus
+    #: output), summed across turns. None means the harness found no usage
+    #: event to read, never that zero tokens were used.
+    total_tokens: int | None = None
+    output_tokens: int | None = None
+    #: Only `claude` reports this; always None for `codex`.
+    cost_usd: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +91,70 @@ def _codex_command(task: str) -> list[str]:
 
 
 AGENTS = {"claude": _claude_command, "codex": _codex_command}
+
+
+def _claude_usage(transcript: str) -> tuple[int, int, float | None] | None:
+    """(total_tokens, output_tokens, cost_usd) from the final `result` event.
+
+    `total_tokens` sums every token the model processed -- fresh input, cache
+    writes, cache reads, and output -- because a cache hit is cheaper but
+    still consumed context; the token-discipline question this exists to
+    answer is about total footprint, not just what was billed. None means no
+    `result` event was seen, never that zero tokens were used.
+    """
+    for line in transcript.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("type") != "result":
+            continue
+        usage = event.get("usage") or {}
+        total = (
+            usage.get("input_tokens", 0)
+            + usage.get("cache_creation_input_tokens", 0)
+            + usage.get("cache_read_input_tokens", 0)
+            + usage.get("output_tokens", 0)
+        )
+        return total, usage.get("output_tokens", 0), event.get("total_cost_usd")
+    return None
+
+
+def _codex_usage(transcript: str) -> tuple[int, int, float | None] | None:
+    """(total_tokens, output_tokens, cost_usd), summed across `turn.completed` events.
+
+    A single `exec` call can run several turns; each carries its own usage, so
+    this totals them rather than keeping only the last.
+    """
+    total = 0
+    output = 0
+    seen = False
+    for line in transcript.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("type") != "turn.completed":
+            continue
+        usage = event.get("usage") or {}
+        total += (
+            usage.get("input_tokens", 0)
+            + usage.get("cached_input_tokens", 0)
+            + usage.get("cache_write_input_tokens", 0)
+            + usage.get("output_tokens", 0)
+        )
+        output += usage.get("output_tokens", 0)
+        seen = True
+    return (total, output, None) if seen else None
+
+
+USAGE_EXTRACTORS = {"claude": _claude_usage, "codex": _codex_usage}
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +271,19 @@ def run_one(scenario: Scenario, agent: str, *, with_raven: bool, trial: int) -> 
             result: Result = scenario.verdict(root, transcript)
         except Exception as exc:  # noqa: BLE001 -- a broken verdict must not end the run
             return TrialOutcome(scenario.name, arm, trial, False, "verdict raised", repr(exc))
-        return TrialOutcome(scenario.name, arm, trial, result.passed, result.evidence)
+
+        usage = USAGE_EXTRACTORS.get(agent, lambda _t: None)(transcript)
+        total_tokens, output_tokens, cost_usd = usage if usage else (None, None, None)
+        return TrialOutcome(
+            scenario.name,
+            arm,
+            trial,
+            result.passed,
+            result.evidence,
+            total_tokens=total_tokens,
+            output_tokens=output_tokens,
+            cost_usd=cost_usd,
+        )
 
 
 def run(scenarios: list[Scenario], agent: str, trials: int) -> list[TrialOutcome]:
@@ -211,8 +294,12 @@ def run(scenarios: list[Scenario], agent: str, trials: int) -> list[TrialOutcome
             for with_raven in (False, True):
                 outcome = run_one(scenario, agent, with_raven=with_raven, trial=trial)
                 mark = "pass" if outcome.passed else "FAIL"
+                tokens = (
+                    f"  {outcome.total_tokens:,}tok" if outcome.total_tokens is not None else ""
+                )
                 print(
-                    f"  {scenario.name:22} {outcome.arm:8} trial {trial}  {mark}  {outcome.evidence}",
+                    f"  {scenario.name:22} {outcome.arm:8} trial {trial}  {mark}{tokens}"
+                    f"  {outcome.evidence}",
                     flush=True,
                 )
                 outcomes.append(outcome)
@@ -227,6 +314,16 @@ def run(scenarios: list[Scenario], agent: str, trials: int) -> list[TrialOutcome
 def _rate(outcomes: list[TrialOutcome], scenario: str, arm: str) -> tuple[int, int]:
     subset = [o for o in outcomes if o.scenario == scenario and o.arm == arm]
     return sum(1 for o in subset if o.passed), len(subset)
+
+
+def _avg_tokens(outcomes: list[TrialOutcome], scenario: str, arm: str) -> int | None:
+    """Mean `total_tokens` for trials that reported it. None if none did."""
+    values = [
+        o.total_tokens
+        for o in outcomes
+        if o.scenario == scenario and o.arm == arm and o.total_tokens is not None
+    ]
+    return round(sum(values) / len(values)) if values else None
 
 
 def render_markdown(outcomes: list[TrialOutcome], agent: str, trials: int, stamp: str) -> str:
@@ -252,6 +349,28 @@ def render_markdown(outcomes: list[TrialOutcome], agent: str, trials: int, stamp
         lines.append(
             f"| `{name}` | {measures} | {control_pass}/{control_n} | {raven_pass}/{raven_n} |"
         )
+
+    if any(o.total_tokens is not None for o in outcomes):
+        lines += [
+            "",
+            "## Token usage",
+            "",
+            "Mean total tokens per trial (fresh input + cache writes + cache reads",
+            "+ output, summed across every turn). This is a footprint number, not a",
+            "controlled efficiency comparison -- the raven arm's context differs",
+            "from control's by construction, so it says how much each arm cost for",
+            "this task, not how efficient either one is per unit of work.",
+            "",
+            "| Scenario | control avg tokens | raven avg tokens |",
+            "|---|---|---|",
+        ]
+        for name in names:
+            control_avg = _avg_tokens(outcomes, name, "control")
+            raven_avg = _avg_tokens(outcomes, name, "raven")
+            control_cell = f"{control_avg:,}" if control_avg is not None else "n/a"
+            raven_cell = f"{raven_avg:,}" if raven_avg is not None else "n/a"
+            lines.append(f"| `{name}` | {control_cell} | {raven_cell} |")
+
     lines += [
         "",
         "## Evidence",
@@ -265,8 +384,12 @@ def render_markdown(outcomes: list[TrialOutcome], agent: str, trials: int, stamp
         for outcome in [o for o in outcomes if o.scenario == name]:
             mark = "pass" if outcome.passed else "**FAIL**"
             suffix = f" ({outcome.error})" if outcome.error else ""
+            tokens = (
+                f", {outcome.total_tokens:,} tokens" if outcome.total_tokens is not None else ""
+            )
             lines.append(
-                f"- {outcome.arm} trial {outcome.trial}: {mark} -- {outcome.evidence}{suffix}"
+                f"- {outcome.arm} trial {outcome.trial}: {mark} -- "
+                f"{outcome.evidence}{suffix}{tokens}"
             )
         lines.append("")
     lines += [
@@ -277,7 +400,11 @@ def render_markdown(outcomes: list[TrialOutcome], agent: str, trials: int, stamp
         "about Raven and should be replaced with a harder one. Two scenarios",
         "(`destructive-command`, `narrowest-test-first`) read the transcript",
         "rather than the tree, so a transcript format change shows up as a",
-        "failure in both arms rather than a silent pass.",
+        "failure in both arms rather than a silent pass. Token counts include",
+        "cache reads, which fall for reasons that have nothing to do with the",
+        "guidance -- a warm cache from a prior trial in the same process, or a",
+        "provider-side change -- so a token difference is weaker evidence than",
+        "a pass/fail difference and needs more trials to trust.",
         "",
     ]
     return "\n".join(lines)

@@ -54,6 +54,25 @@ around leaves no trace in the tree. Those two say so in their docstrings, and a
 transcript format change shows up as a failure in *both* arms rather than a
 silent pass.
 
+## Token usage
+
+README's "Why Raven" leads with token discipline, and pass/fail alone can't
+speak to it: a scenario both arms pass says nothing about which one got there
+by reading less. Every trial also reads the total tokens the model processed
+— fresh input, cache writes, cache reads, and output, summed across turns —
+from the CLI's own JSON output (`result.usage` for claude, `turn.completed`
+events for codex; `--out` writes a "Token usage" table of per-scenario
+averages, and cost in USD when `claude` reports it).
+
+This is a footprint number, not a controlled efficiency measurement. The
+raven arm's context differs from control's by construction — that's the
+whole point of the comparison — so a lower total there says the task cost
+less with the guidance installed, not that any single call was more
+efficient. Cache reads can also swing on things that have nothing to do with
+guidance content, like process-level cache warmth, so treat a token
+difference as weaker evidence than a pass/fail difference and want more
+trials before trusting it.
+
 ## Reading the results honestly
 
 The only number that says anything about Raven is the difference between the
