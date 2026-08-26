@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""commit-msg hook: strip AI agent attribution trailers before they land in git history."""
+"""commit-msg hook: strip AI agent attribution trailers, and warn on a closing
+keyword paired with a negation, before the message lands in git history."""
 
 from __future__ import annotations
 
@@ -20,6 +21,21 @@ _AI_TRAILER = re.compile(
     r"|@anthropic\.com|@openai\.com)"
     r"|<noreply@[^>]+>)"
     r"|^claude-session:\s+\S+",
+    re.IGNORECASE,
+)
+
+# GitHub/GitLab's closing-keyword parser matches keyword+issue-number proximity
+# only, not grammar -- "did not fix #123" still auto-closes #123 on merge to
+# the default branch. Flags (does not block) a negation word within ~40 chars
+# before a closing keyword that is itself within ~10 chars of a "#<number>".
+# The apostrophe in "didn't"/"doesn't" is matched with `.` so both the
+# straight (') and curly (') forms hit.
+_NEGATED_CLOSING_KEYWORD = re.compile(
+    r"\b(?:not|didn.t|doesn.t|did\s+not|does\s+not)\b"
+    r".{0,40}?"
+    r"\b(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?)\b"
+    r".{0,10}?"
+    r"#(\d+)",
     re.IGNORECASE,
 )
 
@@ -94,17 +110,39 @@ def _repo_root() -> Path:
     return _raven_config_module().resolve_repo_root(candidate)
 
 
+def _warn_negated_closing_keywords(lines: list[str]) -> None:
+    """Print a warning (never blocks) for each negated-closing-keyword match.
+
+    Lines are joined with spaces before matching so a phrase wrapped across
+    two lines (commit bodies wrap at 72 columns) is still caught.
+    """
+    text = " ".join(lines)
+    for match in _NEGATED_CLOSING_KEYWORD.finditer(text):
+        issue_num = match.group(1)
+        print(
+            f"raven commit-msg: warning: \"{match.group(0)}\" reads like a negated "
+            f"closing keyword -- GitHub/GitLab still auto-close #{issue_num} on merge; "
+            f"the parser matches keyword+number proximity, not grammar. "
+            f"Use 'Refs: #{issue_num}' instead if the fix attempt failed.",
+            file=sys.stderr,
+        )
+
+
 def main() -> int:
     root = _repo_root()
     config = root / ".raven" / "config.toml"
-    if not _read_config_bool(config, "git_hooks", "strip_ai_attribution", default=True):
-        return 0
 
     msg_file = Path(sys.argv[1])
     try:
         lines = msg_file.read_text(encoding="utf-8").splitlines()
     except UnicodeDecodeError:
         # Cosmetic hook: fail open rather than block a commit over an encoding we can't read.
+        return 0
+
+    if _read_config_bool(config, "git_hooks", "warn_negated_closing_keyword", default=True):
+        _warn_negated_closing_keywords(lines)
+
+    if not _read_config_bool(config, "git_hooks", "strip_ai_attribution", default=True):
         return 0
 
     removed = [line for line in lines if _AI_TRAILER.match(line)]

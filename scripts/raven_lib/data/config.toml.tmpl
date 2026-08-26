@@ -158,6 +158,13 @@ block_ai_attribution_content = true
 # with a trailing `raven-hygiene: allow` comment on its line.
 block_gate_relaxation = true
 
+# Warn (never block) when a commit message pairs a closing keyword with a
+# negation near an issue number, e.g. "did not fix #123" -- GitHub's and
+# GitLab's closing-keyword parsers match keyword+number proximity only, not
+# grammar, and still auto-close #123 on merge despite the negation. Suggests
+# "Refs: #123" instead when a fix attempt failed. Runs in commit-msg.
+warn_negated_closing_keyword = true
+
 # [sources.superpowers]
 # An externally-installed agent-skill library this repository depends on.
 # Raven neither installs nor vendors one: `raven doctor` checks that the

@@ -242,6 +242,78 @@ class CommitMsgHookTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(self.msg_file.read_bytes(), raw)
 
+    def test_warns_on_did_not_fix_with_issue_number(self):
+        msg = "fix: attempt cache invalidation\n\nTried a TTL fix, did not fix #123.\n"
+        self.msg_file.write_text(msg, encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(self.installed_hook), str(self.msg_file)],
+            capture_output=True,
+            text=True,
+            cwd=str(self.repo),
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.msg_file.read_text(encoding="utf-8"), msg)  # never rewrites
+        self.assertIn("#123", result.stderr)
+        self.assertIn("Refs: #123", result.stderr)
+
+    def test_warns_on_doesnt_close_phrasing(self):
+        msg = "fix: partial patch\n\nThis doesn't close #45 yet, more work needed.\n"
+        self.msg_file.write_text(msg, encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(self.installed_hook), str(self.msg_file)],
+            capture_output=True,
+            text=True,
+            cwd=str(self.repo),
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("#45", result.stderr)
+
+    def test_warns_when_phrase_wraps_across_two_lines(self):
+        msg = "fix: patch\n\nInvestigated the root cause but did not\nfix #77 in this pass.\n"
+        self.msg_file.write_text(msg, encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(self.installed_hook), str(self.msg_file)],
+            capture_output=True,
+            text=True,
+            cwd=str(self.repo),
+        )
+        self.assertIn("#77", result.stderr)
+
+    def test_no_warning_on_positive_closing_keyword(self):
+        msg = "fix: prevent race condition\n\nCloses: #123\n"
+        self.msg_file.write_text(msg, encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(self.installed_hook), str(self.msg_file)],
+            capture_output=True,
+            text=True,
+            cwd=str(self.repo),
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "")
+
+    def test_respects_warn_negated_closing_keyword_false_in_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+            installed_hook = _install_hook_into(repo)
+            (repo / ".raven" / "config.toml").write_text(
+                "[git_hooks]\nwarn_negated_closing_keyword = false\n", encoding="utf-8"
+            )
+            msg_file = repo / "COMMIT_EDITMSG"
+            msg_file.write_text("fix: patch\n\ndid not fix #123\n", encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(installed_hook), str(msg_file)],
+                capture_output=True,
+                text=True,
+                cwd=str(repo),
+            )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "")
+
+    def test_config_section_includes_warn_negated_closing_keyword(self):
+        config_text = raven.default_config_text("python", False)
+        self.assertIn("warn_negated_closing_keyword = true", config_text)
+
     def test_no_bogus_removed_message_for_trailing_blank_only(self):
         self.msg_file.write_text("fix: x\n\n", encoding="utf-8")
         result = subprocess.run(

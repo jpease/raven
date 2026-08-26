@@ -57,6 +57,7 @@ Closes: #123
 - Use `Refs: #123` when the commit relates to an issue without resolving it.
 - Multiple issues: repeat the keyword per issue. Platforms don't reliably parse comma-separated lists.
 - Don't close an issue manually ahead of the merge (e.g. `gh issue close`) when a closing keyword will do it — a manual close can land before the change is on the default branch, or reference a pre-squash sha that no longer exists.
+- **A negation doesn't stop the closing keyword.** The parser matches keyword+number proximity, not grammar — "did not fix #123" still auto-closes #123 on merge. If a fix attempt failed and the issue should stay open, write `Refs: #123`, not `Fixes #123` inside a sentence explaining it didn't work. Raven's `commit-msg` hook flags (does not block) this pattern as a warning.
 
 ## Workflow guidance
 
