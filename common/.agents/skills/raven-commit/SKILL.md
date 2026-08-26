@@ -63,3 +63,4 @@ Closes: #123
 
 - **One concern per commit.** If a change fits multiple types, split it. A body that keeps growing is a signal the patch does more than one thing.
 - **Wrong type before merge**: fix with `git rebase -i`. After release, leave it — tools will ignore the non-conforming commit.
+- **Don't re-run a gate the commit hook already will.** If `.git/hooks/pre-commit` or `pre-push` is installed, it runs the quality gate on `git commit`/`git push` regardless of whether you ran it first. Running it yourself immediately beforehand duplicates work, not safety.
