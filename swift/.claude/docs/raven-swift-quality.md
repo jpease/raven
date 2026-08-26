@@ -74,6 +74,11 @@ For changes that touch security-sensitive boundaries, run the `raven-security-re
 - Use `weak` or `unowned` references in closures and delegate patterns when needed to avoid retain cycles.
 - Treat compiler warnings and strict concurrency warnings as correctness issues.
 
+## Custom Lint Rules
+
+- SwiftLint custom rules match via single-line regex with no visibility into surrounding lines — a preceding doc comment, an attribute on the line above, a multi-line signature. A rule conditional on that context can silently degrade in one of two shapes: it matches nothing (never fires), or it matches everything (fires on every occurrence, forcing enough suppressions that it's effectively disabled). Both shapes report the linter as green while enforcing nothing.
+- For a check that needs multi-line or structural context, use a dedicated script invoked from the project's own gate (a `just` recipe or equivalent) instead of a SwiftLint custom rule. Treat "never matches" and "matches everything" as the signal that a regex-based rule has outlived its usefulness.
+
 ## Platform Alignment
 
 - Prefer native Apple frameworks and system controls before adding dependencies.

@@ -97,6 +97,20 @@ For implementation work:
 5. Broaden verification only after narrow checks pass.
 6. Report what was verified and what remains unverified.
 
+A reported status is not the same signal as the thing it reports on:
+
+- **A background or piped command's exit status can lie about the real command's outcome.** A backgrounded script ending in a trailing construct (`echo "done"`, a wrapper's own final line) reports the wrapper's exit code, not the real command's — the real command can have failed non-zero moments earlier. A pipeline's exit status is the last stage's, not the first's: `some-command | tail -f` reports `tail`'s code, so an upstream failure reads as success. Capture and check the actual command's own exit status (`PIPESTATUS[0]` in bash, `$pipestatus[1]` in fish) rather than trusting a wrapper or pipeline's trailing status.
+- **For backgrounded work, verify the durable artifact** — a file changed on disk, a commit that exists, a ref that was pushed — rather than trusting a completion notification that only reflects the launcher's own exit code.
+- **A hard-killed write-heavy command can destroy files, not just fail.** A commit, build, or migration killed by SIGTERM/timeout mid-write can leave partially-written, reverted, or deleted files on disk; "timed out" reads as merely slow, not as potentially destructive. Check the affected files' on-disk state before treating a timeout as harmless, and prefer a generous timeout over a tight one for exactly this reason.
+
+## Pause-And-Ask Enforcement Is Prose-Only
+
+`AGENTS.md`'s Pause And Ask categories (auth/secret handling, destructive operations, schema/migration changes, dependency additions, etc.) are enforced by the agent self-identifying a match, every time — nothing in the hook chain greps a diff against them, and there is no fallback if the agent misses one. A project extending this list with its own literal protected paths in `CLAUDE.md`/`AGENTS.md` inherits the same gap: it is a list a human wrote for an agent to remember, not something a hook checks. An opt-in mechanical backstop — a hook that greps a staged/pushed diff against a project-declared list of protected path globs and warns or blocks — would let a downstream project's own extensions to this list get an actual check, but does not exist today.
+
+## Local Hooks Validate Ambient State, Not A Clean Checkout
+
+Local pre-commit/pre-push hooks run in the contributor's normal, already-warmed-up shell — not the from-scratch environment CI always is. A bug that only manifests when some piece of ambient state (an exported environment variable, a cached file, an already-installed tool) is *absent* can stay invisible to every local hook run indefinitely: if every contributor's day-to-day shell already has that state present from ordinary use, no local hook ever exercises the failing branch, while a from-scratch checkout hits it every time. This is a different shape than a missing or misconfigured interpreter (where pointing the hook at the right one fixes it) — here the destination project's own code has a latent bug that only a genuinely clean environment triggers, and no amount of retargeting the hook closes the gap. Local hooks validate "did I break something my environment can see," not "does this work from zero." Treat a periodic clean-environment smoke check (an `env -i`-style invocation, or a CI-only step) as a deliberate companion to ambient pre-commit/pre-push hooks, not a redundant one — it exists specifically to catch the class of bug ambient hooks structurally cannot.
+
 ## Override Rules
 
 - Destructive commands require explicit user approval.
