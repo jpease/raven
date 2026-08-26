@@ -33,6 +33,12 @@ already logged in. No API key is read, stored, or passed. Runs happen in
 temporary directories that are deleted afterwards; nothing touches the
 repository you invoke it from.
 
+Both commands run with the operator's own user-level config excluded
+(`--setting-sources project` for claude, `--ignore-user-config` for codex).
+Without that, personal plugins and global MCP servers configured on whoever
+runs the eval leak into every trial, in both arms alike, and don't reproduce
+on a different machine or in CI.
+
 This is not part of `just check` and never will be. It costs real model calls,
 it is not deterministic, and a gate that fails for reasons a commit cannot fix
 is not a gate.

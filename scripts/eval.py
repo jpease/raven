@@ -76,6 +76,12 @@ def _claude_command(task: str) -> list[str]:
         "--verbose",
         "--permission-mode",
         "bypassPermissions",
+        # Without this, the operator's own ~/.claude config -- personal plugins,
+        # global MCP servers -- leaks into every trial, in both arms alike. That
+        # inflates every number here with content that has nothing to do with
+        # Raven and won't reproduce on a different machine or in CI.
+        "--setting-sources",
+        "project",
     ]
 
 
@@ -86,6 +92,9 @@ def _codex_command(task: str) -> list[str]:
         "--dangerously-bypass-approvals-and-sandbox",
         "--skip-git-repo-check",
         "--json",
+        # Same reasoning as claude's `--setting-sources project` above: keep the
+        # operator's own $CODEX_HOME/config.toml out of the trial.
+        "--ignore-user-config",
         task,
     ]
 
