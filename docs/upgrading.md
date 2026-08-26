@@ -141,6 +141,17 @@ like any other template file, with no merge artifact.
 your personal preferences there. Raven never manages it, and gitignores it the
 first time it installs or adopts `settings.json`.
 
+List-type settings in `settings.json` — `permissions.allow`/`deny`, `hooks`,
+`env` — merge across scopes, so Raven's copy can only add to what a developer
+already approved personally, never take it away. Scalars (`model`, `theme`,
+`effortLevel`) don't merge: the highest-precedence scope wins outright, and
+`.claude/settings.json` outranks a developer's own `~/.claude/settings.json`.
+Since Raven upgrades this file in place across every install, a scalar added
+here would silently override that personal preference for everyone on the
+next upgrade. Don't add one without a deliberate, explicit reason — a personal
+preference belongs in `settings.local.json` or `~/.claude/settings.json`, not
+the template.
+
 - On a clean install Raven writes `.claude/settings.json` immediately, and
   later upgrades update it in place.
 - If the repository already has a hand-written `.claude/settings.json` that
