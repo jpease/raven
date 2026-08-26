@@ -1,5 +1,11 @@
 {
   "permissions": {
+    "allow": [
+      "mcp__gitnexus__impact",
+      "mcp__gitnexus__detect_changes",
+      "Bash(git ls-tree *)",
+      "Bash(git merge-base *)"
+    ],
     "deny": [
       "Read(*.pem)",
       "Read(*.key)",
