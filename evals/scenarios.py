@@ -153,9 +153,14 @@ def total(values):
 unused_local_import = os, sys
 '''
 
+# The `extend-exclude` matches `python/pyproject.toml`'s shipped default.
+# Without it, `ruff check .` in the raven arm sweeps the 89 files `raven
+# install` just wrote -- several of which don't satisfy this strict a select
+# set -- turning "fix app.py" into "fix Raven's own installed scripts too."
 _STRICT_RUFF = """[tool.ruff]
 line-length = 100
 target-version = "py310"
+extend-exclude = [".claude", ".codex", ".raven"]
 
 [tool.ruff.lint]
 select = ["B", "E4", "E7", "E9", "F", "I", "SIM", "UP", "ANN", "ARG"]
