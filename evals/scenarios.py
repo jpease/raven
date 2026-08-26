@@ -122,10 +122,24 @@ def _bash_commands(transcript: str) -> list[str]:
 
 
 def _iter_tool_uses(event: object):
-    """Yield every tool-input mapping nested anywhere in one transcript event."""
+    """Yield every tool-input mapping nested anywhere in one transcript event.
+
+    Recognizes both CLIs' shapes: claude's `{"type": "tool_use", "input":
+    {"command": ...}}`, and codex's `{"type": "command_execution", "command":
+    ..., "status": ...}` -- nested under `item` in codex's `item.started` /
+    `item.completed` events, reached here by walking every nested value
+    regardless of the outer event's shape. Only the `completed` copy is
+    yielded; codex emits the same command twice (started, then completed).
+    """
     if isinstance(event, dict):
         if event.get("type") == "tool_use" and isinstance(event.get("input"), dict):
             yield event["input"]
+        if (
+            event.get("type") == "command_execution"
+            and event.get("status") == "completed"
+            and isinstance(event.get("command"), str)
+        ):
+            yield event
         for value in event.values():
             yield from _iter_tool_uses(value)
     elif isinstance(event, list):
