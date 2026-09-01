@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from helpers import UNIFIED_ADAPTER_HOOKS, UNIFIED_ADAPTER_SCRIPTS, RavenTestCase, raven
-from raven_lib.cli import _build_run_plan, _symlink_adoption_decision, invalid_overrides
+from raven_lib.cli import _adoption_decision, _build_run_plan, invalid_overrides
 
 # Which byte-identical files each adapter subdirectory unifies (issue #165).
 UNIFIED_BY_SUBDIR = {
@@ -53,8 +53,9 @@ class ApplyTests(RavenTestCase):
         self.assertTrue(claude_skills.is_symlink())
         self.assertEqual(os.readlink(claude_skills), "../.agents/skills")
         self.assertTrue((claude_skills / "raven-tool-bootstrap" / "SKILL.md").is_file())
-        self.assertTrue(claude_md.is_symlink())
-        self.assertEqual(os.readlink(claude_md), "AGENTS.md")
+        # CLAUDE.md is a plain @AGENTS.md import file, not a symlink (#253).
+        self.assertFalse(claude_md.is_symlink())
+        self.assertEqual(claude_md.read_text(encoding="utf-8").strip(), "@AGENTS.md")
 
     def test_override_path_can_overwrite_one_changed_file(self):
         target = self.destination / ".claude" / "scripts" / "raven-tool-check.py"
@@ -306,8 +307,8 @@ rules = false
                 False,
                 False,
                 [],
-                adopt_claude_symlink_requested=False,
-                prompt_claude_symlink=False,
+                adopt_claude_requested=False,
+                prompt_claude=False,
             )
 
         self.assertEqual(rc, 0, output.getvalue())
@@ -346,9 +347,9 @@ def _classification(**overrides):
 class BuildApplyPlanTests(unittest.TestCase):
     def test_claude_symlink_conflict_respects_overrides(self):
         classification = _classification(needs_merge=["CLAUDE.md", "AGENTS.md"])
-        self.assertTrue(raven.claude_symlink_conflict(classification, []))
+        self.assertTrue(raven.claude_conflict(classification, []))
         # An explicit override for CLAUDE.md removes it from the conflict set.
-        self.assertFalse(raven.claude_symlink_conflict(classification, ["CLAUDE.md"]))
+        self.assertFalse(raven.claude_conflict(classification, ["CLAUDE.md"]))
 
     def test_build_apply_plan_is_pure_and_routes_overrides(self):
         classification = _classification(
@@ -358,25 +359,25 @@ class BuildApplyPlanTests(unittest.TestCase):
             classification,
             ["c.md"],
             existing_overrides={"c.md"},
-            adopt_claude_symlink=False,
+            adopt_claude=False,
         )
         self.assertEqual(plan.will_copy, ["a.md"])
         self.assertEqual(plan.overwritten, ["c.md"])
         self.assertEqual(plan.needs_merge, [])  # removed by override
-        self.assertFalse(plan.adopt_claude_symlink)
+        self.assertFalse(plan.adopt_claude)
 
     def test_build_apply_plan_adopts_claude_symlink_when_decided(self):
         classification = _classification(needs_merge=["CLAUDE.md"])
         plan = raven.build_apply_plan(
-            classification, [], existing_overrides=set(), adopt_claude_symlink=True
+            classification, [], existing_overrides=set(), adopt_claude=True
         )
-        self.assertTrue(plan.adopt_claude_symlink)
+        self.assertTrue(plan.adopt_claude)
         self.assertNotIn("CLAUDE.md", plan.needs_merge)
 
     def test_local_only_files_get_no_guided_merge(self):
         classification = _classification(local_only=["notes.md"], needs_merge=["real.md"])
         plan = raven.build_apply_plan(
-            classification, [], existing_overrides=set(), adopt_claude_symlink=False
+            classification, [], existing_overrides=set(), adopt_claude=False
         )
         # local_only is left untouched: it carries no merge artifact, while a
         # genuine needs_merge file still does.
@@ -413,40 +414,34 @@ class SymlinkAdoptionDecisionTests(unittest.TestCase):
         for requested in (False, True):
             for conflict in (False, True):
                 self.assertEqual(
-                    _symlink_adoption_decision(
-                        needed=False, conflict=conflict, requested=requested
-                    ),
+                    _adoption_decision(needed=False, conflict=conflict, requested=requested),
                     "skip",
                 )
 
     def test_skips_when_needed_but_no_conflict(self):
         for requested in (False, True):
             self.assertEqual(
-                _symlink_adoption_decision(needed=True, conflict=False, requested=requested),
+                _adoption_decision(needed=True, conflict=False, requested=requested),
                 "skip",
             )
 
     def test_auto_adopts_when_pre_authorized(self):
-        self.assertEqual(
-            _symlink_adoption_decision(needed=True, conflict=True, requested=True), "auto"
-        )
+        self.assertEqual(_adoption_decision(needed=True, conflict=True, requested=True), "auto")
 
     def test_prompts_when_needed_and_conflicting_but_not_pre_authorized(self):
-        self.assertEqual(
-            _symlink_adoption_decision(needed=True, conflict=True, requested=False), "prompt"
-        )
+        self.assertEqual(_adoption_decision(needed=True, conflict=True, requested=False), "prompt")
 
 
 class BuildRunPlanTests(RavenTestCase):
     """`_build_run_plan` computes every precondition `_run` checks before writing."""
 
-    def _plan(self, adopt_claude_symlink=False):
+    def _plan(self, adopt_claude=False):
         return _build_run_plan(
             self.destination,
             _classification(will_copy=["AGENTS.md"]),
             [],
             set(),
-            adopt_claude_symlink,
+            adopt_claude,
         )
 
     def test_clean_destination_has_no_blocking_preconditions(self):
@@ -474,11 +469,11 @@ class BuildRunPlanTests(RavenTestCase):
     def test_backup_conflict_only_when_adopting_over_an_existing_backup(self):
         (self.destination / raven.CLAUDE_BACKUP_PATH).write_text("old\n", encoding="utf-8")
 
-        self.assertFalse(self._plan(adopt_claude_symlink=False).backup_conflict)
-        self.assertTrue(self._plan(adopt_claude_symlink=True).backup_conflict)
+        self.assertFalse(self._plan(adopt_claude=False).backup_conflict)
+        self.assertTrue(self._plan(adopt_claude=True).backup_conflict)
 
     def test_no_backup_conflict_when_adopting_without_a_backup(self):
-        self.assertFalse(self._plan(adopt_claude_symlink=True).backup_conflict)
+        self.assertFalse(self._plan(adopt_claude=True).backup_conflict)
 
 
 class SettingsJsonClassificationTests(RavenTestCase):
@@ -859,7 +854,7 @@ class BuildApplyPlanSettingsJsonTests(unittest.TestCase):
             classification,
             [],
             existing_overrides=set(),
-            adopt_claude_symlink=False,
+            adopt_claude=False,
             adopt_settings_json=True,
         )
         self.assertTrue(plan.adopt_settings_json)
@@ -871,7 +866,7 @@ class BuildApplyPlanSettingsJsonTests(unittest.TestCase):
             classification,
             [],
             existing_overrides=set(),
-            adopt_claude_symlink=False,
+            adopt_claude=False,
             adopt_settings_json=False,
         )
         self.assertFalse(plan.adopt_settings_json)
@@ -883,7 +878,7 @@ class BuildApplyPlanSettingsJsonTests(unittest.TestCase):
             classification,
             [".claude/settings.json"],
             existing_overrides={".claude/settings.json"},
-            adopt_claude_symlink=False,
+            adopt_claude=False,
             adopt_settings_json=False,
         )
         self.assertNotIn(".claude/settings.json", plan.effective_classification.needs_adoption)

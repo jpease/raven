@@ -95,7 +95,7 @@ def _checkout_symlink_findings() -> list[Finding]:
 def _flattened_install_findings(destination: Path, manifest: dict) -> list[Finding]:
     """ERROR for installed files the manifest records as symlinks but that are now regular files.
 
-    Generalizes `_symlink_finding`'s CLAUDE.md-only check to every symlink-kind
+    Generalizes `_claude_finding`'s CLAUDE.md-only check to every symlink-kind
     manifest entry, so an already-corrupted destination cannot report `0 errors`
     (#177). A manifest ``kind`` is recorded from what was actually written to the
     destination, so "manifest says symlink, disk says regular file" is always a
@@ -276,7 +276,7 @@ def integrity_findings(destination: Path) -> list[Finding]:
                 )
             )
 
-        findings.append(_symlink_finding(destination))
+        findings.append(_claude_finding(destination))
     return findings
 
 
@@ -322,41 +322,63 @@ def _manifest_finding(status: ManifestStatus) -> Finding:
     )
 
 
-def _symlink_finding(destination: Path) -> Finding:
+def _claude_finding(destination: Path) -> Finding:
+    """OK/WARN on whether CLAUDE.md correctly imports AGENTS.md (#253).
+
+    Raven installs CLAUDE.md as a plain one-line file containing the Claude
+    Code import directive ``@AGENTS.md``, not a symlink -- a symlink breaks on
+    a Windows checkout without symlink support, materializing as a regular
+    file whose entire content is the literal target path string. A leftover
+    symlink (from a pre-#253 install) is therefore itself a WARN, alongside a
+    real file whose content doesn't carry the import line.
+    """
     claude = destination / CLAUDE_PATH
-    if not claude.exists() and not claude.is_symlink():
+    if not _any_exists(claude):
         return Finding(
-            id="doctor.install.symlink",
+            id="doctor.install.claude",
             severity=Severity.OK,
             category=_INTEGRITY,
             title="CLAUDE.md absent",
             detail="no CLAUDE.md; AGENTS.md is used directly",
         )
     if claude.is_symlink():
-        target = claude.readlink().as_posix()
-        if target == "AGENTS.md":
-            return Finding(
-                id="doctor.install.symlink",
-                severity=Severity.OK,
-                category=_INTEGRITY,
-                title="CLAUDE.md -> AGENTS.md",
-                detail="symlink target is correct",
-            )
         return Finding(
-            id="doctor.install.symlink",
+            id="doctor.install.claude",
             severity=Severity.WARN,
             category=_INTEGRITY,
-            title="CLAUDE.md points elsewhere",
-            detail=f"symlink target is {target!r}, expected 'AGENTS.md'",
-            fix="re-point CLAUDE.md at AGENTS.md (see `raven upgrade --adopt-claude-symlink`)",
+            title="CLAUDE.md is a symlink",
+            detail=(
+                "Raven now installs CLAUDE.md as a plain file importing AGENTS.md "
+                "(`@AGENTS.md`), not a symlink -- a symlink breaks on a Windows "
+                "checkout without symlink support (#253)"
+            ),
+            fix="run `raven upgrade` to convert it",
+        )
+    try:
+        content = claude.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return Finding(
+            id="doctor.install.claude",
+            severity=Severity.WARN,
+            category=_INTEGRITY,
+            title="CLAUDE.md is unreadable",
+            detail=str(exc),
+        )
+    if any(line.strip() == "@AGENTS.md" for line in content.splitlines()):
+        return Finding(
+            id="doctor.install.claude",
+            severity=Severity.OK,
+            category=_INTEGRITY,
+            title="CLAUDE.md imports AGENTS.md",
+            detail="contains the `@AGENTS.md` import directive",
         )
     return Finding(
-        id="doctor.install.symlink",
+        id="doctor.install.claude",
         severity=Severity.WARN,
         category=_INTEGRITY,
-        title="CLAUDE.md is a regular file",
-        detail="CLAUDE.md should be a symlink to AGENTS.md",
-        fix="run `raven upgrade --adopt-claude-symlink`",
+        title="CLAUDE.md does not import AGENTS.md",
+        detail="expected a line containing `@AGENTS.md`",
+        fix="run `raven upgrade --adopt-claude` (or accept the interactive prompt)",
     )
 
 

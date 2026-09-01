@@ -54,7 +54,7 @@ def _install(testcase, platform=None):
         overrides=[],
         dry_run=False,
         include_readme=False,
-        adopt_claude_symlink=False,
+        adopt_claude=False,
         platform=platform,
     )
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -120,9 +120,22 @@ class DoctorIntegrityTests(RavenTestCase):
         ids = self._ids(findings)
         self.assertIn("doctor.install.agents", ids)
         self.assertEqual(ids["doctor.install.agents"].severity, Severity.ERROR)
-        self.assertIn("doctor.install.symlink", ids)
+        self.assertIn("doctor.install.claude", ids)
 
-    def test_correct_claude_symlink_is_ok(self):
+    def test_correct_claude_import_is_ok(self):
+        (self.destination / ".raven").mkdir()
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n', encoding="utf-8"
+        )
+        (self.destination / "AGENTS.md").write_text("# A\n", encoding="utf-8")
+        (self.destination / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        findings = integrity_findings(self.destination)
+        ids = self._ids(findings)
+        self.assertEqual(ids["doctor.install.claude"].severity, Severity.OK)
+
+    def test_claude_symlink_is_warn(self):
+        # A repo installed before #253 still has CLAUDE.md as a symlink --
+        # that is now the WARN case, not the OK one (#253 flips this).
         (self.destination / ".raven").mkdir()
         (self.destination / ".raven" / "config.toml").write_text(
             'schema = 1\ntemplate = "python"\n', encoding="utf-8"
@@ -131,18 +144,18 @@ class DoctorIntegrityTests(RavenTestCase):
         (self.destination / "CLAUDE.md").symlink_to("AGENTS.md")
         findings = integrity_findings(self.destination)
         ids = self._ids(findings)
-        self.assertEqual(ids["doctor.install.symlink"].severity, Severity.OK)
+        self.assertEqual(ids["doctor.install.claude"].severity, Severity.WARN)
 
-    def test_claude_regular_file_is_warn(self):
+    def test_claude_wrong_content_is_warn(self):
         (self.destination / ".raven").mkdir()
         (self.destination / ".raven" / "config.toml").write_text(
             'schema = 1\ntemplate = "python"\n', encoding="utf-8"
         )
         (self.destination / "AGENTS.md").write_text("# A\n", encoding="utf-8")
-        (self.destination / "CLAUDE.md").write_text("not a symlink\n", encoding="utf-8")
+        (self.destination / "CLAUDE.md").write_text("not an import\n", encoding="utf-8")
         findings = integrity_findings(self.destination)
         ids = self._ids(findings)
-        self.assertEqual(ids["doctor.install.symlink"].severity, Severity.WARN)
+        self.assertEqual(ids["doctor.install.claude"].severity, Severity.WARN)
 
     def test_unsupported_template_is_error(self):
         # Issue #50 — a configured but unsupported template must surface as ERROR
@@ -1241,12 +1254,17 @@ class DoctorFlattenedSymlinkTests(RavenTestCase):
         before = self._ids(integrity_findings(self.destination))
         self.assertNotIn("doctor.checkout.symlinks", before)
 
-        # A stand-in Raven checkout whose common/CLAUDE.md is a regular file
-        # holding its target text -- exactly what git writes when the checkout
-        # cannot create symlinks.
+        # A stand-in Raven checkout whose common/.claude/skills is a regular
+        # file holding its target text -- exactly what git writes when the
+        # checkout cannot create symlinks. CLAUDE.md is deliberately not used
+        # here (#253): it is a plain @AGENTS.md import file, not a symlink,
+        # so it can no longer be "flattened" this way.
         fake_root = self.destination.parent / "fake-raven-checkout"
         (fake_root / "common").mkdir(parents=True)
-        (fake_root / "common" / "CLAUDE.md").write_text("AGENTS.md\n", encoding="utf-8")
+        (fake_root / "common" / ".claude").mkdir()
+        (fake_root / "common" / ".claude" / "skills").write_text(
+            "../.agents/skills\n", encoding="utf-8"
+        )
         self.addCleanup(shutil.rmtree, fake_root, True)
 
         with mock.patch("raven_lib.doctor.REPO_ROOT", fake_root):
@@ -1256,33 +1274,41 @@ class DoctorFlattenedSymlinkTests(RavenTestCase):
         self.assertIn("doctor.checkout.symlinks", ids)
         finding = ids["doctor.checkout.symlinks"]
         self.assertEqual(finding.severity, Severity.ERROR)
-        self.assertIn("CLAUDE.md", finding.detail)
+        self.assertIn(".claude/skills", finding.detail)
         self.assertIn("core.symlinks", finding.fix)
 
     def test_flattened_installed_symlink_is_an_error(self):
+        # `.claude/skills` is the only path Raven currently installs into a
+        # destination as a real symlink (CLAUDE.md no longer is, #253), and
+        # test_flattened_installed_directory_symlink_is_an_error already
+        # covers it. `_flattened_install_findings` is otherwise generic over
+        # any KIND_SYMLINK manifest entry, so exercise that directly with a
+        # fabricated file-kind entry rather than depending on a real
+        # installed path that happens to be one.
         _install(self)
         before = self._ids(build_doctor_findings(self.destination, _fake_toolcheck_runner([])))
         self.assertNotIn("doctor.install.flattened", before)
         self.assertEqual(exit_code(list(before.values())), 0)
 
-        manifest = json.loads(
-            (self.destination / ".raven" / "manifest.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(manifest["files"]["CLAUDE.md"]["kind"], "symlink")
-
-        # Corrupt the destination the way a symlink-unaware copy would: replace
-        # the installed symlink with a regular file holding its target text.
-        # The manifest still records it as a symlink.
-        claude = self.destination / "CLAUDE.md"
-        target = os.readlink(claude)
-        claude.unlink()
-        claude.write_text(target + "\n", encoding="utf-8")
+        relative = "fake-flattened-symlink.txt"
+        manifest_path = self.destination / ".raven" / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"][relative] = {
+            "kind": "symlink",
+            "target": "somewhere-else.txt",
+            "sourceSha256": "0" * 64,
+            "installedSha256": "0" * 64,
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        # The manifest says symlink, but the file on disk is a regular file
+        # holding the target text -- exactly what a symlink-unaware copy does.
+        (self.destination / relative).write_text("somewhere-else.txt\n", encoding="utf-8")
 
         findings = build_doctor_findings(self.destination, _fake_toolcheck_runner([]))
         ids = self._ids(findings)
         self.assertIn("doctor.install.flattened", ids)
         self.assertEqual(ids["doctor.install.flattened"].severity, Severity.ERROR)
-        self.assertIn("CLAUDE.md", ids["doctor.install.flattened"].detail)
+        self.assertIn(relative, ids["doctor.install.flattened"].detail)
         self.assertEqual(exit_code(findings), 1)
 
     def test_flattened_installed_directory_symlink_is_an_error(self):
@@ -1719,7 +1745,7 @@ class ComponentScopingTests(RavenTestCase):
             overrides=[],
             dry_run=False,
             include_readme=False,
-            adopt_claude_symlink=False,
+            adopt_claude=False,
             platform=None,
         )
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):

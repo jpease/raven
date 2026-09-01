@@ -36,7 +36,10 @@ class GuidedMergeTests(RavenTestCase):
         self.assertIn("patch -p1 < .raven/merge/AGENTS.md.patch", instructions)
         self.assertIn("Future Raven upgrades can update that block automatically", instructions)
 
-    def test_guided_merge_artifacts_for_existing_claude_symlink_template_do_not_modify_file(self):
+    def test_guided_merge_artifacts_for_existing_claude_md_template_do_not_modify_file(self):
+        # CLAUDE.md is a plain @AGENTS.md import file, not a symlink (#253),
+        # so it gets the same patch-based guided merge as any other root
+        # instruction file -- no more symlink-explanation stub.
         original = "# Existing CLAUDE\n\nKeep this local guidance.\n"
         (self.destination / "CLAUDE.md").write_text(original, encoding="utf-8")
         entries = raven.entries_for_destination(
@@ -51,10 +54,10 @@ class GuidedMergeTests(RavenTestCase):
         self.assertEqual((self.destination / "CLAUDE.md").read_text(encoding="utf-8"), original)
         self.assertIn(".raven/merge/CLAUDE.md.raven", written)
         self.assertIn(".raven/merge/CLAUDE.md.instructions.md", written)
-        self.assertNotIn(".raven/merge/CLAUDE.md.patch", written)
-        self.assertIn(
-            "symlink",
+        self.assertIn(".raven/merge/CLAUDE.md.patch", written)
+        self.assertEqual(
             (self.destination / ".raven" / "merge" / "CLAUDE.md.raven").read_text(encoding="utf-8"),
+            "@AGENTS.md\n",
         )
 
     def test_mcp_json_still_classifies_unknown_existing_not_needs_adoption(self):

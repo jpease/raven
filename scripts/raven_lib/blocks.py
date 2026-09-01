@@ -213,15 +213,30 @@ def block_managed_state(entry: TemplateEntry, target: Path) -> BlockState | None
     """Classify a root instruction file's managed block against the template, or None if not applicable.
 
     None covers every case where there is nothing to classify: the entry is not
-    a root instruction file, it is installed as a symlink, the target is not a
-    plain file, the target is unreadable, or the target has no managed block at
-    all. Otherwise returns "identical" (current hash, content matches),
-    "upgradeable" (safe to rewrite -- includes the legacy-hash migration case),
-    or "modified" (user edits Raven must not overwrite).
+    a root instruction file, it is installed as a symlink, the *destination*
+    is currently a symlink, the target is not a plain file, the target is
+    unreadable, or the target has no managed block at all. Otherwise returns
+    "identical" (current hash, content matches), "upgradeable" (safe to
+    rewrite -- includes the legacy-hash migration case), or "modified" (user
+    edits Raven must not overwrite).
+
+    The destination-is-a-symlink check is independent of ``entry.copy_as_
+    symlink``: a repo installed when CLAUDE.md was still a symlink (see #253)
+    keeps that symlink on disk until its next upgrade, even though the current
+    template entry for CLAUDE.md is now a plain file. ``target.is_file()`` and
+    ``target.read_text()`` both transparently follow a symlink, so without this
+    guard a still-symlinked CLAUDE.md reads as *AGENTS.md's own content* (the
+    symlink's resolved target) -- which then spuriously parses as a managed
+    block matching AGENTS.md and, if updated in place, would splice AGENTS.md's
+    text into CLAUDE.md. Routing this case to None instead sends it through
+    classify()'s ordinary kind-aware fingerprint/reconcile path, which compares
+    the destination's own symlink identity against the template's file
+    identity and correctly resolves it as a plain overwrite.
     """
     if (
         entry.relative not in ROOT_INSTRUCTION_FILES
         or entry.copy_as_symlink
+        or target.is_symlink()
         or not target.is_file()
     ):
         return None

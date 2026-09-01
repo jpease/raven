@@ -178,7 +178,7 @@ paths = [".claude/skills/raven-plan/**"]
                             args=[language],
                             include_readme=False,
                             dry_run=False,
-                            adopt_claude_symlink=False,
+                            adopt_claude=False,
                         )
                     )
                 with contextlib.redirect_stdout(upgrade_output):
@@ -188,15 +188,17 @@ paths = [".claude/skills/raven-plan/**"]
                             overrides=[],
                             include_readme=False,
                             dry_run=True,
-                            adopt_claude_symlink=False,
+                            adopt_claude=False,
                         )
                     )
 
                 self.assertEqual(install_rc, 0, install_output.getvalue())
                 self.assertEqual(upgrade_rc, 0, upgrade_output.getvalue())
                 self.assertTrue((destination / "AGENTS.md").is_file())
-                self.assertTrue((destination / "CLAUDE.md").is_symlink())
-                self.assertEqual(os.readlink(destination / "CLAUDE.md"), "AGENTS.md")
+                self.assertFalse((destination / "CLAUDE.md").is_symlink())
+                self.assertEqual(
+                    (destination / "CLAUDE.md").read_text(encoding="utf-8").strip(), "@AGENTS.md"
+                )
                 self.assertTrue((destination / ".claude" / "skills").is_symlink())
                 self.assertEqual(
                     os.readlink(destination / ".claude" / "skills"), "../.agents/skills"
@@ -570,7 +572,7 @@ class BrokenTemplateSymlinkDetectionTests(unittest.TestCase):
     def test_flattened_entries_are_reported_and_healthy_ones_are_not(self):
         self._flatten(".codex/scripts/raven-tool-check.py")
         self._flatten(".codex/hooks/raven-pre-bash-guard.py")
-        self._link("CLAUDE.md")
+        self._link(".claude/skills")
 
         self.assertEqual(
             broken_template_symlinks(self.common),
@@ -631,10 +633,13 @@ class SymlinkContainmentTests(unittest.TestCase):
         self.assertFalse(should_preserve_symlink(link, common_root=self.common))
 
     def test_sibling_target_inside_common_is_still_preserved(self):
-        # common/.claude/skills -> ../.agents/skills and common/CLAUDE.md ->
-        # AGENTS.md both *resolve* inside common/ but are not `../common/`
-        # cross-links: they are the destination-relative links Raven installs as
-        # symlinks. Resolving-and-containing alone would wrongly flatten them.
+        # common/.claude/skills -> ../.agents/skills *resolves* inside common/
+        # but is not a `../common/` cross-link: it's a destination-relative
+        # link Raven installs as a symlink. Resolving-and-containing alone
+        # would wrongly flatten it. A synthetic CLAUDE.md -> AGENTS.md sibling
+        # link is included too, purely to pin should_preserve_symlink's
+        # generic within-tree-sibling behavior -- CLAUDE.md itself is no
+        # longer shipped as a symlink in any real template (#253).
         (self.common / ".agents").mkdir()
         (self.common / ".agents" / "skills").mkdir()
         skills = self.common / ".claude" / "skills"

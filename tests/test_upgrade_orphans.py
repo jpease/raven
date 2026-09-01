@@ -45,7 +45,7 @@ def _install_ns(
         overrides=[],
         dry_run=False,
         include_readme=False,
-        adopt_claude_symlink=False,
+        adopt_claude=False,
         confirm_template_switch=confirm_template_switch,
         platform=None,
     )
@@ -62,7 +62,7 @@ def _upgrade_ns(
         overrides=[],
         dry_run=dry_run,
         include_readme=False,
-        adopt_claude_symlink=False,
+        adopt_claude=False,
         confirm_template_switch=confirm_template_switch,
     )
 

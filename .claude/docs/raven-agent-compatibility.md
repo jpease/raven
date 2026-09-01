@@ -16,7 +16,7 @@ Do not duplicate canonical guidance into agent-specific files unless the target 
 
 Claude-specific files:
 
-- `CLAUDE.md`: compatibility symlink or pointer to `AGENTS.md`.
+- `CLAUDE.md`: a plain one-line file importing `AGENTS.md` (`@AGENTS.md`), not a symlink — a symlink breaks on a Windows checkout without symlink support (#253).
 - `.claude/skills`: compatibility symlink to `.agents/skills`.
 - `.claude/agents/raven-*.md`: Claude Code subagents.
 - `.claude/hooks/raven-*.py`: Claude Code hook scripts.
@@ -98,8 +98,11 @@ dereference behavior, and `tests/test_apply.py` installs a Claude-disabled desti
 prove real files arrive.
 
 Consequently these links never reach a destination, so `.raven/manifest.json` records the
-installed files as `KIND_FILE`, not `KIND_SYMLINK`. `KIND_SYMLINK` remains correct for
-links that are *meant* to reach a destination, such as `CLAUDE.md` and `.claude/skills`.
+installed files as `KIND_FILE`, not `KIND_SYMLINK`. `KIND_SYMLINK` remains correct for a
+link that is *meant* to reach a destination, such as `.claude/skills` — `CLAUDE.md` no
+longer belongs on that list (#253): it ships as a plain `@AGENTS.md` import file so it
+survives a destination-repo checkout without symlink support, which `.claude/skills` and
+the Codex hook/script symlinks still do not.
 This also means the unification needs no symlink support on the destination platform:
 a destination never receives one of these links.
 

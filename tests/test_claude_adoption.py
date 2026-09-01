@@ -1,13 +1,20 @@
 import contextlib
+import hashlib
 import io
-import os
 import unittest
 
 from helpers import RavenTestCase, raven
 
 
-class ClaudeSymlinkTests(RavenTestCase):
-    def test_adopt_claude_symlink_backs_up_existing_file_and_creates_symlink(self):
+class ClaudeAdoptionTests(RavenTestCase):
+    """CLAUDE.md is a plain one-line ``@AGENTS.md`` import file, not a symlink (#253).
+
+    Covers adopting an existing hand-written CLAUDE.md (mirrors the
+    .claude/settings.json adoption flow) and migrating a repo installed before
+    #253, whose CLAUDE.md is still the old symlink.
+    """
+
+    def test_adopt_claude_md_backs_up_existing_file_and_writes_import(self):
         (self.destination / "CLAUDE.md").write_text("custom claude guidance\n", encoding="utf-8")
         entries = raven.entries_for_destination(
             self.template,
@@ -16,17 +23,19 @@ class ClaudeSymlinkTests(RavenTestCase):
             self.destination,
         )
 
-        changed = raven.adopt_claude_symlink(self.destination, entries)
+        changed = raven.adopt_claude_md(self.destination, entries)
 
         self.assertEqual(changed, ["CLAUDE.md.bak", "CLAUDE.md"])
         self.assertEqual(
             (self.destination / "CLAUDE.md.bak").read_text(encoding="utf-8"),
             "custom claude guidance\n",
         )
-        self.assertTrue((self.destination / "CLAUDE.md").is_symlink())
-        self.assertEqual(os.readlink(self.destination / "CLAUDE.md"), "AGENTS.md")
+        self.assertFalse((self.destination / "CLAUDE.md").is_symlink())
+        self.assertEqual(
+            (self.destination / "CLAUDE.md").read_text(encoding="utf-8").strip(), "@AGENTS.md"
+        )
 
-    def test_adopt_claude_symlink_refuses_to_overwrite_existing_backup(self):
+    def test_adopt_claude_md_refuses_to_overwrite_existing_backup(self):
         (self.destination / "CLAUDE.md").write_text("custom claude guidance\n", encoding="utf-8")
         (self.destination / "CLAUDE.md.bak").write_text("existing backup\n", encoding="utf-8")
         entries = raven.entries_for_destination(
@@ -37,7 +46,7 @@ class ClaudeSymlinkTests(RavenTestCase):
         )
 
         with self.assertRaises(FileExistsError):
-            raven.adopt_claude_symlink(self.destination, entries)
+            raven.adopt_claude_md(self.destination, entries)
 
         self.assertEqual(
             (self.destination / "CLAUDE.md").read_text(encoding="utf-8"), "custom claude guidance\n"
@@ -46,7 +55,7 @@ class ClaudeSymlinkTests(RavenTestCase):
             (self.destination / "CLAUDE.md.bak").read_text(encoding="utf-8"), "existing backup\n"
         )
 
-    def test_run_with_adopt_claude_symlink_does_not_report_claude_manual_merge(self):
+    def test_run_with_adopt_claude_does_not_report_claude_manual_merge(self):
         (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
         (self.destination / "CLAUDE.md").write_text("custom claude guidance\n", encoding="utf-8")
         output = io.StringIO()
@@ -59,22 +68,22 @@ class ClaudeSymlinkTests(RavenTestCase):
                 False,
                 False,
                 [],
-                adopt_claude_symlink_requested=True,
-                prompt_claude_symlink=False,
+                adopt_claude_requested=True,
+                prompt_claude=False,
             )
 
         self.assertEqual(rc, 0)
-        self.assertTrue((self.destination / "CLAUDE.md").is_symlink())
+        self.assertFalse((self.destination / "CLAUDE.md").is_symlink())
         self.assertEqual(
             (self.destination / "CLAUDE.md.bak").read_text(encoding="utf-8"),
             "custom claude guidance\n",
         )
-        self.assertIn("Adopted CLAUDE.md compatibility symlink", output.getvalue())
+        self.assertIn("Adopted CLAUDE.md as Raven-managed", output.getvalue())
         self.assertNotIn(
             "  CLAUDE.md\n", output.getvalue().split("Wrote guided merge artifacts", 1)[-1]
         )
 
-    def test_run_with_adopt_claude_symlink_fails_if_backup_exists(self):
+    def test_run_with_adopt_claude_fails_if_backup_exists(self):
         (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
         (self.destination / "CLAUDE.md").write_text("custom claude guidance\n", encoding="utf-8")
         (self.destination / "CLAUDE.md.bak").write_text("existing backup\n", encoding="utf-8")
@@ -88,8 +97,8 @@ class ClaudeSymlinkTests(RavenTestCase):
                 False,
                 False,
                 [],
-                adopt_claude_symlink_requested=True,
-                prompt_claude_symlink=False,
+                adopt_claude_requested=True,
+                prompt_claude=False,
             )
 
         self.assertEqual(rc, 2)
@@ -99,7 +108,7 @@ class ClaudeSymlinkTests(RavenTestCase):
         )
         self.assertIn("CLAUDE.md.bak already exists", output.getvalue())
 
-    def test_dry_run_with_adopt_claude_symlink_reports_backup_without_writing(self):
+    def test_dry_run_with_adopt_claude_reports_backup_without_writing(self):
         (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
         (self.destination / "CLAUDE.md").write_text("custom claude guidance\n", encoding="utf-8")
         output = io.StringIO()
@@ -112,16 +121,16 @@ class ClaudeSymlinkTests(RavenTestCase):
                 False,
                 True,
                 [],
-                adopt_claude_symlink_requested=True,
-                prompt_claude_symlink=False,
+                adopt_claude_requested=True,
+                prompt_claude=False,
             )
 
         self.assertEqual(rc, 0)
         self.assertFalse((self.destination / "CLAUDE.md").is_symlink())
         self.assertFalse((self.destination / "CLAUDE.md.bak").exists())
-        self.assertIn("Would adopt CLAUDE.md compatibility symlink", output.getvalue())
+        self.assertIn("Would adopt CLAUDE.md as Raven-managed", output.getvalue())
 
-    def test_dry_run_with_adopt_claude_symlink_fails_if_backup_exists(self):
+    def test_dry_run_with_adopt_claude_fails_if_backup_exists(self):
         (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
         (self.destination / "CLAUDE.md").write_text("custom claude guidance\n", encoding="utf-8")
         (self.destination / "CLAUDE.md.bak").write_text("existing backup\n", encoding="utf-8")
@@ -135,8 +144,8 @@ class ClaudeSymlinkTests(RavenTestCase):
                 False,
                 True,
                 [],
-                adopt_claude_symlink_requested=True,
-                prompt_claude_symlink=False,
+                adopt_claude_requested=True,
+                prompt_claude=False,
             )
 
         self.assertEqual(rc, 2)
@@ -146,7 +155,7 @@ class ClaudeSymlinkTests(RavenTestCase):
         )
         self.assertIn("CLAUDE.md.bak already exists", output.getvalue())
 
-    def test_dry_run_with_adopt_claude_symlink_fails_if_backup_is_broken_symlink(self):
+    def test_dry_run_with_adopt_claude_fails_if_backup_is_broken_symlink(self):
         (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
         (self.destination / "CLAUDE.md").write_text("custom claude guidance\n", encoding="utf-8")
         missing_target = self.destination / "missing-target"
@@ -161,8 +170,8 @@ class ClaudeSymlinkTests(RavenTestCase):
                 False,
                 True,
                 [],
-                adopt_claude_symlink_requested=True,
-                prompt_claude_symlink=False,
+                adopt_claude_requested=True,
+                prompt_claude=False,
             )
 
         self.assertEqual(rc, 2)
@@ -170,9 +179,8 @@ class ClaudeSymlinkTests(RavenTestCase):
         self.assertTrue((self.destination / "AGENTS.md").is_file())
         self.assertFalse((self.destination / "CLAUDE.md").is_symlink())
         self.assertTrue((self.destination / "CLAUDE.md.bak").is_symlink())
-        self.assertEqual(os.readlink(self.destination / "CLAUDE.md.bak"), str(missing_target))
 
-    def test_run_with_adopt_claude_symlink_fails_if_backup_is_broken_symlink(self):
+    def test_run_with_adopt_claude_fails_if_backup_is_broken_symlink(self):
         (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
         (self.destination / "CLAUDE.md").write_text("custom claude guidance\n", encoding="utf-8")
         missing_target = self.destination / "missing-target"
@@ -187,8 +195,8 @@ class ClaudeSymlinkTests(RavenTestCase):
                 False,
                 False,
                 [],
-                adopt_claude_symlink_requested=True,
-                prompt_claude_symlink=False,
+                adopt_claude_requested=True,
+                prompt_claude=False,
             )
 
         self.assertEqual(rc, 2)
@@ -196,9 +204,8 @@ class ClaudeSymlinkTests(RavenTestCase):
         self.assertTrue((self.destination / "AGENTS.md").is_file())
         self.assertFalse((self.destination / "CLAUDE.md").is_symlink())
         self.assertTrue((self.destination / "CLAUDE.md.bak").is_symlink())
-        self.assertEqual(os.readlink(self.destination / "CLAUDE.md.bak"), str(missing_target))
 
-    def test_dry_run_with_adopt_claude_symlink_fails_if_backup_is_valid_symlink(self):
+    def test_dry_run_with_adopt_claude_fails_if_backup_is_valid_symlink(self):
         (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
         (self.destination / "CLAUDE.md").write_text("custom claude guidance\n", encoding="utf-8")
         real_target = self.destination / "real-backup-target.md"
@@ -214,8 +221,8 @@ class ClaudeSymlinkTests(RavenTestCase):
                 False,
                 True,
                 [],
-                adopt_claude_symlink_requested=True,
-                prompt_claude_symlink=False,
+                adopt_claude_requested=True,
+                prompt_claude=False,
             )
 
         self.assertEqual(rc, 2)
@@ -223,7 +230,89 @@ class ClaudeSymlinkTests(RavenTestCase):
         self.assertTrue((self.destination / "AGENTS.md").is_file())
         self.assertFalse((self.destination / "CLAUDE.md").is_symlink())
         self.assertTrue((self.destination / "CLAUDE.md.bak").is_symlink())
-        self.assertEqual(os.readlink(self.destination / "CLAUDE.md.bak"), str(real_target))
+
+
+class ClaudeSymlinkMigrationTests(RavenTestCase):
+    """A repo installed before #253 has CLAUDE.md as a real symlink to AGENTS.md.
+
+    Regression coverage for the bug this migration surfaced: `Path.is_file()`
+    and `Path.read_text()` both transparently follow a symlink, so without a
+    guard in `block_managed_state()`, reading a still-symlinked CLAUDE.md
+    during upgrade reads *AGENTS.md's own content* -- which then spuriously
+    parses as a managed block and, if "updated" in place, splices AGENTS.md's
+    text into CLAUDE.md. These tests build that exact pre-#253 on-disk shape
+    and assert upgrade replaces it cleanly instead.
+    """
+
+    def _install_then_revert_to_symlink(self):
+        """Install normally (new shape), then hand-revert CLAUDE.md to the old symlink shape."""
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+            )
+        self.assertEqual(rc, 0)
+        agents_content = (self.destination / "AGENTS.md").read_text(encoding="utf-8")
+
+        (self.destination / "CLAUDE.md").unlink()
+        (self.destination / "CLAUDE.md").symlink_to("AGENTS.md")
+
+        manifest = raven.load_manifest(self.destination)
+        symlink_sha = hashlib.sha256(b"symlink:AGENTS.md").hexdigest()
+        manifest["files"]["CLAUDE.md"] = {
+            "kind": "symlink",
+            "target": "AGENTS.md",
+            "sourceSha256": symlink_sha,
+            "installedSha256": symlink_sha,
+        }
+        raven.save_manifest(self.destination, manifest)
+        return agents_content
+
+    def test_upgrade_replaces_symlinked_claude_md_with_plain_import_file(self):
+        agents_content = self._install_then_revert_to_symlink()
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+            )
+
+        self.assertEqual(rc, 0)
+        claude = self.destination / "CLAUDE.md"
+        self.assertFalse(claude.is_symlink())
+        self.assertEqual(claude.read_text(encoding="utf-8").strip(), "@AGENTS.md")
+        # The regression this guards against: AGENTS.md's own content must be
+        # completely untouched by the CLAUDE.md rewrite.
+        self.assertEqual(
+            (self.destination / "AGENTS.md").read_text(encoding="utf-8"), agents_content
+        )
+
+    def test_dry_run_reports_symlinked_claude_md_as_an_upgrade(self):
+        self._install_then_revert_to_symlink()
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                True,
+                [],
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertIn("CLAUDE.md", output.getvalue())
+        # Nothing written on a dry run: still the old symlink shape.
+        self.assertTrue((self.destination / "CLAUDE.md").is_symlink())
 
 
 if __name__ == "__main__":

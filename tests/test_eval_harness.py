@@ -518,7 +518,9 @@ class UsageExtractionTests(unittest.TestCase):
     def test_claude_usage_sums_input_cache_and_output(self):
         from eval import _claude_usage
 
-        total, output, cost = _claude_usage(self._claude_result())
+        result = _claude_usage(self._claude_result())
+        assert result is not None
+        total, output, cost = result
         self.assertEqual(total, 4 + 100 + 200 + 50)
         self.assertEqual(output, 50)
         self.assertEqual(cost, 0.05)
@@ -534,7 +536,9 @@ class UsageExtractionTests(unittest.TestCase):
         transcript = "\n".join(
             [self._codex_turn(input_tokens=10), self._codex_turn(input_tokens=30)]
         )
-        total, output, cost = _codex_usage(transcript)
+        result = _codex_usage(transcript)
+        assert result is not None
+        total, output, cost = result
         self.assertEqual(total, (10 + 20 + 0 + 5) + (30 + 20 + 0 + 5))
         self.assertEqual(output, 10)
         self.assertIsNone(cost)

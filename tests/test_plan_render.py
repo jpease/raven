@@ -53,7 +53,7 @@ def apply_plan(**overrides) -> ApplyPlan:
         "needs_merge": [],
         "unknown_existing": [],
         "effective_classification": effective,
-        "adopt_claude_symlink": False,
+        "adopt_claude": False,
         "guided_merge_paths": [],
     }
     fields.update(overrides)
@@ -205,7 +205,7 @@ class RenderApplySummaryTest(unittest.TestCase):
 class RenderDryRunPlanTest(unittest.TestCase):
     def test_minimal_plan_renders_just_the_summary(self):
         text = render_dry_run_plan(
-            apply_plan(), orphan_classification(), show_claude_symlink_note=False
+            apply_plan(), orphan_classification(), show_claude_adoption_note=False
         )
         self.assertTrue(text.startswith("Will copy new Raven files:"))
         self.assertIn("Preview only.", text)
@@ -217,7 +217,7 @@ class RenderDryRunPlanTest(unittest.TestCase):
             render_dry_run_plan(
                 apply_plan(overwritten=["a.md"]),
                 orphan_classification(),
-                show_claude_symlink_note=False,
+                show_claude_adoption_note=False,
             ),
         )
         self.assertIn(
@@ -225,34 +225,34 @@ class RenderDryRunPlanTest(unittest.TestCase):
             render_dry_run_plan(
                 apply_plan(requested_overrides=["a.md"], overwritten=["a.md"]),
                 orphan_classification(),
-                show_claude_symlink_note=False,
+                show_claude_adoption_note=False,
             ),
         )
 
     def test_claude_symlink_note_is_controlled_by_the_caller(self):
         # The note depends on a filesystem probe the shell performs, so the
         # renderer must not try to decide it.
-        note = "CLAUDE.md exists as a regular destination file."
+        note = "CLAUDE.md exists but doesn't hold Raven's content."
         self.assertNotIn(
             note,
             render_dry_run_plan(
-                apply_plan(), orphan_classification(), show_claude_symlink_note=False
+                apply_plan(), orphan_classification(), show_claude_adoption_note=False
             ),
         )
         self.assertIn(
             note,
             render_dry_run_plan(
-                apply_plan(), orphan_classification(), show_claude_symlink_note=True
+                apply_plan(), orphan_classification(), show_claude_adoption_note=True
             ),
         )
 
     def test_adopting_the_symlink_lists_both_affected_paths(self):
         text = render_dry_run_plan(
-            apply_plan(adopt_claude_symlink=True),
+            apply_plan(adopt_claude=True),
             orphan_classification(),
-            show_claude_symlink_note=False,
+            show_claude_adoption_note=False,
         )
-        self.assertIn("Would adopt CLAUDE.md compatibility symlink:", text)
+        self.assertIn("Would adopt CLAUDE.md as Raven-managed:", text)
         self.assertIn("CLAUDE.md.bak", text)
         self.assertIn("CLAUDE.md", text)
 
@@ -260,7 +260,7 @@ class RenderDryRunPlanTest(unittest.TestCase):
         text = render_dry_run_plan(
             apply_plan(),
             orphan_classification(will_remove=["gone.md"], orphan_modified=["kept.md"]),
-            show_claude_symlink_note=False,
+            show_claude_adoption_note=False,
         )
         self.assertIn("Will remove orphaned Raven files", text)
         self.assertIn("Orphaned but locally modified; left in place", text)
@@ -271,7 +271,7 @@ class RenderDryRunPlanTest(unittest.TestCase):
         # Backward-compat: existing callers that only pass orphans must not
         # crash, and must not gain a spurious empty section.
         text = render_dry_run_plan(
-            apply_plan(), orphan_classification(), show_claude_symlink_note=False
+            apply_plan(), orphan_classification(), show_claude_adoption_note=False
         )
         self.assertNotIn("deactivated by config", text)
 
@@ -280,7 +280,7 @@ class RenderDryRunPlanTest(unittest.TestCase):
             apply_plan(),
             orphan_classification(),
             deactivated_classification(removable=["skill-a.md"], preserved=["skill-b.md"]),
-            show_claude_symlink_note=False,
+            show_claude_adoption_note=False,
         )
         self.assertIn("Would remove skill(s) deactivated by config", text)
         self.assertIn("Deactivated by config but locally modified; left in place", text)
@@ -304,7 +304,7 @@ class RenderDryRunPlanTest(unittest.TestCase):
                 stale=["stale.md"],
                 customized=["customized.md"],
             ),
-            show_claude_symlink_note=False,
+            show_claude_adoption_note=False,
         )
         self.assertIn("modified.md", text)
         self.assertIn("stale.md", text)
@@ -325,7 +325,7 @@ class RenderDryRunPlanTest(unittest.TestCase):
             apply_plan(),
             orphan_classification(),
             deactivated_classification(preserved=["modified.md"]),
-            show_claude_symlink_note=False,
+            show_claude_adoption_note=False,
         )
         self.assertNotIn("raven accept", text)
         self.assertNotIn("accepted customization", text.lower())

@@ -226,7 +226,7 @@ def install_ns(destination: Path, language: str = "python", *, dry_run: bool = F
         overrides=[],
         dry_run=dry_run,
         include_readme=False,
-        adopt_claude_symlink=False,
+        adopt_claude=False,
         platform=None,
     )
 
@@ -238,7 +238,7 @@ def upgrade_ns(destination: Path, *, dry_run: bool = False):
         overrides=[],
         dry_run=dry_run,
         include_readme=False,
-        adopt_claude_symlink=False,
+        adopt_claude=False,
     )
 
 

@@ -2,7 +2,7 @@
 
 Every mutating command (`cmd_install`, `cmd_upgrade`, `cmd_accept`) routes
 through `_run` or an equivalent preflight that checks path collisions and
-CLAUDE.md-symlink conflicts *before* writing, so a rejected request changes
+CLAUDE.md-adoption conflicts *before* writing, so a rejected request changes
 nothing on disk -- see `_build_run_plan`'s docstring for the pure/impure split
 this module leans on throughout.
 """
@@ -19,10 +19,10 @@ from typing import Literal
 
 from .apply import (
     classify,
-    claude_symlink_adoption_needed,
+    claude_adoption_needed,
     find_path_collisions,
     find_state_symlink_collisions,
-    prompt_for_claude_symlink_adoption,
+    prompt_for_claude_adoption,
     prompt_for_settings_json_adoption,
     prompt_for_template_switch,
 )
@@ -70,7 +70,7 @@ from .orphans import classify_orphans, shipped_relatives
 from .plan import (
     apply_plan,
     build_apply_plan,
-    claude_symlink_conflict,
+    claude_conflict,
     normalize_override,
     print_apply_summary,
     print_dry_run_plan,
@@ -201,7 +201,7 @@ def _planned_write_paths(plan: ApplyPlan) -> list[str]:
     paths.add(CONFIG_PATH.as_posix())
     paths.add(MANIFEST_PATH.as_posix())
     paths.update((MERGE_DIR / relative).as_posix() for relative in plan.guided_merge_paths)
-    if plan.adopt_claude_symlink:
+    if plan.adopt_claude:
         paths.add(CLAUDE_PATH)
     if plan.adopt_settings_json:
         paths.add(SETTINGS_JSON_PATH)
@@ -231,14 +231,14 @@ def invalid_overrides(entries: dict[str, TemplateEntry], requested: list[str]) -
     return [path for path in requested if path not in entries]
 
 
-def _symlink_adoption_decision(
+def _adoption_decision(
     *, needed: bool, conflict: bool, requested: bool
 ) -> Literal["skip", "auto", "prompt"]:
-    """Whether to skip CLAUDE.md symlink adoption, auto-adopt it, or ask the user.
+    """Whether to skip an adoption (CLAUDE.md or .claude/settings.json), auto-adopt it, or ask the user.
 
-    "auto" when --adopt-claude-symlink was passed explicitly; "prompt" when
-    adoption is needed and conflicts with the plan but wasn't pre-authorized;
-    "skip" otherwise.
+    "auto" when the relevant --adopt-* flag was passed explicitly; "prompt"
+    when adoption is needed and conflicts with the plan but wasn't
+    pre-authorized; "skip" otherwise.
     """
     if not (needed and conflict):
         return "skip"
@@ -283,7 +283,7 @@ def _build_run_plan(
     classification: Classification,
     requested_overrides_norm: list[str],
     existing_overrides: set[str],
-    adopt_claude_symlink: bool,
+    adopt_claude: bool,
     adopt_settings_json: bool = False,
 ) -> RunPlan:
     """Compute the apply plan and every precondition `_run` must check before writing.
@@ -295,14 +295,14 @@ def _build_run_plan(
         classification,
         requested_overrides_norm,
         existing_overrides,
-        adopt_claude_symlink=adopt_claude_symlink,
+        adopt_claude=adopt_claude,
         adopt_settings_json=adopt_settings_json,
     )
     collisions = find_path_collisions(destination, _planned_write_paths(plan))
     state_symlinks = find_state_symlink_collisions(
         destination, [CONFIG_PATH.as_posix(), MANIFEST_PATH.as_posix()]
     )
-    backup_conflict = plan.adopt_claude_symlink and _any_exists(destination / CLAUDE_BACKUP_PATH)
+    backup_conflict = plan.adopt_claude and _any_exists(destination / CLAUDE_BACKUP_PATH)
     settings_backup_conflict = plan.adopt_settings_json and _any_exists(
         destination / SETTINGS_JSON_BACKUP_PATH
     )
@@ -341,8 +341,8 @@ def _run(
     include_readme: bool,
     dry_run: bool,
     requested_overrides: list[str],
-    adopt_claude_symlink_requested: bool = False,
-    prompt_claude_symlink: bool = True,
+    adopt_claude_requested: bool = False,
+    prompt_claude: bool = True,
     adopt_settings_json_requested: bool = False,
     prompt_settings_json: bool = True,
     confirm_template_switch_requested: bool = False,
@@ -436,28 +436,26 @@ def _run(
     orphans = classify_orphans(template, destination, manifest)
     deactivated = classify_deactivated(template, destination, manifest, config)
     existing_overrides = {p for p in requested_overrides_norm if _any_exists(destination / p)}
-    symlink_adoption_needed = claude_symlink_adoption_needed(destination, entries)
-    conflict = symlink_adoption_needed and claude_symlink_conflict(
-        classification, requested_overrides_norm
-    )
-    decision = _symlink_adoption_decision(
-        needed=symlink_adoption_needed,
+    claude_needed = claude_adoption_needed(destination, entries)
+    conflict = claude_needed and claude_conflict(classification, requested_overrides_norm)
+    decision = _adoption_decision(
+        needed=claude_needed,
         conflict=conflict,
-        requested=adopt_claude_symlink_requested,
+        requested=adopt_claude_requested,
     )
-    adopt_claude_symlink = decision == "auto"
-    if decision == "prompt" and not dry_run and prompt_claude_symlink:
-        adopt_claude_symlink = prompt_for_claude_symlink_adoption(destination)
+    adopt_claude = decision == "auto"
+    if decision == "prompt" and not dry_run and prompt_claude:
+        adopt_claude = prompt_for_claude_adoption(destination)
 
     # .claude/settings.json (#200): the classification bucket itself (
     # "needs_adoption") already *is* the structural "adoption needed" check --
-    # unlike CLAUDE.md's symlink, there is no separate filesystem shape to
-    # probe -- so "needed" and "conflict" collapse to one membership test.
+    # unlike CLAUDE.md, there is no separate filesystem shape to probe -- so
+    # "needed" and "conflict" collapse to one membership test.
     settings_adoption_needed = SETTINGS_JSON_PATH in classification.needs_adoption
     settings_conflict = settings_adoption_needed and settings_json_adoption_conflict(
         classification, requested_overrides_norm
     )
-    settings_decision = _symlink_adoption_decision(
+    settings_decision = _adoption_decision(
         needed=settings_adoption_needed,
         conflict=settings_conflict,
         requested=adopt_settings_json_requested,
@@ -474,7 +472,7 @@ def _run(
         classification,
         requested_overrides_norm,
         existing_overrides,
-        adopt_claude_symlink,
+        adopt_claude,
         adopt_settings_json,
     )
     plan = run_plan.plan
@@ -773,7 +771,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         include_readme,
         args.dry_run,
         overrides,
-        adopt_claude_symlink_requested=args.adopt_claude_symlink,
+        adopt_claude_requested=args.adopt_claude,
         adopt_settings_json_requested=getattr(args, "adopt_settings_json", False),
         confirm_template_switch_requested=getattr(args, "confirm_template_switch", False),
         platform_override=platform,
@@ -820,7 +818,7 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
         include_readme,
         args.dry_run,
         args.overrides,
-        adopt_claude_symlink_requested=args.adopt_claude_symlink,
+        adopt_claude_requested=args.adopt_claude,
         adopt_settings_json_requested=getattr(args, "adopt_settings_json", False),
         confirm_template_switch_requested=getattr(args, "confirm_template_switch", False),
     )
@@ -1174,7 +1172,7 @@ File safety:
         description=(
             "Install a language template into the destination repo. Run with --dry-run first.\n"
             "Existing files are preserved unless they are explicitly named as override paths,\n"
-            "--adopt-claude-symlink is approved for CLAUDE.md, or --adopt-settings-json is\n"
+            "--adopt-claude is approved for CLAUDE.md, or --adopt-settings-json is\n"
             "approved for .claude/settings.json."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1183,7 +1181,7 @@ Examples:
   raven install python --dry-run
   raven install python
   raven install go --dry-run
-  raven install python --adopt-claude-symlink
+  raven install python --adopt-claude
   raven install python --adopt-settings-json
   raven install python .claude/scripts/raven-tool-check.py
 
@@ -1196,9 +1194,10 @@ Overrides:
   files you know are Raven-owned.
 
 AGENTS.md and CLAUDE.md:
-  AGENTS.md is canonical; CLAUDE.md is normally installed as a symlink to it.
-  If CLAUDE.md already exists, Raven leaves it untouched unless you pass
-  --adopt-claude-symlink, which moves it to CLAUDE.md.bak first.
+  AGENTS.md is canonical; CLAUDE.md is normally installed as a one-line file
+  that imports it (`@AGENTS.md`). If CLAUDE.md already exists, Raven leaves it
+  untouched unless you pass --adopt-claude, which moves it to CLAUDE.md.bak
+  first.
 
 .claude/settings.json:
   Raven manages .claude/settings.json as a template file, upgraded like any
@@ -1232,11 +1231,11 @@ AGENTS.md and CLAUDE.md:
         help="include the language template README.md; overrides config include_readme=false",
     )
     install_parser.add_argument(
-        "--adopt-claude-symlink",
+        "--adopt-claude",
         action="store_true",
         help=(
-            "if CLAUDE.md exists, move it to CLAUDE.md.bak and create the CLAUDE.md -> "
-            "AGENTS.md symlink; fails if backup exists"
+            "if CLAUDE.md exists, move it to CLAUDE.md.bak and write the `@AGENTS.md` "
+            "import file; fails if backup exists"
         ),
     )
     install_parser.add_argument(
@@ -1275,7 +1274,7 @@ AGENTS.md and CLAUDE.md:
 Examples:
   raven upgrade --dry-run
   raven upgrade
-  raven upgrade --adopt-claude-symlink
+  raven upgrade --adopt-claude
   raven upgrade --adopt-settings-json
   raven upgrade .claude/scripts/raven-tool-check.py
 
@@ -1283,9 +1282,10 @@ Override paths force-copy specific template-relative files. Use them only for
 files you know are Raven-owned.
 
 AGENTS.md and CLAUDE.md:
-  AGENTS.md is canonical; CLAUDE.md is normally installed as a symlink to it.
-  If CLAUDE.md already exists, Raven leaves it untouched unless you pass
-  --adopt-claude-symlink, which moves it to CLAUDE.md.bak first.
+  AGENTS.md is canonical; CLAUDE.md is normally installed as a one-line file
+  that imports it (`@AGENTS.md`). If CLAUDE.md already exists, Raven leaves it
+  untouched unless you pass --adopt-claude, which moves it to CLAUDE.md.bak
+  first.
 
 .claude/settings.json:
   Raven manages .claude/settings.json as a template file, upgraded like any
@@ -1312,11 +1312,11 @@ AGENTS.md and CLAUDE.md:
         help="include the language template README.md; overrides config include_readme=false",
     )
     upgrade_parser.add_argument(
-        "--adopt-claude-symlink",
+        "--adopt-claude",
         action="store_true",
         help=(
-            "if CLAUDE.md exists, move it to CLAUDE.md.bak and create the CLAUDE.md -> "
-            "AGENTS.md symlink; fails if backup exists"
+            "if CLAUDE.md exists, move it to CLAUDE.md.bak and write the `@AGENTS.md` "
+            "import file; fails if backup exists"
         ),
     )
     upgrade_parser.add_argument(

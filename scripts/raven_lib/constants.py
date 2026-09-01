@@ -163,7 +163,6 @@ KIND_SYMLINK = "symlink"
 # until it is.
 EXPECTED_TEMPLATE_SYMLINKS = frozenset(
     {
-        "CLAUDE.md",
         ".claude/skills",
         ".codex/hooks/raven-post-bash-summarize.py",
         ".codex/hooks/raven-post-edit-format.py",

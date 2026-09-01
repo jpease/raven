@@ -195,9 +195,9 @@ class ApplyPlan:
     needs_merge: list[str]
     unknown_existing: list[str]
     effective_classification: Classification
-    adopt_claude_symlink: bool
+    adopt_claude: bool
     guided_merge_paths: list[str]
-    # Defaulted (unlike `adopt_claude_symlink`) so existing callers/fixtures
+    # Defaulted (unlike `adopt_claude`) so existing callers/fixtures
     # that predate #200 keep constructing an `ApplyPlan` without naming it.
     adopt_settings_json: bool = False
 

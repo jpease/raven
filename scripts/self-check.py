@@ -118,8 +118,9 @@ _TREE_SYMLINKS_TO_COMMON = [
     "AGENTS.md",
 ]
 # Shared paths that symlink within their own tree rather than into common/.
+# CLAUDE.md is deliberately absent here (#253): it is a plain one-line file
+# ("@AGENTS.md") in every tree, not a symlink -- see validate_claude_import().
 _TREE_SYMLINKS_WITHIN_TREE = {
-    "CLAUDE.md": "AGENTS.md",
     ".claude/skills": "../.agents/skills",
 }
 
@@ -135,10 +136,10 @@ def _language_dirs() -> list[Path]:
 
 def validate_symlink_canonicality() -> None:
     """Each language tree symlinks its shared paths to common/ (or, for
-    CLAUDE.md/.claude/skills, to the in-tree canonical file) instead of
-    carrying its own copy. A stray `cp` during a manual edit or guided merge
-    can silently replace a symlink with a real file, which then drifts from
-    common/ unnoticed -- catch that here instead of relying on `ls -l`.
+    .claude/skills, to the in-tree canonical file) instead of carrying its own
+    copy. A stray `cp` during a manual edit or guided merge can silently
+    replace a symlink with a real file, which then drifts from common/
+    unnoticed -- catch that here instead of relying on `ls -l`.
     """
     print("==> validate language-tree symlink canonicality")
     problems: list[str] = []
@@ -172,6 +173,35 @@ def _check_tree_symlink(target: Path, expected: Path) -> list[str]:
             f"MISDIRECTED: {label} -> {os.readlink(target)} (expected to resolve to {expected})"
         ]
     return []
+
+
+def validate_claude_import() -> None:
+    """Each language tree's CLAUDE.md is a plain file containing `@AGENTS.md`, not a symlink (#253).
+
+    A symlinked CLAUDE.md breaks on a Windows checkout without symlink
+    support (git materializes it as a regular file holding the literal target
+    text), so every tree carries its own plain one-line import file instead --
+    deliberately not a symlink to a shared copy either, since that would
+    reintroduce the same failure mode one hop removed.
+    """
+    print("==> validate CLAUDE.md import files")
+    problems: list[str] = []
+    for lang_dir in _language_dirs():
+        claude = lang_dir / "CLAUDE.md"
+        label = str(claude.relative_to(REPO_ROOT))
+        if not claude.exists() and not claude.is_symlink():
+            problems.append(f"MISSING: {label}")
+            continue
+        if claude.is_symlink():
+            problems.append(f"IS A SYMLINK: {label} (expected a plain @AGENTS.md import file)")
+            continue
+        if claude.read_text(encoding="utf-8").strip() != "@AGENTS.md":
+            problems.append(f"WRONG CONTENT: {label} (expected exactly '@AGENTS.md')")
+    if problems:
+        for p in problems:
+            print(f"  {p}")
+        raise SystemExit("CLAUDE.md import files broken. See #253.")
+    print("CLAUDE.md import files ok")
 
 
 def _template_rules_files() -> dict[str, Path]:
@@ -546,7 +576,7 @@ def validate_installed_shape() -> None:
 
     Run both before and after the self-upgrade in `main`: before, to catch a
     pre-existing broken state early; after, to confirm the upgrade itself
-    didn't damage the managed block or the CLAUDE.md symlink.
+    didn't damage the managed block or CLAUDE.md's import content.
     """
     print("==> validate installed RAVEN shape")
     raven = load_raven_module()
@@ -561,8 +591,10 @@ def validate_installed_shape() -> None:
         raise SystemExit("AGENTS.md is missing a RAVEN-managed block")
     if not raven.raven_block_is_unchanged(block):
         raise SystemExit("AGENTS.md RAVEN-managed block was edited directly")
-    if not claude.is_symlink() or os.readlink(claude) != "AGENTS.md":
-        raise SystemExit("CLAUDE.md must be a symlink to AGENTS.md")
+    if claude.is_symlink():
+        raise SystemExit("CLAUDE.md must be a plain file (not a symlink), see #253")
+    if not claude.is_file() or claude.read_text(encoding="utf-8").strip() != "@AGENTS.md":
+        raise SystemExit("CLAUDE.md must be a plain file containing exactly '@AGENTS.md'")
     if not claude_skills.is_symlink() or os.readlink(claude_skills) != "../.agents/skills":
         raise SystemExit(".claude/skills must be a symlink to ../.agents/skills")
     print("installed shape ok")
@@ -851,6 +883,7 @@ def main() -> int:
     """
     validate_shared_docs_sync()
     validate_symlink_canonicality()
+    validate_claude_import()
     validate_context_budget()
     validate_aggregate_budget()
     validate_skill_description_budget()

@@ -11,9 +11,9 @@ import sys
 from pathlib import Path
 
 from .apply import (
-    adopt_claude_symlink,
+    adopt_claude_md,
     adopt_settings_json,
-    claude_symlink_adoption_needed,
+    claude_adoption_needed,
     copy_paths,
 )
 from .blocks import (
@@ -111,7 +111,7 @@ def render_apply_summary(
     if adopted_claude:
         sections.append(
             render_section(
-                "Adopted CLAUDE.md compatibility symlink; original file was backed up:",
+                "Adopted CLAUDE.md as Raven-managed; original file was backed up:",
                 adopted_claude,
             )
         )
@@ -299,7 +299,7 @@ def _without(paths: list[str], excluded: set[str]) -> list[str]:
     return sorted(set(paths) - excluded)
 
 
-def claude_symlink_conflict(classification: Classification, requested_overrides: list[str]) -> bool:
+def claude_conflict(classification: Classification, requested_overrides: list[str]) -> bool:
     """Whether CLAUDE.md ends up needing a manual merge after override removal."""
     override_set = set(requested_overrides)
     conflicts = (
@@ -313,7 +313,7 @@ def settings_json_adoption_conflict(
 ) -> bool:
     """Whether .claude/settings.json still needs adoption consent after override removal.
 
-    Mirrors ``claude_symlink_conflict``, but over ``needs_adoption`` instead of
+    Mirrors ``claude_conflict``, but over ``needs_adoption`` instead of
     ``needs_merge``/``unknown_existing``: an explicit ``--override
     .claude/settings.json`` already force-copies the file, so it resolves the
     same way an override resolves a CLAUDE.md conflict -- no adoption prompt
@@ -328,16 +328,16 @@ def build_apply_plan(
     requested_overrides: list[str],
     existing_overrides: set[str],
     *,
-    adopt_claude_symlink: bool,
+    adopt_claude: bool,
     adopt_settings_json: bool = False,
 ) -> ApplyPlan:
     """Resolve a `Classification` and override flags into the concrete `ApplyPlan` to execute.
 
     Requested overrides are pulled out of every classification bucket first
     (they get their own copy/overwrite handling), then CLAUDE.md is pulled out
-    of ``needs_merge``/``unknown_existing`` when symlink adoption is requested,
-    and ``.claude/settings.json`` out of ``needs_adoption`` when settings
-    adoption is requested, since each resolves its conflict a different way.
+    of ``needs_merge``/``unknown_existing`` when adoption is requested, and
+    ``.claude/settings.json`` out of ``needs_adoption`` when settings adoption
+    is requested, since each resolves its conflict a different way.
     """
     override_set = set(requested_overrides)
     overwritten = sorted(path for path in requested_overrides if path in existing_overrides)
@@ -350,8 +350,7 @@ def build_apply_plan(
     local_only = _without(classification.local_only, override_set)
     needs_adoption = _without(classification.needs_adoption, override_set)
 
-    adopt_symlink = adopt_claude_symlink
-    if adopt_symlink:
+    if adopt_claude:
         needs_merge = [path for path in needs_merge if path != CLAUDE_PATH]
         unknown_existing = [path for path in unknown_existing if path != CLAUDE_PATH]
 
@@ -381,7 +380,7 @@ def build_apply_plan(
         needs_merge=needs_merge,
         unknown_existing=unknown_existing,
         effective_classification=effective_classification,
-        adopt_claude_symlink=adopt_symlink,
+        adopt_claude=adopt_claude,
         guided_merge_paths=guided_merge_paths,
         adopt_settings_json=adopt_settings,
     )
@@ -392,13 +391,13 @@ def render_dry_run_plan(
     orphans: OrphanClassification,
     deactivated: DeactivatedClassification | None = None,
     *,
-    show_claude_symlink_note: bool,
+    show_claude_adoption_note: bool,
     show_settings_adoption_note: bool = False,
 ) -> str:
     """The dry-run report text.
 
     Pure: every filesystem question this report depends on is answered by the
-    caller and arrives as ``show_claude_symlink_note``/``show_settings_adoption_note``.
+    caller and arrives as ``show_claude_adoption_note``/``show_settings_adoption_note``.
     That keeps the whole section-assembly -- which sections appear, in which
     order, with which wording -- testable without building a destination tree
     on disk. ``show_settings_adoption_note`` defaults to False so existing
@@ -416,10 +415,10 @@ def render_dry_run_plan(
                 plan.newly_copied_overrides,
             )
         )
-    if plan.adopt_claude_symlink:
+    if plan.adopt_claude:
         sections.append(
             render_section(
-                "Would adopt CLAUDE.md compatibility symlink:", [CLAUDE_BACKUP_PATH, CLAUDE_PATH]
+                "Would adopt CLAUDE.md as Raven-managed:", [CLAUDE_BACKUP_PATH, CLAUDE_PATH]
             )
         )
     if plan.adopt_settings_json:
@@ -430,11 +429,11 @@ def render_dry_run_plan(
             )
         )
     sections.append(render_dry_run_summary(plan.effective_classification))
-    if show_claude_symlink_note:
+    if show_claude_adoption_note:
         sections.append(
-            "CLAUDE.md exists as a regular destination file. Raven can leave it untouched, "
-            "or you can rerun with --adopt-claude-symlink to move it to CLAUDE.md.bak and "
-            "create the AGENTS.md symlink."
+            "CLAUDE.md exists but doesn't hold Raven's content. Raven can leave it untouched, "
+            "or you can rerun with --adopt-claude to move it to CLAUDE.md.bak and write the "
+            "`@AGENTS.md` import file."
         )
     if show_settings_adoption_note:
         sections.append(
@@ -519,10 +518,9 @@ def print_dry_run_plan(
 
     The report itself is built by ``render_dry_run_plan``.
     """
-    if plan.adopt_claude_symlink and _any_exists(destination / CLAUDE_BACKUP_PATH):
+    if plan.adopt_claude and _any_exists(destination / CLAUDE_BACKUP_PATH):
         print(
-            f"error: {CLAUDE_BACKUP_PATH} already exists; "
-            "remove it before adopting the CLAUDE.md symlink.",
+            f"error: {CLAUDE_BACKUP_PATH} already exists; remove it before adopting CLAUDE.md.",
             file=sys.stderr,
         )
         return 2
@@ -533,10 +531,10 @@ def print_dry_run_plan(
             file=sys.stderr,
         )
         return 2
-    show_claude_symlink_note = (
-        not plan.adopt_claude_symlink
+    show_claude_adoption_note = (
+        not plan.adopt_claude
         and CLAUDE_PATH in set(classification.needs_merge) | set(classification.unknown_existing)
-        and claude_symlink_adoption_needed(destination, entries)
+        and claude_adoption_needed(destination, entries)
     )
     show_settings_adoption_note = not plan.adopt_settings_json and SETTINGS_JSON_PATH in set(
         classification.needs_adoption
@@ -546,7 +544,7 @@ def print_dry_run_plan(
             plan,
             orphans,
             deactivated,
-            show_claude_symlink_note=show_claude_symlink_note,
+            show_claude_adoption_note=show_claude_adoption_note,
             show_settings_adoption_note=show_settings_adoption_note,
         )
     )
@@ -579,9 +577,9 @@ def apply_plan(
     manifest records are retained for the next run to retry (#183).
     """
     adopted_claude: list[str] = []
-    if plan.adopt_claude_symlink:
+    if plan.adopt_claude:
         try:
-            adopted_claude = adopt_claude_symlink(destination, entries)
+            adopted_claude = adopt_claude_md(destination, entries)
         except FileExistsError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2, [], [], [], [], []

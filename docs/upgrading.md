@@ -108,13 +108,15 @@ for consent rather than writing a merge artifact. See `AGENTS.md` and
 ## `AGENTS.md` and `CLAUDE.md`
 
 Raven treats `AGENTS.md` as canonical and normally installs `CLAUDE.md` as a
-symlink pointing at it.
+plain one-line file containing the Claude Code import directive `@AGENTS.md`
+(not a symlink — a symlink breaks on a Windows checkout without symlink
+support, since git materializes it as a regular file holding the literal
+target text instead).
 
 When either file already exists, Raven writes merge artifacts under
 `.raven/merge/`:
 
-- `AGENTS.md.raven` or `CLAUDE.md.raven` — the suggested content, or symlink
-  guidance
+- `AGENTS.md.raven` or `CLAUDE.md.raven` — the suggested content
 - `*.instructions.md` — a short merge note for the project owner
 - `*.patch` — an append-only patch, when the suggestion is safe to express as
   text
@@ -122,8 +124,8 @@ When either file already exists, Raven writes merge artifacts under
 For an existing `CLAUDE.md`:
 
 - Raven leaves it alone by default.
-- To take the compatibility symlink instead, answer `Y` at the prompt or run
-  with `--adopt-claude-symlink`.
+- To take Raven's version instead, answer `Y` at the prompt or run with
+  `--adopt-claude`.
 - Adoption moves your file to `CLAUDE.md.bak`.
 - If that backup already exists, Raven fails rather than overwrite it.
 
