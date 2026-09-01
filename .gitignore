@@ -21,8 +21,12 @@ TODO.md
 # Local Claude session memory
 .remember/
 
-# Tool-installed local agent skills; regenerate with GitNexus when needed
+# Tool-installed local agent skills; regenerate with GitNexus when needed.
+# GitNexus writes one directory per skill (gitnexus-cli/, gitnexus-guide/,
+# etc.), not a single gitnexus/ directory, so the pattern must match both
+# the current per-skill shape and the older single-directory one.
 .agents/skills/gitnexus/
+.agents/skills/gitnexus-*/
 
 # Machine-local just recipes, pulled in by `import? 'private.just'`
 private.just
