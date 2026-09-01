@@ -129,4 +129,4 @@ Read `reference/genres.md` before running the tells. Which of them can fire depe
 
 ## Words
 
-Read `reference/words.md` when doing a word pass. It holds the flagged-word table with a keep-test for each, and how to measure which words to add.
+Read `reference/words.md` when doing a word pass. It holds the flagged-word table with a keep-test for each. Read `reference/words-history.md` instead when adding, removing, or reconsidering an entry -- it holds the measurement procedure.

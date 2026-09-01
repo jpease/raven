@@ -42,7 +42,7 @@ A package on the `Packages` line but missing from that listing adds no rules. Un
 
 Vale covers the word half only. It cannot see a tricolon, a restating conclusion, or a dependent heading.
 
-Two things it will flag that are correct. A file whose job is to name the banned words — the prose rules file, `reference/words.md`, the prose skills themselves — trips every word rule by design; skip those. And a `KeepTest` finding is a prompt. Read the keep-test and decide.
+Two things it will flag that are correct. A file whose job is to name the banned words — the prose rules file, `reference/words.md`, `reference/words-history.md`, the prose skills themselves — trips every word rule by design; skip those. And a `KeepTest` finding is a prompt. Read the keep-test and decide.
 
 ## Pass 2: the structural pass
 

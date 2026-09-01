@@ -71,6 +71,7 @@ class ProseRulesTests(unittest.TestCase):
 SKILLS = REPO_ROOT / "common" / ".agents" / "skills"
 WRITE_SKILL = SKILLS / "raven-write-prose" / "SKILL.md"
 WORDS_REF = SKILLS / "raven-write-prose" / "reference" / "words.md"
+WORDS_HISTORY_REF = SKILLS / "raven-write-prose" / "reference" / "words-history.md"
 GENRES_REF = SKILLS / "raven-write-prose" / "reference" / "genres.md"
 
 # Matches SKILL_DESCRIPTION_PER_SKILL_LIMIT in scripts/self-check.py.
@@ -183,9 +184,14 @@ class WriteProseSkillTests(unittest.TestCase):
         genres = GENRES_REF.read_text(encoding="utf-8")
         self.assertIn("Bulletification cannot fire", genres)
 
-    def test_word_reference_exists_and_carries_the_measurement_procedure(self):
+    def test_word_reference_exists_and_carries_the_table(self):
         self.assertTrue(WORDS_REF.exists(), f"missing {WORDS_REF}")
         text = WORDS_REF.read_text(encoding="utf-8")
+        self.assertIn("keep only when", text, "the flagged-word table itself must ship")
+
+    def test_word_history_exists_and_carries_the_measurement_procedure(self):
+        self.assertTrue(WORDS_HISTORY_REF.exists(), f"missing {WORDS_HISTORY_REF}")
+        text = WORDS_HISTORY_REF.read_text(encoding="utf-8")
         self.assertIn("rg", text, "the measurement procedure must be runnable, not described")
         self.assertIn("git log", text)
 
@@ -199,6 +205,8 @@ class ValeStyleTests(unittest.TestCase):
         self.assertTrue((VALE_DIR / "styles" / "Raven" / "PlainWords.yml").exists())
         self.assertTrue((VALE_DIR / "styles" / "Raven" / "KeepTest.yml").exists())
         self.assertTrue((VALE_DIR / "styles" / "Raven" / "Vacuous.yml").exists())
+        self.assertTrue((VALE_DIR / "styles" / "Raven" / "Genuine.yml").exists())
+        self.assertTrue((VALE_DIR / "styles" / "Raven" / "Honest.yml").exists())
 
     def test_hard_ban_words_fail_the_gate(self):
         """The gate runs at warning, so a hard ban must be warning or above.
@@ -206,6 +214,9 @@ class ValeStyleTests(unittest.TestCase):
         `vacuous` has its own file rather than a PlainWords entry: the
         one-word swap PlainWords can express is wrong for the sense the word
         gets used in, since "passes vacuously" is not "passes emptily".
+        `genuine`/`honest` are the same shape: `genuine` has no one-word
+        swap ("cut it"), and `honest`'s fix is conditional on whether it's
+        a modifier or the sentence's verb.
         """
         plain = (VALE_DIR / "styles" / "Raven" / "PlainWords.yml").read_text(encoding="utf-8")
         self.assertIn("extends: substitution", plain)
@@ -216,6 +227,14 @@ class ValeStyleTests(unittest.TestCase):
         self.assertIn("level: warning", vac)
         self.assertIn("vacuous(ly)?", vac)
 
+        genuine = (VALE_DIR / "styles" / "Raven" / "Genuine.yml").read_text(encoding="utf-8")
+        self.assertIn("level: warning", genuine)
+        self.assertIn("genuine(ly)?", genuine)
+
+        honest = (VALE_DIR / "styles" / "Raven" / "Honest.yml").read_text(encoding="utf-8")
+        self.assertIn("level: warning", honest)
+        self.assertIn("honest(ly)?", honest)
+
     def test_a_hard_ban_is_never_downgraded_to_a_suggestion(self):
         """Both words were briefly moved to keep-tests on the strength of a
         repo that turned out to have learned them from an agent. Assert the
@@ -223,7 +242,7 @@ class ValeStyleTests(unittest.TestCase):
         """
         keep = (VALE_DIR / "styles" / "Raven" / "KeepTest.yml").read_text(encoding="utf-8")
         tokens = keep.split("tokens:", 1)[-1]
-        for word in ["adjudicat", "vacuous"]:
+        for word in ["adjudicat", "vacuous", "genuine", "honest"]:
             with self.subTest(word=word):
                 self.assertNotIn(word, tokens, f"{word} is a hard ban, not a suggestion")
 

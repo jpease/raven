@@ -1,0 +1,16 @@
+extends: existence
+message: "Cut '%s'. A fact stated nearby almost always already proves it."
+level: warning
+ignorecase: true
+# Moved here from the keep-test list on 2026-08-27: high, consistent counts
+# (22 in this repo's last 400 commits, 13-54 across four other actively
+# developed repos) looked like domain need, but striking the word from every
+# sampled sentence never lost a fact -- "a genuinely local-only case (a
+# private-repo symlink target)" loses nothing, because the parenthetical was
+# already proving it. See docs/superpowers/plans/2026-08-27-words-list-history.md.
+#
+# Gated on the same spot-check evidence vacuous's rule was, not the fuller
+# 120-use false-positive sample vacuous itself got -- read the counts above
+# with that caveat.
+tokens:
+  - genuine(ly)?
