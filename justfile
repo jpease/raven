@@ -1,3 +1,7 @@
+# Machine-local recipes (not committed). Absent in a fresh clone; `import?`
+# skips it silently rather than erroring.
+import? 'private.just'
+
 # Interpreter launcher for `test` (and other dev-only commands that need
 # pytest). Defaults to a uv-managed, reproducible dev environment -- see
 # [dependency-groups].dev in pyproject.toml and the committed uv.lock.

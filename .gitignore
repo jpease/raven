@@ -23,3 +23,6 @@ TODO.md
 
 # Tool-installed local agent skills; regenerate with GitNexus when needed
 .agents/skills/gitnexus/
+
+# Machine-local just recipes, pulled in by `import? 'private.just'`
+private.just
