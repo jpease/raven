@@ -18,6 +18,11 @@ These language-neutral principles apply across templates. Language-specific rule
 - Use comments for intent, constraints, tradeoffs, or surprising behavior. Avoid comments that restate the code.
 - Use documentation comments for public APIs and reusable framework-like code.
 
+## Error Handling
+
+- A fallible check has three outcomes: yes, no, and could not ask. `except: return False`, `.catch(() => false)`, and `if err != nil { return false }` collapse the third into the second.
+- Model the unknown case and route it to the conservative path when the negative branch is destructive: a liveness probe that could not send must not authorize deleting the socket, a lock probe that could not stat must not report unlocked, a cache read error is not a miss to evict on. The two ways of being wrong rarely cost the same; weigh them before choosing which one the ambiguous case gets.
+
 ## Dependencies
 
 - Prefer standard library and platform-native capabilities before adding dependencies.

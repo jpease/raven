@@ -38,6 +38,7 @@ Stop producing patches once the work stops converging. Partial work leaves the c
 |---|---|
 | "This is too simple to need verification" | `Skip When` already covers docs-only/one-line edits. Anything else runs the narrowest check. |
 | "It looks right, I'll say it's verified" | Looking right isn't verifying. Run the check or state the gap. |
+| "It exited zero, so it passed" | An exit code is a claim. Pipes report the last stage, gate wrappers tally and exit zero, and empty output is no answer. Read the line that decides it; `raven-guardrails` lists the shapes. |
 | "Nothing I touched affects the tests" | That's an assumption, not evidence. Run the narrowest relevant test to confirm. |
 | "I verified this earlier in the session" | State what changed since, or re-run against the current diff. |
 | "The code explains itself" | Then say that explicitly. Silence is indistinguishable from having no reason. |

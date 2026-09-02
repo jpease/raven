@@ -53,6 +53,13 @@ For changes that touch security-sensitive boundaries, run the `raven-security-re
 - Keep tests, examples, and benches lint-clean when they are included in the repository's configured Clippy targets.
 - If a Clippy failure remains, do not call the work complete; report the exact lint, why it remains, and what decision is needed.
 
+## Cross-Platform Builds
+
+- A repository with `cfg(unix)`/`cfg(windows)` code and a multi-platform CI matrix has a gap the host-only quality gate cannot see: an import or item used on one platform is dead code on another, and `-D warnings` fails that leg at build, before any test runs. A leg that dies at build confirms nothing about the tests it exists to run.
+- Cross-compile before pushing platform-gated code. `rustup target add <triple>` plus `cargo check --target <triple>` with the repository's `RUSTFLAGS` reproduces the runner's error list locally in about a minute.
+- Run three checks, since CI compiles three times: `--lib` mirrors `cargo build`, `--locked` without `--lib` adds the bins, and `--profile test --lib` mirrors `cargo test --lib`. Gating an item strands its tests, and only the test profile shows that.
+- From a non-Windows host, target `x86_64-pc-windows-gnu` (with `mingw-w64` installed), not the msvc triple. `cfg` resolution is identical for both, which is all dead-code analysis needs, and msvc dies in any C dependency before reaching your crate.
+
 ## Testing Strategy
 
 - Start with nearby test patterns and fixtures.

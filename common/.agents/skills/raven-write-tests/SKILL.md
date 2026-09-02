@@ -21,6 +21,7 @@ description: Use when adding, fixing, or reviewing tests.
 - Run the new or changed test before the implementation lands and confirm it fails for the behavior it asserts — not from a compile, import, collection, or fixture error. A test written first but never run red can be one that would have passed anyway.
 - When a change adds or changes a required member on a shared interface, protocol, or abstract base, search for all implementers across the repo before treating the change as scoped to the file you're editing. The break can surface outside your test target entirely — as a compile error, an import-time failure, or a different package's test suite — not as a failing test where you made the change.
 - If a shared test double's fidelity gap blocks an assertion, prefer asserting on the observable call sequence over widening the double. Widening changes behavior for every other test that depends on it; a narrow assertion doesn't.
+- A test that stands up a fixture must assert the fixture held. A spawned server, background thread, or external process that can die mid-test makes "my fixture left" read as "the code under test is wrong", and the assertion names the wrong one. Record what the fixture did and assert that premise before the conclusion.
 - Run only the new or changed tests first.
 - Broaden test scope only after narrow tests pass.
 - Do not delete, weaken, or over-mock tests just to make a change pass. Deletion and weakening each have an observable form: a diff ending with fewer test functions in a file than it started with, and an unconditional skip (`@pytest.mark.skip`, `@unittest.skip`, `self.skipTest`). A conditional `skipif`/`skipUnless` is different in kind — it states the environment in which the test does not apply.
@@ -36,6 +37,7 @@ description: Use when adding, fixing, or reviewing tests.
 | "Coverage looks thin but the main path works" | Missing edge cases and regressions are the gap this skill exists to close, not something to wave off. |
 | "This failure is in a different file, that's unrelated" | A required-member change on a shared interface breaks every implementer at once. Sweep repo-wide before deciding it's unrelated. |
 | "This guard has been green for months, it must work" | Green-forever is exactly the invisible failure mode. Write the negative control before trusting it. |
+| "The test failed, so the code under test is broken" | Only if the fixture held. A fixture that died mid-test produces a specific, confident, wrong message. Assert the premise first. |
 | "The loop covers every file it finds, so new files are covered automatically" | And zero files, silently. A discovery-driven guard needs an assertion on the count before its per-file assertions mean anything. |
 
 ## When Existing Tests Fail
