@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -599,19 +600,33 @@ def main() -> int:
     outcomes = run(scenarios, args.agent, args.trials, transcripts)
 
     report = render_markdown(outcomes, args.agent, args.trials, args.stamp)
+    # A run costs real money and ~15 minutes of wall clock, so it always leaves
+    # an artifact now. Without `--out` the report went to stdout only, where a
+    # pipe (`| tail -40`) or a closed scrollback destroyed it and the run had to
+    # be repeated to recover the numbers. Defaulting to a timestamped file under
+    # `evals/runs/` keeps the explicit `--out` behavior (stable filename, for
+    # the committed reports) and makes silent loss impossible.
     if args.out:
         out_dir = Path(args.out)
-        try:
-            out_dir.mkdir(parents=True, exist_ok=True)
-            path = out_dir / f"results-{args.agent}.md"
-            path.write_text(report, encoding="utf-8")
-        except OSError as exc:
-            print(f"error: could not write results: {exc}", file=sys.stderr)
-            return 2
-        print(f"\nWrote {path}")
+        name = f"results-{args.agent}.md"
     else:
+        out_dir = REPO_ROOT / "evals" / "runs"
+        name = f"results-{args.agent}-{time.strftime('%Y%m%d-%H%M%S')}.md"
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / name
+        path.write_text(report, encoding="utf-8")
+    except OSError as exc:
+        print(f"error: could not write results: {exc}", file=sys.stderr)
+        # Falling back to stdout rather than returning: losing the report is the
+        # failure this block exists to prevent.
         print()
         print(report)
+        return 2
+    if not args.out:
+        print()
+        print(report)
+    print(f"\nWrote {path}")
 
     if args.json:
         print(json.dumps([o.__dict__ for o in outcomes], indent=2))

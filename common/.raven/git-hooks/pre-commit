@@ -1,5 +1,22 @@
 #!/usr/bin/env sh
 
+# Git exports GIT_DIR, GIT_WORK_TREE and friends into every hook it runs, and
+# neither `git -C <dir>` nor `cd` overrides an exported GIT_DIR. Anything this
+# hook invokes therefore inherits a pointer at *this* repository -- including a
+# test suite that builds throwaway git fixtures, whose `git -C "$sandbox"
+# config user.email ...` then writes into the real `.git/config` instead of the
+# sandbox. That corruption is durable, shared with every linked worktree, and
+# was observed downstream as ~50 commits authored by a fixture identity with
+# commit signing silently disabled.
+#
+# Unsetting is safe in both shapes a hook runs in: the working directory is the
+# worktree root either way, so git rediscovers the right repository (and, in a
+# linked worktree, the right gitdir) from the current directory. A fixture that
+# genuinely wants a different repository has to say so explicitly, which is the
+# point.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR \
+    GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 cd "$repo_root" || exit 0
 

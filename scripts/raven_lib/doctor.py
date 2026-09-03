@@ -827,8 +827,9 @@ def hook_integrity_findings(destination: Path) -> list[Finding]:
     git_hooks_src = destination / ".raven" / "git-hooks"
     if not git_hooks_src.is_dir():
         return []
-    if detect_hook_manager(destination) is not None:
-        return []
+    manager = detect_hook_manager(destination)
+    if manager is not None:
+        return _inert_vendored_hook_findings(git_hooks_src, destination, manager)
     hooks_dir = git_hooks_dir(destination)
     if hooks_dir is None:
         return []
@@ -837,6 +838,75 @@ def hook_integrity_findings(destination: Path) -> list[Finding]:
         for hook_src in sorted(git_hooks_src.iterdir())
         if not hook_src.name.startswith(".") and hook_src.is_file()
     ]
+
+
+def _inert_vendored_hook_findings(
+    git_hooks_src: Path, destination: Path, manager: str
+) -> list[Finding]:
+    """Name the vendored hooks a hook manager has made inert, rather than saying nothing.
+
+    Deferring to a hook manager is supported, so this is not a failure. But the
+    report used to go completely silent about hooks, which hid two real states
+    observed downstream: a leftover `.git/hooks/<name>` symlink into
+    `.raven/git-hooks/` that no longer runs (git reads only the manager's
+    directory), and the fact that a `raven upgrade` fixing a bug in a vendored
+    hook lands with no effect because nothing invokes it. Both read as "fine"
+    when the category prints nothing at all.
+
+    A leftover symlink is reported at WARN because it actively misleads -- it is
+    the first thing anyone inspecting "the commit-msg hook" finds, and it can
+    describe behavior opposite to the hook that actually runs. The inert-copy
+    note is INFO: it is the documented consequence of the deferral, not a defect.
+    """
+    vendored = sorted(
+        hook for hook in git_hooks_src.iterdir() if not hook.name.startswith(".") and hook.is_file()
+    )
+    if not vendored:
+        return []
+
+    findings: list[Finding] = []
+    stale = []
+    for hook in vendored:
+        link = destination / ".git" / "hooks" / hook.name
+        if link.is_symlink():
+            try:
+                resolved = (link.parent / link.readlink()).resolve()
+            except OSError:  # pragma: no cover - unreadable link
+                continue
+            if resolved == hook.resolve():
+                stale.append(hook.name)
+    if stale:
+        findings.append(
+            Finding(
+                id="doctor.hooks.inert_symlink",
+                severity=Severity.WARN,
+                category=_HOOKS,
+                title=f"{len(stale)} Raven hook symlink(s) in .git/hooks/ never run",
+                detail=(
+                    f"{', '.join(stale)} still link into .raven/git-hooks/, but {manager} owns "
+                    "the effective hooks directory, so git never reads them. Anyone inspecting "
+                    "these files sees behavior that is not what runs on commit."
+                ),
+                fix=f"remove .git/hooks/{stale[0]} (and the others listed) to leave one answer",
+            )
+        )
+
+    findings.append(
+        Finding(
+            id="doctor.hooks.vendored_inert",
+            severity=Severity.INFO,
+            category=_HOOKS,
+            title=f"{len(vendored)} vendored hook(s) are not invoked",
+            detail=(
+                f"{manager} owns the hooks directory, so .raven/git-hooks/ "
+                f"({', '.join(h.name for h in vendored)}) is reference material here. A "
+                "`raven upgrade` that fixes a bug in one of them changes nothing until the "
+                "fix is carried into whatever the manager actually runs."
+            ),
+            fix=None,
+        )
+    )
+    return findings
 
 
 def _hook_link_finding(hook_src: Path, hook_link: Path) -> Finding:

@@ -1132,7 +1132,7 @@ class DoctorHookIntegrityTests(RavenTestCase):
         self._git_init()
         self.assertEqual(hook_integrity_findings(self.destination), [])
 
-    def test_empty_when_hook_manager_owns_hooks_dir(self):
+    def _with_hook_manager(self):
         self._git_init()
         (self.destination / ".husky" / "_").mkdir(parents=True)
         subprocess.run(
@@ -1140,8 +1140,36 @@ class DoctorHookIntegrityTests(RavenTestCase):
             capture_output=True,
             check=True,
         )
-        self._write_hook("pre-commit")
-        self.assertEqual(hook_integrity_findings(self.destination), [])
+        return self._write_hook("pre-commit")
+
+    def test_hook_manager_reports_vendored_hooks_as_inert(self):
+        """Silence here read as "hooks are fine" when nothing Raven ships runs."""
+        self._with_hook_manager()
+        findings = hook_integrity_findings(self.destination)
+        ids = {f.id for f in findings}
+        self.assertIn("doctor.hooks.vendored_inert", ids)
+        inert = next(f for f in findings if f.id == "doctor.hooks.vendored_inert")
+        self.assertEqual(inert.severity, Severity.INFO)
+        self.assertIn("pre-commit", inert.detail)
+
+    def test_a_leftover_symlink_under_a_hook_manager_warns(self):
+        """The state observed downstream: .git/hooks/commit-msg -> .raven/git-hooks/,
+        inert because core.hooksPath points elsewhere, and the first thing anyone
+        inspecting "the commit-msg hook" reads.
+        """
+        hook_src = self._with_hook_manager()
+        hooks_dir = self.destination / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        (hooks_dir / "pre-commit").symlink_to(hook_src)
+        findings = hook_integrity_findings(self.destination)
+        stale = next(f for f in findings if f.id == "doctor.hooks.inert_symlink")
+        self.assertEqual(stale.severity, Severity.WARN)
+        self.assertIn("pre-commit", stale.detail)
+
+    def test_no_stale_warning_without_a_leftover_symlink(self):
+        self._with_hook_manager()
+        ids = {f.id for f in hook_integrity_findings(self.destination)}
+        self.assertNotIn("doctor.hooks.inert_symlink", ids)
 
     def test_ok_when_hook_correctly_symlinked(self):
         self._git_init()
