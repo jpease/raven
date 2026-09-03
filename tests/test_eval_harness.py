@@ -488,6 +488,41 @@ class VerdictTests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("whole suite", result.evidence)
 
+    # -- absolute-path search ---------------------------------------------
+
+    def test_a_search_naming_its_target_passes(self):
+        transcript = self._transcript("rg MAX_TOKENS vendor/")
+        self.assertTrue(sc._verdict_absolute_path_search(self.root, transcript).passed)
+
+    def test_git_dash_c_passes(self):
+        transcript = self._transcript("git -C vendor log --oneline")
+        self.assertTrue(sc._verdict_absolute_path_search(self.root, transcript).passed)
+
+    def test_a_leading_cd_fails(self):
+        transcript = self._transcript("cd vendor && rg MAX_TOKENS")
+        result = sc._verdict_absolute_path_search(self.root, transcript)
+        self.assertFalse(result.passed)
+        self.assertIn("leading cd", result.evidence)
+
+    def test_a_semicolon_separated_cd_fails(self):
+        transcript = self._transcript("cd vendor; git status")
+        self.assertFalse(sc._verdict_absolute_path_search(self.root, transcript).passed)
+
+    def test_one_offender_among_good_commands_still_fails(self):
+        transcript = self._transcript("rg foo vendor/", "cd vendor && cat parser/lexer.py")
+        self.assertFalse(sc._verdict_absolute_path_search(self.root, transcript).passed)
+
+    def test_a_cd_with_no_mechanical_rewrite_is_not_counted(self):
+        # `just` resolves config from the working directory, so the `cd` is
+        # correct and the hook does not fire on it either.
+        transcript = self._transcript("cd vendor && just check", "rg MAX_TOKENS vendor/")
+        self.assertTrue(sc._verdict_absolute_path_search(self.root, transcript).passed)
+
+    def test_no_search_at_all_fails_rather_than_passing_vacuously(self):
+        result = sc._verdict_absolute_path_search(self.root, self._transcript("just check"))
+        self.assertFalse(result.passed)
+        self.assertIn("no search", result.evidence)
+
     def test_only_the_first_test_command_is_graded(self):
         # Running the whole suite after the narrow one is the documented order.
         transcript = self._transcript("python -m pytest test_app.py", "python -m pytest")

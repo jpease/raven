@@ -911,7 +911,7 @@ CANONICAL_CODEX_LAUNCHER = (
 # newly added (or removed) hook event cannot skip this check by being
 # invisible to it. Update this value -- and CANONICAL_CODEX_LAUNCHER, if the
 # expression itself legitimately changed -- when that happens.
-EXPECTED_CODEX_LAUNCHER_COUNT = 7
+EXPECTED_CODEX_LAUNCHER_COUNT = 8
 
 
 def _iter_command_strings(node):
@@ -980,6 +980,7 @@ class CodexHookLauncherDriftFixtureTests(unittest.TestCase):
             ".codex/scripts/raven-capability-roster.py",
             ".codex/hooks/raven-pre-bash-guard.py",
             ".codex/hooks/raven-pre-bash-test-scope.py",
+            ".codex/hooks/raven-pre-bash-cd-scope.py",
             ".codex/hooks/raven-pre-edit-guard.py",
             ".codex/hooks/raven-session-checkpoint.py",
             ".codex/hooks/raven-post-bash-summarize.py",
@@ -999,10 +1000,10 @@ class CodexHookLauncherDriftFixtureTests(unittest.TestCase):
             "hooks": {
                 "SessionStart": [{"hooks": [{"type": "command", "command": commands[0]}]}],
                 "PreToolUse": [
-                    {"hooks": [{"type": "command", "command": c}]} for c in commands[1:5]
+                    {"hooks": [{"type": "command", "command": c}]} for c in commands[1:6]
                 ],
                 "PostToolUse": [
-                    {"hooks": [{"type": "command", "command": c}]} for c in commands[5:7]
+                    {"hooks": [{"type": "command", "command": c}]} for c in commands[6:8]
                 ],
             }
         }
@@ -1023,14 +1024,14 @@ class CodexHookLauncherDriftFixtureTests(unittest.TestCase):
             any("does not match the canonical launcher prefix" in p for p in problems), problems
         )
 
-    def test_detects_eighth_command(self):
+    def test_detects_ninth_command(self):
         commands = self._good_commands()
         config = self._config(commands)
-        eighth = CANONICAL_CODEX_LAUNCHER + ".codex/scripts/raven-skeleton.py"
-        config["hooks"]["PostToolUse"].append({"hooks": [{"type": "command", "command": eighth}]})
+        ninth = CANONICAL_CODEX_LAUNCHER + ".codex/scripts/raven-skeleton.py"
+        config["hooks"]["PostToolUse"].append({"hooks": [{"type": "command", "command": ninth}]})
         problems = find_codex_launcher_drift(config, REPO_ROOT / "common")
-        self.assertTrue(any("found 8" in p for p in problems), problems)
-        # Isolate the count failure: the 8th copy is otherwise well-formed,
+        self.assertTrue(any("found 9" in p for p in problems), problems)
+        # Isolate the count failure: the 9th copy is otherwise well-formed,
         # distinct, and points at a real script, so nothing else should fire.
         self.assertEqual(len(problems), 1, problems)
 
