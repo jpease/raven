@@ -1,4 +1,8 @@
 {
+  "includeCoAuthoredBy": false,
+  "attribution": {
+    "sessionUrl": false
+  },
   "permissions": {
     "allow": [
       "mcp__gitnexus__impact",
