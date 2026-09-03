@@ -136,6 +136,16 @@ class CodexScriptUnificationTests(RavenTestCase):
             "the Claude-only read guard must not gain a Codex counterpart",
         )
 
+    def test_bash_truncator_has_no_codex_counterpart(self):
+        # Same classification, same reason in kind: Codex's PostToolUse hook
+        # cannot replace a tool result, so a `.codex/hooks/` copy would be a
+        # hook that never does anything.
+        truncator = REPO_ROOT / "common" / ".codex" / "hooks" / "raven-post-bash-truncate.py"
+        self.assertFalse(
+            truncator.exists() or truncator.is_symlink(),
+            "the Claude-only Bash truncator must not gain a Codex counterpart",
+        )
+
     def test_a_non_common_spelling_would_be_preserved(self):
         # Proves the check above has teeth rather than passing for every input:
         # the shorter sibling spelling resolves to the same file, but the

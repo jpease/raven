@@ -685,7 +685,9 @@ class AgentHooksTests(RavenTestCase):
     def test_hooks_tolerate_null_tool_input(self):
         hooks = [
             "raven-post-bash-summarize.py",
+            "raven-post-bash-truncate.py",
             "raven-pre-bash-guard.py",
+            "raven-pre-bash-test-scope.py",
             "raven-pre-edit-guard.py",
             "raven-post-edit-format.py",
         ]
@@ -705,7 +707,9 @@ class AgentHooksTests(RavenTestCase):
     def test_hooks_tolerate_non_dict_tool_input(self):
         hooks = [
             "raven-post-bash-summarize.py",
+            "raven-post-bash-truncate.py",
             "raven-pre-bash-guard.py",
+            "raven-pre-bash-test-scope.py",
             "raven-pre-edit-guard.py",
             "raven-post-edit-format.py",
         ]
@@ -907,7 +911,7 @@ CANONICAL_CODEX_LAUNCHER = (
 # newly added (or removed) hook event cannot skip this check by being
 # invisible to it. Update this value -- and CANONICAL_CODEX_LAUNCHER, if the
 # expression itself legitimately changed -- when that happens.
-EXPECTED_CODEX_LAUNCHER_COUNT = 6
+EXPECTED_CODEX_LAUNCHER_COUNT = 7
 
 
 def _iter_command_strings(node):
@@ -975,6 +979,7 @@ class CodexHookLauncherDriftFixtureTests(unittest.TestCase):
         return [
             ".codex/scripts/raven-capability-roster.py",
             ".codex/hooks/raven-pre-bash-guard.py",
+            ".codex/hooks/raven-pre-bash-test-scope.py",
             ".codex/hooks/raven-pre-edit-guard.py",
             ".codex/hooks/raven-session-checkpoint.py",
             ".codex/hooks/raven-post-bash-summarize.py",
@@ -994,10 +999,10 @@ class CodexHookLauncherDriftFixtureTests(unittest.TestCase):
             "hooks": {
                 "SessionStart": [{"hooks": [{"type": "command", "command": commands[0]}]}],
                 "PreToolUse": [
-                    {"hooks": [{"type": "command", "command": c}]} for c in commands[1:4]
+                    {"hooks": [{"type": "command", "command": c}]} for c in commands[1:5]
                 ],
                 "PostToolUse": [
-                    {"hooks": [{"type": "command", "command": c}]} for c in commands[4:6]
+                    {"hooks": [{"type": "command", "command": c}]} for c in commands[5:7]
                 ],
             }
         }
@@ -1009,7 +1014,7 @@ class CodexHookLauncherDriftFixtureTests(unittest.TestCase):
         self.assertEqual(problems, [])
 
     def test_detects_drifted_command(self):
-        # Simulates fixing 5-of-6 copies and missing one -- exactly the
+        # Simulates fixing 6-of-7 copies and missing one -- exactly the
         # silent-failure scenario this guard exists to prevent.
         commands = self._good_commands()
         commands[2] = commands[2].replace("(cwd,*cwd.parents)", "(cwd, *cwd.parents)")
@@ -1018,14 +1023,14 @@ class CodexHookLauncherDriftFixtureTests(unittest.TestCase):
             any("does not match the canonical launcher prefix" in p for p in problems), problems
         )
 
-    def test_detects_seventh_command(self):
+    def test_detects_eighth_command(self):
         commands = self._good_commands()
         config = self._config(commands)
-        seventh = CANONICAL_CODEX_LAUNCHER + ".codex/scripts/raven-skeleton.py"
-        config["hooks"]["PostToolUse"].append({"hooks": [{"type": "command", "command": seventh}]})
+        eighth = CANONICAL_CODEX_LAUNCHER + ".codex/scripts/raven-skeleton.py"
+        config["hooks"]["PostToolUse"].append({"hooks": [{"type": "command", "command": eighth}]})
         problems = find_codex_launcher_drift(config, REPO_ROOT / "common")
-        self.assertTrue(any("found 7" in p for p in problems), problems)
-        # Isolate the count failure: the 7th copy is otherwise well-formed,
+        self.assertTrue(any("found 8" in p for p in problems), problems)
+        # Isolate the count failure: the 8th copy is otherwise well-formed,
         # distinct, and points at a real script, so nothing else should fire.
         self.assertEqual(len(problems), 1, problems)
 
@@ -1190,6 +1195,8 @@ class ClaudeHookLauncherTests(unittest.TestCase):
 # a traceback on every tool call is its own kind of breakage.
 PAYLOAD_READING_HOOKS = (
     "raven-pre-bash-guard.py",
+    "raven-pre-bash-test-scope.py",
+    "raven-post-bash-truncate.py",
     "raven-pre-edit-guard.py",
     "raven-skeleton-read-guard.py",
     "raven-post-bash-summarize.py",

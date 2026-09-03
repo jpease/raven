@@ -109,6 +109,26 @@ paths = []
 # Set to false to fall back to instructional-only enforcement.
 checkpoint_enforcement = true
 
+[edit_guard]
+# Project-declared protected paths (issue #247). AGENTS.md's Pause-And-Ask
+# categories are prose; this is the mechanical backstop for the ones a project
+# can spell as paths. A PreToolUse hook matches each edited path, relative to
+# the repository root, against these fnmatch globs (`*` crosses directory
+# separators, so `migrations/*` covers the whole tree beneath it). On Claude
+# Code a match escalates the edit to a permission prompt; on Codex, which has
+# no `ask` decision yet, it adds a warning to the agent's context instead.
+# protected_paths = ["migrations/*", "infra/*.tf", "src/auth/*"]
+# "ask" (default) or "warn". `warn` adds context on both hosts and never prompts.
+# protected_paths_decision = "ask"
+
+[bash_output]
+# Claude Code only. A PostToolUse hook replaces a Bash result longer than this
+# many lines with its first 40 lines, its last lines up to the limit, and the
+# path of a file holding the whole output, so the agent can search it instead
+# of carrying it on every later turn. Codex cannot replace a tool result from
+# a hook, so there is no Codex counterpart. 0 turns it off. Default 150.
+# max_lines = 150
+
 [skeleton]
 # Skeleton-first read gate (Claude Code only). When read_gate is true, a
 # PreToolUse hook denies unbounded reads of large supported-language files and

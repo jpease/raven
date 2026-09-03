@@ -2,8 +2,7 @@
 # Project-local Codex config loads only after the project .codex layer is trusted.
 
 [agents]
-max_threads = 4
-max_depth = 1
+max_concurrent_threads_per_session = 4
 
 [mcp_servers.semgrep]
 command = "semgrep"

@@ -167,6 +167,7 @@ EXPECTED_TEMPLATE_SYMLINKS = frozenset(
         ".codex/hooks/raven-post-bash-summarize.py",
         ".codex/hooks/raven-post-edit-format.py",
         ".codex/hooks/raven-pre-bash-guard.py",
+        ".codex/hooks/raven-pre-bash-test-scope.py",
         ".codex/hooks/raven-pre-edit-guard.py",
         ".codex/hooks/raven-session-checkpoint.py",
         ".codex/scripts/raven-capability-roster.py",

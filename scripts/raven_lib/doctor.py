@@ -14,6 +14,7 @@ from pathlib import Path
 
 from .apply import classify
 from .blocks import pending_merge_paths
+from .codex_trust import TRUSTED, UNTRUSTED, codex_home, project_trust
 from .config import ConfigError, load_config
 from .constants import (
     CLAUDE_PATH,
@@ -1184,6 +1185,83 @@ def sources_findings(
     return findings
 
 
+_CODEX = "Codex adapter"
+
+
+def codex_trust_findings(destination: Path) -> list[Finding]:
+    """INFO/WARN/OK on whether Codex will load the installed `.codex/` layer at all.
+
+    Codex loads a project's `.codex/` layer -- config, hooks, rules, custom
+    agents -- only for a project the user has trusted, recorded in Codex's own
+    `$CODEX_HOME/config.toml`. An untrusted project's hooks are parsed and then
+    skipped without any message (verified live, 2026-09-02), so a Raven install
+    can look complete and enforce nothing. Empty when the destination has no
+    Codex adapter to speak of: no `.codex/` directory, or every Codex component
+    switched off in `.raven/config.toml`.
+
+    Hook trust is a second, per-hook gate (`/hooks` in the Codex TUI) that
+    lives in Codex's state database rather than its config, so it is named in
+    the fix text but not checked here.
+    """
+    config = load_config(destination)
+    if not (destination / ".codex").is_dir():
+        return []
+    if config.codex_components and not any(config.codex_components.values()):
+        return []
+
+    trust = project_trust(destination)
+    config_path = codex_home() / "config.toml"
+    if trust is None:
+        return [
+            Finding(
+                id="doctor.codex.unconfigured",
+                severity=Severity.INFO,
+                category=_CODEX,
+                title="Codex has no config on this machine",
+                detail=(
+                    f"{config_path} is absent; the installed .codex/ layer stays inert "
+                    "until Codex trusts this project"
+                ),
+            )
+        ]
+    if trust == TRUSTED:
+        return [
+            Finding(
+                id="doctor.codex.trusted",
+                severity=Severity.OK,
+                category=_CODEX,
+                title="Codex trusts this project",
+                detail="the .codex/ layer (config, hooks, rules, agents) is live",
+            )
+        ]
+    if trust == UNTRUSTED:
+        title = "Codex marks this project untrusted"
+        detail = (
+            f"{config_path} records trust_level = \"untrusted\" for this project or a "
+            "parent, so Codex skips the installed .codex/ layer entirely"
+        )
+    else:
+        title = "Codex has not trusted this project"
+        detail = (
+            f"no [projects] entry in {config_path} covers this repository, so Codex "
+            "skips the installed .codex/ layer (config, hooks, rules, agents) without "
+            "saying so"
+        )
+    return [
+        Finding(
+            id="doctor.codex.untrusted",
+            severity=Severity.WARN,
+            category=_CODEX,
+            title=title,
+            detail=detail,
+            fix=(
+                "run `codex` in this repository once and accept the trust prompt, "
+                "then review Raven's hooks in `/hooks`; hooks stay skipped until reviewed"
+            ),
+        )
+    ]
+
+
 def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> list[Finding]:
     """Assemble the full `raven doctor` findings list: config sanity, then every other check.
 
@@ -1211,6 +1289,7 @@ def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> l
     findings.extend(hook_integrity_findings(destination))
     findings.extend(gate_relaxation_findings(destination))
     findings.extend(merge_only_tracking_findings(destination))
+    findings.extend(codex_trust_findings(destination))
     config = load_config(destination)
     if config.exists:
         findings.extend(drift_findings(destination))

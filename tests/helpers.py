@@ -181,6 +181,7 @@ UNIFIED_ADAPTER_HOOKS = (
     "raven-post-bash-summarize.py",
     "raven-post-edit-format.py",
     "raven-pre-bash-guard.py",
+    "raven-pre-bash-test-scope.py",
     "raven-pre-edit-guard.py",
     "raven-session-checkpoint.py",
 )

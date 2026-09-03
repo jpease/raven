@@ -32,10 +32,9 @@ resumes on your next prompt" (`code.claude.com/docs/en/skills.md`, fetched 2026-
 So `model: haiku` on a skill does not buy a cheap skill — it downgrades every step that
 follows it in the same turn. For Raven's skills that is precisely backwards: they are
 procedures that precede work, not ones that conclude it. Even the end-of-unit skills are
-not terminal — `raven-context-hygiene`'s own trigger includes "when the user signals a new
-unrelated task is beginning", and a commit is routinely followed by more work in the same
-turn. Four skills (`raven-commit`, `raven-context-hygiene`, `raven-doc-sync`,
-`raven-tool-bootstrap`) carried the field until issue #208; it is now removed everywhere,
+not terminal — a commit is routinely followed by more work in the same turn. Four skills
+(`raven-commit`, `raven-doc-sync`, `raven-tool-bootstrap`, and the since-removed
+`raven-context-hygiene`) carried the field until issue #208; it is now removed everywhere,
 and `tests/test_skills.py::SkillModelOverrideTests` fails if one reappears without a
 registered reason.
 
@@ -48,12 +47,23 @@ harnesses behave differently for no stated reason.
 
 Codex-specific files:
 
-- `.codex/config.toml`: Codex project config, including subagent concurrency defaults and MCP servers. `max_threads`/`max_depth` are pinned to their current Codex defaults deliberately, so Raven's behavior stays stable across Codex releases instead of drifting silently if Codex changes its own defaults — not an oversight to "clean up" as redundant.
+- `.codex/config.toml`: Codex project config, including subagent concurrency defaults and MCP servers. `agents.max_concurrent_threads_per_session` is pinned deliberately, so Raven's behavior stays stable across Codex releases instead of drifting silently if Codex changes its own default — not an oversight to "clean up" as redundant. It replaced `max_threads`, now a legacy alias that is reported to error under Codex's `multi_agent_v2`, and `max_depth`, which V2 ignores (both verified against the Codex config reference, 2026-09-02).
 - `.codex/agents/raven-*.toml`: Codex custom agents.
 - `.codex/hooks.json`: Codex hook wiring.
 - `.codex/hooks/raven-*.py`: Codex hook scripts.
 - `.codex/rules/raven.rules`: Codex command approval rules.
 - `.codex/scripts/raven-*.py`: Codex helper scripts.
+
+Every file under `.codex/` is inert until the project is trusted. Codex loads a project's
+`.codex/` layer — config, hooks, rules, and custom agents — only for a project whose
+`[projects."<path>"] trust_level = "trusted"` entry exists in the user's `config.toml`, which
+the TUI writes when the user accepts the trust prompt; a `-c projects.<path>.trust_level`
+command-line override does not grant it. Each hook additionally needs a one-time review
+in `/hooks`, keyed on the hook's hash, so an upgraded `hooks.json` goes back to skipped
+until reviewed again. `AGENTS.md` and `.agents/skills` load regardless of trust. Verified
+live against codex-cli 0.152.1 on 2026-09-02: a SessionStart hook in an untrusted
+throwaway repository never ran; the same hook in a trusted tree did. `raven doctor` cannot
+see Codex's trust store, so this is the one adapter-level failure it does not report.
 
 Codex reads `.agents/skills` directly, so Raven does not install a `.codex/skills` copy.
 Per the Codex skills documentation, "Codex scans `.agents/skills` in every directory from
@@ -76,9 +86,9 @@ trees — all three are deliberate.
 
 | Category | Meaning | Files |
 |---|---|---|
-| **Byte-identical (unified)** | One real file under `common/.claude/`; the `.codex/` path is a template-internal symlink to it. Nothing to keep in sync. | `scripts/raven-capability-roster.py`, `scripts/raven-session.py`, `scripts/raven-skeleton.py`, `scripts/raven-tool-check.py`, `hooks/raven-post-bash-summarize.py`, `hooks/raven-post-edit-format.py`, `hooks/raven-pre-bash-guard.py`, `hooks/raven-pre-edit-guard.py`, `hooks/raven-session-checkpoint.py` (computes its own adapter directory at runtime, same pattern as `raven-tool-check.py`, instead of hardcoding one — issue #195) |
+| **Byte-identical (unified)** | One real file under `common/.claude/`; the `.codex/` path is a template-internal symlink to it. Nothing to keep in sync. | `scripts/raven-capability-roster.py`, `scripts/raven-session.py`, `scripts/raven-skeleton.py`, `scripts/raven-tool-check.py`, `hooks/raven-post-bash-summarize.py`, `hooks/raven-post-edit-format.py`, `hooks/raven-pre-bash-guard.py`, `hooks/raven-pre-bash-test-scope.py`, `hooks/raven-pre-edit-guard.py` (reads its adapter directory from its install path to pick `ask` on Claude and a context warning on Codex, #247), `hooks/raven-session-checkpoint.py` (computes its own adapter directory at runtime, same pattern as `raven-tool-check.py`, instead of hardcoding one — issue #195) |
 | **Schema-translated** | Same role, different file format required by the harness. Not comparable line-by-line. | `.claude/agents/raven-*.md` ↔ `.codex/agents/raven-*.toml`; `.claude/settings.json` ↔ `.codex/hooks.json`; `.claude/rules/raven-security.md` ↔ `.codex/rules/raven.rules`; `.claude/skills` symlink ↔ Codex reading `.agents/skills` directly |
-| **Intentionally asymmetric** | Exists for one harness only, because the underlying capability does not exist in the other. See Known Asymmetries below. | `.claude/hooks/raven-skeleton-read-guard.py` (Claude-only); `.codex/config.toml` (Codex-only) |
+| **Intentionally asymmetric** | Exists for one harness only, because the underlying capability does not exist in the other. See Known Asymmetries below. | `.claude/hooks/raven-skeleton-read-guard.py` and `.claude/hooks/raven-post-bash-truncate.py` (Claude-only); `.codex/config.toml` (Codex-only) |
 
 ### How the unified files stay unified
 
@@ -143,6 +153,14 @@ audits don't re-flag them:
   `.codex/hooks/` counterpart would wire a gate Codex cannot fire. Its continued absence is
   asserted by `test_deliberately_unlinked_codex_hooks_stay_real_files`, so the asymmetry
   fails loudly if it is ever erased by a well-meaning cleanup rather than a decision.
+
+- **`.claude/hooks/raven-post-bash-truncate.py`** (the Bash result truncator, wired to the
+  `Bash` matcher under `PostToolUse` in `.claude/settings.json`) has no Codex counterpart
+  for the same kind of reason. Claude Code's PostToolUse hook can replace a tool result
+  through `hookSpecificOutput.updatedToolOutput`; Codex's PostToolUse can block a turn or
+  add feedback, and has no field that swaps the result (verified against the Codex hooks
+  reference, 2026-09-02). Codex bounds tool output through its own
+  `tool_output_token_limit` config key instead. Asserted the same way as the read guard.
 
 ## Maintenance Rules
 

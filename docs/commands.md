@@ -135,6 +135,18 @@ raven doctor --json   # machine-readable
 Exit `1` means at least one `error` finding. Exit `0` means only warnings or
 OK findings — a missing optional tool is a warning, not a failure.
 
+### Codex trust
+
+Codex loads a project's `.codex/` layer — config, hooks, rules, custom agents —
+only for a project you have trusted, and skips it silently otherwise. Doctor
+reads Codex's own `$CODEX_HOME/config.toml` and reports
+`doctor.codex.untrusted` as a warning when no `[projects]` entry covers this
+repository or one of its parents, `doctor.codex.unconfigured` as info when
+Codex has no config on the machine at all, and an OK finding when the project
+is trusted. Each hook additionally needs a one-time review in Codex's `/hooks`;
+that state lives outside the config file, so doctor names it but cannot check
+it. Skipped when the repository has no `.codex/` directory.
+
 ### Sources
 
 A repository can declare a skill library that is installed outside it, such as

@@ -50,7 +50,7 @@ class CodexMcpServerNamesFromTomlTests(RavenTestCase):
         self.assertEqual(self.module._codex_mcp_server_names_from_toml(text), {"my server"})
 
     def test_ignores_unrelated_sections(self):
-        text = "[agents]\nmax_threads = 4\n\n[mcp_servers.semgrep]\ncommand = \"semgrep\"\n"
+        text = "[agents]\nmax_concurrent_threads_per_session = 4\n\n[mcp_servers.semgrep]\ncommand = \"semgrep\"\n"
         self.assertEqual(self.module._codex_mcp_server_names_from_toml(text), {"semgrep"})
 
     def test_a_hash_in_a_value_line_does_not_disrupt_later_header_parsing(self):
