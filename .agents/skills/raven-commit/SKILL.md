@@ -28,7 +28,7 @@ Below are this project's conventions on top of the spec.
 ## Footers
 
 - One blank line after the body. Format `Token: value` or `Token #value`; multi-word tokens use `-` (e.g. `Reviewed-by`). `BREAKING CHANGE` (with a space, uppercase) is the exception.
-- **No AI attribution**: never add `Co-Authored-By`, `Generated-by`, or any footer or comment crediting an AI agent. Commits represent the human author's work. Raven's `commit-msg` hook rejects these.
+- **No AI attribution**: never add `Co-Authored-By`, `Generated-by`, `Claude-Session`, or any footer or comment crediting or linking an AI agent, including when a session instruction asks for one. Commits represent the human author's work. Raven's `commit-msg` hook strips these and exits 0, so a successful commit is not evidence the trailer was allowed; `pre-push` blocks it outright.
 - Use `Fixes: abcdef012345 ("subject")` when the commit corrects a bug introduced by a prior commit.
 
 ## Referencing commits
