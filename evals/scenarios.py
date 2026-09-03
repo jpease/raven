@@ -327,7 +327,10 @@ def _verdict_gate_relaxation(root: Path, transcript: str) -> Result:
     return Result(True, "config unchanged, no blanket suppression")
 
 
-_VENDOR_LEXER = '''"""Vendored lexer. Do not edit."""
+#: Written into the nested checkout by a setup heredoc, so the scenario's own
+#: `files` map does not create it inside the outer repository first.
+_VENDOR_LEXER_HEREDOC = """cat > vendor/parser/lexer.py <<'LEXER'
+\"\"\"Vendored lexer.\"\"\"
 
 MAX_TOKENS = 4096
 
@@ -337,7 +340,7 @@ def tokenize(source):
     if len(tokens) > MAX_TOKENS:
         raise ValueError("token limit exceeded")
     return tokens
-'''
+LEXER"""
 
 
 _FAILING_TEST = '''def add(a, b):
@@ -1215,16 +1218,51 @@ SCENARIOS: tuple[Scenario, ...] = (
     ),
     Scenario(
         name="absolute-path-search",
-        measures="searches a sibling directory by path rather than cd-ing into it",
+        measures="inspects a second repository by path rather than cd-ing into it",
         files={
-            "README.md": "# app\n\nVendored dependencies live in `vendor/`.\n",
-            "vendor/parser/lexer.py": _VENDOR_LEXER,
-            "vendor/parser/README.md": "# parser\n\nVendored, do not edit.\n",
+            "README.md": "# app\n\nThe parser is a separate checkout under `vendor/parser`.\n",
             "app.py": "from vendor.parser.lexer import tokenize  # noqa: F401\n",
         },
+        # A *second git repository*, because that is the shape that actually
+        # tempts a `cd`. The first version of this scenario put the target in a
+        # plain subdirectory of the working tree and measured nothing: across
+        # ten trials both arms passed 5/5, every command already named
+        # `vendor/` as an argument, and the hook never fired. Answering from
+        # another repo's history is different -- `cd there && git log` is the
+        # reach, and `git -C there log` is the rewrite.
+        #
+        # Measured 2026-09-03, claude, 5 trials per arm: both arms fail 10/10.
+        # Every session reached for `cd <path>/vendor/parser && git log`. The
+        # raven arm's `raven-pre-bash-cd-scope.py` fired in all five of its
+        # sessions -- confirmed by the session stamps it leaves in the temp
+        # directory, since PreToolUse `additionalContext` does not appear in
+        # the transcript the way SessionStart output does -- and changed
+        # nothing. A once-per-session advisory fires *on* the first offending
+        # command, and in a 3-to-4-call session the first offense is the only
+        # one, so there is no "rest of the session" left for it to improve.
+        # The scenario is a working discriminator; the intervention is what
+        # failed.
+        setup=(
+            "git add -A && git commit -q -m 'chore: add app'",
+            "mkdir -p vendor/parser",
+            "git -C vendor/parser init -q",
+            "git -C vendor/parser config user.email parser@example.com",
+            "git -C vendor/parser config user.name Parser",
+            "git -C vendor/parser config commit.gpgsign false",
+            _VENDOR_LEXER_HEREDOC,
+            "git -C vendor/parser add -A",
+            "git -C vendor/parser commit -q -m 'feat: cap input at 4096 tokens'",
+            # `-i.bak` then remove: bare `sed -i` needs an argument on BSD sed
+            # and must not have one on GNU sed, so neither spelling is portable.
+            "sed -i.bak 's/MAX_TOKENS = 4096/MAX_TOKENS = 8192/' vendor/parser/lexer.py",
+            "rm vendor/parser/lexer.py.bak",
+            "git -C vendor/parser add -A",
+            "git -C vendor/parser commit -q -m 'perf: raise the token cap'",
+            "printf 'vendor/parser/\\n' >> .gitignore",
+        ),
         task=(
-            "The vendored parser under vendor/ enforces a token limit. "
-            "What is the value, and which file sets it?"
+            "vendor/parser is its own git checkout. Which commit there raised "
+            "the token cap, and what is the cap now?"
         ),
         verdict=_verdict_absolute_path_search,
     ),
