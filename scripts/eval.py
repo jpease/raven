@@ -35,11 +35,24 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from evals.scenarios import SCENARIOS, Result, Scenario  # noqa: E402 -- needs the path inserts
+from evals.scenarios import (  # noqa: E402 -- needs the path inserts
+    SCENARIOS,
+    Result,
+    Scenario,
+    tool_calls,
+)
 
 #: How long one agent run may take before the harness gives up on it. A hung
 #: run is a failed trial, never a hung harness.
 TIMEOUT_SECONDS = 600
+
+#: Written into every fixture that does not ship its own. Any real Python
+#: repository ignores these; a fixture that did not handed the Raven arm
+#: extra work of its own making -- the installed pre-commit hook runs ruff,
+#: which leaves `.ruff_cache/` untracked, and a gate run leaves
+#: `__pycache__/`, and transcripts (2026-09-02) show agents spending steps
+#: on both. Identical in both arms, so it changes nothing about the comparison.
+FIXTURE_GITIGNORE = ".ruff_cache/\n__pycache__/\n"
 
 
 @dataclass
@@ -59,6 +72,10 @@ class TrialOutcome:
     output_tokens: int | None = None
     #: Only `claude` reports this; always None for `codex`.
     cost_usd: float | None = None
+    #: Tool calls the agent made, on either CLI. Read beside `total_tokens`:
+    #: it says whether a costlier arm took more steps or carried more context
+    #: per step. None means the transcript held no events to count.
+    tool_calls: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -92,14 +109,61 @@ def _codex_command(task: str) -> list[str]:
         "--dangerously-bypass-approvals-and-sandbox",
         "--skip-git-repo-check",
         "--json",
-        # Same reasoning as claude's `--setting-sources project` above: keep the
-        # operator's own $CODEX_HOME/config.toml out of the trial.
-        "--ignore-user-config",
+        # Codex runs a project's hooks only after each one has been reviewed
+        # and trusted by hash in `/hooks`. Nothing can do that review in a
+        # throwaway fixture, so without this the Raven arm's `.codex/hooks.json`
+        # is parsed and then skipped -- confirmed live, 2026-09-02, with a
+        # SessionStart hook that touches a file and never did. The operator's
+        # own config is kept out by `codex_home` below, not by
+        # `--ignore-user-config`, which did not stop `~/.codex/rules/` from
+        # loading either.
+        "--dangerously-bypass-hook-trust",
         task,
     ]
 
 
 AGENTS = {"claude": _claude_command, "codex": _codex_command}
+
+
+def codex_home(scratch: Path, root: Path) -> Path:
+    """Write a throwaway `$CODEX_HOME` that trusts ``root`` and nothing else.
+
+    Codex loads a project's `.codex/` layer -- config, hooks, rules, agents --
+    only when the project is trusted, and the only thing that grants trust is
+    a `[projects."<path>"] trust_level = "trusted"` table in the config file
+    `$CODEX_HOME` points at. A `-c projects.<path>.trust_level=trusted`
+    override on the command line does not (tried live, 2026-09-02: the hook
+    stayed silent), and a fresh temporary directory is trusted by nobody, so
+    every Codex trial before this ran the Raven arm with its adapter files
+    inert and reported a number for guidance the agent never received.
+
+    A private home also replaces `--ignore-user-config`: the operator's
+    config, rules, and skills are absent by construction instead of by flag.
+    Auth is the one thing carried over -- as a symlink to the real
+    `auth.json`, never a copy, so no credential is written anywhere new and
+    the link dies with the fixture. Skipped when there is no `auth.json`,
+    which is the API-key case, where the environment carries the credential.
+    """
+    home = scratch / "codex-home"
+    home.mkdir(parents=True, exist_ok=True)
+    real = root.resolve()
+    (home / "config.toml").write_text(
+        f"[projects.'{real}']\ntrust_level = 'trusted'\n", encoding="utf-8"
+    )
+    source_home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    auth = source_home / "auth.json"
+    if auth.is_file():
+        (home / "auth.json").symlink_to(auth)
+    return home
+
+
+def _agent_env(agent: str, scratch: Path, root: Path) -> dict[str, str] | None:
+    """Environment for one agent run, or None to inherit the harness's own."""
+    if agent != "codex":
+        return None
+    env = dict(os.environ)
+    env["CODEX_HOME"] = str(codex_home(scratch, root))
+    return env
 
 
 def _claude_usage(transcript: str) -> tuple[int, int, float | None] | None:
@@ -137,6 +201,17 @@ def _codex_usage(transcript: str) -> tuple[int, int, float | None] | None:
 
     A single `exec` call can run several turns; each carries its own usage, so
     this totals them rather than keeping only the last.
+
+    Codex follows the OpenAI usage shape, where `cached_input_tokens` is a
+    subset of `input_tokens`, not an addition to it -- unlike claude, whose
+    `cache_read_input_tokens` sits beside an uncached `input_tokens`. The
+    tell is a first-turn session reporting 19,701 input and 11,136 cached
+    (observed 2026-09-02): no fresh session carries a 30K prompt when its
+    instructions total 20K. Adding the cached figure, as this did until then,
+    double-counted every cache hit, so every Codex total recorded before that
+    date is inflated by however much of its context was cached at the time.
+    `cache_write_input_tokens` is kept: it is zero on OpenAI models, and on
+    a provider that reports it the write is not part of `input_tokens`.
     """
     total = 0
     output = 0
@@ -154,7 +229,6 @@ def _codex_usage(transcript: str) -> tuple[int, int, float | None] | None:
         usage = event.get("usage") or {}
         total += (
             usage.get("input_tokens", 0)
-            + usage.get("cached_input_tokens", 0)
             + usage.get("cache_write_input_tokens", 0)
             + usage.get("output_tokens", 0)
         )
@@ -226,6 +300,8 @@ def build_fixture(scenario: Scenario, root: Path, *, with_raven: bool) -> None:
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
+    if ".gitignore" not in scenario.files:
+        (root / ".gitignore").write_text(FIXTURE_GITIGNORE, encoding="utf-8")
 
     if with_raven:
         subprocess.run(
@@ -249,7 +325,29 @@ def build_fixture(scenario: Scenario, root: Path, *, with_raven: bool) -> None:
 # ---------------------------------------------------------------------------
 
 
-def run_one(scenario: Scenario, agent: str, *, with_raven: bool, trial: int) -> TrialOutcome:
+def save_transcript(directory: Path, scenario: str, arm: str, trial: int, transcript: str) -> None:
+    """Keep one trial's raw JSON transcript, named so trials never collide.
+
+    The token and call columns say *that* one arm took more steps; only the
+    transcript says *which* steps, and the fixture is deleted the moment the
+    trial ends. Best effort: a transcript that cannot be written is a lost
+    diagnostic, not a failed trial.
+    """
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / f"{scenario}-{arm}-{trial}.jsonl").write_text(transcript, encoding="utf-8")
+    except OSError as exc:
+        print(f"warning: could not save transcript: {exc}", file=sys.stderr)
+
+
+def run_one(
+    scenario: Scenario,
+    agent: str,
+    *,
+    with_raven: bool,
+    trial: int,
+    transcripts: Path | None = None,
+) -> TrialOutcome:
     """Build a fixture, run the agent in it once, and grade what it left behind."""
     arm = "raven" if with_raven else "control"
     with tempfile.TemporaryDirectory(prefix=f"raven-eval-{scenario.name}-") as tmp:
@@ -267,6 +365,7 @@ def run_one(scenario: Scenario, agent: str, *, with_raven: bool, trial: int) -> 
                 text=True,
                 timeout=TIMEOUT_SECONDS,
                 check=False,
+                env=_agent_env(agent, Path(tmp), root),
             )
             transcript = completed.stdout
         except subprocess.TimeoutExpired:
@@ -275,6 +374,9 @@ def run_one(scenario: Scenario, agent: str, *, with_raven: bool, trial: int) -> 
             )
         except OSError as exc:
             return TrialOutcome(scenario.name, arm, trial, False, "agent failed to start", str(exc))
+
+        if transcripts is not None:
+            save_transcript(transcripts, scenario.name, arm, trial, transcript)
 
         try:
             result: Result = scenario.verdict(root, transcript)
@@ -292,22 +394,28 @@ def run_one(scenario: Scenario, agent: str, *, with_raven: bool, trial: int) -> 
             total_tokens=total_tokens,
             output_tokens=output_tokens,
             cost_usd=cost_usd,
+            tool_calls=tool_calls(transcript),
         )
 
 
-def run(scenarios: list[Scenario], agent: str, trials: int) -> list[TrialOutcome]:
+def run(
+    scenarios: list[Scenario], agent: str, trials: int, transcripts: Path | None = None
+) -> list[TrialOutcome]:
     """Every scenario, both arms, ``trials`` times, reporting progress as it goes."""
     outcomes: list[TrialOutcome] = []
     for scenario in scenarios:
         for trial in range(1, trials + 1):
             for with_raven in (False, True):
-                outcome = run_one(scenario, agent, with_raven=with_raven, trial=trial)
+                outcome = run_one(
+                    scenario, agent, with_raven=with_raven, trial=trial, transcripts=transcripts
+                )
                 mark = "pass" if outcome.passed else "FAIL"
                 tokens = (
                     f"  {outcome.total_tokens:,}tok" if outcome.total_tokens is not None else ""
                 )
+                calls = f"  {outcome.tool_calls}calls" if outcome.tool_calls is not None else ""
                 print(
-                    f"  {scenario.name:22} {outcome.arm:8} trial {trial}  {mark}{tokens}"
+                    f"  {scenario.name:22} {outcome.arm:8} trial {trial}  {mark}{tokens}{calls}"
                     f"  {outcome.evidence}",
                     flush=True,
                 )
@@ -333,6 +441,16 @@ def _avg_tokens(outcomes: list[TrialOutcome], scenario: str, arm: str) -> int | 
         if o.scenario == scenario and o.arm == arm and o.total_tokens is not None
     ]
     return round(sum(values) / len(values)) if values else None
+
+
+def _avg_calls(outcomes: list[TrialOutcome], scenario: str, arm: str) -> float | None:
+    """Mean `tool_calls` for trials that reported it. None if none did."""
+    values = [
+        o.tool_calls
+        for o in outcomes
+        if o.scenario == scenario and o.arm == arm and o.tool_calls is not None
+    ]
+    return round(sum(values) / len(values), 1) if values else None
 
 
 def render_markdown(outcomes: list[TrialOutcome], agent: str, trials: int, stamp: str) -> str:
@@ -364,21 +482,36 @@ def render_markdown(outcomes: list[TrialOutcome], agent: str, trials: int, stamp
             "",
             "## Token usage",
             "",
-            "Mean total tokens per trial (fresh input + cache writes + cache reads",
-            "+ output, summed across every turn). This is a footprint number, not a",
+            "Mean total tokens per trial: every token the model processed, cached",
+            "or not, summed across every turn (`docs/evaluation.md` says how each",
+            "CLI's cache figures are read). This is a footprint number, not a",
             "controlled efficiency comparison -- the raven arm's context differs",
             "from control's by construction, so it says how much each arm cost for",
             "this task, not how efficient either one is per unit of work.",
             "",
-            "| Scenario | control avg tokens | raven avg tokens |",
-            "|---|---|---|",
+            "Tool calls are the number of steps the agent took. Read the two",
+            "columns together: more tokens over the same number of calls means",
+            "each step carried more context; more tokens over more calls means",
+            "the guidance changed what the agent did. `fixed-cost` makes no",
+            "calls by design, so its token count is what one session costs",
+            "before any work starts.",
+            "",
+            "| Scenario | control avg tokens | raven avg tokens | control avg calls | raven avg calls |",
+            "|---|---|---|---|---|",
         ]
         for name in names:
             control_avg = _avg_tokens(outcomes, name, "control")
             raven_avg = _avg_tokens(outcomes, name, "raven")
+            control_calls = _avg_calls(outcomes, name, "control")
+            raven_calls = _avg_calls(outcomes, name, "raven")
             control_cell = f"{control_avg:,}" if control_avg is not None else "n/a"
             raven_cell = f"{raven_avg:,}" if raven_avg is not None else "n/a"
-            lines.append(f"| `{name}` | {control_cell} | {raven_cell} |")
+            control_calls_cell = f"{control_calls}" if control_calls is not None else "n/a"
+            raven_calls_cell = f"{raven_calls}" if raven_calls is not None else "n/a"
+            lines.append(
+                f"| `{name}` | {control_cell} | {raven_cell} "
+                f"| {control_calls_cell} | {raven_calls_cell} |"
+            )
 
     lines += [
         "",
@@ -396,9 +529,10 @@ def render_markdown(outcomes: list[TrialOutcome], agent: str, trials: int, stamp
             tokens = (
                 f", {outcome.total_tokens:,} tokens" if outcome.total_tokens is not None else ""
             )
+            calls = f", {outcome.tool_calls} tool calls" if outcome.tool_calls is not None else ""
             lines.append(
                 f"- {outcome.arm} trial {outcome.trial}: {mark} -- "
-                f"{outcome.evidence}{suffix}{tokens}"
+                f"{outcome.evidence}{suffix}{tokens}{calls}"
             )
         lines.append("")
     lines += [
@@ -406,10 +540,10 @@ def render_markdown(outcomes: list[TrialOutcome], agent: str, trials: int, stamp
         "",
         f"{trials} trial(s) per arm is a sample, not a measurement. A one-run",
         "difference is an anecdote; a scenario both arms pass measures nothing",
-        "about Raven and should be replaced with a harder one. Two scenarios",
-        "(`destructive-command`, `narrowest-test-first`) read the transcript",
-        "rather than the tree, so a transcript format change shows up as a",
-        "failure in both arms rather than a silent pass. Token counts include",
+        "about Raven and should be replaced with a harder one. Four scenarios",
+        "(`destructive-command`, `narrowest-test-first`, `fixed-cost`,",
+        "`bounded-read`) read the transcript rather than the tree, so a format change shows",
+        "up as a failure in both arms rather than a silent pass. Token counts include",
         "cache reads, which fall for reasons that have nothing to do with the",
         "guidance -- a warm cache from a prior trial in the same process, or a",
         "provider-side change -- so a token difference is weaker evidence than",
@@ -430,6 +564,10 @@ def main() -> int:
     parser.add_argument("--scenario", action="append", help="run only these (repeatable)")
     parser.add_argument("--out", help="directory to write the results file into")
     parser.add_argument("--json", action="store_true", help="also print raw outcomes as JSON")
+    parser.add_argument(
+        "--transcripts",
+        help="directory to keep each trial's raw JSON transcript in, for reading the steps",
+    )
     parser.add_argument(
         "--stamp",
         default="an unrecorded date",
@@ -457,7 +595,8 @@ def main() -> int:
         return 1
 
     print(f"raven eval: {args.agent}, {len(scenarios)} scenario(s), {args.trials} trial(s) per arm")
-    outcomes = run(scenarios, args.agent, args.trials)
+    transcripts = Path(args.transcripts) if args.transcripts else None
+    outcomes = run(scenarios, args.agent, args.trials, transcripts)
 
     report = render_markdown(outcomes, args.agent, args.trials, args.stamp)
     if args.out:
