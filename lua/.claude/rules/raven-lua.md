@@ -17,12 +17,6 @@ performance, security, or dependency policy.
 
 - Prefer the repository's task runner, such as `just`, `make`, or project scripts,
   before inventing raw commands.
-- Discover available commands before guessing when the repo documents them.
-- Use the narrowest relevant command first, then broaden after it passes.
-- Common fallback commands are:
-  - `stylua .` and `stylua --check .`
-  - `luacheck .`
-  - `busted`
 - Use `luarocks` for dependency and build tasks when the project uses it.
 - Do not assume every project uses `busted`, `luacheck`, or `stylua`. Use them when
   configured or clearly appropriate. `selene` is a common single-binary alternative
@@ -82,10 +76,7 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 ## Quality Gates
 
-- Run the repository's documented final quality gate before handoff when code
-  changed; `just check` runs `stylua --check`, `luacheck`, and `busted` when present.
-- If no final gate exists, use the narrowest relevant checks first, then broaden to
-  formatting, lint, and tests.
-- Fix formatting and lint failures in touched code.
+- The pre-commit and pre-push hooks Raven installs run the formatter, linter, type check, and test suite. Do not run them by hand before committing; run the narrowest test for the change and let the hooks own the rest.
+- Fix a gate failure the hook reports in touched code rather than suppressing it.
 - Do not add broad inline ignores to silence the linter. Prefer fixing the code or
   the narrowest justified `.luacheckrc`/inline ignore with a reason.

@@ -11,16 +11,7 @@ Use `.claude/docs/raven-elixir-quality.md` for detailed Elixir quality guidance 
 ## Setup And Commands
 
 - Prefer the repository's task runner, such as `mix precommit`, `mix quality`, `just`, `make`, or scripts, before inventing raw `mix` command sequences.
-- Discover available aliases in `mix.exs` and documented commands before guessing.
-- Use the narrowest relevant command first, then broaden after it passes.
-- Common fallback commands:
-  - `mix format --check-formatted`
-  - `mix compile --warnings-as-errors`
-  - `mix test`
-  - `mix test path/to/test.exs` for a specific file
-  - `mix test --failed` after a failure
-  - `mix credo --strict` when Credo is configured
-  - `mix sobelow --config` or the repository's Sobelow command when configured
+- Do not assume every project uses the same toolchain; the session roster and the task runner say what this one uses.
   - `mix deps.audit` when `mix_audit` is configured
 - Run `mix help <task>` before using an unfamiliar Mix task or option.
 - Avoid `mix deps.clean --all` unless there is a clear dependency corruption reason.
@@ -85,9 +76,8 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 ## Quality Gates
 
-- Run the repository's documented final quality gate before handoff when code changed.
-- If no final gate exists, run formatting, compile, focused tests, and relevant static checks.
-- Fix formatter, compiler warning, Credo, Sobelow, and audit failures in touched code.
+- The pre-commit and pre-push hooks Raven installs run the formatter, linter, type check, and test suite. Do not run them by hand before committing; run the narrowest test for the change and let the hooks own the rest.
+- Fix a gate failure the hook reports in touched code rather than suppressing it.
 - Do not add broad Credo disables. Prefer fixing the code or using the narrowest scoped disable with a reason.
 - If a required check cannot run locally, state the exact command and blocker.
 

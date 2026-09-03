@@ -18,6 +18,7 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 - State what was verified and what was not — never silently skip a step.
 - Do not generalize a narrow check into a broad claim. If you ran one test file, say that — not "all tests pass." Name the exact scope you verified.
 - If a verification step fails, address it before proceeding.
+- The installed pre-commit and pre-push hooks run the formatter, linter, type check, and suite. Do not run them by hand here.
 - State design intent that is not derivable from the diff: the constraint that forced this design, the alternative rejected, or a non-obvious behavior. If nothing forced a decision, say so explicitly rather than padding.
 
 ## Terminal States
@@ -50,14 +51,10 @@ Stop producing patches once the work stops converging. Partial work leaves the c
 
 1. **Run the narrowest test** covering the changed behavior — the single test file, test case, or command most directly relevant. If no test exists and one should, note the gap explicitly.
 2. **Check diff scope** — run `git diff` and confirm only intended files changed. Flag unintended files, config drift, or stray hunks.
-3. **Remove debug scaffolding** — scan touched files for temporary additions left during the session: `print`, `console.log`, `dbg!`, `IO.inspect`, `fmt.Println`, temporary `TODO` comments, commented-out blocks. Then list the comment lines
-   the diff adds — `git diff -U0 | rg '^\+[^+]' | rg '#|//|/\*'` — and check each
-   against `raven-write-prose`'s genre rule for comments. A comment that only
-   makes sense beside this diff belongs in the commit body, not the file.
-4. **Run lint and type-check** on touched files using the project's configured tools. If no tool is configured, note it and skip.
-5. **Disposition discovered work** — enumerate anything found during this unit that falls outside the current issue's acceptance criteria, including findings returned by sub-agents, and assign each one a disposition per `raven-triage-discovery`. "None" must be stated, not implied.
-6. **Name what needs human eyes.** Rank the parts of the diff a reviewer should actually read, and say why each one: it is hard to undo, it touches stored data or a public contract, or it rests on a judgment the gates cannot check — a chosen default, a name, a trade-off. Everything else is covered by the checks that just ran. Reviewer attention is the scarce resource; spending it evenly across the diff wastes it.
-7. **State the verification summary** before handing off.
+3. **Remove debug scaffolding** — scan touched files for temporary additions left during the session: `print`, `console.log`, `dbg!`, `IO.inspect`, `fmt.Println`, temporary `TODO` comments, commented-out blocks. Check any comment the diff adds against `raven-write-prose`'s genre rule for comments: one that only makes sense beside this diff belongs in the commit body, not the file.
+4. **Disposition discovered work** — enumerate anything found during this unit that falls outside the current issue's acceptance criteria, including findings returned by sub-agents, and assign each one a disposition per `raven-triage-discovery`. "None" must be stated, not implied.
+5. **Name what needs human eyes.** Rank the parts of the diff a reviewer should actually read, and say why each one: it is hard to undo, it touches stored data or a public contract, or it rests on a judgment the gates cannot check — a chosen default, a name, a trade-off. Everything else is covered by the hooks. Reviewer attention is the scarce resource; spending it evenly across the diff wastes it.
+6. **State the verification summary** before handing off.
 
 ## Integration with raven-project-lifecycle
 
@@ -71,7 +68,7 @@ Always:
 
 On success:
 
-> Verified: [test command and result], [lint/type-check result]. Diff scoped to [N files]. No debug scaffolding found.
+> Verified: [test command and result]. Diff scoped to [N files]. No debug scaffolding found. Gates run at commit and push.
 
 When gaps exist:
 

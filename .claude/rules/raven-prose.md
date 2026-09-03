@@ -7,4 +7,4 @@
 - Avoid "not X, but Y". A trailing "X, not Y" must rule out a misreading.
 - Cite specifics: numbers, names, cases.
 - Match the voice already in the file.
-- Drafting or editing prose? Use raven-write-prose.
+- Whole document? Use raven-write-prose. Reviewing one? raven-review-prose.

@@ -40,7 +40,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=b4eaaa122f9776b24a91cd697d32fee400ec42c24d21ff93dd350265b9c40354 -->
+<!-- RAVEN:BEGIN sha256=5d4bd23088c30a3ce8dcda3594b56553fdc863ecffd14f58cf1541a17b2ed986 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -53,7 +53,7 @@ Be effective while preserving context. Prefer targeted retrieval, summaries, and
 - `.agents/skills/` is the canonical location for reusable skills.
 - Agent-specific skill paths (e.g. `.claude/skills`) should point to `.agents/skills`, not duplicate content.
 - When a `raven-*` skill and a generic skill cover the same intent, prefer the `raven-*` one — it encodes this project's guardrails.
-- Deeper guidance lives in `.claude/docs/`: `raven-authority-map` (canonical vs non-canonical context), `raven-guardrails` (guardrail types), `raven-coding-principles` (cross-language quality), `raven-namespace` (Raven-owned files), `raven-agent-compatibility` (canonical vs Claude/Codex adapters), `raven-lsp-mcp` (LSP-over-MCP and language-server defaults), `raven-antipatterns` (repo-specific recurring-issue registry).
+- Deeper guidance lives in `.claude/docs/raven-*.md`: guardrails, authority map, coding principles, namespace, agent compatibility, LSP defaults, and the antipattern registry. Read one when its subject comes up.
 - If another tool inserts a managed block in `AGENTS.md`, treat it as authoritative for that tool's commands, syntax, and resource names — not as an override of these workflow guardrails.
 
 ## Retrieval Discipline
@@ -70,17 +70,17 @@ Use the cheapest adequate source before reading full files.
 | Syntax-aware pattern or mechanical rewrite | ast-grep or Semgrep |
 | Build, test, or log output | RTK-wrapped shell command |
 
-- `rg` is recursive by default; never pass `-r` for recursion. `-r` is ripgrep's `--replace` and takes an argument — unlike grep's `-r`, which means `--recursive`.
-- `rg`, `fd`, and `ast-grep` skip dot-directories by default. Raven's `.ignore` re-admits `.agents/`, `.claude/`, `.codex/`, and `.raven/` in a tree Raven installed into. Elsewhere — an uninstalled tree, or `$HOME`, which Raven deliberately skips — an empty result proves nothing until you re-run with `--hidden` (`--no-ignore hidden` for ast-grep) or `git grep`.
-- Run ast-grep by full name as `ast-grep --lang <lang> -p '<pattern>'`, never the `sg` alias. An empty result is not absence until `--debug-query=ast` shows the pattern parsed as intended.
 - Batch independent reads, searches, and inspections per turn.
 - Skeleton-first: for a large or unfamiliar file, get a symbol map (LSP document symbols, or `ast-grep`/`rg`) before reading, then read only the ranges you need — read a full file only when it is small or the whole structure matters.
 - Return concise findings before editing.
-- When two literal `rg` guesses miss, switch tools rather than iterating term variations. `mcp__gitnexus__query` is the conceptual-discovery step where an index is configured — it returns execution paths grouped by process, not just file locations. It is not proof: verify with `rg`, LSP, targeted reads, or tests before changing code.
-- GitNexus tools are spelled `mcp__gitnexus__<tool>`. Vendor-generated GitNexus content uses shorter labels (`impact()`, `gitnexus_query`) for the same tools — read them as the MCP tools, and take parameter names from the tool schema, not from the skill prose. No MCP grant? A subagent with Bash but no MCP access can reach the same operations via the CLI: `gitnexus query|context|impact|trace|detect-changes`.
+- When two literal `rg` guesses miss, switch tools rather than iterating term variations; an index query is discovery, not proof, so verify with `rg`, LSP, or tests before changing code. Tool spellings, flags, and dot-directory caveats live in `raven-codebase-discovery`.
 - Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried and delegate per the Delegation section, or ask the user.
-- Tool availability comes from the session capability roster. If no roster is present, probe before relying on any non-baseline tool. MCP servers the roster lists as configured may still be unapproved or unconnected; a failed call is information, not a contradiction of the roster.
-- When the repo configures a code-intelligence index (such as GitNexus), its impact analysis before a symbol edit and change-detection before a commit are mandatory, not optional table picks. If it is stale, reindex or say so — do not silently skip it.
+- Tool availability comes from the session capability roster. If no roster is present, probe before relying on any non-baseline tool. An MCP server the roster lists may still be unapproved or unconnected; a failed call is information, not a contradiction of the roster.
+- When the session roster lists a code-intelligence index, run its impact analysis before a symbol edit and its change-detection before a commit; say so if it is stale. No `Index` line means nothing to run: a configured MCP server is not an index.
+
+## Skills
+
+A skill costs a file read on Codex and a step on Claude Code, before any work starts. Invoke one for a task of several steps or when the user asks for it; a one-file change or a short paragraph needs none.
 
 ## Delegation
 
@@ -140,20 +140,9 @@ Pause and ask before work that is ambiguous or could create durable harm:
 - Do not add dependencies without explaining why.
 - Never hide uncertainty; state confidence and unresolved assumptions.
 - Agreement is not helpfulness. Before ratifying a design, plan, or conclusion the user proposed, name the specific thing you would change, or state why you agree with it.
-
-## Platform Awareness
-
-- Prefer portable commands and hooks for guidance shared across macOS, Linux, Windows, and WSL.
-- On Windows, account for PowerShell/CMD path behavior and native-vs-WSL execution.
-- Treat `.mcp.json` tools as locally configured capabilities, not guaranteed dependencies.
-
-## Tool Availability Memory
-
-- When recommended tools matter, use the `raven-tool-bootstrap` skill.
-- Record verified tool availability in local user memory outside the repository.
-- If recommended tools are missing, ask whether to install them, provide instructions, remind later, or stop reminding.
-- Do not install tools or suppress future reminders without explicit user approval.
-- If a SessionStart hook reports missing or unverified tools, ask how to proceed before relying on them.
+- When offering options, lead with a recommendation and its one real trade-off; ask only when the choice is close.
+- When the roster reports a recommended tool missing, do not install it or silence the reminder without the user's say; `raven-tool-bootstrap` records their answer.
+- Prefer portable commands and hooks; guidance is shared across macOS, Linux, Windows, and WSL.
 <!-- RAVEN:END -->
 
 <!-- gitnexus:start -->

@@ -46,13 +46,37 @@ Two things it will flag that are correct. A file whose job is to name the banned
 
 ## Pass 2: the structural pass
 
-Walk all fourteen tells from `raven-write-prose`. Run each test rather than judging by feel. The long-word sweep is the one most often skipped and the one that finds the most:
+Walk all fourteen tells from `raven-write-prose`. Run each test rather than judging by feel.
+
+## Mechanical checks
+
+Run these when the user asks for a review or before a document is published. Never per edit: a transcript of a one-section README change that ran them cost ten tool calls against a control's three, for the same result.
+
+The long-word sweep is Orwell's rules 2 and 5 made mechanical, the tell most often skipped, and the one that finds the most. Most hits are technical terms with no shorter form and get kept; the sweep exists to make you ask the question of each one.
 
 ```bash
 rg -oN '\b[a-z]{9,}\b' FILE | sort -u
 ```
 
-Triage every hit with one question: is there a shorter everyday word for this? Words borrowed from an outside source are where this finds the most.
+It also flags one fact restated across clauses: "implemented an enhanced retry mechanism to improve resilience against transient call failures" says "retry failed calls up to three times" twice. Does the word add a fact `retry` did not already carry?
+
+The `X, not Y` tag on titles and commit subjects:
+
+```bash
+git log --format='%s' -n 400 | rg -N ',\s+(not|never|rather than|instead of)\b'
+rg -N '^#{1,6}.*,\s+(not|never|rather than|instead of)\b' FILE
+```
+
+A hit that names a thing — `not cwd`, `not Package.swift` — rules out the wrong behavior the fix replaced and stays. A hit that rates the method — "measured rather than assumed" — goes. Position decides this, which is why no linter can: `measured|verified` against `assumed|inferred` reads both ways.
+
+Essence-framing and stakes-inflation:
+
+```bash
+rg -N "what (this|that|it)('s)? (really|actually) (means|is|matters)|at (its|their) core|(boils|comes) down to|the real (question|issue) is" FILE
+rg -N "changes everything|cannot be overstated|profound implications|watershed moment|game-?changer|pivotal moment|marks a turning point" FILE
+```
+
+A heading or a named specific ("what registry v2 means") is not a hit.
 
 ## Pass 3: verdict
 

@@ -11,15 +11,7 @@ Use `.claude/docs/raven-rust-quality.md` for detailed Rust quality guidance when
 ## Setup And Commands
 
 - Prefer the repository's task runner, such as `just`, `make`, `cargo xtask`, or scripts, before inventing raw `cargo` command sequences.
-- Discover available commands before guessing when the repo documents them.
-- Use the narrowest relevant command first, then broaden after it passes.
-- Common fallback commands are:
-  - `cargo fmt --all -- --check`
-  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-  - `cargo test --workspace --all-features`
-  - `cargo audit`
-  - `cargo deny check`
-- Do not assume every project supports `--all-features`, `cargo audit`, `cargo deny`, `nextest`, or benchmarks. Use them when configured or clearly appropriate.
+- Do not assume every project uses the same toolchain; the session roster and the task runner say what this one uses.
 
 ## Additional Pause And Ask Triggers
 
@@ -79,9 +71,8 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 ## Quality Gates
 
-- Run the repository's documented final quality gate before handoff when code changed.
-- If no final gate exists, use the narrowest relevant `cargo` checks first, then broaden to workspace checks when practical.
-- Fix `rustfmt`, Clippy, and warning failures in touched code.
+- The pre-commit and pre-push hooks Raven installs run the formatter, linter, type check, and test suite. Do not run them by hand before committing; run the narrowest test for the change and let the hooks own the rest.
+- Fix a gate failure the hook reports in touched code rather than suppressing it.
 - Do not add broad `allow` attributes to silence lints. Prefer fixing the code or adding the narrowest justified allowance with a reason.
 - If a required check cannot run locally, state the exact command and blocker.
 

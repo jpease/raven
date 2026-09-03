@@ -69,9 +69,7 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 ## Quality Gates
 
-- Discover commands with the repository task runner first, such as `just --list`, before guessing.
-- Run the narrowest relevant test or build first.
-- Run the repository's final quality gate before handoff when code changed.
-- Fix SwiftLint or formatting violations in files you touch.
+- The pre-commit and pre-push hooks Raven installs run the formatter, linter, type check, and test suite. Do not run them by hand before committing; run the narrowest test for the change and let the hooks own the rest.
+- Fix a gate failure the hook reports in touched code rather than suppressing it.
 - For docs-only changes, run the documented lightweight docs/link check if available.
 - Treat warnings-as-errors projects accordingly; do not dismiss warnings as cosmetic.

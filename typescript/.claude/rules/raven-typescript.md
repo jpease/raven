@@ -11,15 +11,7 @@ Use `.claude/docs/raven-typescript-quality.md` for detailed TypeScript quality g
 ## Setup And Commands
 
 - Prefer the repository's task runner such as `turbo`, `just`, `make`, or `nx` before inventing raw `tsc` or package-manager command sequences.
-- Discover available commands before guessing when the repo documents them.
-- Use the narrowest relevant command first, then broaden after it passes.
-- Common fallback commands:
-  - `pnpm typecheck` or `tsc --noEmit`
-  - `pnpm lint` or `eslint .`
-  - `pnpm test` or `vitest run`
-  - `pnpm build`
-  - `pnpm format --check` or `prettier --check .`
-- Do not assume every project uses pnpm, turbo, vitest, or ESLint. Confirm before using.
+- Do not assume every project uses the same toolchain; the session roster and the task runner say what this one uses.
 - In monorepos and project-reference layouts, editor-injected `cannot find module` diagnostics are often false positives (one root `tsserver` over a solution-style `tsconfig`); the build/typecheck gate wins on disagreement.
 
 ## Additional Pause And Ask Triggers
@@ -57,7 +49,6 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 ## Testing
 
 - Inspect nearby tests and fixtures before adding new patterns.
-- Prefer the narrowest useful test command first, such as one file or one test case.
 - Unit-test pure functions and domain logic at high volume.
 - Use integration tests for API routes, repositories, and service layers.
 - Do not delete or weaken tests to make a change pass unless explicitly requested.
@@ -75,7 +66,6 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 ## Quality Gates
 
-- Run the repository's documented final quality gate before handoff when code changed.
-- If no final gate exists, run typecheck, lint, and tests at minimum.
-- Fix typecheck, lint, and formatter failures in touched code.
+- The pre-commit and pre-push hooks Raven installs run the formatter, linter, type check, and test suite. Do not run them by hand before committing; run the narrowest test for the change and let the hooks own the rest.
+- Fix a gate failure the hook reports in touched code rather than suppressing it.
 - Do not add broad `eslint-disable` comments. Prefer fixing the code or using the narrowest scoped disable with a reason comment.

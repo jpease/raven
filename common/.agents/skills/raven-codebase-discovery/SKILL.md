@@ -34,6 +34,13 @@ Apply the AGENTS.md stop rule. Discovery also counts as failed when promising ca
 
 Report what you were trying to locate, what was tried, the best candidate paths, and the unresolved question. Then delegate per AGENTS.md Delegation guidance, or pause and ask if no delegation mechanism is available. For a broad mapping question, hand off to the `raven-codebase-cartographer` subagent with that same brief.
 
+## Tool Notes
+
+- `rg` is recursive by default; never pass `-r` for recursion. `-r` is ripgrep's `--replace` and takes an argument, unlike grep's `-r`.
+- `rg`, `fd`, and `ast-grep` skip dot-directories by default. Raven's `.ignore` re-admits `.agents/`, `.claude/`, `.codex/`, and `.raven/` in a tree Raven installed into. Elsewhere, an empty result proves nothing until you re-run with `--hidden` (`--no-ignore hidden` for ast-grep) or `git grep`.
+- Run ast-grep by full name as `ast-grep --lang <lang> -p '<pattern>'`, never the `sg` alias. An empty result is not absence until `--debug-query=ast` shows the pattern parsed as intended.
+- GitNexus tools are spelled `mcp__gitnexus__<tool>`. Vendor-generated GitNexus content uses shorter labels (`impact()`, `gitnexus_query`) for the same tools; take parameter names from the tool schema, not from prose. Without an MCP grant, a subagent with Bash reaches the same operations through the CLI: `gitnexus query|context|impact|trace|detect-changes`.
+
 ## Broad Exploration
 
 For architecture or "how does X work" questions that would need multiple queries to answer — not a single symbol lookup:

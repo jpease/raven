@@ -11,14 +11,7 @@ Use `.claude/docs/raven-python-quality.md` for detailed Python quality guidance 
 ## Setup And Commands
 
 - Prefer the repository's task runner such as `just`, `make`, `invoke`, `tox`, or `nox` before inventing raw command sequences.
-- Discover available commands before guessing when the repo documents them.
-- Use the narrowest relevant command first, then broaden after it passes.
-- Common fallback commands:
-  - `python -m pytest` or `pytest` for tests
-  - `ruff check .` or `flake8` for lint
-  - `ruff format --check .` or `black --check .` for formatting
-  - `mypy .` or `pyright` for type checking
-- Do not assume every project uses the same toolchain. Confirm before using.
+- Do not assume every project uses the same toolchain; the session roster and the task runner say what this one uses.
 
 ## Additional Pause And Ask Triggers
 
@@ -58,12 +51,10 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 ## Testing
 
 - Inspect nearby tests and fixtures before adding new patterns.
-- Prefer the narrowest useful test command first, such as one test file or one test case.
 - Use `pytest` fixtures and parametrize rather than duplicating setup across tests.
 - Write behavior-focused tests; avoid over-mocking internals.
 - Add regression tests for bug fixes when the failure can be reproduced deterministically.
 - Do not delete or weaken tests to make a change pass unless explicitly requested. The observable form is a diff that ends with fewer test functions in a file than it started with, or an unconditional skip added to one; name the replacement, or say the coverage is gone.
-- Broaden to the repository's standard test or quality command only after targeted tests pass.
 - Avoid brittle sleeps, timing assumptions, and oversized snapshots unless the codebase already relies on them.
 
 ## Dependencies
@@ -78,8 +69,7 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 ## Quality Gates
 
-- Run the repository's documented final quality gate before handoff when code changed.
-- If no final gate exists, run formatter check, lint, type check, and tests at minimum.
-- Fix formatter, lint, and type-checking failures in touched code.
+- The pre-commit and pre-push hooks Raven installs run the formatter, linter, type check, and test suite. Do not run them by hand before committing; run the narrowest test for the change and let the hooks own the rest.
+- Fix a gate failure the hook reports in touched code rather than suppressing it.
 - Do not add broad `# noqa` or `# type: ignore` comments. Prefer fixing the code or using the narrowest scoped suppression with a reason comment. A suppression naming no rule code is blocked at commit time by `.raven/git-hooks/lib/check-gate-relaxation.py`; a rule code with no reason still commits, and only review catches it. `.claude/scripts/raven-capability-roster.py` shows the shape that passes — one code, then why.
 

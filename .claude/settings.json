@@ -120,7 +120,16 @@
         ]
       },
       {
-        "matcher": "Write|Edit|MultiEdit",
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-run-hook.sh\" .claude/hooks/raven-pre-bash-test-scope.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
@@ -158,7 +167,16 @@
         ]
       },
       {
-        "matcher": "Write|Edit|MultiEdit",
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-run-hook.sh\" .claude/hooks/raven-post-bash-truncate.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",

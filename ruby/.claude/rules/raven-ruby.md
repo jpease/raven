@@ -11,12 +11,6 @@ Use `.claude/docs/raven-ruby-quality.md` for detailed Ruby quality guidance when
 ## Setup And Commands
 
 - Prefer the repository's task runner, such as `just`, `rake`, or project scripts, before inventing raw commands.
-- Discover available `rake` tasks (`bundle exec rake -T`) and documented commands before guessing.
-- Use the narrowest relevant command first, then broaden after it passes.
-- Common fallback commands:
-  - `bundle exec rubocop` and `bundle exec rubocop -A` (autocorrect)
-  - `bundle exec rake test`
-  - `just audit` (osv-scanner against `Gemfile.lock`, when installed)
 - Use `bundle exec` to run gem executables against the project's locked versions; do not assume a bare binary on PATH matches `Gemfile.lock`.
 - Do not assume every project uses RuboCop, Minitest, or Bundler. Use them when configured or clearly appropriate; RSpec is a common alternative to Minitest.
 
@@ -66,7 +60,6 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 ## Quality Gates
 
-- Run the repository's documented final quality gate before handoff when code changed; `just check` runs `rubocop` and `rake test` when present.
-- If no final gate exists, use the narrowest relevant checks first, then broaden to lint and tests.
-- Fix RuboCop offenses in touched code.
+- The pre-commit and pre-push hooks Raven installs run the formatter, linter, type check, and test suite. Do not run them by hand before committing; run the narrowest test for the change and let the hooks own the rest.
+- Fix a gate failure the hook reports in touched code rather than suppressing it.
 - Do not add broad `# rubocop:disable` comments spanning a whole file. Prefer fixing the code or the narrowest scoped inline disable with a reason.
