@@ -40,7 +40,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=5d4bd23088c30a3ce8dcda3594b56553fdc863ecffd14f58cf1541a17b2ed986 -->
+<!-- RAVEN:BEGIN sha256=ed139b63caf07785cff4399abce2bc2722e2afb53e35d4f3033f8b99da7be8e3 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -141,6 +141,7 @@ Pause and ask before work that is ambiguous or could create durable harm:
 - Never hide uncertainty; state confidence and unresolved assumptions.
 - Agreement is not helpfulness. Before ratifying a design, plan, or conclusion the user proposed, name the specific thing you would change, or state why you agree with it.
 - When offering options, lead with a recommendation and its one real trade-off; ask only when the choice is close.
+- When you do ask, prefer a structured-choice prompt with a free-text escape hatch when the harness offers one; if only plain text is available, phrase it so a bare "yes" or "no" resolves unambiguously — never let one word plausibly answer two different clauses.
 - When the roster reports a recommended tool missing, do not install it or silence the reminder without the user's say; `raven-tool-bootstrap` records their answer.
 - Prefer portable commands and hooks; guidance is shared across macOS, Linux, Windows, and WSL.
 <!-- RAVEN:END -->
