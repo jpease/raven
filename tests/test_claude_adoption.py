@@ -295,6 +295,54 @@ class ClaudeSymlinkMigrationTests(RavenTestCase):
             (self.destination / "AGENTS.md").read_text(encoding="utf-8"), agents_content
         )
 
+    def test_a_symlink_reappearing_after_migration_is_re_migrated(self):
+        """The manifest already records the plain file; only the tree reverted (#261).
+
+        This is the shape a partial commit plus a later `git reset --hard`
+        leaves behind: `raven upgrade` migrates CLAUDE.md and writes the
+        manifest, only the manifest gets staged, and the reset restores the
+        committed symlink. The baseline then says "plain file" while the tree
+        says "symlink", and the template has not changed since -- which used to
+        classify as `local_only` and be left alone on every future upgrade.
+
+        A symlink is never a valid local customization of a path the template
+        ships as a regular file: it is the pre-#253 shape that breaks on a
+        Windows checkout without symlink support, which is the whole reason
+        #253 stopped installing one.
+        """
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+            )
+        self.assertEqual(rc, 0)
+        claude = self.destination / "CLAUDE.md"
+        self.assertFalse(claude.is_symlink())
+
+        # Revert only the tree, leaving the manifest on the migrated baseline.
+        claude.unlink()
+        claude.symlink_to("AGENTS.md")
+        record = raven.load_manifest(self.destination)["files"]["CLAUDE.md"]
+        self.assertEqual(record["kind"], "file")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertFalse(claude.is_symlink(), "upgrade left the reverted symlink in place")
+        self.assertEqual(claude.read_text(encoding="utf-8").strip(), "@AGENTS.md")
+
     def test_dry_run_reports_symlinked_claude_md_as_an_upgrade(self):
         self._install_then_revert_to_symlink()
         output = io.StringIO()

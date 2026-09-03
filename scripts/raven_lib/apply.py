@@ -19,6 +19,7 @@ from .blocks import BlockState, block_managed_state, update_raven_block
 from .constants import (
     CLAUDE_BACKUP_PATH,
     CLAUDE_PATH,
+    KIND_FILE,
     KIND_SYMLINK,
     SETTINGS_JSON_BACKUP_PATH,
     SETTINGS_JSON_PATH,
@@ -68,6 +69,24 @@ def reconcile_state(
 
     template_changed = template_fp is None or template_fp.sha256 != record.source_sha256
     user_touched = not _fingerprint_matches(fingerprint, record)
+    if (
+        fingerprint is not None
+        and template_fp is not None
+        and fingerprint.kind == KIND_SYMLINK
+        and template_fp.kind == KIND_FILE
+    ):
+        # A symlink standing where the template ships a regular file is drift,
+        # never a customization: it holds no content of the user's to lose, and
+        # it is the pre-#253 shape that a Windows checkout without symlink
+        # support materializes as a file containing the literal target path.
+        # Without this, a tree reverted to the symlink after its baseline had
+        # already migrated reads as `local_only` -- template unchanged, file
+        # "edited" -- and every future upgrade leaves it alone (#261).
+        #
+        # Deliberately one-directional. The mirror case, a regular file where
+        # the template ships a symlink, can hold real content, so it keeps the
+        # existing merge path rather than being overwritten here.
+        return "will_upgrade"
     if not template_changed:
         # Raven's template is unchanged since the baseline. If the file still
         # matches the recorded baseline (e.g. an accepted manual merge) there is

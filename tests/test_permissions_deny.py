@@ -57,6 +57,17 @@ def _edit_guard_module():
     return load_script_module("raven_pre_edit_guard_permissions_test", EDIT_GUARD_PATH)
 
 
+SECRET_READ_GUARD_PATH = (
+    REPO_ROOT / "common" / ".claude" / "hooks" / "raven-pre-read-secret-guard.py"
+)
+
+
+def _secret_read_guard_module():
+    return load_script_module(
+        "raven_pre_read_secret_guard_permissions_test", SECRET_READ_GUARD_PATH
+    )
+
+
 def _read_rule_matches(pattern: str, path: str) -> bool:
     """Whether a `Read(pattern)` deny rule (gitignore-style) covers `path`.
 
@@ -170,16 +181,30 @@ class EditGuardBlockedPathsHaveNativeCoverageTests(unittest.TestCase):
                 with self.subTest(pattern=pattern, sample=sample):
                     self.assertTrue(re.search(pattern, sample, re.IGNORECASE))
 
-    def test_every_sample_is_covered_by_a_native_read_deny_rule(self):
+    def test_every_sample_is_covered_by_the_secret_read_guard(self):
+        """The pairing this file exists to hold: a path the edit guard refuses
+        to write must also be one the agent cannot read.
+
+        The read half used to be `Read(...)` entries in `permissions.deny`.
+        Those escalated every recursive search of the repository root once
+        Claude Code 2.1.259 began evaluating them at directory granularity, so
+        they moved into `raven-pre-read-secret-guard.py`, which sees the
+        concrete path instead (#260). The invariant is unchanged; only the
+        mechanism enforcing it is.
+        """
+        guard = _secret_read_guard_module()
         for pattern, samples in BLOCKED_PATTERN_SAMPLES.items():
             for sample in samples:
                 with self.subTest(pattern=pattern, sample=sample):
-                    covered = any(_read_rule_matches(p, sample) for p in READ_RULES)
-                    self.assertTrue(
-                        covered,
-                        f"no Read(...) deny rule in settings.json covers {sample!r} "
+                    self.assertIsNotNone(
+                        guard.matches(sample),
+                        f"raven-pre-read-secret-guard.py does not cover {sample!r} "
                         f"(from edit-guard BLOCKED pattern {pattern!r})",
                     )
+
+    def test_no_read_deny_rules_came_back(self):
+        """Re-adding one would bring the #260 escalation back with it."""
+        self.assertEqual(READ_RULES, [])
 
 
 # --- Part 2: caution-tier paths must NEVER appear in permissions.deny ------

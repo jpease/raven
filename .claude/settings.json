@@ -7,27 +7,6 @@
       "Bash(git merge-base *)"
     ],
     "deny": [
-      "Read(*.pem)",
-      "Read(*.key)",
-      "Read(*.p12)",
-      "Read(*.pfx)",
-      "Read(*.crt)",
-      "Read(*.cer)",
-      "Read(.env)",
-      "Read(.env.*)",
-      "Read(.envrc)",
-      "Read(secret)",
-      "Read(secrets)",
-      "Read(secret.*)",
-      "Read(secrets.*)",
-      "Read(secret/**)",
-      "Read(secrets/**)",
-      "Read(credential)",
-      "Read(credentials)",
-      "Read(credential.*)",
-      "Read(credentials.*)",
-      "Read(credential/**)",
-      "Read(credentials/**)",
       "Bash(rm -rf /)",
       "Bash(rm -fr /)",
       "Bash(rm -r -f /)",
@@ -152,6 +131,15 @@
           {
             "type": "command",
             "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-run-hook.sh\" .claude/hooks/raven-session-checkpoint.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/raven-run-hook.sh\" .claude/hooks/raven-pre-read-secret-guard.py"
           }
         ]
       },

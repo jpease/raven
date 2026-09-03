@@ -201,9 +201,9 @@
       "sourceSha256": "806f1224309120784649d7029e47e83f6c46e993f504bfe5afe5171d95f8be0e"
     },
     ".claude/docs/raven-guardrails.md": {
-      "installedSha256": "c8c09b4bf723bdb926dfce627ed6fadc88537b3e36822569fe1b4ea4144b724e",
+      "installedSha256": "bd02b93dc5fb2907f369d0ac3592a46c009f8a975f14a2e2e19e2fa7312a8941",
       "kind": "file",
-      "sourceSha256": "c8c09b4bf723bdb926dfce627ed6fadc88537b3e36822569fe1b4ea4144b724e"
+      "sourceSha256": "bd02b93dc5fb2907f369d0ac3592a46c009f8a975f14a2e2e19e2fa7312a8941"
     },
     ".claude/docs/raven-lsp-mcp.md": {
       "installedSha256": "432815e13e05d03d874cb6dc0c02b268d6b7513d98db3655a22daa3f67869452",
@@ -265,6 +265,11 @@
       "kind": "file",
       "sourceSha256": "28d29d5dc61b2c1e4e1360c6cbe7db305d8164c4e4081500c74322a1ee56858f"
     },
+    ".claude/hooks/raven-pre-read-secret-guard.py": {
+      "installedSha256": "2f683fa520da6f5b93be8fd8a75425795c3654778c0a53ecb0b863a765abe66c",
+      "kind": "file",
+      "sourceSha256": "2f683fa520da6f5b93be8fd8a75425795c3654778c0a53ecb0b863a765abe66c"
+    },
     ".claude/hooks/raven-run-hook.sh": {
       "installedSha256": "7df6fa1966fb49fad50e700222f3f24e10f014c5867c7ecf0500e2e8fb7f0726",
       "kind": "file",
@@ -316,9 +321,9 @@
       "sourceSha256": "27e47024e44b5cd28973306c99eec1405a900b970b81e3403c3d90a0ffa42f47"
     },
     ".claude/settings.json": {
-      "installedSha256": "d76bc6b07f72cf1237e5b3d0ce5b211ef23017c1460a3ecbfe758706a5877609",
+      "installedSha256": "143c9d146ce1fade1f8d6d2b78bd9e11ac70bfc6a80d70d7e38c8030677c383a",
       "kind": "file",
-      "sourceSha256": "d76bc6b07f72cf1237e5b3d0ce5b211ef23017c1460a3ecbfe758706a5877609"
+      "sourceSha256": "143c9d146ce1fade1f8d6d2b78bd9e11ac70bfc6a80d70d7e38c8030677c383a"
     },
     ".claude/skills": {
       "installedSha256": "81bdc0f9bb8fdb71e26bfdaf4de77159e927d44746752c62564185c1eefdce9e",
@@ -492,8 +497,8 @@
     "pyright",
     "pytest"
   ],
-  "ravenVersion": "a775fea998c9-dirty",
+  "ravenVersion": "eac03e0dacb3-dirty",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-09-03T17:53:06.713481+00:00"
+  "updatedAt": "2026-09-03T18:09:06.994748+00:00"
 }
