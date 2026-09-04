@@ -141,7 +141,7 @@ _PY_LINE_BLANKETS = (
 _PYTHON = _PY_FILE_BLANKETS + _PY_LINE_BLANKETS
 
 # --- TypeScript and JavaScript ----------------------------------------------
-# tsc 5 (checked 2026-08-25):
+# tsc 5 (checked 2026-08-25, re-verified 2026-09-03 for #127):
 #   https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-9.html
 #   https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-7.html
 # Observed: on a line with a type error, the ignore and expect-error forms are
@@ -149,6 +149,12 @@ _PYTHON = _PY_FILE_BLANKETS + _PY_LINE_BLANKETS
 # '@ts-expect-error' directive") and the ignore form stays silent -- so only
 # the ignore form can rot unnoticed, and only it is reported here.
 # `@ts-nocheck` silenced the whole file.
+# #127, tsc 5.9.3: tsc recognizes the directive only when it is the first
+# thing in a `//` line comment (mod leading whitespace) -- trailing text after
+# it is fine, but any character before it, or a `/* */` block form, is not.
+# `// `@ts-nocheck`; explained here` still reported the file's type error, so
+# both patterns require the token to sit immediately after `//`, the same
+# marker-then-token adjacency every other detector below already requires.
 # ESLint 9: https://eslint.org/docs/latest/use/configure/rules
 # Observed on a file violating no-unused-vars and eqeqeq: the file-level
 # `eslint-disable` with no rule names reported 0 problems, while the same
@@ -156,9 +162,9 @@ _PYTHON = _PY_FILE_BLANKETS + _PY_LINE_BLANKETS
 # with no rule name silences everything on the following line. A trailing
 # `-- description` is part of the directive, so it does not make one narrow.
 _TYPESCRIPT = (
-    (re.compile(r"@ts-nocheck\b"), "a file-level TypeScript check disable"),
+    (re.compile(r"//\s*@ts-nocheck\b"), "a file-level TypeScript check disable"),
     (
-        re.compile(r"@ts-ignore\b"),
+        re.compile(r"//\s*@ts-ignore\b"),
         "a TypeScript suppression that stays silent once it is no longer needed",
     ),
     (

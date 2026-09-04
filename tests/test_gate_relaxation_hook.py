@@ -256,6 +256,29 @@ class GateRelaxationHookTests(unittest.TestCase):
         self._stage("b.ts", "// " + _token("@ts-", "ignore") + "\nconst n = 1;\n")
         self.assertEqual(self._run()[0], 1)
 
+    def test_ts_directive_named_in_prose_is_not_reported(self):
+        # #127: a comment that merely *mentions* the directive, rather than
+        # opening with it, is not recognized by tsc as a suppression -- so
+        # flagging it is a false accusation. Verified against tsc 5.9.3: a
+        # comment reading "// `@ts-nocheck`; explanation" still reports the
+        # file's type error, while "// @ts-nocheck" alone does not.
+        self._stage(
+            "a.ts",
+            "// `" + _token("@ts-", "nocheck") + "`; explained here, not enabled\n"
+            "const n: number = 1;\n",
+        )
+        self.assertEqual(self._run()[0], 0)
+        self._stage(
+            "b.ts",
+            "const a: number = 1;\n"
+            "// see `" + _token("@ts-", "ignore") + "` for details\n"
+            "const n: number = 1;\n",
+        )
+        self.assertEqual(self._run()[0], 0)
+        # The real directive, anchored right after `//`, still reports.
+        self._stage("c.ts", "// " + _token("@ts-", "nocheck") + "\nconst n: number = 1;\n")
+        self.assertEqual(self._run()[0], 1)
+
     def test_bare_rubocop_disable_is_not_reported(self):
         # Verified against rubocop 1.89: a disable naming no cop suppresses
         # nothing, so reporting it would be a false accusation.

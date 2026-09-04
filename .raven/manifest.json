@@ -442,9 +442,9 @@
       "sourceSha256": "361e354a55500c86b5512683ecf25f47e579c02149ce012b1dda6286e8b263c0"
     },
     ".raven/git-hooks/lib/check-gate-relaxation.py": {
-      "installedSha256": "2d0010edfa3900f519c05fcab0794d4af6e1ed48f1c72e37856a312c149bec40",
+      "installedSha256": "54777ba1ff45aaf6f627943ca980552ce6873599d10e86208ad5ea7d0924acbf",
       "kind": "file",
-      "sourceSha256": "2d0010edfa3900f519c05fcab0794d4af6e1ed48f1c72e37856a312c149bec40"
+      "sourceSha256": "54777ba1ff45aaf6f627943ca980552ce6873599d10e86208ad5ea7d0924acbf"
     },
     ".raven/git-hooks/lib/check-managed-block-integrity.py": {
       "installedSha256": "5f864f75c9c4eeb1943ce0f0c5ed3c1d6281dcd5854c3f746aa263ed2ecc028c",
@@ -497,8 +497,8 @@
     "pyright",
     "pytest"
   ],
-  "ravenVersion": "72852b6d4b4c-dirty",
+  "ravenVersion": "6aaf3e7e3651-dirty",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-09-03T22:31:51.054528+00:00"
+  "updatedAt": "2026-09-04T02:10:46.048764+00:00"
 }
