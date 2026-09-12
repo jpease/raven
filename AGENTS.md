@@ -40,7 +40,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=ed139b63caf07785cff4399abce2bc2722e2afb53e35d4f3033f8b99da7be8e3 -->
+<!-- RAVEN:BEGIN sha256=7354546fb6d9398e0596bbe4a124249209be40def9afc0b023b23aa3486586e9 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -68,7 +68,8 @@ Use the cheapest adequate source before reading full files.
 | "How does X work?" / conceptual flow discovery | `mcp__gitnexus__query` |
 | Blast-radius before editing a symbol | `mcp__gitnexus__impact` |
 | Syntax-aware pattern or mechanical rewrite | ast-grep or Semgrep |
-| Build, test, or log output | RTK-wrapped shell command |
+| Large diff before commit | `git diff --stat`, then targeted hunks |
+| Test, build, or log output | quiet flag first, RTK if still noisy |
 
 - Batch independent reads, searches, and inspections per turn.
 - Skeleton-first: for a large or unfamiliar file, get a symbol map (LSP document symbols, or `ast-grep`/`rg`) before reading, then read only the ranges you need — read a full file only when it is small or the whole structure matters.
@@ -88,13 +89,11 @@ Delegate or ask when the scope of a task exceeds what targeted retrieval can res
 
 ## Shell Command Policy
 
-Use RTK for commands likely to produce noisy output:
+Prefer a command's own quiet flag before RTK (`pytest -q`, `ruff check --quiet`, `npm ci --silent`) — same familiar format, and it still surfaces real failures and violations.
 
-- tests and builds
-- package managers
-- large diffs or recursive listings
-- cloud CLIs
-- Docker and Kubernetes commands
+Use RTK for commands likely to produce noisy output beyond what a quiet flag removes: tests and builds, package managers, cloud CLIs, Docker and Kubernetes commands.
+
+For large diffs or recursive listings, use `git diff --stat` and `fd` before RTK — RTK's summary of these has been seen truncating output behind a local log file the agent can't read back. Read the full diff or listing directly when the summary isn't enough.
 
 Prefer `jq`/`yq` over `grep`/`sed`/`awk` for structured JSON/YAML.
 
