@@ -496,7 +496,7 @@ paths = [".claude/skills/raven-plan/**"]
         self.assertFalse((rules / "raven-generic.md").exists())
 
         # Still ships the two shared rules every tree gets, as symlinks.
-        for name in ("raven-prose.md", "raven-security.md"):
+        for name in ("raven-comments.md", "raven-prose.md", "raven-security.md"):
             with self.subTest(rule=name):
                 self.assertTrue((rules / name).is_symlink())
 

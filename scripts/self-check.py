@@ -105,6 +105,7 @@ _TREE_SYMLINKS_TO_COMMON = [
     ".claude/docs/raven-semgrep.md",
     ".claude/docs/raven-tool-assessment.md",
     ".claude/hooks",
+    ".claude/rules/raven-comments.md",
     ".claude/rules/raven-prose.md",
     ".claude/rules/raven-security.md",
     ".claude/scripts",
@@ -280,6 +281,7 @@ def validate_context_budget() -> None:
         # Raised 75 -> 80 deliberately: this file is the only prose guardrail
         # that reaches ordinary chat, and the maintainer has named three tics
         # (adjudicate, vacuous, re-litigate) that only a loaded rule can catch.
+        "common/.claude/rules/raven-comments.md": 75,
         "common/.claude/rules/raven-prose.md": 80,
         "common/.claude/rules/raven-security.md": 45,
     }
@@ -405,6 +407,7 @@ def validate_aggregate_budget() -> None:
     # corresponding per-file thresholds so it stays a real, tighter constraint.
     SHARED = [
         "common/AGENTS.md",
+        "common/.claude/rules/raven-comments.md",
         "common/.claude/rules/raven-prose.md",
         "common/.claude/rules/raven-security.md",
     ]
@@ -431,15 +434,22 @@ def validate_aggregate_budget() -> None:
         # hidden-files bullet for a correct one and gained an ast-grep bullet
         # covering the invocation form and the empty-result check. The 46 is
         # the net of the rewrite and the addition, not the addition alone.
-        "python": (2174, "python/.claude/rules/raven-python.md"),
-        "elixir": (2208, "elixir/.claude/rules/raven-elixir.md"),
-        "rust": (2131, "rust/.claude/rules/raven-rust.md"),
-        "swift": (2001, "swift/.claude/rules/raven-swift.md"),
-        "typescript": (2024, "typescript/.claude/rules/raven-typescript.md"),
-        "go": (2157, "go/.claude/rules/raven-go.md"),
-        "lua": (2025, "lua/.claude/rules/raven-lua.md"),
-        "ruby": (2158, "ruby/.claude/rules/raven-ruby.md"),
-        "dotfiles": (1910, "dotfiles/.claude/rules/raven-dotfiles.md"),
+        #
+        # Every profile then rose again by the same 75 words, one event rather
+        # than nine: the shared `raven-comments.md` joined SHARED. Raven told an
+        # agent nothing about what a code comment should hold, and the failure
+        # it now names -- a comment restating the line below it, process
+        # narration left in, an unverified "the usual case" -- is only
+        # correctable in guidance loaded at the moment the comment is written.
+        "python": (2249, "python/.claude/rules/raven-python.md"),
+        "elixir": (2283, "elixir/.claude/rules/raven-elixir.md"),
+        "rust": (2206, "rust/.claude/rules/raven-rust.md"),
+        "swift": (2076, "swift/.claude/rules/raven-swift.md"),
+        "typescript": (2099, "typescript/.claude/rules/raven-typescript.md"),
+        "go": (2232, "go/.claude/rules/raven-go.md"),
+        "lua": (2100, "lua/.claude/rules/raven-lua.md"),
+        "ruby": (2233, "ruby/.claude/rules/raven-ruby.md"),
+        "dotfiles": (1985, "dotfiles/.claude/rules/raven-dotfiles.md"),
     }
     print("==> validate aggregate context budget per language profile")
 
