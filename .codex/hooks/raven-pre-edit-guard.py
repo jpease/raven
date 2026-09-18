@@ -38,23 +38,33 @@ def _extract_path(payload: dict) -> str:
     return tool_input.get("file_path") or tool_input.get("path") or payload.get("file_path") or ""
 
 
+def _is_gemini_hook(payload: dict) -> bool:
+    if "GEMINI_PROJECT_DIR" in os.environ:
+        return True
+    event = payload.get("hook_event_name")
+    if event in ("BeforeTool", "AfterTool"):
+        return True
+    tool = payload.get("tool_name")
+    return tool in ("run_shell_command", "read_file", "write_file", "replace")
+
+
 def _is_codex_hook(payload: dict) -> bool:
     return "hook_event_name" in payload or "tool_name" in payload
 
 
 def _adapter_directory_name() -> str:
-    """``.claude`` or ``.codex``, from the path this hook was installed at.
+    """``.claude``, ``.codex``, or ``.gemini``, from the path this hook was installed at.
 
     Read without resolving symlinks, like ``raven-session-checkpoint.py``: in
-    the template the Codex copy is a link into ``.claude/hooks/``, and
-    adapter identity follows the path the host invoked, not where the bytes
+    the template the Codex and Gemini copies are links into ``.claude/hooks/``,
+    and adapter identity follows the path the host invoked, not where the bytes
     live. Anything else answers ``.claude``, the host that supports the most.
     """
     try:
         name = Path(os.path.abspath(__file__)).parents[1].name
     except IndexError:
         return ".claude"
-    return name if name in {".claude", ".codex"} else ".claude"
+    return name if name in {".claude", ".codex", ".gemini"} else ".claude"
 
 
 def _project_root() -> Path:
@@ -128,12 +138,21 @@ def matching_protected_pattern(relative: str, patterns: list[str]) -> str | None
     return None
 
 
-def _context(message: str) -> None:
-    """Add ``message`` to the agent's context without blocking, on either host.
-
-    Plain stderr on exit 0 reaches the debug log on Claude Code and the model
-    never sees it, which is what the caution tier below did until #247.
-    """
+def _context(message: str, payload: dict | None = None) -> None:
+    """Add ``message`` to the agent's context without blocking, on any host."""
+    if payload is not None and _is_gemini_hook(payload):
+        print(
+            json.dumps(
+                {
+                    "systemMessage": message,
+                    "hookSpecificOutput": {
+                        "hookEventName": "BeforeTool",
+                        "additionalContext": message,
+                    },
+                }
+            )
+        )
+        return
     print(
         json.dumps(
             {
@@ -197,6 +216,9 @@ CAUTION = [
 
 
 def _deny(message: str, payload: dict) -> int:
+    if _is_gemini_hook(payload):
+        print(json.dumps({"decision": "deny", "reason": message}))
+        return 0
     if _is_codex_hook(payload):
         print(
             json.dumps(
@@ -249,11 +271,13 @@ def main() -> int:
             if decision == "ask" and _adapter_directory_name() == ".claude":
                 _ask(message)
             else:
-                _context(message)
+                _context(message, payload)
             return 0
 
     if any(re.search(pattern, normalized, re.IGNORECASE) for pattern in CAUTION):
-        _context(f"High-churn or generated/protected path. Edit only when required: {path}")
+        _context(
+            f"High-churn or generated/protected path. Edit only when required: {path}", payload
+        )
 
     return 0
 

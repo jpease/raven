@@ -38,6 +38,7 @@ therefore no nudge, rather than a nudge on every command.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import sys
@@ -77,6 +78,16 @@ def _load_payload() -> dict | None:
     except (ValueError, OSError):
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _is_gemini_hook(payload: dict) -> bool:
+    if "GEMINI_PROJECT_DIR" in os.environ:
+        return True
+    event = payload.get("hook_event_name")
+    if event in ("BeforeTool", "AfterTool"):
+        return True
+    tool = payload.get("tool_name")
+    return tool in ("run_shell_command", "read_file", "write_file", "replace")
 
 
 def _split_after_cd(command: str) -> tuple[str, str] | None:
@@ -153,22 +164,36 @@ def main() -> int:
         return 0
 
     _, rewrite = verdict
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "additionalContext": (
-                        "This command opens with `cd`, so what it reads depends on state "
-                        "that is not in the command, and the harness resets the working "
-                        "directory between calls anyway. An equivalent absolute-path form "
-                        f"exists: {rewrite}. Prefer that spelling for the rest of this "
-                        "session. Continue if the `cd` is load-bearing here."
-                    ),
-                }
-            }
-        )
+    message = (
+        "This command opens with `cd`, so what it reads depends on state "
+        "that is not in the command, and the harness resets the working "
+        "directory between calls anyway. An equivalent absolute-path form "
+        f"exists: {rewrite}. Prefer that spelling for the rest of this "
+        "session. Continue if the `cd` is load-bearing here."
     )
+    if _is_gemini_hook(payload):
+        print(
+            json.dumps(
+                {
+                    "systemMessage": message,
+                    "hookSpecificOutput": {
+                        "hookEventName": "BeforeTool",
+                        "additionalContext": message,
+                    },
+                }
+            )
+        )
+    else:
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "additionalContext": message,
+                    }
+                }
+            )
+        )
     return 0
 
 

@@ -212,7 +212,7 @@ COMMAND_TIMEOUT_SECONDS = 3
 CLAUDE_MCP_TIMEOUT_SECONDS = 3
 RUN_COMMAND_PROBES = os.environ.get("RAVEN_TOOL_CHECK_EXECUTE") == "1"
 RUN_CLAUDE_MCP_CLI = os.environ.get("RAVEN_TOOL_CHECK_CLAUDE_CLI") == "1"
-_ADAPTER_DIRECTORY_NAMES = frozenset({".claude", ".codex"})
+_ADAPTER_DIRECTORY_NAMES = frozenset({".claude", ".codex", ".gemini"})
 # Shown in command examples when this script is not running from an installed
 # `<root>/<adapter>/scripts/` layout and no adapter can be inferred.
 _DEFAULT_ADAPTER_DIRECTORY_NAME = ".claude"
@@ -530,6 +530,15 @@ def _codex_mcp_config_paths(root: Path | None = None) -> list[Path]:
     return list(dict.fromkeys(paths))
 
 
+def _gemini_mcp_config_paths(root: Path | None = None) -> list[Path]:
+    home = Path.home()
+    paths = [
+        (root if root is not None else project_root()) / ".gemini" / "settings.json",
+        home / ".gemini" / "settings.json",
+    ]
+    return list(dict.fromkeys(paths))
+
+
 def _raven_config_module():
     """Import ``.raven/git-hooks/lib/raven_config.py`` for the shared config parser.
 
@@ -629,6 +638,25 @@ def _codex_mcp_server_names_from_config(root: Path | None = None) -> frozenset[s
         except (OSError, UnicodeDecodeError):
             continue
     return frozenset(names)
+
+
+@cache
+def _gemini_mcp_server_names_from_config(root: Path | None = None) -> frozenset[str]:
+    names: set[str] = set()
+    for path in _gemini_mcp_config_paths(root):
+        if not path.is_file():
+            continue
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        names.update(_top_level_mcp_server_names(parsed))
+    return frozenset(names)
+
+
+def gemini_mcp_server_configured(server_name: str, root: Path | None = None) -> bool:
+    """Whether a Gemini MCP server is configured, per its ``settings.json``."""
+    return server_name in _gemini_mcp_server_names_from_config(root)
 
 
 @lru_cache(maxsize=1)
@@ -738,6 +766,9 @@ def check_tool_with_source(tool: dict, root: Path | None = None) -> tuple[bool, 
     codex_mcp_server = tool.get("codexMcpServer")
     if isinstance(codex_mcp_server, str) and codex_mcp_server_configured(codex_mcp_server, root):
         return True, "codex-mcp-config"
+    gemini_mcp_server = tool.get("geminiMcpServer")
+    if isinstance(gemini_mcp_server, str) and gemini_mcp_server_configured(gemini_mcp_server, root):
+        return True, "gemini-mcp-config"
     if timed_out:
         return False, "timed-out"
     return False, None

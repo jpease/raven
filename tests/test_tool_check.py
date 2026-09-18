@@ -122,6 +122,23 @@ gitnexus: gitnexus mcp - ✓ Connected
         self.assertIn("semgrep", module._configured_mcp_server_names(output))
         self.assertIn("gitnexus", module._configured_mcp_server_names(output))
 
+    def test_a_tool_can_be_available_from_gemini_mcp_config_without_cli(self):
+        module = load_script_module("raven_tool_check_gemini_mcp", TOOL_CHECK_SCRIPT)
+        tool = {
+            "id": "mytool",
+            "name": "MyTool",
+            "commands": [["nonexistent-tool-binary-xyz"]],
+            "geminiMcpServer": "gemini-probe",
+        }
+        gemini_settings = self.destination / ".gemini" / "settings.json"
+        gemini_settings.parent.mkdir(parents=True, exist_ok=True)
+        gemini_settings.write_text(
+            json.dumps({"mcpServers": {"gemini-probe": {"command": "probe"}}}), encoding="utf-8"
+        )
+        available, source = module.check_tool_with_source(tool, root=self.destination)
+        self.assertTrue(available)
+        self.assertEqual(source, "gemini-mcp-config")
+
     def test_claude_mcp_config_files_are_parsed_without_cli(self):
         module = load_script_module("raven_tool_check_config", TOOL_CHECK_SCRIPT)
 
@@ -557,6 +574,9 @@ class ProjectRootResolutionTests(RavenTestCase):
 
         self.assertEqual(module._claude_mcp_config_paths(root)[0], root / ".mcp.json")
         self.assertEqual(module._codex_mcp_config_paths(root)[0], root / ".codex" / "config.toml")
+        self.assertEqual(
+            module._gemini_mcp_config_paths(root)[0], root / ".gemini" / "settings.json"
+        )
 
     def _install_project(self, adapter: str, script: Path) -> Path:
         """Install one adapter's prober into a throwaway project worktree."""
@@ -689,8 +709,13 @@ class AdapterDirectoryDerivationTests(RavenTestCase):
             Path("proj/.codex/scripts/raven-tool-check.py"), "raven_tc_layout_codex"
         )
 
+        gemini = self._module_installed_at(
+            Path("proj/.gemini/scripts/raven-tool-check.py"), "raven_tc_layout_gemini"
+        )
+
         self.assertEqual(claude.adapter_directory_name(), ".claude")
         self.assertEqual(codex.adapter_directory_name(), ".codex")
+        self.assertEqual(gemini.adapter_directory_name(), ".gemini")
 
     def test_adapter_name_falls_back_outside_the_install_layout(self):
         stray = self._module_installed_at(

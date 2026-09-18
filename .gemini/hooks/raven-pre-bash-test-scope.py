@@ -22,11 +22,23 @@ than a nudge on every test command.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import sys
 import tempfile
 from pathlib import Path
+
+
+def _is_gemini_hook(payload: dict) -> bool:
+    if "GEMINI_PROJECT_DIR" in os.environ:
+        return True
+    event = payload.get("hook_event_name")
+    if event in ("BeforeTool", "AfterTool"):
+        return True
+    tool = payload.get("tool_name")
+    return tool in ("run_shell_command", "read_file", "write_file", "replace")
+
 
 STAMP_PREFIX = "raven-test-scope-"
 
@@ -152,21 +164,35 @@ def main() -> int:
     if verdict != "whole":
         return 0
 
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "additionalContext": (
-                        "This is the session's first test run and it covers the whole "
-                        "suite. Raven asks for the narrowest relevant test first, then "
-                        "the full gate once it passes. Continue if the whole suite is "
-                        "what this step needs."
-                    ),
-                }
-            }
-        )
+    message = (
+        "This is the session's first test run and it covers the whole "
+        "suite. Raven asks for the narrowest relevant test first, then "
+        "the full gate once it passes. Continue if the whole suite is "
+        "what this step needs."
     )
+    if _is_gemini_hook(payload):
+        print(
+            json.dumps(
+                {
+                    "systemMessage": message,
+                    "hookSpecificOutput": {
+                        "hookEventName": "BeforeTool",
+                        "additionalContext": message,
+                    },
+                }
+            )
+        )
+    else:
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "additionalContext": message,
+                    }
+                }
+            )
+        )
     return 0
 
 

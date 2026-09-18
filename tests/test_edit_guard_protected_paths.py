@@ -128,6 +128,48 @@ class EndToEndTests(RavenTestCase):
         self.assertNotIn("permissionDecision", output)
         self.assertIn("migrations/*", output["additionalContext"])
 
+    def test_gemini_gets_context_and_system_message_because_it_has_no_ask(self):
+        hook = self._install(".gemini", self.PROTECTED)
+        payload = {
+            "hook_event_name": "BeforeTool",
+            "tool_name": "write_file",
+            "tool_input": {"file_path": "migrations/0001.py"},
+        }
+        result = subprocess.run(
+            [sys.executable, str(hook)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            cwd=self.destination,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertIn("systemMessage", data)
+        self.assertIn("migrations/*", data["systemMessage"])
+        self.assertEqual(data["hookSpecificOutput"]["hookEventName"], "BeforeTool")
+        self.assertIn("migrations/*", data["hookSpecificOutput"]["additionalContext"])
+
+    def test_gemini_denies_secret_paths(self):
+        hook = self._install(".gemini", '[edit_guard]\nprotected_paths = ["*"]\n')
+        payload = {
+            "hook_event_name": "BeforeTool",
+            "tool_name": "write_file",
+            "tool_input": {"file_path": ".env"},
+        }
+        result = subprocess.run(
+            [sys.executable, str(hook)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            cwd=self.destination,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["decision"], "deny")
+        self.assertIn("Protected file path", data["reason"])
+
     def test_an_unlisted_path_passes_silently(self):
         hook = self._install(".claude", self.PROTECTED)
         result = self._run(hook, "src/app.py")

@@ -260,6 +260,49 @@ class GuardHookEndToEndTests(RavenTestCase):
         self.assertEqual(decision["permissionDecision"], "deny")
         self.assertIn("raven-skeleton", decision["permissionDecisionReason"].lower())
 
+    @unittest.skipUnless(HAVE_SKELETON_BACKEND, "no skeleton backend (ast-grep/rg) on PATH")
+    def test_denies_large_unbounded_read_for_gemini_payload(self):
+        path = self._setup_project(gate_enabled=True, lines=2000)
+        payload = json.dumps(
+            {
+                "hook_event_name": "BeforeTool",
+                "tool_name": "read_file",
+                "tool_input": {"file_path": str(path)},
+            }
+        )
+        result = subprocess.run(
+            [sys.executable, str(GUARD_SCRIPT)],
+            input=payload,
+            capture_output=True,
+            text=True,
+            cwd=self.destination,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["decision"], "deny")
+        self.assertIn("raven-skeleton", data["reason"].lower())
+
+    def test_allows_bounded_read_for_gemini_payload(self):
+        path = self._setup_project(gate_enabled=True, lines=2000)
+        payload = json.dumps(
+            {
+                "hook_event_name": "BeforeTool",
+                "tool_name": "read_file",
+                "tool_input": {"file_path": str(path), "start_line": 1, "end_line": 50},
+            }
+        )
+        result = subprocess.run(
+            [sys.executable, str(GUARD_SCRIPT)],
+            input=payload,
+            capture_output=True,
+            text=True,
+            cwd=self.destination,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+
     def test_allows_when_gate_disabled(self):
         path = self._setup_project(gate_enabled=False, lines=2000)
         result = self._run(path)

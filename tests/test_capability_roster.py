@@ -751,6 +751,10 @@ class _StubProber:
     def _codex_mcp_server_names_from_config(root):
         return set()
 
+    @staticmethod
+    def _gemini_mcp_server_names_from_config(root):
+        return set()
+
 
 if __name__ == "__main__":
     unittest.main()

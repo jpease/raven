@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -476,10 +477,10 @@ def build_roster(root: Path | None, prober: Any) -> str:
     if root is not None:
         keys = read_config_keys(root)
         template = keys["template"]
-        mcp_servers = sorted(
-            prober._claude_mcp_server_names_from_config(root)
-            | prober._codex_mcp_server_names_from_config(root)
-        )
+        claude_mcp = getattr(prober, "_claude_mcp_server_names_from_config", lambda r: set())(root)
+        codex_mcp = getattr(prober, "_codex_mcp_server_names_from_config", lambda r: set())(root)
+        gemini_mcp = getattr(prober, "_gemini_mcp_server_names_from_config", lambda r: set())(root)
+        mcp_servers = sorted(claude_mcp | codex_mcp | gemini_mcp)
         tracker_line = render_tracker_line(
             keys["platform"], present=lambda cli: prober.command_works([cli, "--version"])
         )
@@ -525,6 +526,14 @@ def main() -> int:
         text = build_roster(root, prober)
         if args.json:
             print(json.dumps({"roster": text}, indent=2))
+        elif payload is not None and (
+            "GEMINI_PROJECT_DIR" in os.environ
+            or (
+                payload.get("hook_event_name") in ("BeforeTool", "AfterTool", "SessionStart")
+                and ("transcript_path" in payload or "session_id" in payload)
+            )
+        ):
+            print(json.dumps({"systemMessage": text}))
         else:
             sys.stdout.write(text)
     except Exception:  # noqa: BLE001 -- deliberate last-resort boundary, see spec's Error Handling

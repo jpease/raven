@@ -134,6 +134,22 @@ class EndToEndTests(RavenTestCase):
             Path(path).read_text(encoding="utf-8"), self._payload(300)["tool_response"]["stdout"]
         )
 
+    def test_gemini_payload_replaces_oversized_result_with_deny_decision(self):
+        hook = self._install("[bash_output]\nmax_lines = 50\n")
+        payload = {
+            "session_id": "gemini-123",
+            "hook_event_name": "AfterTool",
+            "tool_name": "run_shell_command",
+            "tool_input": {"command": "pytest -q"},
+            "tool_response": {"output": "".join(f"out {i}\n" for i in range(300))},
+        }
+        result = self._run(hook, payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["decision"], "deny")
+        self.assertIn("Full output:", data["reason"])
+        self.assertEqual(len(data["reason"].splitlines()), 51)
+
     def test_default_limit_applies_without_a_section(self):
         hook = self._install("[skeleton]\n")
         self.assertEqual(self._run(hook, self._payload(150)).stdout, "")

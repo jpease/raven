@@ -14,6 +14,7 @@ from helpers import REPO_ROOT, RavenTestCase
 
 CLAUDE_BASH_GUARD = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-pre-bash-guard.py"
 CODEX_BASH_GUARD = REPO_ROOT / "common" / ".codex" / "hooks" / "raven-pre-bash-guard.py"
+GEMINI_BASH_GUARD = REPO_ROOT / "common" / ".gemini" / "hooks" / "raven-pre-bash-guard.py"
 
 # The git verbs beyond `reset --hard` and `clean -fdx` that destroy work
 # (issue #210), each in the plain and the `git -C <dir>` spelling. Split out
@@ -220,6 +221,32 @@ class BashGuardDestructiveOptionTests(RavenTestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), "")
 
+    def test_gemini_copy_denies_all_spellings(self):
+        for command in DENIED_BASH_COMMANDS:
+            with self.subTest(command=command):
+                payload = {
+                    "hook_event_name": "BeforeTool",
+                    "tool_name": "run_shell_command",
+                    "tool_input": {"command": command},
+                }
+                result = _run_bash_guard(GEMINI_BASH_GUARD, payload)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                response = json.loads(result.stdout)
+                self.assertEqual(response["decision"], "deny")
+                self.assertIn("reason", response)
+
+    def test_gemini_copy_allows_safe_commands(self):
+        for command in ALLOWED_BASH_COMMANDS:
+            with self.subTest(command=command):
+                payload = {
+                    "hook_event_name": "BeforeTool",
+                    "tool_name": "run_shell_command",
+                    "tool_input": {"command": command},
+                }
+                result = _run_bash_guard(GEMINI_BASH_GUARD, payload)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), "")
+
 
 class BashGuardRegexPatternTests(RavenTestCase):
     """Raw-text matches are denied, but only for text a shell could execute.
@@ -254,6 +281,18 @@ class BashGuardRegexPatternTests(RavenTestCase):
             "tool_input": {"command": command},
         }
         result = _run_bash_guard(CODEX_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "", "a data heredoc must not be denied")
+
+    def test_gemini_copy_allows_a_trigger_phrase_in_a_data_heredoc(self):
+        """Gemini version: a data heredoc body is not a command."""
+        command = "python - <<'EOF'\n# Example: git reset --hard\nprint(1)\nEOF"
+        payload = {
+            "hook_event_name": "BeforeTool",
+            "tool_name": "run_shell_command",
+            "tool_input": {"command": command},
+        }
+        result = _run_bash_guard(GEMINI_BASH_GUARD, payload)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "", "a data heredoc must not be denied")
 
@@ -329,6 +368,34 @@ class BashGuardRegexPatternTests(RavenTestCase):
         self.assertEqual(response["hookSpecificOutput"]["permissionDecision"], "deny")
         reason = response["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("destructive", reason.lower())
+
+    def test_gemini_copy_denies_real_git_reset_hard_command(self):
+        """Gemini version: real 'git reset --hard' is still denied."""
+        command = "git reset --hard HEAD"
+        payload = {
+            "hook_event_name": "BeforeTool",
+            "tool_name": "run_shell_command",
+            "tool_input": {"command": command},
+        }
+        result = _run_bash_guard(GEMINI_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        response = json.loads(result.stdout)
+        self.assertEqual(response["decision"], "deny")
+        self.assertIn("destructive", response["reason"].lower())
+
+    def test_gemini_copy_denies_a_trigger_phrase_in_a_shell_heredoc(self):
+        """Gemini version: a shell heredoc body is code."""
+        command = "sh - <<'SCRIPT'\nsudo rm -rf /\nexit 0\nSCRIPT"
+        payload = {
+            "hook_event_name": "BeforeTool",
+            "tool_name": "run_shell_command",
+            "tool_input": {"command": command},
+        }
+        result = _run_bash_guard(GEMINI_BASH_GUARD, payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        response = json.loads(result.stdout)
+        self.assertEqual(response["decision"], "deny")
+        self.assertIn("destructive", response["reason"].lower())
 
 
 class BashGuardTokenizedIntentTests(RavenTestCase):
@@ -680,6 +747,32 @@ class BashGuardRipgrepReplaceFlagTests(RavenTestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), "")
 
+    def test_gemini_copy_denies_bundled_replace_cluster(self):
+        for command in RIPGREP_DENIED_COMMANDS:
+            with self.subTest(command=command):
+                payload = {
+                    "hook_event_name": "BeforeTool",
+                    "tool_name": "run_shell_command",
+                    "tool_input": {"command": command},
+                }
+                result = _run_bash_guard(GEMINI_BASH_GUARD, payload)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                response = json.loads(result.stdout)
+                self.assertEqual(response["decision"], "deny")
+                self.assertIn("--replace", response["reason"])
+
+    def test_gemini_copy_allows_safe_ripgrep_commands(self):
+        for command in RIPGREP_ALLOWED_COMMANDS:
+            with self.subTest(command=command):
+                payload = {
+                    "hook_event_name": "BeforeTool",
+                    "tool_name": "run_shell_command",
+                    "tool_input": {"command": command},
+                }
+                result = _run_bash_guard(GEMINI_BASH_GUARD, payload)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), "")
+
 
 class AgentHooksTests(RavenTestCase):
     def test_hooks_tolerate_null_tool_input(self):
@@ -786,6 +879,40 @@ class AgentHooksTests(RavenTestCase):
                 decision = response["hookSpecificOutput"]
                 self.assertEqual(decision["hookEventName"], "PreToolUse")
                 self.assertEqual(decision["permissionDecision"], "deny")
+
+    def test_gemini_pre_hooks_emit_deny_payload_for_blocked_actions(self):
+        cases = [
+            (
+                "raven-pre-bash-guard.py",
+                {
+                    "hook_event_name": "BeforeTool",
+                    "tool_name": "run_shell_command",
+                    "tool_input": {"command": "git reset --hard"},
+                },
+            ),
+            (
+                "raven-pre-edit-guard.py",
+                {
+                    "hook_event_name": "BeforeTool",
+                    "tool_name": "write_file",
+                    "tool_input": {"file_path": ".env"},
+                },
+            ),
+        ]
+
+        for hook, payload in cases:
+            with self.subTest(hook=hook):
+                result = subprocess.run(
+                    [sys.executable, str(REPO_ROOT / "common" / ".gemini" / "hooks" / hook)],
+                    input=json.dumps(payload),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                response = json.loads(result.stdout)
+                self.assertEqual(response["decision"], "deny")
+                self.assertIn("reason", response)
 
 
 # --- Edit guard: anchored `credentials` + `..` traversal normalization
@@ -1560,6 +1687,34 @@ class NoisyCommandMatchingTests(unittest.TestCase):
 
     def test_a_command_already_using_rtk_is_left_alone(self):
         self.assertEqual(self._hint("rtk pytest -q"), "")
+
+    def test_gemini_payload_receives_gemini_after_tool_and_system_message(self):
+        stub_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, stub_dir, True)
+        stub = Path(stub_dir) / "rtk"
+        stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        stub.chmod(0o755)
+
+        env = dict(os.environ, PATH=stub_dir)
+        result = subprocess.run(
+            [sys.executable, str(self.HOOK)],
+            input=json.dumps(
+                {
+                    "hook_event_name": "AfterTool",
+                    "tool_name": "run_shell_command",
+                    "tool_input": {"command": "pytest -q"},
+                }
+            ),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(result.returncode, 0)
+        data = json.loads(result.stdout)
+        self.assertIn("systemMessage", data)
+        self.assertIn("RTK", data["systemMessage"])
+        self.assertEqual(data["hookSpecificOutput"]["hookEventName"], "AfterTool")
+        self.assertIn("RTK", data["hookSpecificOutput"]["additionalContext"])
 
 
 if __name__ == "__main__":

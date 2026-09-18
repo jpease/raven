@@ -22,7 +22,7 @@ from pathlib import Path
 # adapter directory from this script's own install path -- the same pattern
 # `raven-tool-check.py` already uses for the identical problem -- makes that
 # drift structurally impossible instead of relying on a reviewer to catch it.
-_ADAPTER_DIRECTORY_NAMES = frozenset({".claude", ".codex"})
+_ADAPTER_DIRECTORY_NAMES = frozenset({".claude", ".codex", ".gemini"})
 _DEFAULT_ADAPTER_DIRECTORY_NAME = ".claude"
 
 
@@ -180,11 +180,24 @@ def _extract_command(payload: dict) -> str:  # type: ignore[type-arg] -- host JS
     return tool_input.get("command") or payload.get("command") or ""
 
 
+def _is_gemini_hook(payload: dict) -> bool:  # type: ignore[type-arg] -- host JSON, shape varies
+    if "GEMINI_PROJECT_DIR" in os.environ:
+        return True
+    event = payload.get("hook_event_name")
+    if event in ("BeforeTool", "AfterTool"):
+        return True
+    tool = payload.get("tool_name")
+    return tool in ("run_shell_command", "read_file", "write_file", "replace")
+
+
 def _is_codex_hook(payload: dict) -> bool:  # type: ignore[type-arg] -- host JSON, shape varies
     return "hook_event_name" in payload or "tool_name" in payload
 
 
 def _deny(message: str, payload: dict) -> int:  # type: ignore[type-arg] -- host JSON, shape varies
+    if _is_gemini_hook(payload):
+        print(json.dumps({"decision": "deny", "reason": message}))
+        return 0
     if _is_codex_hook(payload):
         print(
             json.dumps(

@@ -82,12 +82,25 @@ def _extract_command(payload: dict) -> str:
     return tool_input.get("command") or payload.get("command") or ""
 
 
+def _is_gemini_hook(payload: dict) -> bool:
+    if "GEMINI_PROJECT_DIR" in os.environ:
+        return True
+    event = payload.get("hook_event_name")
+    if event in ("BeforeTool", "AfterTool"):
+        return True
+    tool = payload.get("tool_name")
+    return tool in ("run_shell_command", "read_file", "write_file", "replace")
+
+
 def _is_codex_hook(payload: dict) -> bool:
     # Both Claude Code and Codex include these fields; both use the structured JSON path.
     return "hook_event_name" in payload or "tool_name" in payload
 
 
 def _deny(message: str, payload: dict) -> int:
+    if _is_gemini_hook(payload):
+        print(json.dumps({"decision": "deny", "reason": message}))
+        return 0
     if _is_codex_hook(payload):
         print(
             json.dumps(

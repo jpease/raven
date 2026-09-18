@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import sys
@@ -63,6 +64,16 @@ def _extract_command(payload: dict) -> str:
     return tool_input.get("command") or payload.get("command") or ""
 
 
+def _is_gemini_hook(payload: dict) -> bool:
+    if "GEMINI_PROJECT_DIR" in os.environ:
+        return True
+    event = payload.get("hook_event_name")
+    if event in ("BeforeTool", "AfterTool"):
+        return True
+    tool = payload.get("tool_name")
+    return tool in ("run_shell_command", "read_file", "write_file", "replace")
+
+
 def main() -> int:
     """Read the hook payload from stdin and print an RTK hint if the command matches a noisy tool."""
     payload = _load_payload()
@@ -82,8 +93,19 @@ def main() -> int:
             f"Consider running noisy commands through RTK when exact raw output"
             f" is not required: {command}"
         )
-        # Both Claude Code and Codex include hook_event_name/tool_name in payloads.
-        if "hook_event_name" in payload or "tool_name" in payload:
+        if _is_gemini_hook(payload):
+            print(
+                json.dumps(
+                    {
+                        "systemMessage": hint,
+                        "hookSpecificOutput": {
+                            "hookEventName": "AfterTool",
+                            "additionalContext": hint,
+                        },
+                    }
+                )
+            )
+        elif "hook_event_name" in payload or "tool_name" in payload:
             print(
                 json.dumps(
                     {

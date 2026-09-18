@@ -110,8 +110,14 @@ def parse_gate_config(text: str) -> tuple[bool, int]:
 
 
 def is_unbounded_read(tool_input: dict) -> bool:
-    """A read with neither ``offset`` nor ``limit`` pulls the whole file."""
-    return not tool_input.get("offset") and not tool_input.get("limit")
+    """A read with neither offset/limit (Claude) nor start_line/end_line (Gemini) pulls the whole file."""
+    has_bounds = (
+        bool(tool_input.get("offset"))
+        or bool(tool_input.get("limit"))
+        or bool(tool_input.get("start_line"))
+        or bool(tool_input.get("end_line"))
+    )
+    return not has_bounds
 
 
 #: Backends `raven-skeleton.py` can build a symbol map with. The gate denies a
@@ -191,11 +197,24 @@ def _load_payload() -> dict | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _is_gemini_hook(payload: dict) -> bool:
+    if "GEMINI_PROJECT_DIR" in os.environ:
+        return True
+    event = payload.get("hook_event_name")
+    if event in ("BeforeTool", "AfterTool"):
+        return True
+    tool = payload.get("tool_name")
+    return tool in ("run_shell_command", "read_file", "write_file", "replace")
+
+
 def _is_codex_hook(payload: dict) -> bool:
     return "hook_event_name" in payload or "tool_name" in payload
 
 
 def _deny(message: str, payload: dict) -> int:
+    if _is_gemini_hook(payload):
+        print(json.dumps({"decision": "deny", "reason": message}))
+        return 0
     if _is_codex_hook(payload):
         print(
             json.dumps(

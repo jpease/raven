@@ -102,6 +102,29 @@ class EndToEndTests(RavenTestCase):
         self.assertIn("narrowest", output["additionalContext"])
         self.assertEqual(len(self._stamps()), 1)
 
+    def test_gemini_payload_receives_gemini_hook_event_and_system_message(self):
+        payload = {
+            "hook_event_name": "BeforeTool",
+            "tool_name": "run_shell_command",
+            "tool_input": {"command": "pytest -q"},
+            "session_id": "gemini-test-s-1",
+        }
+        env = dict(os.environ, TMPDIR=str(self.destination))
+        result = subprocess.run(
+            [sys.executable, str(HOOK)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertIn("systemMessage", data)
+        self.assertIn("narrowest", data["systemMessage"])
+        self.assertEqual(data["hookSpecificOutput"]["hookEventName"], "BeforeTool")
+        self.assertIn("narrowest", data["hookSpecificOutput"]["additionalContext"])
+
     def test_nothing_is_said_a_second_time(self):
         self._run("pytest -q")
         self.assertEqual(self._run("pytest -q"), "")

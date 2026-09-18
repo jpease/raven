@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 from importlib.machinery import SourceFileLoader
@@ -42,6 +43,16 @@ def _load_payload() -> dict | None:
     except (ValueError, OSError):
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _is_gemini_hook(payload: dict) -> bool:
+    if "GEMINI_PROJECT_DIR" in os.environ:
+        return True
+    event = payload.get("hook_event_name")
+    if event in ("BeforeTool", "AfterTool"):
+        return True
+    tool = payload.get("tool_name")
+    return tool in ("run_shell_command", "read_file", "write_file", "replace")
 
 
 def _raven_config_module():
@@ -137,9 +148,11 @@ def main() -> int:
     if payload is None:
         return 0
     response = payload.get("tool_response")
-    if not isinstance(response, dict):
-        return 0
-    stdout = response.get("stdout")
+    stdout = None
+    if isinstance(response, str):
+        stdout = response
+    elif isinstance(response, dict):
+        stdout = response.get("stdout") or response.get("output")
     if not isinstance(stdout, str):
         return 0
     tool_input = payload.get("tool_input") or {}
@@ -160,8 +173,15 @@ def main() -> int:
     if replacement is None:
         return 0
 
-    updated = dict(response)
-    updated["stdout"] = replacement
+    if _is_gemini_hook(payload):
+        print(json.dumps({"decision": "deny", "reason": replacement}))
+        return 0
+
+    if isinstance(response, dict):
+        updated = dict(response)
+        updated["stdout"] = replacement
+    else:
+        updated = replacement
     print(
         json.dumps(
             {
