@@ -14,7 +14,18 @@ from pathlib import Path
 
 from .apply import classify
 from .blocks import pending_merge_paths
-from .codex_trust import TRUSTED, UNTRUSTED, codex_home, project_trust
+from .codex_trust import (
+    TRUSTED as CODEX_TRUSTED,
+)
+from .codex_trust import (
+    UNTRUSTED as CODEX_UNTRUSTED,
+)
+from .codex_trust import (
+    codex_home,
+)
+from .codex_trust import (
+    project_trust as codex_project_trust,
+)
 from .config import ConfigError, load_config
 from .constants import (
     CLAUDE_PATH,
@@ -31,6 +42,21 @@ from .constants import (
 from .deactivated import classify_deactivated
 from .findings import Finding, Severity
 from .gates import gate_spec_for
+from .gemini_trust import (
+    INVALID as GEMINI_INVALID,
+)
+from .gemini_trust import (
+    TRUSTED as GEMINI_TRUSTED,
+)
+from .gemini_trust import (
+    UNTRUSTED as GEMINI_UNTRUSTED,
+)
+from .gemini_trust import (
+    gemini_trust_store_path,
+)
+from .gemini_trust import (
+    project_trust as gemini_project_trust,
+)
 from .git_hooks import (
     GATE_RELAXATION_SCRIPT,
     GATE_RELAXATION_SUFFIXES,
@@ -55,7 +81,7 @@ _DRIFT = "Drift & freshness"
 _HOOKS = "Git hooks"
 
 # Adapter script directories, in the order `_tool_check_script` prefers them.
-_ADAPTER_DIRS = (".claude", ".codex")
+_ADAPTER_DIRS = (".claude", ".codex", ".gemini")
 _PROBER_FILENAME = "raven-tool-check.py"
 
 # Gate tools with no reliable --version flag: probing them with --version
@@ -1279,7 +1305,7 @@ def codex_trust_findings(destination: Path) -> list[Finding]:
     if config.codex_components and not any(config.codex_components.values()):
         return []
 
-    trust = project_trust(destination)
+    trust = codex_project_trust(destination)
     config_path = codex_home() / "config.toml"
     if trust is None:
         return [
@@ -1294,7 +1320,7 @@ def codex_trust_findings(destination: Path) -> list[Finding]:
                 ),
             )
         ]
-    if trust == TRUSTED:
+    if trust == CODEX_TRUSTED:
         return [
             Finding(
                 id="doctor.codex.trusted",
@@ -1304,7 +1330,7 @@ def codex_trust_findings(destination: Path) -> list[Finding]:
                 detail="the .codex/ layer (config, hooks, rules, agents) is live",
             )
         ]
-    if trust == UNTRUSTED:
+    if trust == CODEX_UNTRUSTED:
         title = "Codex marks this project untrusted"
         detail = (
             f"{config_path} records trust_level = \"untrusted\" for this project or a "
@@ -1328,6 +1354,86 @@ def codex_trust_findings(destination: Path) -> list[Finding]:
                 "run `codex` in this repository once and accept the trust prompt, "
                 "then review Raven's hooks in `/hooks`; hooks stay skipped until reviewed"
             ),
+        )
+    ]
+
+
+_GEMINI = "Gemini adapter"
+
+
+def gemini_trust_findings(destination: Path) -> list[Finding]:
+    """Report whether Gemini CLI will load the installed ``.gemini/`` layer."""
+    config = load_config(destination)
+    if not (destination / ".gemini").is_dir():
+        return []
+    if config.gemini_components and not any(config.gemini_components.values()):
+        return []
+
+    trust = gemini_project_trust(destination)
+    store_path = gemini_trust_store_path()
+    if trust is None:
+        return [
+            Finding(
+                id="doctor.gemini.unconfigured",
+                severity=Severity.INFO,
+                category=_GEMINI,
+                title="Gemini has no readable trust store on this machine",
+                detail=(
+                    f"{store_path} cannot be read; the installed .gemini/ layer stays "
+                    "inert until Gemini trusts this project"
+                ),
+            )
+        ]
+    if trust == GEMINI_INVALID:
+        return [
+            Finding(
+                id="doctor.gemini.invalid",
+                severity=Severity.ERROR,
+                category=_GEMINI,
+                title="Gemini trust store is invalid",
+                detail=(
+                    f"{store_path} contains malformed JSON or an invalid trust level, "
+                    "so Gemini refuses to load its configuration"
+                ),
+                fix=(
+                    "repair trustedFolders.json using TRUST_FOLDER, TRUST_PARENT, or "
+                    "DO_NOT_TRUST values"
+                ),
+            )
+        ]
+    if trust == GEMINI_TRUSTED:
+        return [
+            Finding(
+                id="doctor.gemini.trusted",
+                severity=Severity.OK,
+                category=_GEMINI,
+                title="Gemini trusts this project",
+                detail="the .gemini/ layer (settings, hooks, policies, agents) is live",
+            )
+        ]
+    if trust == GEMINI_UNTRUSTED:
+        title = "Gemini marks this project untrusted"
+        detail = (
+            f"{store_path} records DO_NOT_TRUST for this project or a parent, so Gemini "
+            "skips the installed .gemini/ layer entirely"
+        )
+        fix = "run `gemini` in this repository and use `/permissions` to change folder trust"
+    else:
+        title = "Gemini has not trusted this project"
+        detail = (
+            f"no trustedFolders.json entry in {store_path} covers this repository, so "
+            "Gemini skips the installed .gemini/ layer (settings, hooks, policies, "
+            "agents)"
+        )
+        fix = "run `gemini` in this repository and trust the folder when prompted"
+    return [
+        Finding(
+            id="doctor.gemini.untrusted",
+            severity=Severity.WARN,
+            category=_GEMINI,
+            title=title,
+            detail=detail,
+            fix=fix,
         )
     ]
 
@@ -1360,6 +1466,7 @@ def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> l
     findings.extend(gate_relaxation_findings(destination))
     findings.extend(merge_only_tracking_findings(destination))
     findings.extend(codex_trust_findings(destination))
+    findings.extend(gemini_trust_findings(destination))
     config = load_config(destination)
     if config.exists:
         findings.extend(drift_findings(destination))
