@@ -139,6 +139,11 @@ from .plan import (
     print_section,
     settings_json_adoption_conflict,
 )
+from .render import (
+    can_render_gemini_settings,
+    render_gemini_settings,
+    resolve_common_root,
+)
 from .report import render_human, render_json
 from .template import (
     entries_for_destination,
@@ -291,4 +296,8 @@ __all__ = [
     "registry_path",
     "merge_only_tracking_findings",
     "untracked_merge_only_paths",
+    # render
+    "render_gemini_settings",
+    "can_render_gemini_settings",
+    "resolve_common_root",
 ]

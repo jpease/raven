@@ -41,6 +41,8 @@ def _symlink_fingerprint(target: str) -> Fingerprint:
 
 def entry_fingerprint(entry: TemplateEntry) -> Fingerprint:
     """Fingerprint a template entry as it would be copied: its symlink target or file hash."""
+    if entry.rendered_content is not None:
+        return Fingerprint(kind=KIND_FILE, sha256=sha256_bytes(entry.rendered_content))
     if entry.copy_as_symlink:
         return _symlink_fingerprint(os.readlink(entry.source))
     return Fingerprint(kind=KIND_FILE, sha256=file_sha256(entry.source))
@@ -61,6 +63,10 @@ def same_content(entry: TemplateEntry, target: Path) -> bool:
     Compares symlink targets directly rather than hashing, and uses a non-shallow
     ``filecmp`` for regular files so a size/mtime match alone cannot pass.
     """
+    if entry.rendered_content is not None:
+        if target.is_symlink() or not target.is_file():
+            return False
+        return sha256_bytes(entry.rendered_content) == file_sha256(target)
     if entry.copy_as_symlink:
         return target.is_symlink() and os.readlink(target) == os.readlink(entry.source)
     if not target.is_file():

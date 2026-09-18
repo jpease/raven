@@ -299,6 +299,8 @@ def template_entry_text(entry: TemplateEntry) -> str:
     substitutes an explanatory stub telling the user what Raven would normally
     have done, rather than dumping the symlink target's raw bytes.
     """
+    if entry.rendered_content is not None:
+        return entry.rendered_content.decode("utf-8")
     if entry.copy_as_symlink:
         target = os.readlink(entry.source)
         return (

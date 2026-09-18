@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -1025,6 +1026,198 @@ template = "lang"
         self.assertNotIn(".gemini/settings.json", manifest["files"])
         self.assertNotIn(".gemini/hooks/test-hook.py", manifest["files"])
         self.assertNotIn(".gemini/agents/test-agent.md", manifest["files"])
+
+
+class GeminiSettingsRendererTests(RavenTestCase):
+    """Acceptance tests for Issue #265: Render .gemini/settings.json at install time."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._fake_repo_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._fake_repo_tmp.cleanup)
+        self.fake_repo_root = Path(self._fake_repo_tmp.name)
+        self.common_dir = self.fake_repo_root / "common"
+        self.template_dir = self.fake_repo_root / "python"
+
+        # Common shared files
+        (self.common_dir / ".gemini").mkdir(parents=True, exist_ok=True)
+        (self.common_dir / ".gemini" / "settings.json").write_text(
+            '{\n  "hooks": {\n    "SessionStart": [\n      {"matcher": "startup", "hooks": [{"name": "init", "type": "command", "command": "python scripts/init.py"}]}\n    ]\n  }\n}\n',
+            encoding="utf-8",
+        )
+        (self.common_dir / ".raven").mkdir(parents=True, exist_ok=True)
+        (self.common_dir / ".raven" / "mcp.json").write_text(
+            '{\n  "mcpServers": {\n    "semgrep": {"command": "semgrep", "args": ["mcp"]},\n    "gitnexus": {"command": "gitnexus", "args": ["mcp"]}\n  }\n}\n',
+            encoding="utf-8",
+        )
+
+        # Language template files
+        (self.template_dir / ".raven").mkdir(parents=True, exist_ok=True)
+        (self.template_dir / ".raven" / "mcp.json").write_text(
+            '{\n  "mcpServers": {\n    "lsp": {"command": "mcp-language-server", "args": ["--workspace", ".", "--lsp", "pyright-langserver", "--", "--stdio"]}\n  }\n}\n',
+            encoding="utf-8",
+        )
+        (self.template_dir / "AGENTS.md").write_text("# Agents\n", encoding="utf-8")
+
+        patcher = mock.patch("raven_lib.cli.REPO_ROOT", self.fake_repo_root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _install(self) -> int:
+        ns = argparse.Namespace(
+            destination=str(self.destination),
+            language="python",
+            args=None,
+            overrides=[],
+            dry_run=False,
+            include_readme=False,
+            adopt_claude=False,
+            platform=None,
+        )
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return raven.cmd_install(ns)
+
+    def _upgrade(self, dry_run: bool = False) -> tuple[int, str]:
+        ns = argparse.Namespace(
+            destination=str(self.destination),
+            overrides=[],
+            dry_run=dry_run,
+            include_readme=False,
+            adopt_claude=False,
+            confirm_template_switch=False,
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc = raven.cmd_upgrade(ns)
+        return rc, buf.getvalue()
+
+    def test_render_gemini_settings_deterministic(self) -> None:
+        from raven_lib.render import render_gemini_settings
+
+        run1 = render_gemini_settings(self.template_dir, common_root=self.common_dir)
+        run2 = render_gemini_settings(self.template_dir, common_root=self.common_dir)
+        self.assertEqual(run1, run2)
+
+        # Pinned byte-for-byte check
+        data = json.loads(run1)
+        self.assertIn("hooks", data)
+        self.assertIn("mcpServers", data)
+        self.assertEqual(set(data["mcpServers"].keys()), {"gitnexus", "semgrep", "lsp"})
+        self.assertEqual(data["mcpServers"]["lsp"]["command"], "mcp-language-server")
+        # Alphabetical key order pinned
+        self.assertEqual(list(data.keys()), ["hooks", "mcpServers"])
+        self.assertEqual(list(data["mcpServers"].keys()), ["gitnexus", "lsp", "semgrep"])
+
+    def test_install_renders_gemini_settings_and_records_manifest(self) -> None:
+        (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_text(
+            """schema = 1
+template = "python"
+
+[components.gemini]
+settings = true
+""",
+            encoding="utf-8",
+        )
+        rc = self._install()
+        self.assertEqual(rc, 0)
+
+        settings_path = self.destination / ".gemini" / "settings.json"
+        self.assertTrue(settings_path.exists())
+        self.assertFalse(settings_path.is_symlink())
+
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+        self.assertIn("hooks", data)
+        self.assertIn("mcpServers", data)
+        self.assertIn("lsp", data["mcpServers"])
+
+        manifest = raven.load_manifest(self.destination)
+        self.assertIn(".gemini/settings.json", manifest["files"])
+        record = manifest["files"][".gemini/settings.json"]
+        self.assertEqual(record["kind"], "file")
+        self.assertEqual(record["installedSha256"], raven.file_sha256(settings_path))
+        self.assertEqual(record["sourceSha256"], raven.file_sha256(settings_path))
+
+    def test_upgrade_when_inputs_unchanged_reports_nothing_for_settings(self) -> None:
+        (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_text(
+            """schema = 1
+template = "python"
+
+[components.gemini]
+settings = true
+""",
+            encoding="utf-8",
+        )
+        rc = self._install()
+        self.assertEqual(rc, 0)
+
+        rc, output = self._upgrade()
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Upgraded", output)
+        self.assertIn(".gemini/settings.json", output)
+
+        rc, dry_run_out = self._upgrade(dry_run=True)
+        self.assertEqual(rc, 0)
+        self.assertIn(".gemini/settings.json", dry_run_out)
+        self.assertIn("Already up to date; will not copy:", dry_run_out)
+
+    def test_user_edit_to_rendered_settings_is_handled_as_managed_file(self) -> None:
+        (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_text(
+            """schema = 1
+template = "python"
+
+[components.gemini]
+settings = true
+""",
+            encoding="utf-8",
+        )
+        rc = self._install()
+        self.assertEqual(rc, 0)
+
+        # User customizes .gemini/settings.json
+        settings_path = self.destination / ".gemini" / "settings.json"
+        custom_content = '{\n  "custom": true,\n  "mcpServers": {}\n}\n'
+        settings_path.write_text(custom_content, encoding="utf-8")
+
+        # Upgrade leaves it untouched (local_only)
+        rc, dry_run_out = self._upgrade(dry_run=True)
+        self.assertEqual(rc, 0)
+        self.assertIn("Locally customized; template unchanged, so left untouched", dry_run_out)
+        self.assertIn(".gemini/settings.json", dry_run_out)
+
+        rc, output = self._upgrade()
+        self.assertEqual(rc, 0)
+        self.assertEqual(settings_path.read_text(encoding="utf-8"), custom_content)
+
+        # Now user accepts the edit
+        ns_accept = argparse.Namespace(
+            paths=[".gemini/settings.json"],
+            dry_run=False,
+            destination=str(self.destination),
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc_accept = raven.cmd_accept(ns_accept)
+        self.assertEqual(rc_accept, 0)
+        # Template input changes: update common hooks
+        (self.common_dir / ".gemini" / "settings.json").write_text(
+            '{\n  "hooks": {\n    "SessionStart": [{"matcher": "startup", "hooks": [{"name": "updated", "type": "command", "command": "python scripts/updated.py"}]}]\n  }\n}\n',
+            encoding="utf-8",
+        )
+
+        # Upgrade should detect conflict and require merge
+        rc, dry_run_out = self._upgrade(dry_run=True)
+        self.assertEqual(rc, 0)
+        self.assertIn("Manual merge required", dry_run_out)
+        self.assertIn(".gemini/settings.json", dry_run_out)
+
+        rc, output = self._upgrade()
+        self.assertEqual(rc, 0)
+        self.assertIn("Manual merge still required", output)
+        self.assertEqual(settings_path.read_text(encoding="utf-8"), custom_content)
+        diff_path = self.destination / ".raven" / "merge" / ".gemini" / "settings.json.diff"
+        self.assertTrue(diff_path.exists())
 
 
 if __name__ == "__main__":

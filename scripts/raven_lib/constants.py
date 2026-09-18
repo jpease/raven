@@ -54,6 +54,10 @@ SETTINGS_JSON_BACKUP_PATH = ".claude/settings.json.bak"
 GITATTRIBUTES_PATH = ".gitattributes"
 IGNORE_PATH = ".ignore"
 MERGE_ONLY_TEMPLATE_PATHS = {GITATTRIBUTES_PATH, IGNORE_PATH}
+# Internal template assets used as input to install-time renderers (e.g. MCP
+# server definitions) that must never be copied to the destination repository.
+MCP_DEFINITION_PATH = ".raven/mcp.json"
+INTERNAL_TEMPLATE_PATHS = {MCP_DEFINITION_PATH}
 RAVEN_BLOCK_BEGIN = "<!-- RAVEN:BEGIN -->"
 RAVEN_BLOCK_BEGIN_RE = re.compile(r"<!-- RAVEN:BEGIN(?: sha256=([a-f0-9]{64}))? -->")
 RAVEN_BLOCK_END = "<!-- RAVEN:END -->"

@@ -18,6 +18,7 @@ class TemplateEntry:
     relative: str
     source: Path
     copy_as_symlink: bool = False
+    rendered_content: bytes | None = None
 
 
 @dataclass(frozen=True)

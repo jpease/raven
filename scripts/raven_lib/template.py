@@ -11,16 +11,22 @@ import os
 import re
 from pathlib import Path
 
-from .config import config_excluded
+from .config import component_disabled, config_excluded
 from .constants import (
     EXCLUDED_NAMES,
     EXPECTED_TEMPLATE_SYMLINKS,
+    INTERNAL_TEMPLATE_PATHS,
     MERGE_ONLY_TEMPLATE_PATHS,
     REPO_ROOT,
     STARTER_TOOL_CONFIG_PATHS,
     _any_exists,
 )
 from .models import RavenConfig, TemplateEntry
+from .render import (
+    can_render_gemini_settings,
+    render_gemini_settings,
+    resolve_common_root,
+)
 
 #: A relative symlink target that climbs out of its tree and back in through
 #: ``common/`` -- the shape of the template's own internal cross-links.
@@ -57,6 +63,8 @@ def is_excluded(
     if relative in explicit_excludes:
         return True
     if relative in MERGE_ONLY_TEMPLATE_PATHS:
+        return True
+    if relative in INTERNAL_TEMPLATE_PATHS:
         return True
     if config and config_excluded(relative, config):
         return True
@@ -211,4 +219,43 @@ def entries_for_destination(
                     source=entry.source,
                     copy_as_symlink=False,
                 )
+
+    gemini_settings_rel = ".gemini/settings.json"
+    common = resolve_common_root(template)
+    if gemini_settings_rel in entries:
+        rendered_str = render_gemini_settings(template, common_root=common)
+        entries[gemini_settings_rel] = TemplateEntry(
+            relative=gemini_settings_rel,
+            source=entries[gemini_settings_rel].source,
+            copy_as_symlink=False,
+            rendered_content=rendered_str.encode("utf-8"),
+        )
+    elif (
+        (
+            config is None
+            or not is_excluded(
+                destination / gemini_settings_rel, gemini_settings_rel, excludes, config
+            )
+        )
+        and can_render_gemini_settings(template, common_root=common)
+        and (
+            (template / gemini_settings_rel).exists()
+            or (common / gemini_settings_rel).exists()
+            or (config is not None and not component_disabled(gemini_settings_rel, config))
+        )
+    ):
+        source_path = (
+            template / gemini_settings_rel
+            if (template / gemini_settings_rel).exists()
+            else common / gemini_settings_rel
+            if (common / gemini_settings_rel).exists()
+            else template / gemini_settings_rel
+        )
+        rendered_str = render_gemini_settings(template, common_root=common)
+        entries[gemini_settings_rel] = TemplateEntry(
+            relative=gemini_settings_rel,
+            source=source_path,
+            copy_as_symlink=False,
+            rendered_content=rendered_str.encode("utf-8"),
+        )
     return {key: entries[key] for key in sorted(entries)}

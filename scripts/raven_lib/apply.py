@@ -154,7 +154,10 @@ def _differs_only_by_final_newline(entry: TemplateEntry, target: Path) -> bool:
     if entry.copy_as_symlink or target.is_symlink():
         return False
     try:
-        src = entry.source.read_bytes()
+        if entry.rendered_content is not None:
+            src = entry.rendered_content
+        else:
+            src = entry.source.read_bytes()
         dst = target.read_bytes()
     except OSError:
         return False
@@ -306,6 +309,10 @@ def copy_paths(
         target.parent.mkdir(parents=True, exist_ok=True)
         if update_managed_blocks and block_managed_state(entry, target) == "upgradeable":
             update_raven_block(entry, target)
+        elif entry.rendered_content is not None:
+            if target.is_symlink():
+                target.unlink()
+            target.write_bytes(entry.rendered_content)
         elif entry.copy_as_symlink:
             if _any_exists(target):
                 target.unlink()
