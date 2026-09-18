@@ -1,0 +1,7 @@
+{"type":"init","timestamp":"<TIMESTAMP>","session_id":"test-session-id","model":"test-model"}
+{"type":"message","timestamp":"<TIMESTAMP>","role":"user","content":"Stream test"}
+{"type":"message","timestamp":"<TIMESTAMP>","role":"assistant","content":"Thinking...","delta":true}
+{"type":"tool_use","timestamp":"<TIMESTAMP>","tool_name":"testTool","tool_id":"tool-1","parameters":{"arg1":"value1"}}
+{"type":"tool_result","timestamp":"<TIMESTAMP>","tool_id":"tool-1","status":"success","output":"Tool executed successfully"}
+{"type":"message","timestamp":"<TIMESTAMP>","role":"assistant","content":"Final answer","delta":true}
+{"type":"result","timestamp":"<TIMESTAMP>","status":"success","stats":{"total_tokens":0,"input_tokens":0,"output_tokens":0,"cached":0,"input":0,"duration_ms":1,"tool_calls":1,"models":{}}}

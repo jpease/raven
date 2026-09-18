@@ -38,7 +38,7 @@ def gemini_trust_store_path() -> Path:
     return gemini_home() / "trustedFolders.json"
 
 
-def _strip_json_comments(text: str) -> str:
+def strip_json_comments(text: str) -> str:
     """Strip JavaScript-style comments while preserving JSON string contents."""
     output: list[str] = []
     index = 0
@@ -86,7 +86,7 @@ def _strip_json_comments(text: str) -> str:
 
 def trust_entries(text: str) -> dict[str, str]:
     """Parse and validate Gemini CLI's ``{path: TrustLevel}`` trust map."""
-    data = json.loads(_strip_json_comments(text))
+    data = json.loads(strip_json_comments(text))
     if not isinstance(data, dict):
         raise ValueError("trusted folders file is not a JSON object")
     entries: dict[str, str] = {}

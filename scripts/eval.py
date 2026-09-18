@@ -4,11 +4,12 @@
 Not part of any gate. It costs real model calls, it is not deterministic, and a
 single run of it proves nothing on its own -- which is exactly why it is a
 command someone chooses to run rather than something `just check` does. Use the
-local `claude` or `codex` CLI and whatever subscription is already logged in;
-this script never handles a key.
+local `claude`, `codex`, or `gemini` CLI and whatever subscription is already
+logged in; this script never handles a key.
 
     python scripts/eval.py --agent claude --trials 3
     python scripts/eval.py --agent codex --scenario gate-relaxation
+    python scripts/eval.py --agent gemini --scenario fixed-cost
     python scripts/eval.py --agent claude --trials 5 --out docs/evaluation/
 
 Every scenario runs twice per trial in identical throwaway repositories: one
@@ -35,6 +36,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from raven_lib.gemini_trust import (  # noqa: E402 -- needs the path inserts
+    strip_json_comments,
+)
 
 from evals.scenarios import (  # noqa: E402 -- needs the path inserts
     SCENARIOS,
@@ -71,9 +76,9 @@ class TrialOutcome:
     #: event to read, never that zero tokens were used.
     total_tokens: int | None = None
     output_tokens: int | None = None
-    #: Only `claude` reports this; always None for `codex`.
+    #: Claude reports this; Codex and Gemini do not.
     cost_usd: float | None = None
-    #: Tool calls the agent made, on either CLI. Read beside `total_tokens`:
+    #: Tool calls the agent made, on any supported CLI. Read beside `total_tokens`:
     #: it says whether a costlier arm took more steps or carried more context
     #: per step. None means the transcript held no events to count.
     tool_calls: int | None = None
@@ -123,7 +128,22 @@ def _codex_command(task: str) -> list[str]:
     ]
 
 
-AGENTS = {"claude": _claude_command, "codex": _codex_command}
+def _gemini_command(task: str) -> list[str]:
+    return [
+        "gemini",
+        "-p",
+        task,
+        "--output-format",
+        "stream-json",
+        "--approval-mode=yolo",
+    ]
+
+
+AGENTS = {
+    "claude": _claude_command,
+    "codex": _codex_command,
+    "gemini": _gemini_command,
+}
 
 
 def codex_home(scratch: Path, root: Path) -> Path:
@@ -158,13 +178,67 @@ def codex_home(scratch: Path, root: Path) -> Path:
     return home
 
 
+def gemini_trust_store(scratch: Path, root: Path) -> Path:
+    """Write a temporary Gemini trust store that trusts only ``root``."""
+    store = scratch / "gemini-trusted-folders.json"
+    store.write_text(
+        json.dumps({str(root.resolve()): "TRUST_FOLDER"}),
+        encoding="utf-8",
+    )
+    return store
+
+
+def gemini_home(scratch: Path) -> Path:
+    """Write a throwaway Gemini home while reusing only existing CLI auth.
+
+    Gemini records accepted project hooks in ``trusted_hooks.json`` under its
+    global state directory. Isolating ``GEMINI_CLI_HOME`` keeps an eval from
+    mutating that real user state. OAuth files stay in place and are linked,
+    while only authentication fields are copied out of ``settings.json``;
+    unrelated user settings must not leak into a trial.
+    """
+    home = scratch / "gemini-home"
+    state = home / ".gemini"
+    state.mkdir(parents=True, exist_ok=True)
+    source_home = Path(os.environ.get("GEMINI_CLI_HOME") or Path.home())
+    source_state = source_home / ".gemini"
+    for filename in ("oauth_creds.json", "google_accounts.json"):
+        source = source_state / filename
+        if source.is_file():
+            (state / filename).symlink_to(source)
+
+    settings_path = source_state / "settings.json"
+    try:
+        settings = json.loads(strip_json_comments(settings_path.read_text(encoding="utf-8")))
+        auth = settings["security"]["auth"]
+        if not isinstance(auth, dict):
+            raise TypeError
+        sanitized_auth = {key: auth[key] for key in ("selectedType", "useExternal") if key in auth}
+    except (FileNotFoundError, KeyError, TypeError, ValueError):
+        pass
+    else:
+        if sanitized_auth:
+            (state / "settings.json").write_text(
+                json.dumps({"security": {"auth": sanitized_auth}}),
+                encoding="utf-8",
+            )
+    return home
+
+
 def _agent_env(agent: str, scratch: Path, root: Path) -> dict[str, str] | None:
     """Environment for one agent run, or None to inherit the harness's own."""
-    if agent != "codex":
-        return None
-    env = dict(os.environ)
-    env["CODEX_HOME"] = str(codex_home(scratch, root))
-    return env
+    if agent == "codex":
+        env = dict(os.environ)
+        env["CODEX_HOME"] = str(codex_home(scratch, root))
+        return env
+    if agent == "gemini":
+        env = dict(os.environ)
+        env.pop("GEMINI_RESTRICTED_MODE", None)
+        env.pop("GEMINI_CLI_TRUST_WORKSPACE", None)
+        env["GEMINI_CLI_HOME"] = str(gemini_home(scratch))
+        env["GEMINI_CLI_TRUSTED_FOLDERS_PATH"] = str(gemini_trust_store(scratch, root))
+        return env
+    return None
 
 
 def _claude_usage(transcript: str) -> tuple[int, int, float | None] | None:
@@ -238,7 +312,30 @@ def _codex_usage(transcript: str) -> tuple[int, int, float | None] | None:
     return (total, output, None) if seen else None
 
 
-USAGE_EXTRACTORS = {"claude": _claude_usage, "codex": _codex_usage}
+def _gemini_usage(transcript: str) -> tuple[int, int, float | None] | None:
+    """(total_tokens, output_tokens, cost_usd) from the final `result` event."""
+    for line in transcript.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "result":
+            continue
+        stats = event.get("stats")
+        if not isinstance(stats, dict):
+            stats = {}
+        return stats.get("total_tokens", 0), stats.get("output_tokens", 0), None
+    return None
+
+
+USAGE_EXTRACTORS = {
+    "claude": _claude_usage,
+    "codex": _codex_usage,
+    "gemini": _gemini_usage,
+}
 
 
 # ---------------------------------------------------------------------------

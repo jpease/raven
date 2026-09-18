@@ -101,8 +101,8 @@ def _git(root: Path, *args: str) -> str:
 def _bash_commands(transcript: str) -> list[str]:
     """Every Bash/shell command in a stream-json transcript, best effort.
 
-    Both CLIs emit JSON lines; the shapes differ and both change over time, so
-    this reads what it recognizes and returns what it found. A verdict that
+    Claude, Codex, and Gemini emit JSON lines; their shapes differ and change
+    over time, so this reads what it recognizes and returns what it found. A verdict that
     depends on this says so, because an empty list here means "nothing seen",
     never "nothing run".
     """
@@ -130,19 +130,20 @@ _CODEX_TOOL_ITEM_TYPES = frozenset(
 
 
 def tool_calls(transcript: str) -> int | None:
-    """How many tool calls the agent made, on either CLI's transcript shape.
+    """How many tool calls the agent made, on any supported CLI transcript shape.
 
     Token totals alone cannot say whether the Raven arm cost more because each
     step carried more context or because it took more steps. This is the other
     half of that question. Every tool call is one step, whichever tool it was.
 
-    claude emits the same `tool_use` block in more than one event as a message
-    streams, so blocks are counted by `id`. codex emits each tool item twice
+    Claude emits the same `tool_use` block in more than one event as a message
+    streams, so blocks are counted by `id`. Gemini `tool_use` events are
+    similarly counted once by `tool_id`. Codex emits each tool item twice
     (`item.started`, then `item.completed`); only the completed copy counts.
     None means the transcript held no JSON event at all -- an empty run, not a
     run with zero calls.
     """
-    claude_ids: set[str] = set()
+    stream_tool_ids: set[str] = set()
     codex_count = 0
     seen_event = False
     for line in transcript.splitlines():
@@ -157,7 +158,9 @@ def tool_calls(transcript: str) -> int | None:
             continue
         seen_event = True
         for tool_id, _tool_input in _iter_tool_use_ids(event):
-            claude_ids.add(tool_id)
+            stream_tool_ids.add(tool_id)
+        for tool_id, _tool_name, _parameters in _iter_gemini_tool_uses(event):
+            stream_tool_ids.add(tool_id)
         item = event.get("item")
         if (
             event.get("type") == "item.completed"
@@ -167,22 +170,29 @@ def tool_calls(transcript: str) -> int | None:
             codex_count += 1
     if not seen_event:
         return None
-    return len(claude_ids) + codex_count
+    return len(stream_tool_ids) + codex_count
 
 
 def _iter_tool_uses(event: object):
     """Yield every tool-input mapping nested anywhere in one transcript event.
 
-    Recognizes both CLIs' shapes: claude's `{"type": "tool_use", "input":
-    {"command": ...}}`, and codex's `{"type": "command_execution", "command":
-    ..., "status": ...}` -- nested under `item` in codex's `item.started` /
-    `item.completed` events, reached here by walking every nested value
-    regardless of the outer event's shape. Only the `completed` copy is
-    yielded; codex emits the same command twice (started, then completed).
+    Recognizes all three CLIs' shapes: Claude's `{"type": "tool_use", "input":
+    {"command": ...}}`, Gemini's `run_shell_command` `tool_use` carrying
+    `parameters`, and Codex's `{"type": "command_execution", "command": ...,
+    "status": ...}` -- nested under `item` in Codex's `item.started` /
+    `item.completed` events, reached here by walking every nested value.
+    Only the `completed` Codex copy is yielded; Codex emits the same command
+    twice (started, then completed).
     """
     if isinstance(event, dict):
         if event.get("type") == "tool_use" and isinstance(event.get("input"), dict):
             yield event["input"]
+        if (
+            event.get("type") == "tool_use"
+            and event.get("tool_name") == "run_shell_command"
+            and isinstance(event.get("parameters"), dict)
+        ):
+            yield event["parameters"]
         if (
             event.get("type") == "command_execution"
             and event.get("status") == "completed"
@@ -212,11 +222,25 @@ def _iter_tool_use_ids(event: object):
             yield from _iter_tool_use_ids(item)
 
 
+def _iter_gemini_tool_uses(event: object):
+    """Yield each Gemini `tool_use` event's id, name, and parameters."""
+    if isinstance(event, dict):
+        if event.get("type") == "tool_use" and isinstance(event.get("tool_id"), str):
+            yield event["tool_id"], event.get("tool_name"), event.get("parameters")
+        for value in event.values():
+            yield from _iter_gemini_tool_uses(value)
+    elif isinstance(event, list):
+        for item in event:
+            yield from _iter_gemini_tool_uses(item)
+
+
 def _iter_tool_results(event: object):
-    """Yield (tool_use_id, is_error) for every claude `tool_result` nested anywhere."""
+    """Yield (tool id, is_error) for every Claude or Gemini `tool_result`."""
     if isinstance(event, dict):
         if event.get("type") == "tool_result" and isinstance(event.get("tool_use_id"), str):
             yield event["tool_use_id"], bool(event.get("is_error"))
+        if event.get("type") == "tool_result" and isinstance(event.get("tool_id"), str):
+            yield event["tool_id"], event.get("status") == "error"
         for value in event.values():
             yield from _iter_tool_results(value)
     elif isinstance(event, list):
@@ -227,11 +251,12 @@ def _iter_tool_results(event: object):
 def _bash_command_outcomes(transcript: str) -> list[tuple[str, bool]]:
     """Every Bash/shell command paired with whether it completed without error.
 
-    claude's `tool_use` (carrying `id`) and `tool_result` (carrying the
-    matching `tool_use_id` and `is_error`) are separate events, matched by
-    id here since the result always comes later in the transcript. codex's
-    `command_execution` items carry `exit_code` directly, no correlation
-    needed.
+    Claude's `tool_use` (carrying `id`) and `tool_result` (carrying the
+    matching `tool_use_id` and `is_error`) are separate events, as are Gemini's
+    `run_shell_command` use and result events (correlated by `tool_id` and
+    `status`). Results are matched by id here since they come later in the
+    transcript. Codex's `command_execution` items carry `exit_code` directly,
+    no correlation needed.
 
     Either way, "completed without error" deliberately collapses a
     PreToolUse hook deny and an unrelated command failure into the same
@@ -254,6 +279,8 @@ def _bash_command_outcomes(transcript: str) -> list[tuple[str, bool]]:
             event = json.loads(line)
         except ValueError:
             continue
+        if not isinstance(event, dict):
+            continue
 
         item = event.get("item") if isinstance(event, dict) else None
         if (
@@ -266,6 +293,12 @@ def _bash_command_outcomes(transcript: str) -> list[tuple[str, bool]]:
 
         for tool_id, tool_input in _iter_tool_use_ids(event):
             command = tool_input.get("command")
+            if isinstance(command, str):
+                tool_uses.append((tool_id, command))
+        for tool_id, tool_name, parameters in _iter_gemini_tool_uses(event):
+            if tool_name != "run_shell_command" or not isinstance(parameters, dict):
+                continue
+            command = parameters.get("command")
             if isinstance(command, str):
                 tool_uses.append((tool_id, command))
         results.update(_iter_tool_results(event))
