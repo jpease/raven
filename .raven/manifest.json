@@ -181,9 +181,9 @@
       "sourceSha256": "0a45826237817077b16e2c53a4bd208eae29e4f46ad3694a8a4e6c1958be5182"
     },
     ".claude/docs/raven-agent-compatibility.md": {
-      "installedSha256": "aa68de6d6a19846f147ade90fdb6bef6a96998e5d661caeaa2ee68607efbae53",
+      "installedSha256": "69e8c9a57d88561972bd8014a121b02cc00898b6ecbe967fed895828cb8b4db0",
       "kind": "file",
-      "sourceSha256": "aa68de6d6a19846f147ade90fdb6bef6a96998e5d661caeaa2ee68607efbae53"
+      "sourceSha256": "69e8c9a57d88561972bd8014a121b02cc00898b6ecbe967fed895828cb8b4db0"
     },
     ".claude/docs/raven-antipatterns.md": {
       "installedSha256": "f90c77447fb32cc2756e81c91d27d3d8b9ae5535fa55084f0000ffa75c72f1bd",
@@ -431,6 +431,116 @@
       "kind": "file",
       "sourceSha256": "27e47024e44b5cd28973306c99eec1405a900b970b81e3403c3d90a0ffa42f47"
     },
+    ".gemini/agents/raven-codebase-cartographer.md": {
+      "installedSha256": "5bc1a029fd0c609687ec534004fa4a97a9ee480bc77089160000d84b70306bc0",
+      "kind": "file",
+      "sourceSha256": "5bc1a029fd0c609687ec534004fa4a97a9ee480bc77089160000d84b70306bc0"
+    },
+    ".gemini/agents/raven-prose-reviewer.md": {
+      "installedSha256": "aaa75c1de63beb9cc20e06b9cc68516fd5cb7781547c746fb1c2b21ccbbc54d7",
+      "kind": "file",
+      "sourceSha256": "aaa75c1de63beb9cc20e06b9cc68516fd5cb7781547c746fb1c2b21ccbbc54d7"
+    },
+    ".gemini/agents/raven-refactor-reviewer.md": {
+      "installedSha256": "4a8dcc73ec043708b24f1034411f94e9cdf030cedb3b99351c050f942633cdb4",
+      "kind": "file",
+      "sourceSha256": "4a8dcc73ec043708b24f1034411f94e9cdf030cedb3b99351c050f942633cdb4"
+    },
+    ".gemini/agents/raven-security-reviewer.md": {
+      "installedSha256": "aa1b9f54849331fd7b8d45381498dfa8a8e92a0c8b15ba9b980ab0520e378e48",
+      "kind": "file",
+      "sourceSha256": "aa1b9f54849331fd7b8d45381498dfa8a8e92a0c8b15ba9b980ab0520e378e48"
+    },
+    ".gemini/agents/raven-test-debugger.md": {
+      "installedSha256": "8b39d13260a032c64ddbd97968d88060c9501fc9d55634876bb3fa88dda6194d",
+      "kind": "file",
+      "sourceSha256": "8b39d13260a032c64ddbd97968d88060c9501fc9d55634876bb3fa88dda6194d"
+    },
+    ".gemini/hooks/raven-post-bash-summarize.py": {
+      "installedSha256": "57eade8232817d0943a0bb825bf5a5c822e709e8b4bd4fcefecd4799e5e4c1d7",
+      "kind": "file",
+      "sourceSha256": "57eade8232817d0943a0bb825bf5a5c822e709e8b4bd4fcefecd4799e5e4c1d7"
+    },
+    ".gemini/hooks/raven-post-bash-truncate.py": {
+      "installedSha256": "19de1665a16a7e41f0c1cd56137bf7057623850892ccaf24f23df34a966ae00d",
+      "kind": "file",
+      "sourceSha256": "19de1665a16a7e41f0c1cd56137bf7057623850892ccaf24f23df34a966ae00d"
+    },
+    ".gemini/hooks/raven-post-edit-format.py": {
+      "installedSha256": "33093d626ed6dba3bca704c08df291e396716825a8260c3a384f0cf84c8df89c",
+      "kind": "file",
+      "sourceSha256": "33093d626ed6dba3bca704c08df291e396716825a8260c3a384f0cf84c8df89c"
+    },
+    ".gemini/hooks/raven-pre-bash-cd-scope.py": {
+      "installedSha256": "ed74162f580b6c64991e381579de6752962838ddbc83d763ac04c13b83e80348",
+      "kind": "file",
+      "sourceSha256": "ed74162f580b6c64991e381579de6752962838ddbc83d763ac04c13b83e80348"
+    },
+    ".gemini/hooks/raven-pre-bash-guard.py": {
+      "installedSha256": "625c18c4154476074a8f3f2225ec7cc2d4bb762050a287f63c94367cb2ec4ceb",
+      "kind": "file",
+      "sourceSha256": "625c18c4154476074a8f3f2225ec7cc2d4bb762050a287f63c94367cb2ec4ceb"
+    },
+    ".gemini/hooks/raven-pre-bash-test-scope.py": {
+      "installedSha256": "d8896caa9662dc0581ea60a0df0b9534375805816aef6905de55a4891e741351",
+      "kind": "file",
+      "sourceSha256": "d8896caa9662dc0581ea60a0df0b9534375805816aef6905de55a4891e741351"
+    },
+    ".gemini/hooks/raven-pre-edit-guard.py": {
+      "installedSha256": "28d29d5dc61b2c1e4e1360c6cbe7db305d8164c4e4081500c74322a1ee56858f",
+      "kind": "file",
+      "sourceSha256": "28d29d5dc61b2c1e4e1360c6cbe7db305d8164c4e4081500c74322a1ee56858f"
+    },
+    ".gemini/hooks/raven-pre-read-secret-guard.py": {
+      "installedSha256": "2f683fa520da6f5b93be8fd8a75425795c3654778c0a53ecb0b863a765abe66c",
+      "kind": "file",
+      "sourceSha256": "2f683fa520da6f5b93be8fd8a75425795c3654778c0a53ecb0b863a765abe66c"
+    },
+    ".gemini/hooks/raven-run-hook.sh": {
+      "installedSha256": "7df6fa1966fb49fad50e700222f3f24e10f014c5867c7ecf0500e2e8fb7f0726",
+      "kind": "file",
+      "sourceSha256": "7df6fa1966fb49fad50e700222f3f24e10f014c5867c7ecf0500e2e8fb7f0726"
+    },
+    ".gemini/hooks/raven-session-checkpoint.py": {
+      "installedSha256": "fa9b6ffffdd3c593cdf89e6401cc5e8bb9287ca5fc9367bcded36dbcedc66c7e",
+      "kind": "file",
+      "sourceSha256": "fa9b6ffffdd3c593cdf89e6401cc5e8bb9287ca5fc9367bcded36dbcedc66c7e"
+    },
+    ".gemini/hooks/raven-skeleton-read-guard.py": {
+      "installedSha256": "eba3a8ba3d85c6709630c39af40281f85a180067242eba2f6ee447600f35785b",
+      "kind": "file",
+      "sourceSha256": "eba3a8ba3d85c6709630c39af40281f85a180067242eba2f6ee447600f35785b"
+    },
+    ".gemini/policies/raven.toml": {
+      "installedSha256": "4daed9853c10406ee02591095a8c958cd5287b330bde1c8fdb2d5a5a313f0f1f",
+      "kind": "file",
+      "sourceSha256": "4daed9853c10406ee02591095a8c958cd5287b330bde1c8fdb2d5a5a313f0f1f"
+    },
+    ".gemini/scripts/raven-capability-roster.py": {
+      "installedSha256": "1ccb2b6bded264cd911652cd2375a643263613294178300f433144348c4d5936",
+      "kind": "file",
+      "sourceSha256": "1ccb2b6bded264cd911652cd2375a643263613294178300f433144348c4d5936"
+    },
+    ".gemini/scripts/raven-session.py": {
+      "installedSha256": "88528ea6f179a9d7aed15a255bc163d1568ec8d24500629e9b0238f55dc08526",
+      "kind": "file",
+      "sourceSha256": "88528ea6f179a9d7aed15a255bc163d1568ec8d24500629e9b0238f55dc08526"
+    },
+    ".gemini/scripts/raven-skeleton.py": {
+      "installedSha256": "e86f026a7a37a57e529e1f06af96aa02c0d963136851f892bf50343af3046a02",
+      "kind": "file",
+      "sourceSha256": "e86f026a7a37a57e529e1f06af96aa02c0d963136851f892bf50343af3046a02"
+    },
+    ".gemini/scripts/raven-tool-check.py": {
+      "installedSha256": "27e47024e44b5cd28973306c99eec1405a900b970b81e3403c3d90a0ffa42f47",
+      "kind": "file",
+      "sourceSha256": "27e47024e44b5cd28973306c99eec1405a900b970b81e3403c3d90a0ffa42f47"
+    },
+    ".gemini/settings.json": {
+      "installedSha256": "e62447eec473d627cd562d1767cfff4fc4891c71488b11a76444a7d93b8eab4a",
+      "kind": "file",
+      "sourceSha256": "e62447eec473d627cd562d1767cfff4fc4891c71488b11a76444a7d93b8eab4a"
+    },
     ".mcp.json": {
       "installedSha256": "289cd24a27a82f5dd0123c8cbc5549ecf4dcc9effd4c163477fe82dd83994815",
       "kind": "file",
@@ -486,6 +596,11 @@
       "kind": "file",
       "sourceSha256": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49"
     },
+    "GEMINI.md": {
+      "installedSha256": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49",
+      "kind": "file",
+      "sourceSha256": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49"
+    },
     "justfile": {
       "installedSha256": "ded03ac2dadd5a14f43de13c82b868f8cba9738bf5f3b1109dfc6560019d4577",
       "kind": "file",
@@ -502,8 +617,8 @@
     "pyright",
     "pytest"
   ],
-  "ravenVersion": "bf710acc68e0-dirty",
+  "ravenVersion": "596bb45d6f45-dirty",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-09-13T07:24:11.856224+00:00"
+  "updatedAt": "2026-09-18T18:24:21.350995+00:00"
 }

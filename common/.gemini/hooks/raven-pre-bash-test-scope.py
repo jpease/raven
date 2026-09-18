@@ -1,0 +1,1 @@
+../../../common/.claude/hooks/raven-pre-bash-test-scope.py

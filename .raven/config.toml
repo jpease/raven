@@ -48,6 +48,14 @@ mcp = true
 # Turn this off if your repository owns Claude settings and will merge hooks manually.
 settings = true
 
+
+[components.gemini]
+root_instructions = true
+settings = true
+hooks = true
+scripts = true
+subagents = true
+rules = true
 [exclude]
 # Additional template-relative paths to exclude from apply operations.
 # Use exact paths or glob patterns. A trailing /** excludes a directory tree.

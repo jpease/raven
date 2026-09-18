@@ -78,21 +78,34 @@ invoke `raven-*` skills.
   changelog, v0.142.0). Re-verify against the source if this ages past the doc-freshness
   window in `scripts/self-check.py`.
 
+## Gemini CLI Adapter
+
+Gemini-specific files:
+
+- `GEMINI.md`: a plain one-line file importing `AGENTS.md` (`@AGENTS.md`), not a symlink, matching `CLAUDE.md`.
+- `.gemini/agents/raven-*.md`: Gemini CLI subagents.
+- `.gemini/hooks/raven-*.py` and `raven-run-hook.sh`: Gemini CLI hook scripts (symlinks into `common/.claude/hooks/`).
+- `.gemini/policies/raven.toml`: Gemini CLI command approval policy.
+- `.gemini/scripts/raven-*.py`: Gemini CLI helper scripts (symlinks into `common/.claude/scripts/`).
+- `.gemini/settings.json`: rendered at install time from `common/.gemini/settings.json` (hook wiring) and language-template MCP definitions.
+
+Gemini CLI reads `.agents/skills` directly, so Raven does not install a `.gemini/skills` copy (verified against `docs/cli/skills.md`, 2026-09-17).
+
 ## Adapter File Classification
 
-Every file that exists under both `.claude/` and `.codex/` falls into one of three
-categories. Check this table before "fixing" an apparent inconsistency between the two
+Every file that exists under `.claude/`, `.codex/`, and `.gemini/` falls into one of three
+categories. Check this table before "fixing" an apparent inconsistency between the
 trees — all three are deliberate.
 
 | Category | Meaning | Files |
 |---|---|---|
-| **Byte-identical (unified)** | One real file under `common/.claude/`; the `.codex/` path is a template-internal symlink to it. Nothing to keep in sync. | `scripts/raven-capability-roster.py`, `scripts/raven-session.py`, `scripts/raven-skeleton.py`, `scripts/raven-tool-check.py`, `hooks/raven-post-bash-summarize.py`, `hooks/raven-post-edit-format.py`, `hooks/raven-pre-bash-guard.py`, `hooks/raven-pre-bash-test-scope.py`, `hooks/raven-pre-bash-cd-scope.py`, `hooks/raven-pre-edit-guard.py` (reads its adapter directory from its install path to pick `ask` on Claude and a context warning on Codex, #247), `hooks/raven-session-checkpoint.py` (computes its own adapter directory at runtime, same pattern as `raven-tool-check.py`, instead of hardcoding one — issue #195) |
-| **Schema-translated** | Same role, different file format required by the harness. Not comparable line-by-line. | `.claude/agents/raven-*.md` ↔ `.codex/agents/raven-*.toml`; `.claude/settings.json` ↔ `.codex/hooks.json`; `.claude/rules/raven-security.md` ↔ `.codex/rules/raven.rules`; `.claude/skills` symlink ↔ Codex reading `.agents/skills` directly |
-| **Intentionally asymmetric** | Exists for one harness only, because the underlying capability does not exist in the other. See Known Asymmetries below. | `.claude/hooks/raven-skeleton-read-guard.py` and `.claude/hooks/raven-post-bash-truncate.py` (Claude-only); `.codex/config.toml` (Codex-only) |
+| **Byte-identical (unified)** | One real file under `common/.claude/`; the `.codex/` and `.gemini/` paths are template-internal symlinks to it. Nothing to keep in sync. | `scripts/raven-capability-roster.py`, `scripts/raven-session.py`, `scripts/raven-skeleton.py`, `scripts/raven-tool-check.py`, `hooks/raven-run-hook.sh` (Claude and Gemini), `hooks/raven-post-bash-summarize.py`, `hooks/raven-post-edit-format.py`, `hooks/raven-pre-bash-guard.py`, `hooks/raven-pre-bash-test-scope.py`, `hooks/raven-pre-bash-cd-scope.py`, `hooks/raven-pre-edit-guard.py` (reads its adapter directory from its install path to pick `ask` on Claude and a context warning on Codex, #247), `hooks/raven-session-checkpoint.py` (computes its own adapter directory at runtime, same pattern as `raven-tool-check.py`, instead of hardcoding one — issue #195), `hooks/raven-post-bash-truncate.py` (Claude and Gemini), `hooks/raven-pre-read-secret-guard.py` (Claude and Gemini), `hooks/raven-skeleton-read-guard.py` (Claude and Gemini) |
+| **Schema-translated** | Same role, different file format required by the harness. Not comparable line-by-line. | `.claude/agents/raven-*.md` ↔ `.codex/agents/raven-*.toml` ↔ `.gemini/agents/raven-*.md`; `.claude/settings.json` ↔ `.codex/hooks.json` ↔ `.gemini/settings.json`; `.claude/rules/raven-security.md` ↔ `.codex/rules/raven.rules` ↔ `.gemini/policies/raven.toml`; `.claude/skills` symlink ↔ Codex reading `.agents/skills` directly ↔ Gemini reading `.agents/skills` directly; `CLAUDE.md` ↔ `GEMINI.md` |
+| **Intentionally asymmetric** | Exists for one harness only, because the underlying capability does not exist in the other. See Known Asymmetries below. | `hooks/raven-skeleton-read-guard.py` and `hooks/raven-post-bash-truncate.py` (Claude and Gemini only); `.codex/config.toml` (Codex-only) |
 
 ### How the unified files stay unified
 
-The `.codex/` entries are symlinks spelled to climb back in through `common/`, e.g.
+The `.codex/` and `.gemini/` entries are symlinks spelled to climb back in through `common/`, e.g.
 `common/.codex/scripts/raven-session.py -> ../../../common/.claude/scripts/raven-session.py`.
 
 That spelling is what `should_preserve_symlink` in `scripts/raven_lib/template.py` reads: it

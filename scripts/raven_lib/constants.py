@@ -200,6 +200,21 @@ EXPECTED_TEMPLATE_SYMLINKS = frozenset(
         ".codex/scripts/raven-session.py",
         ".codex/scripts/raven-skeleton.py",
         ".codex/scripts/raven-tool-check.py",
+        ".gemini/hooks/raven-post-bash-summarize.py",
+        ".gemini/hooks/raven-post-bash-truncate.py",
+        ".gemini/hooks/raven-post-edit-format.py",
+        ".gemini/hooks/raven-pre-bash-cd-scope.py",
+        ".gemini/hooks/raven-pre-bash-guard.py",
+        ".gemini/hooks/raven-pre-bash-test-scope.py",
+        ".gemini/hooks/raven-pre-edit-guard.py",
+        ".gemini/hooks/raven-pre-read-secret-guard.py",
+        ".gemini/hooks/raven-run-hook.sh",
+        ".gemini/hooks/raven-session-checkpoint.py",
+        ".gemini/hooks/raven-skeleton-read-guard.py",
+        ".gemini/scripts/raven-capability-roster.py",
+        ".gemini/scripts/raven-session.py",
+        ".gemini/scripts/raven-skeleton.py",
+        ".gemini/scripts/raven-tool-check.py",
     }
 )
 # The two-line remedy for a flattened checkout, shared verbatim by the CLI

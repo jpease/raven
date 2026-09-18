@@ -156,5 +156,71 @@ class CodexScriptUnificationTests(RavenTestCase):
         self.assertTrue(should_preserve_symlink(link))
 
 
+class GeminiWholeDirSymlinkParityTests(RavenTestCase):
+    """Each language template links common Gemini directories as whole-directory symlinks."""
+
+    def test_gemini_subdirs_are_whole_dir_symlinks_to_common(self):
+        templates = list(_language_template_dirs())
+        self.assertTrue(templates, "expected at least one language template")
+
+        gemini_subdirs = ("agents", "hooks", "policies", "scripts")
+        for template in templates:
+            for subdir in gemini_subdirs:
+                link = template / ".gemini" / subdir
+                with self.subTest(template=template.name, subdir=subdir):
+                    self.assertTrue(
+                        link.is_symlink(),
+                        f"{link} should be a whole-directory symlink to "
+                        f"../../common/.gemini/{subdir}",
+                    )
+                    target = os.readlink(link).replace("\\", "/")
+                    self.assertEqual(target, f"../../common/.gemini/{subdir}")
+
+            settings_link = template / ".gemini" / "settings.json"
+            with self.subTest(template=template.name, file="settings.json"):
+                self.assertTrue(settings_link.is_symlink())
+                target = os.readlink(settings_link).replace("\\", "/")
+                self.assertEqual(target, "../../common/.gemini/settings.json")
+
+
+class GeminiScriptUnificationTests(RavenTestCase):
+    """The byte-identical adapter scripts and hooks are stored once and linked."""
+
+    def test_gemini_scripts_link_to_the_claude_copies(self):
+        for name in UNIFIED_ADAPTER_SCRIPTS:
+            with self.subTest(script=name):
+                link = REPO_ROOT / "common" / ".gemini" / "scripts" / name
+                self.assertTrue(link.is_symlink(), f"{link} should be a symlink")
+                self.assertEqual(
+                    os.readlink(link).replace("\\", "/"),
+                    f"../../../common/.claude/scripts/{name}",
+                )
+                self.assertFalse(should_preserve_symlink(link))
+
+    def test_gemini_hooks_link_to_the_claude_copies(self):
+        gemini_hooks = [
+            "raven-run-hook.sh",
+            "raven-pre-bash-guard.py",
+            "raven-pre-bash-test-scope.py",
+            "raven-pre-bash-cd-scope.py",
+            "raven-pre-edit-guard.py",
+            "raven-session-checkpoint.py",
+            "raven-post-bash-summarize.py",
+            "raven-post-bash-truncate.py",
+            "raven-post-edit-format.py",
+            "raven-pre-read-secret-guard.py",
+            "raven-skeleton-read-guard.py",
+        ]
+        for name in gemini_hooks:
+            with self.subTest(hook=name):
+                link = REPO_ROOT / "common" / ".gemini" / "hooks" / name
+                self.assertTrue(link.is_symlink(), f"{link} should be a symlink")
+                self.assertEqual(
+                    os.readlink(link).replace("\\", "/"),
+                    f"../../../common/.claude/hooks/{name}",
+                )
+                self.assertFalse(should_preserve_symlink(link))
+
+
 if __name__ == "__main__":
     unittest.main()

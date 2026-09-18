@@ -1,0 +1,1 @@
+../../../common/.claude/hooks/raven-pre-read-secret-guard.py

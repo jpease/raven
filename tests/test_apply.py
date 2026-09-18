@@ -1220,5 +1220,118 @@ settings = true
         self.assertTrue(diff_path.exists())
 
 
+class GeminiTemplateShipmentTests(RavenTestCase):
+    """Acceptance tests for Issue #266: Ship the Gemini adapter template files."""
+
+    def _install(self) -> int:
+        ns = argparse.Namespace(
+            destination=str(self.destination),
+            language="python",
+            args=None,
+            overrides=[],
+            dry_run=False,
+            include_readme=False,
+            adopt_claude=False,
+            platform=None,
+        )
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return raven.cmd_install(ns)
+
+    def test_gemini_only_destination_installs_real_files(self) -> None:
+        """Gemini-only destination (Claude/Codex off) installs all Gemini files as real files."""
+        (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_text(
+            """schema = 1
+template = "python"
+
+[components.claude]
+settings = false
+hooks = false
+scripts = false
+subagents = false
+rules = false
+
+[components.codex]
+config = false
+hooks = false
+scripts = false
+subagents = false
+rules = false
+
+[components.gemini]
+root_instructions = true
+settings = true
+hooks = true
+scripts = true
+subagents = true
+rules = true
+""",
+            encoding="utf-8",
+        )
+        rc = self._install()
+        self.assertEqual(rc, 0)
+
+        # Every Gemini file arrives as a real file (not symlink)
+        self.assertTrue((self.destination / "GEMINI.md").is_file())
+        self.assertFalse((self.destination / "GEMINI.md").is_symlink())
+
+        settings = self.destination / ".gemini" / "settings.json"
+        self.assertTrue(settings.is_file())
+        self.assertFalse(settings.is_symlink())
+
+        policy = self.destination / ".gemini" / "policies" / "raven.toml"
+        self.assertTrue(policy.is_file())
+        self.assertFalse(policy.is_symlink())
+
+        agents = [
+            "raven-codebase-cartographer.md",
+            "raven-prose-reviewer.md",
+            "raven-refactor-reviewer.md",
+            "raven-security-reviewer.md",
+            "raven-test-debugger.md",
+        ]
+        for name in agents:
+            p = self.destination / ".gemini" / "agents" / name
+            self.assertTrue(p.is_file(), f"{p} should be a real file")
+            self.assertFalse(p.is_symlink(), f"{p} should not be a symlink")
+
+        hooks = [
+            "raven-run-hook.sh",
+            "raven-pre-bash-guard.py",
+            "raven-pre-bash-test-scope.py",
+            "raven-pre-bash-cd-scope.py",
+            "raven-pre-edit-guard.py",
+            "raven-session-checkpoint.py",
+            "raven-post-bash-summarize.py",
+            "raven-post-bash-truncate.py",
+            "raven-post-edit-format.py",
+            "raven-pre-read-secret-guard.py",
+            "raven-skeleton-read-guard.py",
+        ]
+        for name in hooks:
+            p = self.destination / ".gemini" / "hooks" / name
+            self.assertTrue(p.is_file(), f"{p} should be a real file")
+            self.assertFalse(p.is_symlink(), f"{p} should not be a symlink")
+
+        scripts = [
+            "raven-capability-roster.py",
+            "raven-session.py",
+            "raven-skeleton.py",
+            "raven-tool-check.py",
+        ]
+        for name in scripts:
+            p = self.destination / ".gemini" / "scripts" / name
+            self.assertTrue(p.is_file(), f"{p} should be a real file")
+            self.assertFalse(p.is_symlink(), f"{p} should not be a symlink")
+
+        # Claude and Codex adapter components do not arrive
+        self.assertFalse((self.destination / ".claude" / "hooks").exists())
+        self.assertFalse((self.destination / ".claude" / "scripts").exists())
+        self.assertFalse((self.destination / ".claude" / "settings.json").exists())
+        self.assertFalse((self.destination / ".claude" / "agents").exists())
+        self.assertFalse((self.destination / ".claude" / "rules").exists())
+        self.assertFalse((self.destination / ".codex").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
