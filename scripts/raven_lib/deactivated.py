@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .config import platform_excluded, template_excluded
+from .config import gemini_component_excluded, platform_excluded, template_excluded
 from .hashing import destination_fingerprint, same_content
 from .manifest import parse_record
 from .models import DeactivatedClassification, RavenConfig
@@ -71,19 +71,28 @@ def _template_gated(relative: str, config: RavenConfig) -> bool:
     return template_excluded(relative, config)
 
 
+def _gemini_gated(relative: str, config: RavenConfig) -> bool:
+    """Whether ``relative`` is a Gemini adapter path currently disabled by config."""
+    return gemini_component_excluded(relative, config)
+
+
 def _config_gated(relative: str, config: RavenConfig) -> bool:
-    """Whether ``relative`` is currently excluded by the platform or template gate.
+    """Whether ``relative`` is currently excluded by the platform, template, or Gemini gate.
 
     Deliberately narrower than ``config.config_excluded``: it covers only the
     two finite, hardcoded gated-skill dictionaries (``_platform_gated`` and
-    ``_template_gated``), never component toggles or arbitrary
-    ``exclude_paths`` globs. Those match much wider path sets, so folding
-    them in here would let a much wider config change drive file removal --
-    an ``exclude_paths`` edit or a component toggle would then start deleting
-    files, which is a much larger and riskier behavior than gate-driven
-    deactivation.
+    ``_template_gated``) plus opt-in Gemini components (``_gemini_gated``),
+    never arbitrary component toggles or arbitrary ``exclude_paths`` globs.
+    Those match much wider path sets, so folding them in here would let a
+    much wider config change drive file removal -- an ``exclude_paths`` edit
+    or a component toggle would then start deleting files, which is a much
+    larger and riskier behavior than gate-driven deactivation.
     """
-    return _platform_gated(relative, config) or _template_gated(relative, config)
+    return (
+        _platform_gated(relative, config)
+        or _template_gated(relative, config)
+        or _gemini_gated(relative, config)
+    )
 
 
 def classify_deactivated(

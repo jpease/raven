@@ -225,6 +225,49 @@ class ClassifyOrphansTests(unittest.TestCase):
         self.assertEqual(result.orphan_modified, [])
         self.assertEqual(result.already_gone, [])
 
+    def test_gemini_gated_file_is_never_in_the_orphan_set(self) -> None:
+        # Regression guard for #97/#264: shipped_relatives is policy-neutral on
+        # purpose, so a file the Gemini component gate excludes (default off)
+        # must still be counted as shipped, and classify_orphans must never
+        # bucket it as an orphan. Folding config gating into this computation
+        # would regress #97: disabling the component would look like a template
+        # removal. See raven_lib.deactivated for the distinct classification that
+        # config-gated-but-still-shipped files actually get.
+        template, dest = self._setup()
+        from raven_lib.config import RavenConfig, component_disabled
+        from raven_lib.constants import DEFAULT_GEMINI_COMPONENTS
+        from raven_lib.hashing import file_sha256
+
+        gemini_rel = "GEMINI.md"
+        _write(template / gemini_rel, "@AGENTS.md\n")
+        target = dest / gemini_rel
+        _write(target, "@AGENTS.md\n")
+        sha = file_sha256(target)
+
+        config = RavenConfig(
+            template="python",
+            include_readme=False,
+            components={},
+            claude_components={},
+            codex_components={},
+            exclude_paths=[],
+            platform="none",
+            gemini_components=dict(DEFAULT_GEMINI_COMPONENTS),
+        )
+        # Confirm the premise: config *would* gate this file out of a fresh install.
+        self.assertTrue(component_disabled(gemini_rel, config))
+
+        self.assertIn(gemini_rel, shipped_relatives(template, dest))
+
+        manifest = {
+            "schema": 1,
+            "files": {gemini_rel: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        result = classify_orphans(template, dest, manifest)
+        self.assertEqual(result.will_remove, [])
+        self.assertEqual(result.orphan_modified, [])
+        self.assertEqual(result.already_gone, [])
+
     def test_still_shipped_file_is_not_an_orphan(self) -> None:
         template, dest = self._setup()
         from raven_lib.hashing import file_sha256

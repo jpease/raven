@@ -630,11 +630,12 @@ def apply_plan(
         ensure_gitattributes_lines(destination)
 
     # `.ignore` merges on every apply for the same reason, and ungated (#238):
-    # its negations cover `.agents/`, `.claude/`, `.codex/` and `.raven/`, which
-    # span every component rather than belonging to one, and `.raven/` exists in
-    # any installation regardless of what a config turns off. A repo that
-    # declined a component keeps a negation for a directory it does not have,
-    # which costs nothing -- an ignore rule for an absent path is inert.
+    # its negations cover `.agents/`, `.claude/`, `.codex/`, `.gemini/` and
+    # `.raven/`, which span every component rather than belonging to one, and
+    # `.raven/` exists in any installation regardless of what a config turns
+    # off. A repo that declined a component keeps a negation for a directory
+    # it does not have, which costs nothing -- an ignore rule for an absent
+    # path is inert.
     ensure_ignore_lines(destination)
 
     failed_orphans: list[str] = []

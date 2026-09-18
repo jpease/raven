@@ -24,6 +24,8 @@ from .constants import (
     DEFAULT_CLAUDE_COMPONENTS,
     DEFAULT_CODEX_COMPONENTS,
     DEFAULT_COMPONENTS,
+    DEFAULT_GEMINI_COMPONENTS,
+    GEMINI_COMPONENT_PATHS,
     VALID_PLATFORMS,
 )
 from .models import RavenConfig, SourceSpec
@@ -317,6 +319,9 @@ def build_config(raw: dict, *, exists: bool) -> RavenConfig:
         codex_components=_merge_component_overrides(
             raw, "components.codex", DEFAULT_CODEX_COMPONENTS
         ),
+        gemini_components=_merge_component_overrides(
+            raw, "components.gemini", DEFAULT_GEMINI_COMPONENTS
+        ),
         exclude_paths=exclude_paths,
         platform=platform,
         exists=exists,
@@ -395,15 +400,21 @@ def _disabled_by_component(
 
 
 def component_disabled(relative: str, config: RavenConfig) -> bool:
-    """Whether ``relative`` falls under a component disabled globally, for Claude, or for Codex."""
+    """Whether ``relative`` falls under a component disabled globally, for Claude, for Codex, or for Gemini."""
     return any(
         _disabled_by_component(relative, components, component_paths)
         for components, component_paths in [
             (config.components, COMPONENT_PATHS),
             (config.claude_components, CLAUDE_COMPONENT_PATHS),
             (config.codex_components, CODEX_COMPONENT_PATHS),
+            (config.gemini_components, GEMINI_COMPONENT_PATHS),
         ]
     )
+
+
+def gemini_component_excluded(relative: str, config: RavenConfig) -> bool:
+    """Whether ``relative`` falls under a disabled Gemini adapter component."""
+    return _disabled_by_component(relative, config.gemini_components, GEMINI_COMPONENT_PATHS)
 
 
 _PLATFORM_GATED_SKILLS: dict[str, str] = {

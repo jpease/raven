@@ -775,9 +775,9 @@ def ensure_ignore_lines(destination: Path) -> None:
     ripgrep, fd and ast-grep all read ``.ignore`` through the same ``ignore``
     crate, and all three skip a dot-directory unless something un-hides it. The
     guidance Raven installs lives entirely under ``.agents/``, ``.claude/``,
-    ``.codex/`` and ``.raven/``, so an installed project cannot search its own
-    instructions with the tools Raven's retrieval ladder names first -- the
-    search returns nothing and reads as clean (#238).
+    ``.codex/``, ``.gemini/`` and ``.raven/``, so an installed project cannot
+    search its own instructions with the tools Raven's retrieval ladder names
+    first -- the search returns nothing and reads as clean (#238).
 
     Writes nothing when ``destination`` is the home directory itself. The
     ``dotfiles`` template's target "may be ``~/.config``, a ``dotfiles/``

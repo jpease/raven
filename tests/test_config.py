@@ -19,6 +19,57 @@ class BuildConfigTests(unittest.TestCase):
         self.assertEqual(config.components, raven.DEFAULT_COMPONENTS)
         # Must not alias the module-level defaults.
         self.assertIsNot(config.components, raven.DEFAULT_COMPONENTS)
+        self.assertEqual(config.gemini_components, raven.DEFAULT_GEMINI_COMPONENTS)
+        self.assertIsNot(config.gemini_components, raven.DEFAULT_GEMINI_COMPONENTS)
+        self.assertTrue(all(v is False for v in raven.DEFAULT_GEMINI_COMPONENTS.values()))
+
+    def test_gemini_component_overrides_merge_over_defaults(self):
+        config = raven.build_config(
+            {"components.gemini": {"settings": True, "hooks": True}},
+            exists=True,
+        )
+        self.assertTrue(config.gemini_components["settings"])
+        self.assertTrue(config.gemini_components["hooks"])
+        self.assertFalse(config.gemini_components["scripts"])
+        self.assertFalse(config.gemini_components["subagents"])
+        self.assertFalse(config.gemini_components["rules"])
+        self.assertFalse(config.gemini_components["root_instructions"])
+
+    def test_gemini_component_excluded(self):
+        config_default = raven.build_config({}, exists=False)
+        self.assertTrue(raven.gemini_component_excluded("GEMINI.md", config_default))
+        self.assertTrue(raven.gemini_component_excluded(".gemini/settings.json", config_default))
+        self.assertFalse(raven.gemini_component_excluded("AGENTS.md", config_default))
+        self.assertFalse(raven.gemini_component_excluded(".claude/settings.json", config_default))
+
+    def test_component_disabled_respects_gemini_components(self):
+        config_default = raven.build_config({}, exists=False)
+        self.assertTrue(raven.component_disabled("GEMINI.md", config_default))
+        self.assertTrue(raven.component_disabled(".gemini/settings.json", config_default))
+        self.assertTrue(raven.component_disabled(".gemini/hooks/test.py", config_default))
+        self.assertTrue(raven.component_disabled(".gemini/scripts/test.py", config_default))
+        self.assertTrue(raven.component_disabled(".gemini/agents/test.md", config_default))
+        self.assertTrue(raven.component_disabled(".gemini/policies/test.toml", config_default))
+
+        config_enabled = raven.build_config(
+            {
+                "components.gemini": {
+                    "root_instructions": True,
+                    "settings": True,
+                    "hooks": True,
+                    "scripts": True,
+                    "subagents": True,
+                    "rules": True,
+                }
+            },
+            exists=True,
+        )
+        self.assertFalse(raven.component_disabled("GEMINI.md", config_enabled))
+        self.assertFalse(raven.component_disabled(".gemini/settings.json", config_enabled))
+        self.assertFalse(raven.component_disabled(".gemini/hooks/test.py", config_enabled))
+        self.assertFalse(raven.component_disabled(".gemini/scripts/test.py", config_enabled))
+        self.assertFalse(raven.component_disabled(".gemini/agents/test.md", config_enabled))
+        self.assertFalse(raven.component_disabled(".gemini/policies/test.toml", config_enabled))
 
     def test_component_overrides_merge_over_defaults(self):
         config = raven.build_config(

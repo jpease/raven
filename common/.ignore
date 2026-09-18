@@ -9,4 +9,5 @@
 !.agents/
 !.claude/
 !.codex/
+!.gemini/
 !.raven/

@@ -83,22 +83,35 @@ DEFAULT_CODEX_COMPONENTS = {
     "subagents": True,
     "rules": True,
 }
+DEFAULT_GEMINI_COMPONENTS = {
+    "settings": False,
+    "hooks": False,
+    "scripts": False,
+    "subagents": False,
+    "rules": False,
+    "root_instructions": False,
+}
 COMPONENT_PATHS = {
     "root_instructions": ["AGENTS.md", "CLAUDE.md"],
     "skills": [".agents/skills", ".claude/skills"],
-    "agents": [".claude/agents", ".codex/agents"],
+    "agents": [".claude/agents", ".codex/agents", ".gemini/agents"],
     "hooks": [
         ".claude/hooks",
         ".codex/hooks",
         ".codex/hooks.json",
+        ".gemini/hooks",
         ".gitattributes",
         ".raven/git-hooks",
     ],
-    "rules": [".claude/rules", ".codex/rules"],
+    "rules": [".claude/rules", ".codex/rules", ".gemini/policies", ".gemini/rules"],
     "docs": [".claude/docs"],
-    "scripts": [".claude/scripts", ".codex/scripts"],
+    "scripts": [".claude/scripts", ".codex/scripts", ".gemini/scripts"],
     "mcp": [".mcp.json"],
-    "settings": [".claude/settings.json", ".codex/config.toml"],
+    "settings": [
+        ".claude/settings.json",
+        ".codex/config.toml",
+        ".gemini/settings.json",
+    ],
     "tool_configs": [
         ".credo.exs",
         ".formatter.exs",
@@ -132,6 +145,14 @@ CODEX_COMPONENT_PATHS = {
     "scripts": [".codex/scripts"],
     "subagents": [".codex/agents"],
     "rules": [".codex/rules"],
+}
+GEMINI_COMPONENT_PATHS = {
+    "settings": [".gemini/settings.json"],
+    "hooks": [".gemini/hooks"],
+    "scripts": [".gemini/scripts"],
+    "subagents": [".gemini/agents"],
+    "rules": [".gemini/policies", ".gemini/rules"],
+    "root_instructions": ["GEMINI.md"],
 }
 #: Top-level directories that are part of Raven itself rather than an
 #: installable template. `list_language_templates` walks the repo root, so a

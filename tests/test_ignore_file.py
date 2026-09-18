@@ -3,7 +3,7 @@ destination's own ``.ignore``, never whole-file copied.
 
 ripgrep, fd and ast-grep share the ``ignore`` crate and skip dot-directories
 unless a negation says otherwise, so without this file every ``.agents/``,
-``.claude/``, ``.codex/`` and ``.raven/`` path Raven just installed is invisible
+``.claude/``, ``.codex/``, ``.gemini/`` and ``.raven/`` path Raven just installed is invisible
 to the three tools Raven's own retrieval ladder names first. Raven's checkout
 has carried a root ``.ignore`` for years; no template shipped one.
 
@@ -50,7 +50,7 @@ SHIPPED_IGNORE = COMMON / raven.IGNORE_PATH
 # The dot-directories Raven installs guidance into. Pinned by hand, not derived
 # from a walk: adding a Raven-owned dot-directory should fail this test until
 # common/.ignore un-hides it, rather than pass by construction.
-RAVEN_DOT_DIRECTORIES = (".agents", ".claude", ".codex", ".raven")
+RAVEN_DOT_DIRECTORIES = (".agents", ".claude", ".codex", ".gemini", ".raven")
 
 
 def _required_lines(text: str) -> list[str]:

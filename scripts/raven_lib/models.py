@@ -76,6 +76,7 @@ class RavenConfig:
     # earlier would silently rebind those arguments. Keyed by the
     # `[sources.<name>]` section suffix; empty when the config declares none.
     sources: dict[str, SourceSpec] = field(default_factory=dict)
+    gemini_components: dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

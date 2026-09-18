@@ -1,8 +1,11 @@
+import argparse
 import contextlib
 import io
 import os
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from helpers import UNIFIED_ADAPTER_HOOKS, UNIFIED_ADAPTER_SCRIPTS, RavenTestCase, raven
 from raven_lib.cli import _adoption_decision, _build_run_plan, invalid_overrides
@@ -883,6 +886,145 @@ class BuildApplyPlanSettingsJsonTests(unittest.TestCase):
         )
         self.assertNotIn(".claude/settings.json", plan.effective_classification.needs_adoption)
         self.assertIn(".claude/settings.json", plan.overwritten)
+
+
+class GeminiComponentLifecycleTests(RavenTestCase):
+    """End-to-end coverage for Issue #264: opt-in [components.gemini] component set."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._fake_repo_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._fake_repo_tmp.cleanup)
+        self.fake_repo_root = Path(self._fake_repo_tmp.name)
+        self.template_dir = self.fake_repo_root / "lang"
+        (self.template_dir / "AGENTS.md").parent.mkdir(parents=True, exist_ok=True)
+        (self.template_dir / "AGENTS.md").write_text("# Agents\n", encoding="utf-8")
+        (self.template_dir / "GEMINI.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (self.template_dir / ".gemini").mkdir(parents=True, exist_ok=True)
+        (self.template_dir / ".gemini" / "settings.json").write_text(
+            '{"hooks": {}}\n', encoding="utf-8"
+        )
+        (self.template_dir / ".gemini" / "hooks").mkdir(parents=True, exist_ok=True)
+        (self.template_dir / ".gemini" / "hooks" / "test-hook.py").write_text(
+            'print("hook")\n', encoding="utf-8"
+        )
+        (self.template_dir / ".gemini" / "agents").mkdir(parents=True, exist_ok=True)
+        (self.template_dir / ".gemini" / "agents" / "test-agent.md").write_text(
+            '---\nname: test\n---\n', encoding="utf-8"
+        )
+        patcher = mock.patch("raven_lib.cli.REPO_ROOT", self.fake_repo_root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _install(self) -> int:
+        ns = argparse.Namespace(
+            destination=str(self.destination),
+            language="lang",
+            args=None,
+            overrides=[],
+            dry_run=False,
+            include_readme=False,
+            adopt_claude=False,
+            platform=None,
+        )
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return raven.cmd_install(ns)
+
+    def _upgrade(self) -> tuple[int, str]:
+        ns = argparse.Namespace(
+            destination=str(self.destination),
+            overrides=[],
+            dry_run=False,
+            include_readme=False,
+            adopt_claude=False,
+            confirm_template_switch=False,
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc = raven.cmd_upgrade(ns)
+        return rc, buf.getvalue()
+
+    def test_install_and_upgrade_without_gemini_component_excludes_gemini(self) -> None:
+        # Step 1: Fresh install without [components.gemini] (default config)
+        rc = self._install()
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.destination / "AGENTS.md").exists())
+        self.assertFalse((self.destination / "GEMINI.md").exists())
+        self.assertFalse((self.destination / ".gemini").exists())
+
+        manifest = raven.load_manifest(self.destination)
+        self.assertNotIn("GEMINI.md", manifest["files"])
+        self.assertFalse(any(k.startswith(".gemini") for k in manifest["files"]))
+
+        # Step 2: Upgrade existing install with no [components.gemini]
+        rc, _ = self._upgrade()
+        self.assertEqual(rc, 0)
+        self.assertFalse((self.destination / "GEMINI.md").exists())
+        self.assertFalse((self.destination / ".gemini").exists())
+
+    def test_enable_then_disable_removes_untouched_and_keeps_edited(self) -> None:
+        # Step 1: Install with [components.gemini] enabled
+        (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_text(
+            """schema = 1
+template = "lang"
+
+[components.gemini]
+root_instructions = true
+settings = true
+hooks = true
+scripts = true
+subagents = true
+rules = true
+""",
+            encoding="utf-8",
+        )
+        rc = self._install()
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.destination / "GEMINI.md").exists())
+        self.assertTrue((self.destination / ".gemini" / "settings.json").exists())
+        self.assertTrue((self.destination / ".gemini" / "hooks" / "test-hook.py").exists())
+        self.assertTrue((self.destination / ".gemini" / "agents" / "test-agent.md").exists())
+
+        manifest = raven.load_manifest(self.destination)
+        self.assertIn("GEMINI.md", manifest["files"])
+        self.assertIn(".gemini/settings.json", manifest["files"])
+        self.assertIn(".gemini/hooks/test-hook.py", manifest["files"])
+        self.assertIn(".gemini/agents/test-agent.md", manifest["files"])
+
+        # Step 2: Edit one Gemini file locally (GEMINI.md), leave others untouched
+        (self.destination / "GEMINI.md").write_text("@AGENTS.md\n# custom edit\n", encoding="utf-8")
+
+        # Step 3: Disable [components.gemini] in config
+        (self.destination / ".raven" / "config.toml").write_text(
+            """schema = 1
+template = "lang"
+""",
+            encoding="utf-8",
+        )
+
+        # Step 4: Upgrade -- untouched files should be removed, edited file kept
+        rc, _ = self._upgrade()
+        self.assertEqual(rc, 0)
+
+        # Untouched files are removed
+        self.assertFalse((self.destination / ".gemini" / "settings.json").exists())
+        self.assertFalse((self.destination / ".gemini" / "hooks" / "test-hook.py").exists())
+        self.assertFalse((self.destination / ".gemini" / "agents" / "test-agent.md").exists())
+
+        # Edited file is kept!
+        self.assertTrue((self.destination / "GEMINI.md").exists())
+        self.assertEqual(
+            (self.destination / "GEMINI.md").read_text(encoding="utf-8"),
+            "@AGENTS.md\n# custom edit\n",
+        )
+
+        # Manifest updated: removed files pruned, edited file preserved
+        manifest = raven.load_manifest(self.destination)
+        self.assertIn("GEMINI.md", manifest["files"])
+        self.assertNotIn(".gemini/settings.json", manifest["files"])
+        self.assertNotIn(".gemini/hooks/test-hook.py", manifest["files"])
+        self.assertNotIn(".gemini/agents/test-agent.md", manifest["files"])
 
 
 if __name__ == "__main__":

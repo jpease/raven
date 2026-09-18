@@ -37,7 +37,11 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _config(platform: str | None = "none", template: str | None = None) -> RavenConfig:
+def _config(
+    platform: str | None = "none",
+    template: str | None = None,
+    gemini_components: dict[str, bool] | None = None,
+) -> RavenConfig:
     return RavenConfig(
         template=template,
         include_readme=False,
@@ -46,6 +50,9 @@ def _config(platform: str | None = "none", template: str | None = None) -> Raven
         codex_components={},
         exclude_paths=[],
         platform=platform,
+        gemini_components=dict(raven.DEFAULT_GEMINI_COMPONENTS)
+        if gemini_components is None
+        else gemini_components,
     )
 
 
@@ -342,6 +349,52 @@ class ClassifyDeactivatedTests(unittest.TestCase):
         self.assertEqual(result.preserved, [rel])
         self.assertEqual(result.removable, [])
         self.assertEqual(result.absent, [])
+
+    def test_gemini_gated_file_matching_baseline_is_removable(self) -> None:
+        template, dest = self._setup()
+        rel = "GEMINI.md"
+        _write(template / rel, "@AGENTS.md\n")
+        _write(dest / rel, "@AGENTS.md\n")
+        sha = file_sha256(dest / rel)
+        manifest = {
+            "schema": 1,
+            "files": {rel: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        result = classify_deactivated(template, dest, manifest, _config())
+        self.assertEqual(result.removable, [rel])
+        self.assertEqual(result.preserved, [])
+        self.assertEqual(result.absent, [])
+
+    def test_gemini_gated_file_locally_modified_is_preserved(self) -> None:
+        template, dest = self._setup()
+        rel = "GEMINI.md"
+        _write(template / rel, "@AGENTS.md\n")
+        _write(dest / rel, "@AGENTS.md\n# local edit\n")
+        sha = file_sha256(template / rel)
+        manifest = {
+            "schema": 1,
+            "files": {rel: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        result = classify_deactivated(template, dest, manifest, _config())
+        self.assertEqual(result.preserved, [rel])
+        self.assertEqual(result.removable, [])
+        self.assertEqual(result.absent, [])
+
+    def test_gemini_enabled_file_is_not_classified(self) -> None:
+        template, dest = self._setup()
+        rel = "GEMINI.md"
+        _write(template / rel, "@AGENTS.md\n")
+        _write(dest / rel, "@AGENTS.md\n")
+        sha = file_sha256(dest / rel)
+        manifest = {
+            "schema": 1,
+            "files": {rel: {"kind": "file", "installedSha256": sha, "sourceSha256": sha}},
+        }
+        enabled_gemini = dict.fromkeys(raven.DEFAULT_GEMINI_COMPONENTS, True)
+        result = classify_deactivated(
+            template, dest, manifest, _config(gemini_components=enabled_gemini)
+        )
+        self.assertEqual(result, DeactivatedClassification([], [], []))
 
     def test_handles_both_agents_and_claude_skills_twins_for_template_gate(self) -> None:
         # judgment call: verify (not just assume) that the .claude/skills
