@@ -20,6 +20,7 @@ This implements the skeleton-first guidance in `AGENTS.md` Retrieval Discipline.
 1. Run the skeleton helper from your agent's scripts directory:
    - Claude Code: `python .claude/scripts/raven-skeleton.py <file>`
    - Codex: `python .codex/scripts/raven-skeleton.py <file>`
+   - Gemini CLI: `python .gemini/scripts/raven-skeleton.py <file>`
 
    It prints one declaration per line as `START-END<TAB>header`, for example:
 

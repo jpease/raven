@@ -58,7 +58,7 @@ Stop producing patches once the work stops converging. Partial work leaves the c
 
 ## Integration with raven-project-lifecycle
 
-When using `raven-project-lifecycle`, run this skill immediately before calling `raven-session.py --complete <unit>` (`.claude/scripts/` for Claude Code, `.codex/scripts/` for Codex). The checkpoint hook enforces completion criteria; this skill ensures you meet them before invoking it.
+When using `raven-project-lifecycle`, run this skill immediately before calling `raven-session.py --complete <unit>` (`.claude/scripts/` for Claude Code, `.codex/scripts/` for Codex, `.gemini/scripts/` for Gemini CLI). The checkpoint hook enforces completion criteria; this skill ensures you meet them before invoking it.
 
 ## Output
 

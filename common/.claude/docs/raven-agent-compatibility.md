@@ -70,8 +70,9 @@ Per the Codex skills documentation, "Codex scans `.agents/skills` in every direc
 your current working directory up to the repository root," loading each subdirectory that
 contains a `SKILL.md` with `name` and `description` frontmatter — the exact shape Raven
 ships at `.agents/skills/raven-*/SKILL.md`. The canonical skills are therefore live for
-Codex, not inert files, and the shared `AGENTS.md` can safely instruct both harnesses to
-invoke `raven-*` skills.
+Codex, not inert files, and the shared `AGENTS.md` can safely instruct every harness to
+invoke `raven-*` skills — Gemini CLI reads `.agents/skills` the same direct way (see the
+Gemini CLI Adapter section below).
 
 - Source: <https://developers.openai.com/codex/skills>
 - Last verified: 2026-07-02 (Codex CLI skills GA; feature present in the 2026-06-22
@@ -129,7 +130,7 @@ the Codex hook/script symlinks still do not.
 This also means the unification needs no symlink support on the destination platform:
 a destination never receives one of these links.
 
-Runtime-derived adapter identity: because one file serves both harnesses, a unified script
+Runtime-derived adapter identity: because one file serves every harness, a unified script
 cannot embed its own adapter directory as a literal. `raven-tool-check.py` derives it from
 its install layout (`_adapter_directory_from_install_layout`) for both the project root and
 the directory named in `--help` and remediation text. Deliberately *not* symlink-resolving:
@@ -149,17 +150,21 @@ copy fail loudly instead. Do not re-file this as duplication to clean up.
 
 ## Known Asymmetries
 
-Some Claude adapter files intentionally have no Codex counterpart because the underlying
-agent capability does not exist in Codex, not because of an oversight. Recorded here so
-audits don't re-flag them:
+Some Claude and Gemini CLI adapter files intentionally have no Codex counterpart because
+the underlying agent capability does not exist in Codex, not because of an oversight.
+Recorded here so audits don't re-flag them:
 
-- **`.claude/hooks/raven-skeleton-read-guard.py`** (the rung-2 skeleton-first read gate,
-  wired to the `Read` matcher in `.claude/settings.json`) has no `.codex/hooks/`
-  counterpart and no entry in `.codex/hooks.json`. Codex has no discrete, universally
-  matchable `Read` tool — its `PreToolUse` hook coverage is `Bash`, `apply_patch`, and MCP
-  calls only, so there is nothing to gate the same way. See
-  `docs/research/hook-read-interception.md` for the capability comparison and
-  `docs/superpowers/plans/2026-06-18-skeleton-first-reads.md` for the decision to keep
+- **`raven-skeleton-read-guard.py`** (the rung-2 skeleton-first read gate, wired to the
+  `Read` matcher in `.claude/settings.json` and the `read_file` matcher in
+  `.gemini/settings.json`) is byte-identical across `.claude/hooks/` and `.gemini/hooks/`
+  (symlinked, see the classification table above) but has no `.codex/hooks/` counterpart
+  and no entry in `.codex/hooks.json`. Codex has no discrete, universally matchable `Read`
+  tool — its `PreToolUse` hook coverage is `Bash`, `apply_patch`, and MCP calls only, so
+  there is nothing to gate the same way. Gemini CLI does have a discrete, matchable
+  `read_file` tool and supports `BeforeTool` interception on it, so it gets the real gate
+  rather than being grouped with Codex (`docs/research/gemini-cli-adapter.md` §3, #267).
+  See `docs/research/hook-read-interception.md` for the Claude/Codex capability comparison
+  and `docs/superpowers/plans/2026-06-18-skeleton-first-reads.md` for the decision to keep
   Codex at advisory guidance (rung 0/1) instead of a deny gate.
 
   Unifying the byte-identical hook scripts must not sweep this one along: giving it a
@@ -167,11 +172,15 @@ audits don't re-flag them:
   asserted by `test_deliberately_unlinked_codex_hooks_stay_real_files`, so the asymmetry
   fails loudly if it is ever erased by a well-meaning cleanup rather than a decision.
 
-- **`.claude/hooks/raven-post-bash-truncate.py`** (the Bash result truncator, wired to the
-  `Bash` matcher under `PostToolUse` in `.claude/settings.json`) has no Codex counterpart
-  for the same kind of reason. Claude Code's PostToolUse hook can replace a tool result
-  through `hookSpecificOutput.updatedToolOutput`; Codex's PostToolUse can block a turn or
-  add feedback, and has no field that swaps the result (verified against the Codex hooks
+- **`raven-post-bash-truncate.py`** (the Bash result truncator, wired to the `Bash` matcher
+  under `PostToolUse` in `.claude/settings.json` and the `run_shell_command` matcher under
+  `AfterTool` in `.gemini/settings.json`) has no Codex counterpart for the same kind of
+  reason: it too is byte-identical across `.claude/hooks/` and `.gemini/hooks/`. Claude
+  Code's `PostToolUse` hook can replace a tool result through
+  `hookSpecificOutput.updatedToolOutput`; Gemini CLI's `AfterTool` hook has the equivalent
+  mechanism (`decision: "deny"` + `reason`, or `tailToolCallRequest`,
+  `docs/research/gemini-cli-adapter.md` §3); Codex's `PostToolUse` can only block a turn or
+  add feedback, with no field that swaps the result (verified against the Codex hooks
   reference, 2026-09-02). Codex bounds tool output through its own
   `tool_output_token_limit` config key instead. Asserted the same way as the read guard.
 
@@ -179,9 +188,10 @@ audits don't re-flag them:
 
 - Keep `AGENTS.md` and `.agents/skills` canonical.
 - Keep adapter files as schema translations, not independent policy documents.
-- When a Claude and Codex adapter describe the same role, update both in the same Raven change.
+- When a Claude, Codex, and Gemini adapter describe the same role, update all three in the same Raven change.
 - Check the classification table first. A **unified** file is edited once, under
-  `common/.claude/`; a **path-transformed** file must be edited in both trees. Adding a
-  new adapter file means classifying it — and if it is byte-identical, unifying it.
+  `common/.claude/`; a **path-transformed** (schema-translated) file must be edited in
+  every tree it exists in. Adding a new adapter file means classifying it — and if it is
+  byte-identical across every harness that ships it, unifying it.
 - Prefer project config switches over deleting Raven files by hand.
 - If a destination project has stronger local guidance, preserve it and merge Raven guidance into the managed block or local agent adapter as appropriate.

@@ -112,8 +112,9 @@ class CodexScriptUnificationTests(RavenTestCase):
         # copies (or, for `raven-session-checkpoint.py`, became byte-identical
         # once it learned to compute its own adapter directory at runtime
         # instead of hardcoding one -- issue #195). `raven-skeleton-read-guard.py`
-        # is excluded because it is deliberately Claude-only, recorded in the
-        # classification table in `.claude/docs/raven-agent-compatibility.md`.
+        # is excluded because it is unified across Claude and Gemini but has no
+        # Codex counterpart, recorded in the classification table in
+        # `.claude/docs/raven-agent-compatibility.md`.
         for name in UNIFIED_ADAPTER_HOOKS:
             with self.subTest(hook=name):
                 link = REPO_ROOT / "common" / ".codex" / "hooks" / name
@@ -127,13 +128,14 @@ class CodexScriptUnificationTests(RavenTestCase):
     def test_read_guard_has_no_codex_counterpart(self):
         # The classification is only useful if it is enforced in both
         # directions: unifying this would be a behavior change, not a cleanup --
-        # the read guard has no Codex counterpart at all (it is deliberately
-        # Claude-only, per `.claude/docs/raven-agent-compatibility.md`'s
-        # "Intentionally asymmetric" row).
+        # the read guard has no Codex counterpart at all (it is shared by
+        # Claude and Gemini only, per `.claude/docs/raven-agent-compatibility.md`'s
+        # "Intentionally asymmetric" row -- Codex has no discrete, matchable
+        # `Read` tool to gate).
         read_guard = REPO_ROOT / "common" / ".codex" / "hooks" / "raven-skeleton-read-guard.py"
         self.assertFalse(
             read_guard.exists() or read_guard.is_symlink(),
-            "the Claude-only read guard must not gain a Codex counterpart",
+            "the Claude/Gemini read guard must not gain a Codex counterpart",
         )
 
     def test_bash_truncator_has_no_codex_counterpart(self):
@@ -143,7 +145,7 @@ class CodexScriptUnificationTests(RavenTestCase):
         truncator = REPO_ROOT / "common" / ".codex" / "hooks" / "raven-post-bash-truncate.py"
         self.assertFalse(
             truncator.exists() or truncator.is_symlink(),
-            "the Claude-only Bash truncator must not gain a Codex counterpart",
+            "the Claude/Gemini Bash truncator must not gain a Codex counterpart",
         )
 
     def test_a_non_common_spelling_would_be_preserved(self):

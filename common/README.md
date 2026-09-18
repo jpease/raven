@@ -3,7 +3,7 @@
 This directory contains shared configuration for token-efficient agentic coding.
 
 `AGENTS.md` is authoritative. Agent-specific files should be thin pointers or symlinks to `AGENTS.md`.
-`.agents/skills/` is the canonical skill location. Claude and Codex files are compatibility adapters.
+`.agents/skills/` is the canonical skill location. Claude and Codex files are compatibility adapters; Gemini CLI is a compatibility adapter too, off by default (`[components.gemini]` in `.raven/config.toml`).
 
 The template favors:
 

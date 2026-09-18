@@ -40,7 +40,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=7354546fb6d9398e0596bbe4a124249209be40def9afc0b023b23aa3486586e9 -->
+<!-- RAVEN:BEGIN sha256=328ff75cee2dbbfa3e5b6d6a870eaba5fe1151930a03f83fc438671b63125612 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -81,11 +81,11 @@ Use the cheapest adequate source before reading full files.
 
 ## Skills
 
-A skill costs a file read on Codex and a step on Claude Code, before any work starts. Invoke one for a task of several steps or when the user asks for it; a one-file change or a short paragraph needs none.
+A skill costs a file read on Codex and a step — an `activate_skill`/`Skill` tool call — on Claude Code and Gemini CLI, before any work starts. Invoke one for a task of several steps or when the user asks for it; a one-file change or a short paragraph needs none.
 
 ## Delegation
 
-Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context. Use the `raven-delegate-or-inline` skill for the decision criteria, delegation mechanics, and anti-habit checks. Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-test-debugger`, and `raven-codebase-cartographer` as Claude Code subagents for common audits. Sub-agent returns must include an `## Out Of Scope Findings` section; disposition those findings per `raven-triage-discovery` rather than leaving them in chat or in an issue comment.
+Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context. Use the `raven-delegate-or-inline` skill for the decision criteria, delegation mechanics, and anti-habit checks. Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-test-debugger`, `raven-codebase-cartographer`, and `raven-prose-reviewer` as subagents across Claude Code, Codex, and Gemini CLI for common audits. Sub-agent returns must include an `## Out Of Scope Findings` section; disposition those findings per `raven-triage-discovery` rather than leaving them in chat or in an issue comment.
 
 ## Shell Command Policy
 

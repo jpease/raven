@@ -43,7 +43,7 @@ These integration files are also template-managed, but they cannot be fully name
 - Use nested `AGENTS.md` when the guidance applies only to a directory.
 - If project guidance conflicts with template guidance, prefer the more specific project guidance for its scope.
 - When reapplying the template, manually merge only files that the apply script reports as changed existing files.
-- Use `.claude/docs/raven-agent-compatibility.md` to distinguish canonical Raven content from Claude and Codex adapter files.
+- Use `.claude/docs/raven-agent-compatibility.md` to distinguish canonical Raven content from Claude, Codex, and Gemini adapter files.
 
 ## AGENTS.md Authoring Rules
 

@@ -38,11 +38,11 @@ Use the cheapest adequate source before reading full files.
 
 ## Skills
 
-A skill costs a file read on Codex and a step on Claude Code, before any work starts. Invoke one for a task of several steps or when the user asks for it; a one-file change or a short paragraph needs none.
+A skill costs a file read on Codex and a step — an `activate_skill`/`Skill` tool call — on Claude Code and Gemini CLI, before any work starts. Invoke one for a task of several steps or when the user asks for it; a one-file change or a short paragraph needs none.
 
 ## Delegation
 
-Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context. Use the `raven-delegate-or-inline` skill for the decision criteria, delegation mechanics, and anti-habit checks. Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-test-debugger`, and `raven-codebase-cartographer` as Claude Code subagents for common audits. Sub-agent returns must include an `## Out Of Scope Findings` section; disposition those findings per `raven-triage-discovery` rather than leaving them in chat or in an issue comment.
+Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context. Use the `raven-delegate-or-inline` skill for the decision criteria, delegation mechanics, and anti-habit checks. Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-test-debugger`, `raven-codebase-cartographer`, and `raven-prose-reviewer` as subagents across Claude Code, Codex, and Gemini CLI for common audits. Sub-agent returns must include an `## Out Of Scope Findings` section; disposition those findings per `raven-triage-discovery` rather than leaving them in chat or in an issue comment.
 
 ## Shell Command Policy
 

@@ -22,7 +22,7 @@ For projects with an external issue tracker, check `[issue_tracker].platform` in
 ## Required Constraints
 
 - Never implement code directly; always delegate to the appropriate Raven execution skill
-- The session helper ships per adapter: `.claude/scripts/raven-session.py` (Claude Code) or `.codex/scripts/raven-session.py` (Codex). Steps below write it as `raven-session.py`; run it with `python <that path>`
+- The session helper ships per adapter: `.claude/scripts/raven-session.py` (Claude Code), `.codex/scripts/raven-session.py` (Codex), or `.gemini/scripts/raven-session.py` (Gemini CLI). Steps below write it as `raven-session.py`; run it with `python <that path>`
 - Always call `raven-session.py --status` before beginning Phase 3 to confirm the current unit
 - Always call `raven-session.py --complete <unit>` at the end of each unit — the checkpoint hook will validate before allowing it
 - Never skip the checkpoint call to move faster

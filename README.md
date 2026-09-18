@@ -58,7 +58,7 @@ the Codex one — run `raven init <language>` first to write
 
 - **Token discipline**: a retrieval order that reaches for `rg`, LSP, and a code index before whole-file reads; noisy commands routed through RTK; and, on Claude Code, a hook that trims oversized command output to its head, its tail, and a file path. The guidance itself costs about 7,800 tokens per step on Claude Code and 3,500 on Codex (`docs/evaluation.md`, `fixed-cost`); whether it saves more than it costs over a task is what `scripts/eval.py` exists to measure, and the answer so far is "not yet shown".
 - **Reusable agent setup**: Share guidance, skills, hooks, rules, and docs across repos.
-- **Agent adapters**: Keep `AGENTS.md` and `.agents/skills` canonical while installing thin Claude Code and Codex compatibility layers.
+- **Agent adapters**: Keep `AGENTS.md` and `.agents/skills` canonical while installing thin Claude Code and Codex compatibility layers, plus an opt-in Gemini CLI layer.
 - **Language-aware templates**: Start with common behavior, then layer language-specific rules.
 - **Safe updates**: Track installed files with `.raven/manifest.json` and only auto-upgrade unchanged Raven-managed files.
 - **Local control**: Configure each destination repo with a self-documented `.raven/config.toml`.
@@ -77,7 +77,8 @@ Reusable agent guidance, plus the state needed to upgrade it safely:
 - `.ignore`: append-only. Raven adds a `!` negation for each directory it installs guidance into, so `rg`, `fd` and `ast-grep` — which skip dot-directories by default — search the guidance without `--hidden`. Removing the lines only makes that guidance harder to find; it hides nothing else. Skipped when the destination is your home directory itself, where `.claude/` is Claude Code's runtime state rather than shipped guidance.
 - Git hooks: three symlinks into git's effective hooks directory (`.git/hooks/` normally) — `commit-msg`, `pre-commit`, and `pre-push`. From then on, every commit runs `just check-fast` (lint + format) and every push runs `just check` (adds typecheck and test) if a justfile is present, blocking on failure; `commit-msg` strips AI-agent attribution trailers rather than blocking. A hook manager or an external `core.hooksPath` already owning that directory (e.g. husky) makes Raven defer to it instead — see `raven doctor` for how to wire Raven's hooks through it. To remove Raven's own hooks, delete the three symlinks.
 - `.gitignore`: append-only, the same way as `.gitattributes` and `.ignore` above — entries for `.raven/merge/` and `.claude/settings.local.json`.
-- Claude Code and Codex adapter files when enabled in `.raven/config.toml`. Codex loads a project's `.codex/` layer — config, hooks, rules, and agents — only after you trust the project, and runs each hook only after you review it once in `/hooks`. Until both are done the Codex files are installed but inert, and nothing in Codex or Raven says so.
+- Claude Code and Codex adapter files, on by default. Codex loads a project's `.codex/` layer — config, hooks, rules, and agents — only after you trust the project, and runs each hook only after you review it once in `/hooks`. Until both are done the Codex files are installed but inert, and nothing in Codex or Raven says so.
+- Gemini CLI adapter files, off by default — enable with `[components.gemini]` in `.raven/config.toml` (every entry defaults `false`; set the ones you want `true`, such as `hooks = true`). Gemini CLI likewise skips a project's `.gemini/` layer until you trust the folder; `raven doctor` reports that state the way it does for Codex.
 - Starter tool configuration files when the language template ships them and the destination path does not already exist.
 
 ## Commands

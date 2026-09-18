@@ -21,6 +21,10 @@ narrowly than that conclusion assumed. A follow-up live run plus a direct read o
 `hookRegistry.ts` found the opposite: folder trust does gate project-level hook loading
 today. See "Project-level hooks are gated by folder trust" below.
 
+**Addendum (2026-09-18, for #270):** the Skills section originally covered discovery and
+format only. Added the `activate_skill` tool-call finding below, needed to state the
+correct per-harness skill-invocation cost in `AGENTS.md`.
+
 ## 1. Instructions: `GEMINI.md` and `@import`
 
 **A bare `@AGENTS.md` resolves identically to `@./AGENTS.md`.** Confirmed two ways:
@@ -78,6 +82,17 @@ compatibility doc says reads `.agents/skills` with no alternate path), Gemini CL
 directory is `.gemini/skills`, and `.agents/skills` is documented as an explicit
 compatibility alias — so this is a deliberate cross-tool interop point on Gemini's side, not
 an incidental scan.
+
+**Skill invocation is a discrete tool call, not a bare file read.** Per
+[`docs/cli/skills.md`](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/skills.md)
+("How it works"): at session start Gemini CLI injects only each skill's `name` and
+`description` into the system prompt (discovery); when a task matches, the model calls the
+`activate_skill` tool (activation), the user is shown a consent prompt naming the skill and
+the directory it will gain access to, and only on approval is the `SKILL.md` body added to
+conversation history and its directory added to the agent's allowed file paths. This is
+Claude Code's `Skill`-tool-call model, not Codex's bare directory scan — a skill costs a
+step on Gemini CLI, the same class of cost as on Claude Code, not a file read the way it is
+on Codex.
 
 ## 3. Hooks
 

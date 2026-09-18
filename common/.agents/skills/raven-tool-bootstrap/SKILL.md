@@ -28,7 +28,7 @@ The session capability roster (`raven-capability-roster.py`) splits missing tool
 
 ## Commands
 
-The tool-check helper ships per adapter: `.claude/scripts/raven-tool-check.py` (Claude Code) or `.codex/scripts/raven-tool-check.py` (Codex). Use the one your agent installed.
+The tool-check helper ships per adapter: `.claude/scripts/raven-tool-check.py` (Claude Code), `.codex/scripts/raven-tool-check.py` (Codex), or `.gemini/scripts/raven-tool-check.py` (Gemini CLI). Use the one your agent installed.
 
 After tools are installed or verified, update Raven's local tool-check cache so SessionStart does not repeat the same prompt:
 
