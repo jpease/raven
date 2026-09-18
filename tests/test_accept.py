@@ -8,6 +8,7 @@ from pathlib import Path
 from helpers import RavenTestCase, raven
 from raven_lib.cli import classify_accept_requests
 from raven_lib.doctor import build_doctor_findings
+from raven_lib.render import render_mcp_json
 
 
 class AcceptCommandTests(RavenTestCase):
@@ -49,7 +50,9 @@ class AcceptCommandTests(RavenTestCase):
         self.assertEqual(rc, 0)
         rec = self._manifest()["files"][".mcp.json"]
         self.assertEqual(rec["installedSha256"], self._sha(mcp))
-        self.assertEqual(rec["sourceSha256"], self._sha(self.template / ".mcp.json"))
+        self.assertEqual(
+            rec["sourceSha256"], raven.sha256_bytes(render_mcp_json(self.template).encode("utf-8"))
+        )
 
     def test_accept_stops_reprompt_after_template_drift(self):
         self._install()
@@ -61,19 +64,21 @@ class AcceptCommandTests(RavenTestCase):
         manifest["files"][".mcp.json"]["sourceSha256"] = "0" * 64
         mpath.write_text(json.dumps(manifest), encoding="utf-8")
 
-        before = raven.classify(self.template, self.destination, self.excludes)
-        self.assertIn(".mcp.json", before.needs_merge)
-
-        # Surface the merge artifacts, then accept (no args -> all pending).
+        # `.mcp.json` is a rendered entry (#271): classify() only sees it when
+        # given pre-rendered entries, the way every production caller does.
         entries = raven.entries_for_destination(
             self.template, self.excludes, raven.load_config(self.destination), self.destination
         )
+        before = raven.classify(self.template, self.destination, self.excludes, entries=entries)
+        self.assertIn(".mcp.json", before.needs_merge)
+
+        # Surface the merge artifacts, then accept (no args -> all pending).
         raven.write_guided_merge_artifacts(self.destination, entries, [".mcp.json"])
         with contextlib.redirect_stdout(io.StringIO()):
             rc = raven.cmd_accept(self._ns())
         self.assertEqual(rc, 0)
 
-        after = raven.classify(self.template, self.destination, self.excludes)
+        after = raven.classify(self.template, self.destination, self.excludes, entries=entries)
         self.assertIn(".mcp.json", after.identical)
         self.assertNotIn(".mcp.json", after.needs_merge)
         self.assertFalse((self.destination / ".raven" / "merge").exists())

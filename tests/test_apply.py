@@ -8,7 +8,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from helpers import UNIFIED_ADAPTER_HOOKS, UNIFIED_ADAPTER_SCRIPTS, RavenTestCase, raven
+from helpers import (
+    UNIFIED_ADAPTER_HOOKS,
+    UNIFIED_ADAPTER_SCRIPTS,
+    RavenTestCase,
+    install_ns,
+    raven,
+    upgrade_ns,
+)
 from raven_lib.cli import _adoption_decision, _build_run_plan, invalid_overrides
 
 # Which byte-identical files each adapter subdirectory unifies (issue #165).
@@ -1218,6 +1225,130 @@ settings = true
         self.assertEqual(settings_path.read_text(encoding="utf-8"), custom_content)
         diff_path = self.destination / ".raven" / "merge" / ".gemini" / "settings.json.diff"
         self.assertTrue(diff_path.exists())
+
+
+class McpAndCodexConfigRendererTests(RavenTestCase):
+    """Acceptance tests for Issue #271: render `.mcp.json`/`.codex/config.toml` at install time."""
+
+    def _install(self) -> int:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return raven.cmd_install(install_ns(self.destination))
+
+    def _upgrade(self, dry_run: bool = False) -> tuple[int, str]:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc = raven.cmd_upgrade(upgrade_ns(self.destination, dry_run=dry_run))
+        return rc, buf.getvalue()
+
+    def test_render_mcp_json_excludes_lsp_for_a_plugin_covered_language(self) -> None:
+        from raven_lib.render import render_mcp_json
+
+        run1 = json.loads(render_mcp_json(self.template))
+        run2 = render_mcp_json(self.template)
+        self.assertEqual(render_mcp_json(self.template), run2)  # deterministic
+
+        servers = run1["mcpServers"]
+        self.assertIn("semgrep", servers)
+        self.assertIn("gitnexus", servers)
+        # self.template is "python", which ships an official Claude Code
+        # pyright-lsp plugin -- the bridge must not duplicate it (#271).
+        self.assertNotIn("lsp", servers)
+
+    def test_render_codex_config_toml_always_includes_the_lsp_bridge(self) -> None:
+        from raven_lib.render import render_codex_config_toml
+
+        run1 = render_codex_config_toml(self.template)
+        self.assertEqual(render_codex_config_toml(self.template), run1)  # deterministic
+
+        config = raven.parse_simple_toml(run1)
+        self.assertIn("mcp_servers.semgrep", config)
+        self.assertIn("mcp_servers.gitnexus", config)
+        # Unlike .mcp.json, Codex has no plugin alternative and always wants
+        # the bridge, even for python (#271).
+        lsp = config["mcp_servers.lsp"]
+        assert isinstance(lsp, dict)
+        self.assertEqual(lsp["command"], "mcp-language-server")
+        self.assertIn("pyright-langserver", lsp["args"])
+
+    def test_install_records_rendered_files_in_manifest(self) -> None:
+        rc = self._install()
+        self.assertEqual(rc, 0)
+
+        mcp_path = self.destination / ".mcp.json"
+        codex_path = self.destination / ".codex" / "config.toml"
+        self.assertTrue(mcp_path.is_file())
+        self.assertFalse(mcp_path.is_symlink())
+        self.assertTrue(codex_path.is_file())
+        self.assertFalse(codex_path.is_symlink())
+
+        manifest = raven.load_manifest(self.destination)
+        for relative, path in ((".mcp.json", mcp_path), (".codex/config.toml", codex_path)):
+            record = manifest["files"][relative]
+            self.assertEqual(record["kind"], "file")
+            self.assertEqual(record["installedSha256"], raven.file_sha256(path))
+            self.assertEqual(record["sourceSha256"], raven.file_sha256(path))
+
+    #: The real `python/.mcp.json` and `python/.codex/config.toml` content
+    #: this issue deleted (pinned from git history, not re-derived from the
+    #: renderer under test -- the whole point is to catch the renderer
+    #: silently drifting from what a real pre-#271 install has on disk).
+    _PRE_271_MCP_JSON = (
+        '{\n  "mcpServers": {\n    "semgrep": {\n      "command": "semgrep",\n'
+        '      "args": [\n        "mcp"\n      ]\n    },\n    "gitnexus": {\n'
+        '      "command": "gitnexus",\n      "args": [\n        "mcp"\n'
+        "      ]\n    }\n  }\n}\n"
+    )
+    _PRE_271_CODEX_CONFIG = (
+        "# Raven Codex project configuration for Python repositories.\n"
+        "# Project-local Codex config loads only after the project .codex layer is trusted.\n"
+        "\n[agents]\nmax_concurrent_threads_per_session = 4\n\n"
+        '[mcp_servers.semgrep]\ncommand = "semgrep"\nargs = ["mcp"]\n\n'
+        '[mcp_servers.gitnexus]\ncommand = "gitnexus"\nargs = ["mcp"]\n\n'
+        '[mcp_servers.lsp]\ncommand = "mcp-language-server"\n'
+        'args = ["--workspace", ".", "--lsp", "pyright-langserver", "--", "--stdio"]\n'
+    )
+
+    def test_upgrade_of_a_pre_271_install_reports_no_spurious_change(self) -> None:
+        # Simulate a repository that installed before #271: fresh-install to
+        # get the rest of the tree, then force `.mcp.json`/`.codex/config.toml`
+        # -- on disk and in the manifest baseline -- back to the exact old
+        # checked-in bytes, as if this Raven version had never rendered them.
+        # If the renderer this issue adds is not byte-identical to what it
+        # replaces, this reproduces a real user's upgrade seeing a spurious
+        # merge prompt on every Raven-managed repository at once.
+        rc = self._install()
+        self.assertEqual(rc, 0)
+
+        mcp_path = self.destination / ".mcp.json"
+        codex_path = self.destination / ".codex" / "config.toml"
+        mcp_path.write_text(self._PRE_271_MCP_JSON, encoding="utf-8")
+        codex_path.write_text(self._PRE_271_CODEX_CONFIG, encoding="utf-8")
+
+        old_mcp_sha = raven.sha256_bytes(self._PRE_271_MCP_JSON.encode("utf-8"))
+        old_codex_sha = raven.sha256_bytes(self._PRE_271_CODEX_CONFIG.encode("utf-8"))
+        mpath = self.destination / ".raven" / "manifest.json"
+        manifest = json.loads(mpath.read_text(encoding="utf-8"))
+        for relative, sha in ((".mcp.json", old_mcp_sha), (".codex/config.toml", old_codex_sha)):
+            manifest["files"][relative]["installedSha256"] = sha
+            manifest["files"][relative]["sourceSha256"] = sha
+        mpath.write_text(json.dumps(manifest), encoding="utf-8")
+
+        rc, dry_run_out = self._upgrade(dry_run=True)
+        self.assertEqual(rc, 0)
+        self.assertIn("Already up to date; will not copy:", dry_run_out)
+        self.assertIn(".mcp.json", dry_run_out)
+        self.assertIn(".codex/config.toml", dry_run_out)
+        self.assertIn(
+            "Manual merge required (locally modified Raven-managed files; will be left untouched):\n  (none)",
+            dry_run_out,
+        )
+
+        rc, output = self._upgrade()
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Upgraded", output)
+        self.assertEqual(mcp_path.read_text(encoding="utf-8"), self._PRE_271_MCP_JSON)
+        self.assertEqual(codex_path.read_text(encoding="utf-8"), self._PRE_271_CODEX_CONFIG)
+        self.assertFalse((self.destination / ".raven" / "merge").exists())
 
 
 class GeminiTemplateShipmentTests(RavenTestCase):

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from helpers import REPO_ROOT, RavenTestCase, install_raven_config_lib, load_script_module
+from raven_lib.render import render_codex_config_toml
 from raven_lib.template import should_preserve_symlink
 
 TOOL_CHECK_SCRIPT = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
@@ -66,9 +67,9 @@ class CodexMcpServerNamesFromTomlTests(RavenTestCase):
         self.assertEqual(self.module._codex_mcp_server_names_from_toml(""), set())
 
     def test_real_shipped_codex_config_parses(self):
-        # Pinned against the real template file so the reader and the
+        # Pinned against the rendered template output so the reader and the
         # shipped config cannot drift.
-        text = (REPO_ROOT / "python" / ".codex" / "config.toml").read_text(encoding="utf-8")
+        text = render_codex_config_toml(REPO_ROOT / "python")
         names = self.module._codex_mcp_server_names_from_toml(text)
         self.assertIn("semgrep", names)
         self.assertIn("gitnexus", names)

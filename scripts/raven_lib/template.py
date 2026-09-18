@@ -23,8 +23,12 @@ from .constants import (
 )
 from .models import RavenConfig, TemplateEntry
 from .render import (
+    can_render_codex_config_toml,
     can_render_gemini_settings,
+    can_render_mcp_json,
+    render_codex_config_toml,
     render_gemini_settings,
+    render_mcp_json,
     resolve_common_root,
 )
 
@@ -257,5 +261,29 @@ def entries_for_destination(
             source=source_path,
             copy_as_symlink=False,
             rendered_content=rendered_str.encode("utf-8"),
+        )
+
+    mcp_json_rel = ".mcp.json"
+    if (
+        config is None
+        or not is_excluded(destination / mcp_json_rel, mcp_json_rel, excludes, config)
+    ) and can_render_mcp_json(template, common_root=common):
+        entries[mcp_json_rel] = TemplateEntry(
+            relative=mcp_json_rel,
+            source=template / mcp_json_rel,
+            copy_as_symlink=False,
+            rendered_content=render_mcp_json(template, common_root=common).encode("utf-8"),
+        )
+
+    codex_config_rel = ".codex/config.toml"
+    if (
+        config is None
+        or not is_excluded(destination / codex_config_rel, codex_config_rel, excludes, config)
+    ) and can_render_codex_config_toml(template, common_root=common):
+        entries[codex_config_rel] = TemplateEntry(
+            relative=codex_config_rel,
+            source=template / codex_config_rel,
+            copy_as_symlink=False,
+            rendered_content=render_codex_config_toml(template, common_root=common).encode("utf-8"),
         )
     return {key: entries[key] for key in sorted(entries)}

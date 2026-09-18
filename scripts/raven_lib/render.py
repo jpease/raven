@@ -1,7 +1,8 @@
 """Render adapter configuration files deterministically at install time.
 
-Renders `.gemini/settings.json` (and in #271, `.mcp.json` and `.codex/config.toml`)
-from shared wiring in `common/` and per-language MCP server definitions.
+Renders `.gemini/settings.json`, `.mcp.json`, and `.codex/config.toml` from
+shared wiring in `common/` and per-language MCP server definitions (#265,
+#271).
 """
 
 from __future__ import annotations
@@ -110,8 +111,29 @@ def load_gemini_base_settings(template: Path, common_root: Path | None = None) -
     return base_settings
 
 
+def _drop_plugin_covered_lsp(servers: dict[str, Any], template_name: str) -> dict[str, Any]:
+    """Remove the `lsp` bridge server for a language with a Claude Code LSP plugin.
+
+    Running the `mcp-language-server` bridge alongside a native Claude Code LSP
+    plugin means two LSP clients against one workspace -- measured as several
+    gigabytes of duplicate `sourcekit-lsp` processes for Swift
+    (`raven-lsp-mcp.md`). Only `render_mcp_json` (Claude Code) calls this.
+    `render_codex_config_toml` and `render_gemini_settings` always want the
+    bridge: neither harness has a plugin alternative to avoid duplicating
+    (#271).
+    """
+    if template_name not in CLAUDE_LSP_PLUGIN_TEMPLATES or "lsp" not in servers:
+        return servers
+    return {name: value for name, value in servers.items() if name != "lsp"}
+
+
 def render_gemini_settings(template: Path, common_root: Path | None = None) -> str:
-    """Render `.gemini/settings.json` deterministically with sorted keys and 2-space indents."""
+    """Render `.gemini/settings.json` deterministically with sorted keys and 2-space indents.
+
+    Every MCP server, always -- Gemini CLI has no marketplace LSP plugin
+    ecosystem to avoid duplicating, so it gets the same unfiltered set
+    `render_codex_config_toml` does, unlike `render_mcp_json`.
+    """
     settings = load_gemini_base_settings(template, common_root)
     mcp_servers = load_mcp_servers(template, common_root)
     if mcp_servers:
@@ -127,3 +149,97 @@ def can_render_gemini_settings(template: Path, common_root: Path | None = None) 
     if (template / ".gemini" / "settings.json").is_file():
         return True
     return bool(load_mcp_servers(template, common_root))
+
+
+def render_mcp_json(template: Path, common_root: Path | None = None) -> str:
+    """Render `.mcp.json` deterministically, preserving common-then-template key order.
+
+    `json.dumps` without `sort_keys` walks a dict in insertion order, which is
+    also what `load_mcp_servers` produces: every common baseline server (in
+    the order `common/.raven/mcp.json` declares them), then every per-language
+    addition not already present. That is what makes this byte-identical to
+    the checked-in per-language `.mcp.json` files it replaces (#271) -- sorting
+    keys would reorder `semgrep`/`gitnexus` alphabetically and break that.
+    """
+    servers = _drop_plugin_covered_lsp(load_mcp_servers(template, common_root), template.name)
+    return json.dumps({"mcpServers": servers}, indent=2) + "\n"
+
+
+def can_render_mcp_json(template: Path, common_root: Path | None = None) -> bool:
+    """Whether inputs exist to render `.mcp.json` for `template`."""
+    return bool(_drop_plugin_covered_lsp(load_mcp_servers(template, common_root), template.name))
+
+
+#: Templates with a Claude Code marketplace LSP plugin (`raven-lsp-mcp.md`'s
+#: "Provider on Claude Code" column). `.mcp.json` and `.gemini/settings.json`
+#: exclude the `mcp-language-server` bridge for these; `.codex/config.toml`
+#: always includes it, since Codex has no plugin alternative at all.
+CLAUDE_LSP_PLUGIN_TEMPLATES = frozenset(
+    {"python", "typescript", "rust", "swift", "go", "lua", "ruby"}
+)
+
+#: The `# Raven Codex project configuration for {description}` phrase per
+#: template, the one hand-authored part of `.codex/config.toml` with no other
+#: machine-readable source (it is prose, read by a human trusting the
+#: project, not by Codex).
+CODEX_CONFIG_DESCRIPTIONS = {
+    "python": "Python repositories.",
+    "typescript": "TypeScript repositories.",
+    "rust": "Rust repositories.",
+    "swift": "Swift repositories.",
+    "go": "Go repositories.",
+    "lua": "Lua repositories.",
+    "ruby": "Ruby repositories.",
+    "elixir": "Elixir repositories.",
+    "generic": "repositories with no language stack.",
+    "dotfiles": "dotfiles / home-directory config.",
+}
+
+
+def _toml_string(value: str) -> str:
+    """A TOML basic string literal. JSON and TOML basic-string escaping agree
+    on quote/backslash/control-character handling, so `json.dumps` is exact
+    for the plain command/argument tokens this renders.
+    """
+    return json.dumps(value)
+
+
+def _toml_mcp_server_table(name: str, server: dict[str, Any]) -> str:
+    lines = [f"[mcp_servers.{name}]"]
+    command = server.get("command")
+    if isinstance(command, str):
+        lines.append(f"command = {_toml_string(command)}")
+    args = server.get("args")
+    if isinstance(args, list):
+        rendered_args = ", ".join(_toml_string(a) for a in args if isinstance(a, str))
+        lines.append(f"args = [{rendered_args}]")
+    return "\n".join(lines)
+
+
+def render_codex_config_toml(template: Path, common_root: Path | None = None) -> str:
+    """Render `.codex/config.toml` deterministically: every MCP server, always.
+
+    Unlike `.mcp.json`/`.gemini/settings.json`, this never drops the `lsp`
+    bridge for a plugin-covered language -- Codex has no plugin mechanism, so
+    `.codex/config.toml` is the one place every template's `mcp-language-
+    server` entry always lands (#271).
+    """
+    description = CODEX_CONFIG_DESCRIPTIONS.get(template.name, f"{template.name} repositories.")
+    servers = load_mcp_servers(template, common_root)
+    sections = [_toml_mcp_server_table(name, server) for name, server in servers.items()]
+    body = "\n\n".join(sections)
+    header = (
+        f"# Raven Codex project configuration for {description}\n"
+        "# Project-local Codex config loads only after the project .codex layer is trusted.\n"
+        "\n"
+        "[agents]\n"
+        "max_concurrent_threads_per_session = 4"
+    )
+    return f"{header}\n\n{body}\n" if body else f"{header}\n"
+
+
+def can_render_codex_config_toml(template: Path, common_root: Path | None = None) -> bool:
+    """Whether inputs exist to render `.codex/config.toml` for `template`."""
+    return bool(load_mcp_servers(template, common_root)) or template.name in (
+        CODEX_CONFIG_DESCRIPTIONS
+    )

@@ -23,6 +23,7 @@ from helpers import (
 )
 from raven_lib.cli import list_language_templates
 from raven_lib.constants import EXPECTED_TEMPLATE_SYMLINKS, STARTER_TOOL_CONFIG_PATHS
+from raven_lib.render import render_codex_config_toml, render_mcp_json
 from raven_lib.template import broken_template_symlinks, should_preserve_symlink
 
 
@@ -363,15 +364,13 @@ paths = [".claude/skills/raven-plan/**"]
             if plugin is None:
                 continue
             with self.subTest(language=language, plugin=plugin):
-                servers = json.loads(
-                    (REPO_ROOT / language / ".mcp.json").read_text(encoding="utf-8")
-                )["mcpServers"]
+                servers = json.loads(render_mcp_json(REPO_ROOT / language))["mcpServers"]
 
                 self.assertNotIn(
                     "lsp",
                     servers,
-                    f"{language}/.mcp.json duplicates the language server that the "
-                    f"{plugin} plugin already launches",
+                    f"{language}'s rendered .mcp.json duplicates the language server that "
+                    f"the {plugin} plugin already launches",
                 )
 
     def test_claude_mcp_config_keeps_the_bridge_where_no_plugin_covers_the_language(self):
@@ -382,9 +381,7 @@ paths = [".claude/skills/raven-plan/**"]
 
         for language in covered:
             with self.subTest(language=language):
-                config = json.loads(
-                    (REPO_ROOT / language / ".mcp.json").read_text(encoding="utf-8")
-                )
+                config = json.loads(render_mcp_json(REPO_ROOT / language))
                 lsp = config["mcpServers"]["lsp"]
 
                 self.assertEqual(lsp["command"], "mcp-language-server")
@@ -395,9 +392,7 @@ paths = [".claude/skills/raven-plan/**"]
 
         for language, args in expected.items():
             with self.subTest(language=language):
-                config = raven.parse_simple_toml(
-                    (REPO_ROOT / language / ".codex" / "config.toml").read_text(encoding="utf-8")
-                )
+                config = raven.parse_simple_toml(render_codex_config_toml(REPO_ROOT / language))
                 lsp = config["mcp_servers.lsp"]
                 assert isinstance(lsp, dict)  # parse_simple_toml values are typed object
 
@@ -435,19 +430,17 @@ paths = [".claude/skills/raven-plan/**"]
                 )
 
     def test_common_mcp_json_servers_ship_in_every_language_template(self):
-        # common/.mcp.json is never installed directly (each language tree ships
-        # its own real .mcp.json so it can set a language-specific "lsp" server),
-        # but it documents the shared server set every tree must include. Guard
-        # against it drifting from what trees actually ship, per #83.
+        # common/.raven/mcp.json is the shared baseline every rendered tree's
+        # .mcp.json must include (merged in by `render_mcp_json`/
+        # `load_mcp_servers`, never re-authored per tree). Guard against it
+        # drifting from what trees actually render, per #83.
         common_servers = json.loads(
-            (REPO_ROOT / "common" / ".mcp.json").read_text(encoding="utf-8")
+            (REPO_ROOT / "common" / ".raven" / "mcp.json").read_text(encoding="utf-8")
         )["mcpServers"]
 
         for language in raven.list_language_templates():
             with self.subTest(language=language):
-                tree_servers = json.loads(
-                    (REPO_ROOT / language / ".mcp.json").read_text(encoding="utf-8")
-                )["mcpServers"]
+                tree_servers = json.loads(render_mcp_json(REPO_ROOT / language))["mcpServers"]
 
                 for name, config in common_servers.items():
                     self.assertIn(name, tree_servers)
@@ -463,8 +456,8 @@ paths = [".claude/skills/raven-plan/**"]
         rule = stack / ".claude" / "rules" / "raven-dotfiles.md"
         self.assertTrue(rule.is_file())
 
-        # .mcp.json ships semgrep/gitnexus but intentionally no lsp server.
-        mcp = json.loads((stack / ".mcp.json").read_text(encoding="utf-8"))
+        # Rendered .mcp.json ships semgrep/gitnexus but intentionally no lsp server.
+        mcp = json.loads(render_mcp_json(stack))
         servers = mcp["mcpServers"]
         self.assertIn("semgrep", servers)
         self.assertIn("gitnexus", servers)
@@ -500,15 +493,15 @@ paths = [".claude/skills/raven-plan/**"]
             with self.subTest(rule=name):
                 self.assertTrue((rules / name).is_symlink())
 
-        # .mcp.json ships semgrep/gitnexus and, like dotfiles, no lsp server:
-        # there is no language to point mcp-language-server at.
-        mcp = json.loads((stack / ".mcp.json").read_text(encoding="utf-8"))
+        # Rendered .mcp.json ships semgrep/gitnexus and, like dotfiles, no lsp
+        # server: there is no language to point mcp-language-server at.
+        mcp = json.loads(render_mcp_json(stack))
         servers = mcp["mcpServers"]
         self.assertIn("semgrep", servers)
         self.assertIn("gitnexus", servers)
         self.assertNotIn("lsp", servers)
 
-        codex_config = (stack / ".codex" / "config.toml").read_text(encoding="utf-8")
+        codex_config = render_codex_config_toml(stack)
         self.assertNotIn("mcp_servers.lsp", codex_config)
 
         # No build system means no gate to run and no starter tool config to seed.

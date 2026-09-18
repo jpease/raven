@@ -124,6 +124,17 @@
       ],
       "command": "gitnexus"
     },
+    "lsp": {
+      "args": [
+        "--workspace",
+        ".",
+        "--lsp",
+        "pyright-langserver",
+        "--",
+        "--stdio"
+      ],
+      "command": "mcp-language-server"
+    },
     "semgrep": {
       "args": [
         "mcp"

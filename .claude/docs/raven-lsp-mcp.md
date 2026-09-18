@@ -1,6 +1,6 @@
 # LSP MCP Defaults
 
-Last verified: 2026-08-24
+Last verified: 2026-09-18
 
 Use client-native LSP or language plugins first when the agent client provides a reliable one for the project language. When no client-native option is available, Raven's recommended general-purpose fallback is `mcp-language-server` from `isaacphi/mcp-language-server`.
 
@@ -10,7 +10,7 @@ Use client-native LSP or language plugins first when the agent client provides a
 
 A language server started by two clients is two full instances. They do not share an index, a process, or memory. If a harness already launches the server for a language, do not add a second path to it.
 
-Claude Code covers this through official marketplace LSP plugins, which launch the language server themselves. So a language with a plugin gets no `lsp` server in `.mcp.json`, and the plugin is the only provider. Codex has no LSP integration of its own (verified against codex-cli 0.149.1), so `.codex/config.toml` keeps the `mcp-language-server` bridge for every language.
+Claude Code covers this through official marketplace LSP plugins, which launch the language server themselves. So a language with a plugin gets no `lsp` server in `.mcp.json`, and the plugin is the only provider. Codex has no LSP integration of its own (verified against codex-cli 0.149.1), and Gemini CLI has no marketplace LSP plugin ecosystem either (verified against gemini-cli 0.60.0 docs and source, 2026-09-18 -- `docs/cli/skills.md`'s extension mechanism packages skills, not language servers), so `.codex/config.toml` and `.gemini/settings.json` both keep the `mcp-language-server` bridge for every language, unconditionally.
 
 Swift shows why this matters. `sourcekitd` does no pooling: three `sourcekit-lsp` clients opened against one workspace produced three separate `SourceKitService` processes, and none of them was shared with the instance Xcode was already running. Measured resident size ranged from 0.3 GB to 6.5 GB each. Running the plugin and the bridge together in one Swift repo doubles that bill for no added capability.
 
@@ -28,7 +28,7 @@ For diagnostics on a plugin-covered language, use the repository's own gate — 
 
 ## Recommended Split
 
-Every row names one language server. The "Provider" column says who starts it: the named Claude Code plugin, or the `mcp-language-server` bridge in `.mcp.json`. Codex always uses the bridge, from `.codex/config.toml`.
+Every row names one language server. The "Provider" column says who starts it: the named Claude Code plugin, or the `mcp-language-server` bridge in `.mcp.json`. Codex and Gemini CLI always use the bridge, from `.codex/config.toml` and `.gemini/settings.json` respectively — neither has a plugin alternative to avoid duplicating.
 
 | Language   | Preferred LSP command for generic MCP fallback                                                | Provider on Claude Code |
 | ---------- | --------------------------------------------------------------------------------------------- | ----------------------- |
@@ -44,7 +44,7 @@ Every row names one language server. The "Provider" column says who starts it: t
 
 ## Install
 
-Install the language server from its official documentation. On Claude Code, add the plugin its row names with `/plugin install <name>@claude-plugins-official`; the plugins are opt-in, so a plugin-covered language has no LSP until you do. The `mcp-language-server` bridge is needed for Codex, and on Claude Code only for a language no plugin covers.
+Install the language server from its official documentation. On Claude Code, add the plugin its row names with `/plugin install <name>@claude-plugins-official`; the plugins are opt-in, so a plugin-covered language has no LSP until you do. The `mcp-language-server` bridge is needed for Codex and Gemini CLI always, and on Claude Code only for a language no plugin covers.
 
 | Component                  | Official install documentation                                           | Language-server command              |
 | -------------------------- | ------------------------------------------------------------------------ | ------------------------------------ |
@@ -62,7 +62,7 @@ Treat Raven's template defaults as convenience defaults, not a replacement for u
 
 ## MCP Configuration Pattern
 
-Every language template ships a `.codex/config.toml` bridge entry. A `.mcp.json` bridge entry ships only for a language no Claude Code plugin covers, so today Elixir is the one template that carries both. The general shape is:
+Every language template ships a `.codex/config.toml` bridge entry and the same bridge entry in `.gemini/settings.json`'s `mcpServers`. A `.mcp.json` bridge entry ships only for a language no Claude Code plugin covers, so today Elixir is the one template that carries it there too. The general shape (shared by `.mcp.json`, `.gemini/settings.json`'s `mcpServers`, and `.codex/config.toml`'s `[mcp_servers.lsp]`) is:
 
 ```json
 {

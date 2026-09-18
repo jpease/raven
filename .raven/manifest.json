@@ -206,9 +206,9 @@
       "sourceSha256": "93cfd44db09ec1da4ec854cacdffd824a5409e7caec25566d050edd3b5778829"
     },
     ".claude/docs/raven-lsp-mcp.md": {
-      "installedSha256": "432815e13e05d03d874cb6dc0c02b268d6b7513d98db3655a22daa3f67869452",
+      "installedSha256": "d31c3fb28e331cfbbac3af36f1d14ce707ac52becb4e2e64e5d08389a0179eea",
       "kind": "file",
-      "sourceSha256": "432815e13e05d03d874cb6dc0c02b268d6b7513d98db3655a22daa3f67869452"
+      "sourceSha256": "d31c3fb28e331cfbbac3af36f1d14ce707ac52becb4e2e64e5d08389a0179eea"
     },
     ".claude/docs/raven-namespace.md": {
       "installedSha256": "e8341202a24f74be9c43260bd2d4c4f2a9bf7fa52fece05ab236c19dbfaf282f",
@@ -537,9 +537,9 @@
       "sourceSha256": "c12560edb7df656553f36c7299985ecd11d094acbf49981a6f9778ef42e10af9"
     },
     ".gemini/settings.json": {
-      "installedSha256": "e62447eec473d627cd562d1767cfff4fc4891c71488b11a76444a7d93b8eab4a",
+      "installedSha256": "3b0afda71dd2671fff41280b0533a90dbb19101b917294adebc607235f302281",
       "kind": "file",
-      "sourceSha256": "e62447eec473d627cd562d1767cfff4fc4891c71488b11a76444a7d93b8eab4a"
+      "sourceSha256": "3b0afda71dd2671fff41280b0533a90dbb19101b917294adebc607235f302281"
     },
     ".mcp.json": {
       "installedSha256": "289cd24a27a82f5dd0123c8cbc5549ecf4dcc9effd4c163477fe82dd83994815",
@@ -617,8 +617,8 @@
     "pyright",
     "pytest"
   ],
-  "ravenVersion": "ded0f73c6292-dirty",
+  "ravenVersion": "9d896171de9b-dirty",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-09-18T19:32:35.620824+00:00"
+  "updatedAt": "2026-09-18T20:00:55.542655+00:00"
 }
