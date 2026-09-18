@@ -1379,6 +1379,38 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(outcome.passed)
         self.assertIsNotNone(outcome.evidence)
 
+    def test_gemini_agent_end_to_end_mock_run(self):
+        from eval import run_one
+
+        fake_bin_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, fake_bin_dir, ignore_errors=True)
+        fake_gemini = fake_bin_dir / "gemini"
+        fake_gemini.write_text(
+            f"""#!{sys.executable}
+import json, os, sys
+from pathlib import Path
+
+trust = Path(os.environ["GEMINI_CLI_TRUSTED_FOLDERS_PATH"])
+assert trust.is_file()
+assert list(json.loads(trust.read_text()).values()) == ["TRUST_FOLDER"]
+home = Path(os.environ["GEMINI_CLI_HOME"])
+assert home.name == "gemini-home"
+print(json.dumps({{"type": "init", "session_id": "mock", "model": "mock-gemini"}}))
+print(json.dumps({{"type": "message", "role": "assistant", "content": "OK", "delta": True}}))
+print(json.dumps({{"type": "result", "status": "success", "stats": {{"total_tokens": 7, "input_tokens": 6, "output_tokens": 1, "cached": 0, "input": 0, "duration_ms": 1, "tool_calls": 0, "models": {{}}}}}}))
+""",
+            encoding="utf-8",
+        )
+        fake_gemini.chmod(0o755)
+
+        scenario = _by_name("fixed-cost")
+        with mock.patch.dict(os.environ, {"PATH": f"{fake_bin_dir}:{os.environ.get('PATH', '')}"}):
+            outcome = run_one(scenario, "gemini", with_raven=True, trial=1)
+        self.assertTrue(outcome.passed, outcome.evidence)
+        self.assertEqual(outcome.total_tokens, 7)
+        self.assertEqual(outcome.output_tokens, 1)
+        self.assertEqual(outcome.tool_calls, 0)
+
     def test_render_markdown_reports_both_arms_per_scenario(self):
         from eval import TrialOutcome, render_markdown
 
