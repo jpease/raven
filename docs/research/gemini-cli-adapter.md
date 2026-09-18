@@ -15,6 +15,12 @@ below is anchored to that date and to the exact file/commit fetched, not to a re
 Re-verify against the source if this ages past the doc-freshness window noted in
 `raven-agent-compatibility.md`.
 
+**Correction (2026-09-18):** the Hooks section originally concluded that workspace folder
+trust does not yet gate project-level hook loading, based on a TODO comment scoped more
+narrowly than that conclusion assumed. A follow-up live run plus a direct read of
+`hookRegistry.ts` found the opposite: folder trust does gate project-level hook loading
+today. See "Project-level hooks are gated by folder trust" below.
+
 ## 1. Instructions: `GEMINI.md` and `@import`
 
 **A bare `@AGENTS.md` resolves identically to `@./AGENTS.md`.** Confirmed two ways:
@@ -125,21 +131,47 @@ invoked with a working directory outside the project (the test above ran from in
 project root, the common case); low priority to chase further unless a template design
 depends on the answer.
 
-### Hook trust is a separate, narrower mechanism than folder trust
+### Project-level hooks are gated by folder trust (corrected 2026-09-18)
 
-Source: [`packages/core/src/hooks/trustedHooks.ts`](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/hooks/trustedHooks.ts).
-Each hook is individually tracked by a `name:command` key in a global `~/.gemini/
-trusted_hooks.json` (`{[projectPath]: string[]}`), independent of workspace folder trust —
-structurally the same idea as Codex's per-hook-hash review in `/hooks`, just keyed
-differently. `docs/cli/trusted-folders.md`'s "what we scan for" list (shown in the trust
-dialog) includes hooks, but its "what's disabled when untrusted" list does not — and reading
+An earlier pass of this research read a `// TODO: loading of hooks based on workspace trust`
+comment in
 [`packages/cli/src/config/config.ts`](https://github.com/google-gemini/gemini-cli/blob/main/packages/cli/src/config/config.ts)
-confirms why: the line wiring hooks into the runtime config carries the literal comment `//
-TODO: loading of hooks based on workspace trust` immediately above `enableHooks:
-settings.hooksConfig.enabled`. As of this research date, **workspace folder trust does not
-yet gate whether project-level hooks load** — that gating is on the current TODO list, not
-shipped. The only enforcement today is the separate per-hook trust file, and, in headless
-mode specifically, the coarser all-or-nothing folder-trust refusal below.
+(directly above `enableHooks: settings.hooksConfig.enabled`) and concluded that workspace
+folder trust does not yet gate project-level hook loading. That overgeneralized from a TODO
+scoped to the coarse, top-level `enableHooks` flag. **The actual gate lives one layer down,
+already shipped, and is both live- and source-confirmed:**
+
+- Live run: a `SessionStart` hook that appends a marker line to a file fired correctly in a
+  project explicitly marked `TRUST_FOLDER` (via an isolated `GEMINI_CLI_TRUSTED_FOLDERS_PATH`
+  override, so the user's real trust store was never touched) — the marker file was written,
+  with debug output showing `Hook execution for SessionStart: 1 hooks executed successfully`.
+  The identical hook, same project, with the trust entry set to `DO_NOT_TRUST` or removed
+  entirely, never wrote the marker file at all; the run instead logged `Project hooks
+  disabled because the folder is not trusted.` and exited before hook registration. Headless
+  invocation of the untrusted case refuses even earlier (see §5) and never reaches hook
+  initialization either way.
+- Source:
+  [`packages/core/src/hooks/hookRegistry.ts`](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/hooks/hookRegistry.ts),
+  `processHooksFromConfig()`:
+
+  ```js
+  if (this.config.isTrustedFolder()) {
+    this.processHooksConfiguration(configHooks, ConfigSource.Project);
+  } else {
+    debugLogger.warn('Project hooks disabled because the folder is not trusted.');
+  }
+  ```
+
+  When untrusted, `processHooksConfiguration` — the call that actually registers
+  project-level hooks — is never invoked. This is a real gate, not a warning-only path.
+
+Separately, hooks also pass through a narrower per-hook trust mechanism in
+[`packages/core/src/hooks/trustedHooks.ts`](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/hooks/trustedHooks.ts):
+each hook is individually tracked by a `name:command` key in a global
+`~/.gemini/trusted_hooks.json` (`{[projectPath]: string[]}`) — structurally similar to
+Codex's per-hook-hash review in `/hooks`. This layers on top of folder trust, not instead of
+it: a hook still needs the project folder trusted before this per-hook check is even
+reached.
 
 ## 4. Command approval / policy engine
 
@@ -192,9 +224,10 @@ anything in `settings.json`.** Source:
   not loaded; extension install/update/uninstall is restricted; tool auto-acceptance is
   disabled (always prompts); automatic memory loading is disabled; MCP servers do not
   connect; custom `.toml` commands (project and user) are not loaded.
-- **Hooks are scanned for in the pre-trust discovery dialog but not named in that disabled
-  list** — see the Hooks section above: source shows this is a genuine, dated gap (an open
-  TODO), not settled doc silence.
+- **Hooks are scanned for in the pre-trust discovery dialog but not named in that numbered
+  disabled-features list** — a doc organization gap, not a functional one. See the Hooks
+  section above for the source-confirmed gate (`hookRegistry.ts`) that does disable
+  project-level hooks when the folder is untrusted.
 - **Headless mode does not have a degraded "untrusted but running" state at all.** Live run:
   in an untrusted scratch directory, headless (`-p`) invocation refused outright — `Gemini CLI
   is not running in a trusted directory. To proceed, either use --skip-trust, set the
@@ -293,6 +326,7 @@ Source: [`docs/tools/mcp-server.md`](https://github.com/google-gemini/gemini-cli
 - <https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/reference.md>
 - <https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/writing-hooks.md>
 - <https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/hooks/trustedHooks.ts>
+- <https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/hooks/hookRegistry.ts>
 - <https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/services/FolderTrustDiscoveryService.ts>
 - <https://github.com/google-gemini/gemini-cli/blob/main/packages/cli/src/config/config.ts>
 - <https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/policy-engine.md>
