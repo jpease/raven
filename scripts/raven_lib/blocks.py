@@ -638,6 +638,28 @@ def ensure_settings_local_gitignored(destination: Path) -> None:
     )
 
 
+def ensure_hook_bytecode_gitignored(destination: Path) -> None:
+    """Ignore the bytecode CPython writes beside Raven's Python hooks and scripts.
+
+    Raven's git hooks, agent hooks, and helper scripts are Python, and
+    importing any of them leaves a `__pycache__/` directory next to it --
+    under `.raven/git-hooks/lib/`, `.claude/scripts/`, `.codex/scripts/`,
+    and `.gemini/scripts/`. A Python project ignores that already; a Swift,
+    Rust, Lua, TypeScript, or Elixir one has no reason to, so Raven's own
+    machinery leaves untracked junk in the destination -- and one repo had
+    two `.pyc` files committed by a broad `git add` before this landed.
+
+    One conventional `__pycache__/` line rather than four path-specific
+    ones: it covers every location Raven puts a Python file in, now and
+    later, and a repository that wants bytecode tracked does not exist.
+    """
+    _ensure_gitignored(
+        destination,
+        "__pycache__/",
+        "Raven's hooks and helper scripts are Python; CPython writes bytecode beside them",
+    )
+
+
 def ensure_skill_mirrors_gitignored(destination: Path, skills: list[str]) -> None:
     """Ignore each mirrored `.claude/skills/<skill>/` copy, in one .gitignore block.
 

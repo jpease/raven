@@ -19,6 +19,7 @@ from .apply import (
 )
 from .blocks import (
     ensure_gitattributes_lines,
+    ensure_hook_bytecode_gitignored,
     ensure_ignore_lines,
     ensure_settings_local_gitignored,
     write_guided_merge_artifacts,
@@ -660,6 +661,10 @@ def apply_plan(
     # path is inert.
     ensure_ignore_lines(destination)
 
+    # Every apply, ungated like the `.ignore` merge above: the bytecode
+    # appears the first time any shipped Python hook or script runs, which
+    # can be long after the install that placed it.
+    ensure_hook_bytecode_gitignored(destination)
     failed_orphans: list[str] = []
     # The migrated symlink is already gone, and the path now holds the copies
     # written above -- letting remove_orphans near it would try to unlink a

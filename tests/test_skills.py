@@ -275,6 +275,28 @@ class SkillsTests(RavenTestCase):
         self.assertIn(".claude/skills/tool-thing/SKILL.md", output.getvalue())
         self.assertIn("differ from their .agents/skills source", output.getvalue())
 
+    def test_hook_bytecode_is_gitignored(self):
+        # Raven's own hooks and scripts are Python, so importing one leaves
+        # __pycache__ beside it. A non-Python destination has no reason to
+        # ignore that, and 14 of 14 installs were carrying the junk -- two
+        # with .pyc files committed by a broad `git add`.
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+        self.assertEqual(rc, 0)
+        gitignore = (self.destination / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("__pycache__/", gitignore.splitlines())
+        # Idempotent: a second apply does not append it again.
+        with contextlib.redirect_stdout(io.StringIO()):
+            raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+        self.assertEqual(
+            (self.destination / ".gitignore").read_text(encoding="utf-8").count("__pycache__/"), 1
+        )
+
     def test_a_claude_only_skill_is_never_removed(self):
         # The mirror copies one way. A skill placed directly under
         # `.claude/skills`, with no `.agents/skills` counterpart, is the
