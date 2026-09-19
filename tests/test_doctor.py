@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from helpers import RavenTestCase, raven
 from raven_lib.config import _update_config_platform, load_config
-from raven_lib.constants import CONFIG_PATH, LANE_CLAIMS, claude_config_dir
+from raven_lib.constants import CONFIG_PATH, LANE_CLAIMS, SKILLS_COMPAT_PATH, claude_config_dir
 from raven_lib.doctor import (
     FOUND,
     NOT_FOUND,
@@ -28,7 +28,7 @@ from raven_lib.doctor import (
     sources_findings,
 )
 from raven_lib.findings import Severity, exit_code
-from raven_lib.models import Classification
+from raven_lib.models import Classification, OrphanClassification
 from raven_lib.runner import RunResult
 
 
@@ -475,6 +475,47 @@ class DoctorDriftTests(RavenTestCase):
         self.assertIn("docs/dropped.md", findings["doctor.orphan.modified"].detail)
         self.assertNotIn("doctor.orphan.removable", findings)
 
+    def test_skill_twins_collapse_to_one_reported_path(self):
+        # Since #274 each skill is installed twice -- `.agents/skills/<name>`
+        # and its `.claude/skills/<name>` copy -- and the two are classified
+        # independently, so reporting both doubled every skills finding's
+        # listing and its count.
+        source = ".agents/skills/raven-plan/SKILL.md"
+        compat = ".claude/skills/raven-plan/SKILL.md"
+        modified = self._drift(needs_merge=[source, compat], pending=[])["doctor.drift.modified"]
+        self.assertEqual(modified.detail, source)
+        self.assertIn("1 Raven-owned file", modified.title)
+
+    def test_compat_skill_copy_without_its_twin_still_reports(self):
+        # Only the Claude Code copy drifted while the source skill is
+        # pristine: real independent drift in one copy, which collapsing must
+        # not swallow.
+        compat = ".claude/skills/raven-plan/SKILL.md"
+        modified = self._drift(needs_merge=[compat], pending=[])["doctor.drift.modified"]
+        self.assertEqual(modified.detail, compat)
+        self.assertIn("1 Raven-owned file", modified.title)
+
+    def _orphan_finding(self, relative: str):
+        with mock.patch(
+            "raven_lib.doctor.classify_orphans",
+            return_value=OrphanClassification([relative], [], []),
+        ):
+            return self._drift(needs_merge=[], pending=[])["doctor.orphan.removable"]
+
+    def test_skills_compat_orphan_wording_names_the_per_file_copies(self):
+        # #274 stopped *installing* `.claude/skills` as a symlink; the template
+        # still ships the link, so the generic "the template no longer ships
+        # this" wording is false for this one path.
+        finding = self._orphan_finding(SKILLS_COMPAT_PATH)
+        self.assertNotIn("no longer ships", finding.title)
+        self.assertIn("per-file copy", finding.detail)
+        self.assertIn("#274", finding.detail)
+
+    def test_ordinary_orphan_keeps_the_no_longer_ships_wording(self):
+        finding = self._orphan_finding("docs/dropped.md")
+        self.assertIn("the template no longer ships", finding.title)
+        self.assertEqual(finding.detail, "docs/dropped.md")
+
 
 class DoctorDeactivatedTests(RavenTestCase):
     """#160 -- doctor must report config-gated-but-still-shipped skills distinctly from orphans."""
@@ -533,8 +574,12 @@ class DoctorDeactivatedTests(RavenTestCase):
         findings = {f.id: f for f in drift_findings(self.destination)}
         self.assertIn("doctor.deactivated.preserved", findings)
         self.assertEqual(findings["doctor.deactivated.preserved"].severity, Severity.WARN)
-        for rel in self.SKILL_TWINS:
-            self.assertIn(rel, findings["doctor.deactivated.preserved"].detail)
+        preserved = findings["doctor.deactivated.preserved"]
+        # Both copies were edited and both are classified, but the report
+        # collapses the #274 twins into the one logical skill they are, and
+        # the title's count must match what it lists.
+        self.assertEqual(preserved.detail, self.SKILL_TWINS[0])
+        self.assertTrue(preserved.title.startswith("1 "), preserved.title)
         self.assertNotIn("doctor.deactivated.removable", findings)
 
     def test_matching_platform_reports_no_deactivation(self) -> None:
@@ -560,8 +605,9 @@ class DoctorDeactivatedTests(RavenTestCase):
         findings = {f.id: f for f in drift_findings(self.destination)}
         self.assertIn("doctor.deactivated.stale", findings)
         self.assertEqual(findings["doctor.deactivated.stale"].severity, Severity.WARN)
-        for rel in self.SKILL_TWINS:
-            self.assertIn(rel, findings["doctor.deactivated.stale"].detail)
+        stale = findings["doctor.deactivated.stale"]
+        self.assertEqual(stale.detail, self.SKILL_TWINS[0])
+        self.assertTrue(stale.title.startswith("1 "), stale.title)
         assert findings["doctor.deactivated.stale"].fix is not None
         self.assertIn("raven accept", findings["doctor.deactivated.stale"].fix)
         self.assertNotIn("doctor.deactivated.preserved", findings)
@@ -1845,6 +1891,107 @@ class ComponentScopingTests(RavenTestCase):
         data["files"] = {}
         manifest.write_text(json.dumps(data), encoding="utf-8")
         self.assertIsNotNone(self._tool_configs_finding())
+
+
+class DoctorPlatformCoherenceTests(RavenTestCase):
+    """`doctor.config.platform` grades `[issue_tracker] platform` against the origin remote.
+
+    Every downstream repo checked while dogfooding tracked its work in GitHub
+    issues with `platform` unset or "none", so `raven-github-issues` was never
+    installed -- and a skill that was never installed is exactly what an
+    install in that state cannot notice on its own.
+    """
+
+    def _config(self, platform=None):
+        (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
+        text = 'schema = 1\ntemplate = "python"\n'
+        if platform is not None:
+            text += f'\n[issue_tracker]\nplatform = "{platform}"\n'
+        (self.destination / CONFIG_PATH).write_text(text, encoding="utf-8")
+
+    def _git_init(self) -> None:
+        subprocess.run(["git", "init", str(self.destination)], capture_output=True, check=True)
+
+    def _origin(self, url: str) -> None:
+        self._git_init()
+        subprocess.run(
+            ["git", "-C", str(self.destination), "remote", "add", "origin", url],
+            capture_output=True,
+            check=True,
+        )
+
+    def _finding(self):
+        return {f.id: f for f in integrity_findings(self.destination)}.get("doctor.config.platform")
+
+    def test_github_remote_with_unset_platform_warns(self):
+        self._config()
+        self._origin("git@github.com:acme/widgets.git")
+        finding = self._finding()
+        assert finding is not None
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIn("github.com", finding.detail)
+        self.assertIn("raven-github-issues", finding.detail)
+        assert finding.fix is not None
+        self.assertIn("raven upgrade --platform github", finding.fix)
+        self.assertIn("[issue_tracker]", finding.fix)
+
+    def test_github_remote_with_platform_none_warns(self):
+        # An explicit "none" is the other half of the state found downstream,
+        # and is just as wrong for a repo whose issues live on github.com.
+        self._config("none")
+        self._origin("https://github.com/acme/widgets.git")
+        finding = self._finding()
+        assert finding is not None
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIn("raven-github-issues", finding.detail)
+
+    def test_gitlab_remote_with_unset_platform_warns(self):
+        self._config()
+        self._origin("git@gitlab.example.com:acme/widgets.git")
+        finding = self._finding()
+        assert finding is not None
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIn("raven-gitlab-issues", finding.detail)
+        assert finding.fix is not None
+        self.assertIn("raven upgrade --platform gitlab", finding.fix)
+
+    def test_platform_disagreeing_with_the_remote_warns(self):
+        self._config("gitlab")
+        self._origin("https://github.com/acme/widgets.git")
+        finding = self._finding()
+        assert finding is not None
+        self.assertEqual(finding.severity, Severity.WARN)
+        self.assertIn("'gitlab'", finding.detail)
+        self.assertIn("github.com", finding.detail)
+        assert finding.fix is not None
+        self.assertIn("raven upgrade --platform github", finding.fix)
+
+    def test_consistent_platform_reports_ok(self):
+        # Reported even when healthy, so the check is visible rather than
+        # only existing as a warning nobody has seen fire.
+        self._config("github")
+        self._origin("https://github.com/acme/widgets.git")
+        finding = self._finding()
+        assert finding is not None
+        self.assertEqual(finding.severity, Severity.OK)
+        self.assertIn("github.com", finding.detail)
+
+    def test_repo_without_a_remote_reports_nothing(self):
+        self._config()
+        self._git_init()
+        self.assertIsNone(self._finding())
+
+    def test_non_repository_reports_nothing(self):
+        self._config()
+        self.assertIsNone(self._finding())
+
+    def test_remote_on_an_unrelated_host_reports_nothing(self):
+        # A self-hosted GitHub Enterprise or GitLab behind a company domain is
+        # indistinguishable from any other git host: "cannot tell" must never
+        # be reported as "misconfigured".
+        self._config()
+        self._origin("git@git.example.com:acme/widgets.git")
+        self.assertIsNone(self._finding())
 
 
 if __name__ == "__main__":

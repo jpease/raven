@@ -8,6 +8,7 @@ install `raven` did not create.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,8 @@ from .constants import (
     KIND_SYMLINK,
     LANE_CLAIMS,
     REPO_ROOT,
+    SKILLS_COMPAT_PATH,
+    SKILLS_SOURCE_PATH,
     STARTER_TOOL_CONFIG_PATHS,
     SYMLINK_CHECKOUT_FIX,
     _any_exists,
@@ -60,6 +63,7 @@ from .gemini_trust import (
 from .git_hooks import (
     GATE_RELAXATION_SCRIPT,
     GATE_RELAXATION_SUFFIXES,
+    clean_git_env,
     detect_hook_manager,
     git_hooks_dir,
     hook_manager_guidance,
@@ -177,6 +181,119 @@ def _shipped_component_path(shipped: set[str], relative: str) -> bool:
     return relative in shipped or any(key.startswith(prefix) for key in shipped)
 
 
+def _remote_platform(host: str) -> str | None:
+    """The `[issue_tracker] platform` value ``host`` implies, or None if it implies none.
+
+    Deliberately narrow: only github.com and GitLab's own hostnames state the
+    tracker unambiguously. A GitHub Enterprise install and a self-managed
+    GitLab both sit behind an ordinary company domain, indistinguishable from
+    any other git host, so they stay unconcluded rather than guessed at.
+    """
+    if host == "github.com" or host.endswith(".github.com"):
+        return "github"
+    if host.startswith("gitlab.") or ".gitlab." in host:
+        return "gitlab"
+    return None
+
+
+def _remote_host(url: str) -> str:
+    """The lowercased host in a git remote URL, or "" when it names none.
+
+    Covers both spellings git accepts: a scheme URL
+    (``https://github.com/o/r.git``, ``ssh://git@gitlab.com:22/o/r.git``) and
+    scp syntax (``git@github.com:o/r.git``). A filesystem-path remote names no
+    host at all.
+    """
+    rest = url.split("://", 1)[1] if "://" in url else url
+    rest = rest.rsplit("@", 1)[-1]  # drop any userinfo (git@, token@)
+    # A scheme URL's path and scp syntax's colon both end the host.
+    return rest.split("/", 1)[0].split(":", 1)[0].strip().lower()
+
+
+def _origin_remote_url(destination: Path) -> str:
+    """``origin``'s URL for ``destination``, or "" when there is none to read.
+
+    Uses `clean_git_env` for the same reason `tracking._git` does: an inherited
+    ``GIT_DIR``/``GIT_WORK_TREE`` outranks ``git -C`` and would answer for the
+    *outer* repository -- reachable here, since Raven's own pre-commit hook
+    runs this test suite.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(destination), "config", "--get", "remote.origin.url"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=clean_git_env(),
+        )
+    except OSError:
+        # No git binary on PATH. Raven does not require one, and a missing tool
+        # is the toolchain check's business, not this check's.
+        return ""
+    # A non-zero exit covers both "not a repository" and "no origin configured".
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _platform_findings(destination: Path, config: RavenConfig) -> list[Finding]:
+    """Compare `[issue_tracker] platform` against what the ``origin`` remote implies.
+
+    Dogfooding found installs tracking thousands of GitHub issues with
+    `platform` unset or "none", so `raven-github-issues` was never installed --
+    and a skill's absence is precisely what a repository in that state cannot
+    notice. Nothing reported it because nothing looked.
+
+    Silent whenever the remote cannot settle the question (no git binary, not a
+    repository, no ``origin``, or a host that implies no tracker): "cannot
+    tell" must never be reported as "misconfigured".
+    """
+    host = _remote_host(_origin_remote_url(destination))
+    implied = _remote_platform(host)
+    if implied is None:
+        return []
+    fix = (
+        f"run `raven upgrade --platform {implied}`, or set "
+        f'platform = "{implied}" under [issue_tracker] in .raven/config.toml'
+    )
+    if config.platform is None or config.platform == "none":
+        state = "unset" if config.platform is None else 'set to "none"'
+        return [
+            Finding(
+                id="doctor.config.platform",
+                severity=Severity.WARN,
+                category=_INTEGRITY,
+                title="Issue tracker platform not configured for this remote",
+                detail=(
+                    f"origin points at {host}, but [issue_tracker] platform is {state}, "
+                    f"so the raven-{implied}-issues skill is not installed"
+                ),
+                fix=fix,
+            )
+        ]
+    if config.platform != implied:
+        return [
+            Finding(
+                id="doctor.config.platform",
+                severity=Severity.WARN,
+                category=_INTEGRITY,
+                title="Issue tracker platform disagrees with this remote",
+                detail=(
+                    f"[issue_tracker] platform = {config.platform!r}, but origin points at "
+                    f"{host}, so the installed issue skill is for the wrong tracker"
+                ),
+                fix=fix,
+            )
+        ]
+    return [
+        Finding(
+            id="doctor.config.platform",
+            severity=Severity.OK,
+            category=_INTEGRITY,
+            title="Issue tracker platform matches this remote",
+            detail=f"platform = {config.platform!r}, origin points at {host}",
+        )
+    ]
+
+
 def integrity_findings(destination: Path) -> list[Finding]:
     """Check that a Raven install's own bookkeeping (config, template) is coherent."""
     # Checked before the config gate: a flattened Raven checkout is broken
@@ -205,6 +322,8 @@ def integrity_findings(destination: Path) -> list[Finding]:
             detail=f"template = {config.template!r}",
         )
     )
+
+    findings.extend(_platform_findings(destination, config))
 
     if config.template is not None and not is_known_template(config.template):
         findings.append(
@@ -409,6 +528,62 @@ def _claude_finding(destination: Path) -> Finding:
     )
 
 
+def _collapse_skill_twins(paths: list[str]) -> list[str]:
+    """Drop each `SKILLS_COMPAT_PATH` entry whose `SKILLS_SOURCE_PATH` twin is also listed.
+
+    Since #274 a destination receives every skill twice -- once under
+    `SKILLS_SOURCE_PATH`, once as the per-file `SKILLS_COMPAT_PATH` copy Claude
+    Code reads -- and the two are classified independently, so one logical
+    skill in one state produced two entries in every skills finding, doubling
+    both the listing and the count.
+
+    Presentation only: classification is untouched, and install, upgrade and
+    removal all still act on both copies. A compat path whose source twin is
+    *not* in the list is kept, since that is real drift in one copy alone.
+    """
+    source_prefix = SKILLS_SOURCE_PATH + "/"
+    # The compat spelling of every source path listed. Anything in this set is
+    # the second copy of a skill already reported under its source path.
+    twins = {
+        SKILLS_COMPAT_PATH + path[len(SKILLS_SOURCE_PATH) :]
+        for path in paths
+        if path.startswith(source_prefix)
+    }
+    return [path for path in paths if path not in twins]
+
+
+# `SKILLS_COMPAT_PATH` is the one orphan the orphan findings' "the template no
+# longer ships this" claim is wrong about: the template still ships the
+# symlink, but since #274 `entries_for_destination` expands it into a per-file
+# copy of every skill, so no destination receives the link itself and a
+# pre-#274 install is left holding one. It is orphaned because Raven stopped
+# *installing* it, not because it stopped existing upstream.
+_SKILLS_COMPAT_ORPHAN_NOTE = (
+    f"{SKILLS_COMPAT_PATH} is still shipped by the template, but since #274 it is "
+    "installed as a per-file copy of every skill rather than a symlink, so `raven "
+    "upgrade` replaces the leftover symlink with those copies"
+)
+
+
+def _orphan_claim(paths: list[str]) -> str:
+    """How the orphan findings describe why ``paths`` are orphaned.
+
+    "no longer installs" is accurate for both kinds of orphan, so it is the
+    wording used as soon as the compat path is among them.
+    """
+    if SKILLS_COMPAT_PATH in paths:
+        return "the template no longer installs"
+    return "the template no longer ships"
+
+
+def _orphan_detail(paths: list[str]) -> str:
+    """The orphan path list, plus the #274 note when the compat path is among them."""
+    listing = ", ".join(paths)
+    if SKILLS_COMPAT_PATH in paths:
+        return f"{listing} -- {_SKILLS_COMPAT_ORPHAN_NOTE}"
+    return listing
+
+
 def drift_findings(destination: Path) -> list[Finding]:
     """Classify installed files against the current template and report anything not identical."""
     config = load_config(destination)
@@ -470,24 +645,30 @@ def drift_findings(destination: Path) -> list[Finding]:
     # Template entries absent from the destination -- individually deleted (or
     # never installed) managed files. They are drift the user must restore, and
     # their presence forbids the "no drift detected" OK finding below.
-    missing = sorted(set(classification.will_copy) - set(pending))
+    # Every list a finding below lists or counts goes through
+    # `_collapse_skill_twins` first: reporting only, never classification.
+    missing = _collapse_skill_twins(sorted(set(classification.will_copy) - set(pending)))
     # Files with a pending guided merge are, by construction, also classified as
     # needs_merge. Subtract them so each finding is disjoint: "locally modified"
     # reports only drift that has no merge artifact yet, while "pending guided
     # merge" owns the rest. Reporting both sets in full double-counts the same
     # files and offers contradictory fixes for them.
-    modified = sorted(
-        (set(classification.needs_merge) | set(classification.unknown_existing)) - set(pending)
+    modified = _collapse_skill_twins(
+        sorted(
+            (set(classification.needs_merge) | set(classification.unknown_existing)) - set(pending)
+        )
     )
     # Files the user changed locally where the template is unchanged from the
     # baseline: nothing upstream to merge, so these are informational, not drift
     # that needs action (e.g. an editor reformatting an installed file).
-    local_only = sorted(set(classification.local_only) - set(pending))
+    local_only = _collapse_skill_twins(sorted(set(classification.local_only) - set(pending)))
     # Files needing adoption consent (#200, #273 -- the
     # `constants.ADOPTABLE_CONFIG_PATHS` set) never get a pending guided-merge
     # artifact, so no `- set(pending)` subtraction is needed here, but it is
     # harmless and kept for symmetry with the other buckets above.
-    needs_adoption = sorted(set(classification.needs_adoption) - set(pending))
+    needs_adoption = _collapse_skill_twins(
+        sorted(set(classification.needs_adoption) - set(pending))
+    )
     if missing:
         findings.append(
             Finding(
@@ -597,8 +778,11 @@ def drift_findings(destination: Path) -> list[Finding]:
                 id="doctor.orphan.removable",
                 severity=Severity.WARN,
                 category=_DRIFT,
-                title=f"{len(orphans.will_remove)} orphaned Raven file(s) the template no longer ships",
-                detail=", ".join(orphans.will_remove),
+                title=(
+                    f"{len(orphans.will_remove)} orphaned Raven file(s) "
+                    f"{_orphan_claim(orphans.will_remove)}"
+                ),
+                detail=_orphan_detail(orphans.will_remove),
                 fix="run `raven upgrade` to remove them",
             )
         )
@@ -609,19 +793,23 @@ def drift_findings(destination: Path) -> list[Finding]:
                 severity=Severity.WARN,
                 category=_DRIFT,
                 title=f"{len(orphans.orphan_modified)} orphaned + locally modified Raven file(s)",
-                detail=", ".join(orphans.orphan_modified),
-                fix="template no longer ships these; review and delete manually if unwanted",
+                detail=_orphan_detail(orphans.orphan_modified),
+                fix=(
+                    f"{_orphan_claim(orphans.orphan_modified)} these; "
+                    "review and delete manually if unwanted"
+                ),
             )
         )
 
-    if deactivated.removable:
+    deactivated_removable = _collapse_skill_twins(deactivated.removable)
+    if deactivated_removable:
         findings.append(
             Finding(
                 id="doctor.deactivated.removable",
                 severity=Severity.WARN,
                 category=_DRIFT,
-                title=(f"{len(deactivated.removable)} Raven-owned skill(s) deactivated by config"),
-                detail=", ".join(deactivated.removable),
+                title=(f"{len(deactivated_removable)} Raven-owned skill(s) deactivated by config"),
+                detail=", ".join(deactivated_removable),
                 fix="run `raven upgrade` to remove them",
             )
         )
@@ -633,8 +821,8 @@ def drift_findings(destination: Path) -> list[Finding]:
     # watching this id against a real local edit). Stale and customized get
     # their own, new ids and wording so neither is ever accused of "you
     # modified it".
-    deactivated_modified = sorted(
-        set(deactivated.preserved) - set(deactivated.stale) - set(deactivated.customized)
+    deactivated_modified = _collapse_skill_twins(
+        sorted(set(deactivated.preserved) - set(deactivated.stale) - set(deactivated.customized))
     )
     if deactivated_modified:
         findings.append(
@@ -650,33 +838,35 @@ def drift_findings(destination: Path) -> list[Finding]:
                 fix="no longer selected by platform/template config; review and delete manually if unwanted",
             )
         )
-    if deactivated.stale:
+    deactivated_stale = _collapse_skill_twins(deactivated.stale)
+    if deactivated_stale:
         findings.append(
             Finding(
                 id="doctor.deactivated.stale",
                 severity=Severity.WARN,
                 category=_DRIFT,
                 title=(
-                    f"{len(deactivated.stale)} deactivated-by-config Raven skill(s) "
+                    f"{len(deactivated_stale)} deactivated-by-config Raven skill(s) "
                     "with a stale recorded baseline"
                 ),
-                detail=", ".join(deactivated.stale),
+                detail=", ".join(deactivated_stale),
                 fix="on-disk content matches the current template exactly; "
                 "run `raven accept <path>` to refresh the baseline, then "
                 "`raven upgrade` will remove it",
             )
         )
-    if deactivated.customized:
+    deactivated_customized = _collapse_skill_twins(deactivated.customized)
+    if deactivated_customized:
         findings.append(
             Finding(
                 id="doctor.deactivated.customized",
                 severity=Severity.INFO,
                 category=_DRIFT,
                 title=(
-                    f"{len(deactivated.customized)} deactivated-by-config Raven "
+                    f"{len(deactivated_customized)} deactivated-by-config Raven "
                     "skill(s) kept as an accepted customization"
                 ),
-                detail=", ".join(deactivated.customized),
+                detail=", ".join(deactivated_customized),
                 fix="no action needed; recorded via `raven accept`, so Raven leaves these as-is",
             )
         )
