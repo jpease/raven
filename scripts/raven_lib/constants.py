@@ -189,7 +189,7 @@ COMPONENT_PATHS = {
         ".gitattributes",
         ".raven/git-hooks",
     ],
-    "rules": [".claude/rules", ".codex/rules", ".gemini/policies", ".gemini/rules"],
+    "rules": [".claude/rules", ".codex/rules", ".gemini/policies"],
     "docs": [".claude/docs"],
     "scripts": [".claude/scripts", ".codex/scripts", ".gemini/scripts"],
     "mcp": [".mcp.json"],
@@ -237,7 +237,10 @@ GEMINI_COMPONENT_PATHS = {
     "hooks": [".gemini/hooks"],
     "scripts": [".gemini/scripts"],
     "subagents": [".gemini/agents"],
-    "rules": [".gemini/policies", ".gemini/rules"],
+    # No `.gemini/rules`: Gemini CLI's project-scoped policy tier is a single
+    # `.gemini/policies/raven.toml`, and no template tree has ever shipped a
+    # `.gemini/rules` directory for this path to match.
+    "rules": [".gemini/policies"],
     "root_instructions": ["GEMINI.md"],
 }
 #: Top-level directories that are part of Raven itself rather than an

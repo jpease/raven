@@ -325,6 +325,13 @@ def mirror_project_skills(destination: Path) -> list[str]:
     that writes its own skills) gets its mirror gitignored too. It still
     reaches Claude Code, which is the point, but a broad `git add` cannot
     publish a skill the project deliberately kept untracked.
+
+    A source that is merely *untracked* -- nobody ignored it, nobody added it
+    -- gets a mirror on a tracked path, deliberately. `git add -A` would
+    publish the untracked source anyway, so the mirror exposes nothing the
+    source did not already expose, and treating "untracked" as "private"
+    would have Raven make a call the project itself has not made. Only an
+    explicit ignore rule is treated as intent.
     """
     source_root = destination / SKILLS_SOURCE_PATH
     compat_root = destination / SKILLS_COMPAT_PATH

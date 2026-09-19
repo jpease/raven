@@ -378,25 +378,6 @@ class ConfigTests(RavenTestCase):
         self.assertIn("tool_configs = true", text)
         self.assertIn("[exclude]", text)
 
-    def test_default_config_declares_every_gemini_component(self):
-        # The Gemini adapter shipped (#262) with no line in the starter
-        # config, so a repo regenerating its config to pick up the current
-        # shape still could not discover the adapter existed. Keyed off the
-        # constant, so a component added there fails here until the template
-        # documents it too.
-        config = raven.default_config_text("python", False)
-        self.assertIn("[components.gemini]", config)
-        for name in raven.DEFAULT_GEMINI_COMPONENTS:
-            self.assertIn(f"{name} = false", config)
-
-    def test_rendered_config_gemini_values_match_the_shipped_defaults(self):
-        # The file must state what Raven actually does: a `true` typo in the
-        # template would silently turn the opt-in adapter on for every fresh
-        # install.
-        raw = raven.parse_simple_toml(raven.default_config_text("python", False))
-        config = raven.build_config(raw, exists=True)
-        self.assertEqual(config.gemini_components, raven.DEFAULT_GEMINI_COMPONENTS)
-
     def test_default_config_includes_lifecycle_section(self):
         config = raven.default_config_text("python", False)
         self.assertIn("[lifecycle]", config)
@@ -756,6 +737,74 @@ class PlatformDryRunTests(RavenTestCase):
         output = buffer.getvalue()
         self.assertIn("raven-github-issues", output)
         self.assertNotIn("raven-gitlab-issues", output)
+
+
+class ComponentSetCoverageTests(unittest.TestCase):
+    """Every component map Raven defines must be documented by the starter config.
+
+    `[components.gemini]` was absent from config.toml.tmpl for a whole release
+    (#262) while `DEFAULT_GEMINI_COMPONENTS` already existed, so a repo
+    regenerating its config still could not discover the adapter -- and nothing
+    failed. Driven off the constants rather than a literal key list, so a new
+    component map, or a new key in an existing one, fails here until the
+    template documents it.
+    """
+
+    # (starter-config section, RavenConfig field, shipped defaults).
+    COMPONENT_SETS = (
+        ("components", "components", raven.DEFAULT_COMPONENTS),
+        ("components.claude", "claude_components", raven.DEFAULT_CLAUDE_COMPONENTS),
+        ("components.codex", "codex_components", raven.DEFAULT_CODEX_COMPONENTS),
+        ("components.gemini", "gemini_components", raven.DEFAULT_GEMINI_COMPONENTS),
+    )
+
+    @staticmethod
+    def _declared_keys(text):
+        """Section name -> keys it actually assigns, ignoring commented-out examples.
+
+        A plain substring search cannot tell `[components.gemini]` from the
+        commented `# [sources.superpowers]` example, and cannot tell which
+        section a `hooks = true` line belongs to -- `hooks` is a key in three
+        of these maps.
+        """
+        sections: dict[str, set[str]] = {}
+        current = None
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith("[") and stripped.endswith("]"):
+                current = stripped[1:-1]
+                sections.setdefault(current, set())
+                continue
+            if current is None or "=" not in stripped:
+                continue
+            sections[current].add(stripped.partition("=")[0].strip())
+        return sections
+
+    def test_starter_config_declares_every_component_section(self):
+        declared = self._declared_keys(raven.default_config_text("python", False))
+        for section, _field, _defaults in self.COMPONENT_SETS:
+            with self.subTest(section=section):
+                self.assertIn(section, declared)
+
+    def test_starter_config_declares_every_component_key(self):
+        declared = self._declared_keys(raven.default_config_text("python", False))
+        for section, _field, defaults in self.COMPONENT_SETS:
+            with self.subTest(section=section):
+                # Exact, both ways: an undocumented component is undiscoverable,
+                # and a documented key Raven no longer reads is an inert switch.
+                self.assertEqual(declared.get(section, set()), set(defaults))
+
+    def test_starter_config_values_round_trip_to_the_shipped_defaults(self):
+        # The file must state what Raven actually does: a flipped literal in
+        # the template would silently change every fresh install's behavior
+        # while `build_config` still reported the untouched defaults.
+        raw = raven.parse_simple_toml(raven.default_config_text("python", False))
+        config = raven.build_config(raw, exists=True)
+        for section, field, defaults in self.COMPONENT_SETS:
+            with self.subTest(section=section):
+                self.assertEqual(getattr(config, field), defaults)
 
 
 if __name__ == "__main__":

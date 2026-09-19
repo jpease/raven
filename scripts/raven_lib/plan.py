@@ -439,11 +439,17 @@ def render_dry_run_plan(
     if orphans.will_remove:
         sections.append(
             render_section(
-                "Will remove orphaned Raven files (template no longer ships them; "
+                "Will remove orphaned Raven files (no longer installed at this path; "
                 "destination still matches the recorded baseline):",
                 orphans.will_remove,
             )
         )
+        if SKILLS_COMPAT_PATH in orphans.will_remove:
+            sections.append(
+                f"{SKILLS_COMPAT_PATH} is still shipped by the template; since #274 it is "
+                "installed as per-file copies of .agents/skills instead of a symlink, so the "
+                "recorded symlink is what goes."
+            )
     if orphans.orphan_modified:
         sections.append(
             render_section(
