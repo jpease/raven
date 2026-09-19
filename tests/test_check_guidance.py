@@ -512,6 +512,8 @@ class BuildParserContractTests(unittest.TestCase):
             all_flags,
             {
                 "--adopt",
+                "--sync-config",
+                "--wire-hooks",
                 "--confirm-template-switch",
                 "--destination",
                 "--dry-run",

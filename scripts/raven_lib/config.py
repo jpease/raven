@@ -370,6 +370,78 @@ def default_config_text(template_name: str, include_readme: bool, platform: str 
     )
 
 
+def _section_blocks(text: str) -> dict[str, str]:
+    """Split config text into ``{section header: block text}``, preamble under ``""``.
+
+    Operates on raw text rather than `parse_simple_toml`'s parsed result
+    because the point of a sync is to carry a section's *comments* across --
+    the starter config is the only documentation of what each switch does,
+    and a parsed dict has thrown that away. A commented-out header stays part
+    of the block it sits in: it declares nothing, so it must not be mistaken
+    for a section the destination already has.
+    """
+    blocks: dict[str, list[str]] = {"": []}
+    current = ""
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current = stripped
+            blocks.setdefault(current, [])
+        blocks[current].append(line)
+    return {header: "".join(lines) for header, lines in blocks.items()}
+
+
+def missing_config_sections(text: str, template_text: str) -> list[str]:
+    """Section headers the starter config declares that ``text`` does not.
+
+    Section granularity on purpose: a section the destination already has may
+    have had a key deliberately deleted, and re-adding it would look like
+    Raven overruling that. A wholly absent section carries no such decision --
+    it predates the release that added it.
+    """
+    present = set(_section_blocks(text))
+    return [header for header in _section_blocks(template_text) if header and header not in present]
+
+
+def append_missing_config_sections(text: str, template_text: str) -> tuple[str, list[str]]:
+    """Return ``(new text, appended headers)``, appending each absent section verbatim.
+
+    Append-only, the same contract `.gitattributes` and `.ignore` merges
+    follow: nothing already in the file is reordered, rewritten, or removed,
+    so the result differs from the input only by sections that were missing.
+    """
+    missing = missing_config_sections(text, template_text)
+    if not missing:
+        return text, []
+    blocks = _section_blocks(template_text)
+    parts = [text if text.endswith("\n") or not text else f"{text}\n"]
+    for header in missing:
+        parts.append("\n" if not parts[-1].endswith("\n\n") else "")
+        parts.append(blocks[header].rstrip("\n") + "\n")
+    return "".join(parts), missing
+
+
+def sync_config_sections(destination: Path, template_name: str) -> list[str]:
+    """Append the starter config's missing sections to the destination's config.
+
+    Returns the headers appended, empty when the config is already current.
+    `.raven/config.toml` is destination-owned and no upgrade has ever touched
+    it, so an install that predates a release has no way to learn about the
+    switches that release added -- every long-lived install drifts into that
+    state and stays there.
+    """
+    path = destination / CONFIG_PATH
+    text = path.read_text(encoding="utf-8")
+    config = build_config(parse_simple_toml(text), exists=True)
+    template_text = default_config_text(
+        template_name, config.include_readme, config.platform or "none"
+    )
+    updated, appended = append_missing_config_sections(text, template_text)
+    if appended:
+        path.write_text(updated, encoding="utf-8")
+    return appended
+
+
 def path_within(path: str, prefix: str) -> bool:
     """Whether ``path`` is ``prefix`` itself or a descendant directory entry of it."""
     return path == prefix or path.startswith(f"{prefix}/")

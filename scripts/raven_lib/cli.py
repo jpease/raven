@@ -33,6 +33,7 @@ from .config import (
     default_config_text,
     load_config,
     platform_excluded,
+    sync_config_sections,
     template_excluded,
 )
 from .constants import (
@@ -61,7 +62,13 @@ from .fleet import (
     save_registry,
     stale_paths,
 )
-from .git_hooks import detect_hook_manager, git_hooks_dir, hook_manager_guidance, install_git_hooks
+from .git_hooks import (
+    detect_hook_manager,
+    git_hooks_dir,
+    hook_manager_guidance,
+    install_git_hooks,
+    wire_hook_manager,
+)
 from .manifest import load_manifest, update_manifest
 from .models import ApplyPlan, Classification, RavenConfig, TemplateEntry
 from .orphans import classify_orphans, shipped_relatives
@@ -202,16 +209,26 @@ def _planned_write_paths(plan: ApplyPlan) -> list[str]:
     return sorted(paths)
 
 
-def _print_hook_manager_notice(destination: Path) -> None:
+def _print_hook_manager_notice(destination: Path, wire_hooks: bool = False) -> None:
     """Report that `.raven/git-hooks/` is inert, when a hook manager owns the hooks dir.
 
     Printed on dry runs as well as live ones. A dry run lists the vendored hook
     scripts among the files it would write, so without this the preview reads
     as though those files would take effect -- which is exactly the question a
     reader weighing a hook fix is trying to answer.
+
+    ``wire_hooks`` acts on the guidance instead of only printing it (never on
+    a dry run, which writes nothing). Only husky has a file to append to; the
+    rest still get the notice, so asking to wire an unsupported manager
+    reports rather than silently doing nothing.
     """
     manager = detect_hook_manager(destination)
     if manager is None:
+        return
+    wired = wire_hook_manager(destination, manager) if wire_hooks else []
+    if wired:
+        print()
+        print_section("Wired Raven's gate into the hook manager's hooks:", wired)
         return
     print()
     print_section(
@@ -407,6 +424,7 @@ def _run(
     prompt_template_switch: bool = True,
     platform_override: str | None = None,
     write_config: Callable[[], int] | None = None,
+    wire_hooks: bool = False,
 ) -> int:
     """Validate, then apply or preview, a template installation/upgrade.
 
@@ -665,7 +683,7 @@ def _run(
                 missing_tools,
             )
     else:
-        _print_hook_manager_notice(destination)
+        _print_hook_manager_notice(destination, wire_hooks=wire_hooks)
 
     # #216: a merge-only path is absent from the manifest by design, so it
     # appears in none of the sections above -- and git honors an untracked
@@ -812,6 +830,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         args.dry_run,
         overrides,
         adopt_requested=getattr(args, "adopt", None) or [],
+        wire_hooks=getattr(args, "wire_hooks", False),
         confirm_template_switch_requested=getattr(args, "confirm_template_switch", False),
         platform_override=platform,
         write_config=write_config,
@@ -850,6 +869,25 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     if template_name is None:
         return 2
     include_readme = args.include_readme or config.include_readme
+    platform = getattr(args, "platform", None)
+    sync_config = getattr(args, "sync_config", False)
+
+    def write_config() -> int:
+        # Staged as a callback for the same reason `cmd_install` stages its
+        # own: `_run` can still reject the request, and a rejected upgrade
+        # must not leave a changed config behind. Platform first, so the
+        # sync sees (and therefore keeps) the value this run just set.
+        if platform is not None:
+            _update_config_platform(destination / CONFIG_PATH, platform)
+        if sync_config:
+            appended = sync_config_sections(destination, template_name)
+            print()
+            if appended:
+                print_section("Appended config section(s) this install predated:", appended)
+            else:
+                print("Config already declares every section Raven ships.")
+        return 0
+
     rc = _run(
         destination,
         config,
@@ -858,7 +896,10 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
         args.dry_run,
         args.overrides,
         adopt_requested=getattr(args, "adopt", None) or [],
+        wire_hooks=getattr(args, "wire_hooks", False),
         confirm_template_switch_requested=getattr(args, "confirm_template_switch", False),
+        platform_override=platform,
+        write_config=write_config if (platform is not None or sync_config) else None,
     )
     _register_for_fleet(destination, rc, args.dry_run)
     return rc
@@ -1125,6 +1166,11 @@ def build_parser() -> argparse.ArgumentParser:
     examples against this parser.
     """
     supported_languages = ", ".join(list_language_templates())
+    wire_hooks_help = (
+        "when a hook manager owns core.hooksPath, append Raven's gate to its hooks "
+        "(`just check-fast` to .husky/pre-commit, `just check` to .husky/pre-push) instead "
+        "of only reporting that Raven's own hooks are inert; husky only, append-only"
+    )
     adopt_flag_help = (
         "take over an existing file Raven owns wholesale: move it to <path>.bak and write "
         f"Raven's version. Repeatable; `all` means every one. Adoptable: {', '.join(ADOPTABLE_PATHS)}"
@@ -1291,6 +1337,11 @@ Adoption:
         default=None,
         help="issue-tracker platform: github, gitlab, or none; updates existing config if already installed",
     )
+    install_parser.add_argument(
+        "--wire-hooks",
+        action="store_true",
+        help=wire_hooks_help,
+    )
 
     upgrade_parser = subparsers.add_parser(
         "upgrade",
@@ -1345,6 +1396,28 @@ Adoption:
             "proceed even though .raven/config.toml now selects a different template than the "
             "one last applied; this can remove files the new template no longer ships"
         ),
+    )
+    upgrade_parser.add_argument(
+        "--platform",
+        choices=list(VALID_PLATFORMS),
+        default=None,
+        help=(
+            "issue-tracker platform: github, gitlab, or none; updates the existing config, "
+            "installing or removing the platform-gated issue-tracker skill to match"
+        ),
+    )
+    upgrade_parser.add_argument(
+        "--sync-config",
+        action="store_true",
+        help=(
+            "append config sections this install predates to .raven/config.toml, with their "
+            "documented defaults; never changes a value the config already sets"
+        ),
+    )
+    upgrade_parser.add_argument(
+        "--wire-hooks",
+        action="store_true",
+        help=wire_hooks_help,
     )
 
     accept_parser = subparsers.add_parser(

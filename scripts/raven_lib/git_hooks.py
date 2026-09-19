@@ -175,6 +175,44 @@ def hook_manager_guidance(manager: str) -> str:
     return ""
 
 
+#: The gate each husky hook must invoke, in husky's own file-per-hook layout.
+HUSKY_GATE_COMMANDS = {"pre-commit": "just check-fast", "pre-push": "just check"}
+
+
+def wire_hook_manager(destination: Path, manager: str | None) -> list[str]:
+    """Append Raven's gate to a husky hook file, and report the files changed.
+
+    Opt-in (`--wire-hooks`), because these are the project's files, not
+    Raven's: half the repositories Raven is installed into run a hook
+    manager, which leaves `.raven/git-hooks/` written, upgraded, and never
+    executed. Guidance alone has not closed that -- `hook_manager_guidance`
+    has printed the exact two lines all along.
+
+    Append-only and idempotent, the same contract the `.gitattributes` and
+    `.ignore` merges follow: an existing hook keeps everything it does and
+    gains one line, and a hook that already runs the gate is left untouched.
+    Husky only. The pre-commit framework configures hooks through
+    `.pre-commit-config.yaml`, where the equivalent is a repo entry rather
+    than an appended line, so it is reported rather than guessed at.
+    """
+    if manager != "husky":
+        return []
+    husky = destination / ".husky"
+    if not husky.is_dir():
+        return []
+    wired: list[str] = []
+    for hook, command in HUSKY_GATE_COMMANDS.items():
+        path = husky / hook
+        existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+        if any(line.strip() == command for line in existing.splitlines()):
+            continue
+        prefix = "" if not existing or existing.endswith("\n") else "\n"
+        path.write_text(f"{existing}{prefix}{command}\n", encoding="utf-8")
+        path.chmod(path.stat().st_mode | 0o111)
+        wired.append(f".husky/{hook}")
+    return wired
+
+
 class HookLinkAction(str, Enum):
     """What to do about one hook path in the git hooks directory."""
 
