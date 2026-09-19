@@ -60,11 +60,11 @@ class GuidedMergeTests(RavenTestCase):
             "@AGENTS.md\n",
         )
 
-    def test_mcp_json_still_classifies_unknown_existing_not_needs_adoption(self):
-        # Regression pin for #200: .claude/settings.json got its own
-        # needs_adoption carve-out in _classify_entry, but .mcp.json is
-        # explicitly out of scope for that issue and must keep going through
-        # the exact same unknown_existing/guided-merge path as before.
+    def test_mcp_json_classifies_needs_adoption_not_unknown_existing(self):
+        # #273: `.mcp.json` is rendered by Raven wholesale, so a pre-existing
+        # untracked copy is an adoption question, not a merge -- the same
+        # carve-out `.claude/settings.json` got in #200. It must leave the
+        # unknown_existing/guided-merge path entirely.
         (self.destination / ".mcp.json").write_text('{"local": true}\n', encoding="utf-8")
         entries = raven.entries_for_destination(
             self.template,
@@ -77,13 +77,9 @@ class GuidedMergeTests(RavenTestCase):
             self.template, self.destination, self.excludes, entries=entries
         )
 
-        self.assertIn(".mcp.json", classification.unknown_existing)
-        self.assertNotIn(".mcp.json", classification.needs_adoption)
-
-        written = raven.write_guided_merge_artifacts(self.destination, entries, [".mcp.json"])
-        self.assertIn(".raven/merge/.mcp.json.diff", written)
-        self.assertIn(".raven/merge/.mcp.json.raven", written)
-        self.assertIn(".raven/merge/.mcp.json.instructions.md", written)
+        self.assertIn(".mcp.json", classification.needs_adoption)
+        self.assertNotIn(".mcp.json", classification.unknown_existing)
+        self.assertNotIn(".mcp.json", classification.needs_merge)
 
     def test_guided_merge_artifacts_for_modified_non_instruction_file(self):
         original = '{"mcpServers": {"local": "keep me"}}\n'
@@ -251,7 +247,10 @@ class GuidedMergeTests(RavenTestCase):
         self.assertNotIn("## Recommended automatic merge", body)
 
     def test_run_writes_merge_helpers_for_conflicting_non_instruction_file(self):
-        (self.destination / ".mcp.json").write_text('{"local": true}\n', encoding="utf-8")
+        # A non-instruction file Raven does not own wholesale: an existing
+        # copy keeps the guided-merge path (unlike `.mcp.json`, which #273
+        # moved to adoption).
+        (self.destination / "justfile").write_text("local-recipe:\n\t@true\n", encoding="utf-8")
         output = io.StringIO()
 
         with contextlib.redirect_stdout(output):
@@ -260,7 +259,7 @@ class GuidedMergeTests(RavenTestCase):
             )
 
         self.assertEqual(rc, 0)
-        self.assertTrue((self.destination / ".raven" / "merge" / ".mcp.json.diff").is_file())
+        self.assertTrue((self.destination / ".raven" / "merge" / "justfile.diff").is_file())
         self.assertIn("Wrote guided merge artifacts", output.getvalue())
 
     def test_dry_run_does_not_write_guided_merge_artifacts(self):

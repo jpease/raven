@@ -17,7 +17,7 @@ exists, and how to settle a conflict for good. For command syntax, see
   its own version)
 - Locally customized; template unchanged, so left untouched (no merge needed)
 - Needs consent to adopt as Raven-managed (existing file Raven does not yet
-  own; left untouched, no merge artifact -- see `--adopt-settings-json`)
+  own; left untouched, no merge artifact -- see `--adopt <path>`)
 
 The last two only appear when there is something to report in them.
 
@@ -121,11 +121,12 @@ When either file already exists, Raven writes merge artifacts under
 - `*.patch` — an append-only patch, when the suggestion is safe to express as
   text
 
-For an existing `CLAUDE.md`:
+For an existing `CLAUDE.md` (and `GEMINI.md`, when the Gemini components are
+enabled):
 
 - Raven leaves it alone by default.
 - To take Raven's version instead, answer `Y` at the prompt or run with
-  `--adopt-claude`.
+  `--adopt CLAUDE.md`.
 - Adoption moves your file to `CLAUDE.md.bak`.
 - If that backup already exists, Raven fails rather than overwrite it.
 
@@ -159,14 +160,38 @@ the template.
 - If the repository already has a hand-written `.claude/settings.json` that
   Raven does not track, Raven leaves it alone and reports that it needs
   adoption consent.
-- To adopt it, answer `Y` at the prompt or run with `--adopt-settings-json`.
+- To adopt it, answer `Y` at the prompt or run with
+  `--adopt .claude/settings.json`.
 - Adoption moves your file to `.claude/settings.json.bak` first.
 - If that backup already exists, Raven fails rather than overwrite it.
 - Once adopted or freshly installed, it is tracked in the manifest and
   upgrades like any other managed file.
 
-`.mcp.json` is not part of this ownership model — it goes through the guided
-merge path above.
+## Adopting a file Raven owns
+
+Adoption is the same one-flag deal for every file Raven owns wholesale rather
+than hand-merges:
+
+| Path | What Raven puts there |
+| --- | --- |
+| `CLAUDE.md` | one-line `@AGENTS.md` import |
+| `GEMINI.md` | one-line `@AGENTS.md` import |
+| `.claude/settings.json` | Raven-owned Claude Code settings |
+| `.codex/config.toml` | rendered from Raven's MCP server definitions |
+| `.gemini/settings.json` | rendered from Raven's MCP servers and hook wiring |
+| `.mcp.json` | rendered from Raven's MCP server definitions |
+
+```sh
+raven upgrade --adopt .mcp.json --adopt .codex/config.toml
+raven upgrade --adopt all        # every one that needs it
+```
+
+`--adopt` is repeatable, accepts `all`, and only ever acts on a file that
+actually needs consent — naming one Raven already owns, or one this template
+does not ship, does nothing. Every adoption moves your file to
+`<path>.bak` first and fails rather than overwrite an existing backup. A
+file Raven already tracks and you then edited is *not* adoptable: that is a
+local edit, and it keeps the guided-merge path.
 
 ## Finishing a merge with `raven accept`
 

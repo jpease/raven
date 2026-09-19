@@ -11,9 +11,8 @@ import sys
 from pathlib import Path
 
 from .apply import (
-    adopt_claude_md,
-    adopt_settings_json,
-    claude_adoption_needed,
+    adopt_file,
+    adoption_needed,
     copy_paths,
 )
 from .blocks import (
@@ -24,11 +23,11 @@ from .blocks import (
 )
 from .config import component_disabled
 from .constants import (
-    CLAUDE_BACKUP_PATH,
-    CLAUDE_PATH,
+    ADOPTABLE_BY_PATH,
+    ADOPTABLE_FILES,
     GITATTRIBUTES_PATH,
-    SETTINGS_JSON_BACKUP_PATH,
     SETTINGS_JSON_PATH,
+    AdoptableFile,
     _any_exists,
 )
 from .manifest import update_manifest
@@ -66,7 +65,7 @@ def render_apply_summary(
     copied: list[str],
     upgraded: list[str],
     overwritten: list[str],
-    adopted_claude: list[str],
+    adopted: list[str],
     identical: list[str],
     needs_merge: list[str],
     unknown_existing: list[str],
@@ -76,10 +75,12 @@ def render_apply_summary(
     deactivated_preserved: list[str] | None = None,
     deactivated_stale: list[str] | None = None,
     deactivated_customized: list[str] | None = None,
-    adopted_settings_json: list[str] | None = None,
     needs_adoption: list[str] | None = None,
 ) -> str:
     """The post-apply summary report text: only sections with content are included.
+
+    ``adopted`` is every path an adoption wrote, backups included, in the
+    order `apply_plan` wrote them.
 
     ``deactivated_preserved`` means, as of #179, only the genuinely-modified
     subset -- callers must exclude ``deactivated_stale``/``deactivated_
@@ -92,7 +93,6 @@ def render_apply_summary(
     deactivated_preserved = deactivated_preserved or []
     deactivated_stale = deactivated_stale or []
     deactivated_customized = deactivated_customized or []
-    adopted_settings_json = adopted_settings_json or []
     needs_adoption = needs_adoption or []
     sections = [render_section(f"Copied {len(copied)} file(s):", copied)]
 
@@ -108,19 +108,11 @@ def render_apply_summary(
             )
         )
 
-    if adopted_claude:
+    if adopted:
         sections.append(
             render_section(
-                "Adopted CLAUDE.md as Raven-managed; original file was backed up:",
-                adopted_claude,
-            )
-        )
-
-    if adopted_settings_json:
-        sections.append(
-            render_section(
-                "Adopted .claude/settings.json as Raven-managed; original file was backed up:",
-                adopted_settings_json,
+                "Adopted as Raven-managed; each original file was backed up:",
+                adopted,
             )
         )
 
@@ -146,12 +138,16 @@ def render_apply_summary(
         )
 
     if needs_adoption:
+        # The concrete invocation, not a `<path>` placeholder: this section is
+        # the only place a live run tells the reader how to resolve these, and
+        # they have to name each path anyway.
+        adopt_flags = " ".join(f"--adopt {path}" for path in needs_adoption)
         sections.append(
             render_section(
                 "!!! Needs consent to manage: these files exist but Raven does not yet own them, "
-                "and were left untouched (no merge artifact was written). Re-run with "
-                "--adopt-settings-json, or accept the interactive prompt, to let Raven manage "
-                "them; your own overrides belong in .claude/settings.local.json instead. !!!",
+                f"and were left untouched (no merge artifact was written). Re-run with "
+                f"`raven upgrade {adopt_flags}`, or accept the interactive prompt, to let Raven "
+                "manage them. !!!",
                 needs_adoption,
             )
         )
@@ -219,7 +215,7 @@ def print_apply_summary(
     copied: list[str],
     upgraded: list[str],
     overwritten: list[str],
-    adopted_claude: list[str],
+    adopted: list[str],
     identical: list[str],
     needs_merge: list[str],
     unknown_existing: list[str],
@@ -229,7 +225,6 @@ def print_apply_summary(
     deactivated_preserved: list[str] | None = None,
     deactivated_stale: list[str] | None = None,
     deactivated_customized: list[str] | None = None,
-    adopted_settings_json: list[str] | None = None,
     needs_adoption: list[str] | None = None,
 ) -> None:
     """Print `render_apply_summary`'s output."""
@@ -238,7 +233,7 @@ def print_apply_summary(
             copied,
             upgraded,
             overwritten,
-            adopted_claude,
+            adopted,
             identical,
             needs_merge,
             unknown_existing,
@@ -248,7 +243,6 @@ def print_apply_summary(
             deactivated_preserved,
             deactivated_stale,
             deactivated_customized,
-            adopted_settings_json,
             needs_adoption,
         )
     )
@@ -280,7 +274,7 @@ def render_dry_run_summary(classification: Classification) -> str:
         sections.append(
             render_section(
                 "Needs consent to adopt as Raven-managed (existing file Raven does not yet own; "
-                "left untouched, no merge artifact -- see --adopt-settings-json):",
+                "left untouched, no merge artifact -- see `--adopt <path>`):",
                 classification.needs_adoption,
             )
         )
@@ -299,28 +293,25 @@ def _without(paths: list[str], excluded: set[str]) -> list[str]:
     return sorted(set(paths) - excluded)
 
 
-def claude_conflict(classification: Classification, requested_overrides: list[str]) -> bool:
-    """Whether CLAUDE.md ends up needing a manual merge after override removal."""
+def adoption_conflict(
+    classification: Classification, requested_overrides: list[str], adoptable: AdoptableFile
+) -> bool:
+    """Whether ``adoptable`` still needs adoption consent after override removal.
+
+    An explicit ``--override <path>`` already force-copies the file, so it
+    resolves the question without any adoption prompt. What "unresolved" means
+    depends on the kind: a ``root_instructions`` file is unresolved while it
+    sits in ``needs_merge``/``unknown_existing`` (a guided merge would
+    otherwise be written for it), a ``config`` file while it sits in
+    ``needs_adoption``.
+    """
     override_set = set(requested_overrides)
+    if adoptable.kind == "config":
+        return adoptable.path in (set(classification.needs_adoption) - override_set)
     conflicts = (
         set(classification.needs_merge) | set(classification.unknown_existing)
     ) - override_set
-    return CLAUDE_PATH in conflicts
-
-
-def settings_json_adoption_conflict(
-    classification: Classification, requested_overrides: list[str]
-) -> bool:
-    """Whether .claude/settings.json still needs adoption consent after override removal.
-
-    Mirrors ``claude_conflict``, but over ``needs_adoption`` instead of
-    ``needs_merge``/``unknown_existing``: an explicit ``--override
-    .claude/settings.json`` already force-copies the file, so it resolves the
-    same way an override resolves a CLAUDE.md conflict -- no adoption prompt
-    needed.
-    """
-    override_set = set(requested_overrides)
-    return SETTINGS_JSON_PATH in (set(classification.needs_adoption) - override_set)
+    return adoptable.path in conflicts
 
 
 def build_apply_plan(
@@ -328,16 +319,18 @@ def build_apply_plan(
     requested_overrides: list[str],
     existing_overrides: set[str],
     *,
-    adopt_claude: bool,
-    adopt_settings_json: bool = False,
+    adopt_paths: list[str] | None = None,
 ) -> ApplyPlan:
     """Resolve a `Classification` and override flags into the concrete `ApplyPlan` to execute.
 
     Requested overrides are pulled out of every classification bucket first
-    (they get their own copy/overwrite handling), then CLAUDE.md is pulled out
-    of ``needs_merge``/``unknown_existing`` when adoption is requested, and
-    ``.claude/settings.json`` out of ``needs_adoption`` when settings adoption
-    is requested, since each resolves its conflict a different way.
+    (they get their own copy/overwrite handling), then each adopted path is
+    pulled out of whichever bucket held it -- ``needs_merge``/
+    ``unknown_existing`` for a root instruction file, ``needs_adoption`` for a
+    config file -- since each resolves its conflict a different way. Removal
+    is keyed on the adoptable's own kind rather than on bucket membership, so
+    a caller cannot turn a genuine local edit of a Raven-owned config into a
+    silent overwrite by naming it here.
     """
     override_set = set(requested_overrides)
     overwritten = sorted(path for path in requested_overrides if path in existing_overrides)
@@ -350,13 +343,14 @@ def build_apply_plan(
     local_only = _without(classification.local_only, override_set)
     needs_adoption = _without(classification.needs_adoption, override_set)
 
-    if adopt_claude:
-        needs_merge = [path for path in needs_merge if path != CLAUDE_PATH]
-        unknown_existing = [path for path in unknown_existing if path != CLAUDE_PATH]
-
-    adopt_settings = adopt_settings_json
-    if adopt_settings:
-        needs_adoption = [path for path in needs_adoption if path != SETTINGS_JSON_PATH]
+    adopted = sorted(set(adopt_paths or ()) - override_set)
+    root_adopted = {p for p in adopted if ADOPTABLE_BY_PATH[p].kind == "root_instructions"}
+    config_adopted = {p for p in adopted if ADOPTABLE_BY_PATH[p].kind == "config"}
+    if root_adopted:
+        needs_merge = [path for path in needs_merge if path not in root_adopted]
+        unknown_existing = [path for path in unknown_existing if path not in root_adopted]
+    if config_adopted:
+        needs_adoption = [path for path in needs_adoption if path not in config_adopted]
 
     effective_classification = Classification(
         will_copy=will_copy,
@@ -380,9 +374,8 @@ def build_apply_plan(
         needs_merge=needs_merge,
         unknown_existing=unknown_existing,
         effective_classification=effective_classification,
-        adopt_claude=adopt_claude,
         guided_merge_paths=guided_merge_paths,
-        adopt_settings_json=adopt_settings,
+        adopt_paths=adopted,
     )
 
 
@@ -391,17 +384,16 @@ def render_dry_run_plan(
     orphans: OrphanClassification,
     deactivated: DeactivatedClassification | None = None,
     *,
-    show_claude_adoption_note: bool,
-    show_settings_adoption_note: bool = False,
+    adoption_notes: list[str] | None = None,
 ) -> str:
     """The dry-run report text.
 
     Pure: every filesystem question this report depends on is answered by the
-    caller and arrives as ``show_claude_adoption_note``/``show_settings_adoption_note``.
-    That keeps the whole section-assembly -- which sections appear, in which
-    order, with which wording -- testable without building a destination tree
-    on disk. ``show_settings_adoption_note`` defaults to False so existing
-    callers that predate #200 keep working unchanged.
+    caller and arrives as ``adoption_notes`` -- the adoptable paths this run
+    is *not* adopting but could, which `print_dry_run_plan` determines by
+    probing the destination. That keeps the whole section-assembly -- which
+    sections appear, in which order, with which wording -- testable without
+    building a destination tree on disk.
     """
     deactivated = deactivated or DeactivatedClassification([], [], [], stale=[], customized=[])
     sections = []
@@ -415,32 +407,23 @@ def render_dry_run_plan(
                 plan.newly_copied_overrides,
             )
         )
-    if plan.adopt_claude:
+    if plan.adopt_paths:
+        writes: list[str] = []
+        for path in plan.adopt_paths:
+            writes.extend([ADOPTABLE_BY_PATH[path].backup_path, path])
         sections.append(
             render_section(
-                "Would adopt CLAUDE.md as Raven-managed:", [CLAUDE_BACKUP_PATH, CLAUDE_PATH]
-            )
-        )
-    if plan.adopt_settings_json:
-        sections.append(
-            render_section(
-                "Would adopt .claude/settings.json as Raven-managed; original file backed up:",
-                [SETTINGS_JSON_BACKUP_PATH, SETTINGS_JSON_PATH],
+                "Would adopt as Raven-managed; each original file backed up:",
+                writes,
             )
         )
     sections.append(render_dry_run_summary(plan.effective_classification))
-    if show_claude_adoption_note:
+    for path in adoption_notes or []:
+        adoptable = ADOPTABLE_BY_PATH[path]
         sections.append(
-            "CLAUDE.md exists but doesn't hold Raven's content. Raven can leave it untouched, "
-            "or you can rerun with --adopt-claude to move it to CLAUDE.md.bak and write the "
-            "`@AGENTS.md` import file."
-        )
-    if show_settings_adoption_note:
-        sections.append(
-            "Raven does not yet manage .claude/settings.json here. Raven can leave it untouched, "
-            "or you can rerun with --adopt-settings-json to move it to "
-            ".claude/settings.json.bak and let Raven manage it; your own overrides belong in "
-            ".claude/settings.local.json."
+            f"{path} exists but Raven does not own its content. Raven can leave it untouched, "
+            f"or you can rerun with `--adopt {path}` to move it to {adoptable.backup_path} and "
+            f"let Raven manage it. {adoptable.summary}"
         )
     if plan.guided_merge_paths:
         sections.append(
@@ -518,37 +501,49 @@ def print_dry_run_plan(
 
     The report itself is built by ``render_dry_run_plan``.
     """
-    if plan.adopt_claude and _any_exists(destination / CLAUDE_BACKUP_PATH):
-        print(
-            f"error: {CLAUDE_BACKUP_PATH} already exists; remove it before adopting CLAUDE.md.",
-            file=sys.stderr,
-        )
-        return 2
-    if plan.adopt_settings_json and _any_exists(destination / SETTINGS_JSON_BACKUP_PATH):
-        print(
-            f"error: {SETTINGS_JSON_BACKUP_PATH} already exists; "
-            "remove it before adopting .claude/settings.json.",
-            file=sys.stderr,
-        )
-        return 2
-    show_claude_adoption_note = (
-        not plan.adopt_claude
-        and CLAUDE_PATH in set(classification.needs_merge) | set(classification.unknown_existing)
-        and claude_adoption_needed(destination, entries)
-    )
-    show_settings_adoption_note = not plan.adopt_settings_json and SETTINGS_JSON_PATH in set(
-        classification.needs_adoption
-    )
+    for path in plan.adopt_paths:
+        adoptable = ADOPTABLE_BY_PATH[path]
+        if _any_exists(destination / adoptable.backup_path):
+            print(
+                f"error: {adoptable.backup_path} already exists; remove it before adopting {path}.",
+                file=sys.stderr,
+            )
+            return 2
+    adoption_notes = [
+        adoptable.path
+        for adoptable in ADOPTABLE_FILES
+        if adoptable.path not in plan.adopt_paths
+        and _adoption_offerable(destination, classification, entries, adoptable)
+    ]
     print(
         render_dry_run_plan(
             plan,
             orphans,
             deactivated,
-            show_claude_adoption_note=show_claude_adoption_note,
-            show_settings_adoption_note=show_settings_adoption_note,
+            adoption_notes=adoption_notes,
         )
     )
     return 0
+
+
+def _adoption_offerable(
+    destination: Path,
+    classification: Classification,
+    entries: dict[str, TemplateEntry],
+    adoptable: AdoptableFile,
+) -> bool:
+    """Whether ``adoptable`` is a live adoption offer for this destination.
+
+    Same two-shape test `cli._run` applies when deciding whether to prompt: a
+    config file is offerable while it sits in ``needs_adoption``; a root
+    instruction file while it sits in ``needs_merge``/``unknown_existing``
+    *and* the destination copy really differs from the template's.
+    """
+    if adoptable.kind == "config":
+        return adoptable.path in set(classification.needs_adoption)
+    return adoptable.path in set(classification.needs_merge) | set(
+        classification.unknown_existing
+    ) and adoption_needed(destination, entries, adoptable)
 
 
 def apply_plan(
@@ -562,35 +557,33 @@ def apply_plan(
     plan: ApplyPlan,
     orphans: OrphanClassification,
     deactivated: DeactivatedClassification,
-) -> tuple[int, list[str], list[str], list[str], list[str], list[str]]:
+) -> tuple[int, list[str], list[str], list[str], list[str]]:
     """Execute an `ApplyPlan`: copy/upgrade files, remove orphans, update the manifest, write merges.
 
-    Returns ``(exit_code, adopted_claude, adopted_settings_json,
-    merge_artifacts, removed_orphans, removed_deactivated)``. Exit code 2 on a
-    CLAUDE.md- or settings.json-backup collision or a `ValueError` from
-    `copy_paths` (an unsafe managed-block state) aborts before the manifest is
-    touched, so a failed apply never records paths it did not actually write.
-    Exit code 1 on an OSError during orphan/deactivated removal (e.g. a
-    read-only parent directory) reports the failure without aborting: copies
-    and upgrades land, the manifest is updated for everything that succeeded,
-    failed paths are reported to stderr and omitted from removal, so their
-    manifest records are retained for the next run to retry (#183).
+    Returns ``(exit_code, adopted, merge_artifacts, removed_orphans,
+    removed_deactivated)``, where ``adopted`` is every path the adoptions
+    wrote, backups included. Exit code 2 on an adoption-backup collision or a
+    `ValueError` from `copy_paths` (an unsafe managed-block state) aborts
+    before the manifest is touched, so a failed apply never records paths it
+    did not actually write. Exit code 1 on an OSError during
+    orphan/deactivated removal (e.g. a read-only parent directory) reports the
+    failure without aborting: copies and upgrades land, the manifest is
+    updated for everything that succeeded, failed paths are reported to stderr
+    and omitted from removal, so their manifest records are retained for the
+    next run to retry (#183).
     """
-    adopted_claude: list[str] = []
-    if plan.adopt_claude:
+    adopted: list[str] = []
+    adopted_targets: list[str] = []
+    for path in plan.adopt_paths:
+        adoptable = ADOPTABLE_BY_PATH[path]
         try:
-            adopted_claude = adopt_claude_md(destination, entries)
+            written = adopt_file(destination, entries, adoptable)
         except FileExistsError as exc:
             print(f"error: {exc}", file=sys.stderr)
-            return 2, [], [], [], [], []
-
-    adopted_settings_json: list[str] = []
-    if plan.adopt_settings_json:
-        try:
-            adopted_settings_json = adopt_settings_json(destination, entries)
-        except FileExistsError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2, adopted_claude, [], [], [], []
+            return 2, adopted, [], [], []
+        if written:
+            adopted.extend(written)
+            adopted_targets.append(path)
 
     try:
         if plan.requested_overrides:
@@ -608,12 +601,12 @@ def apply_plan(
             )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2, adopted_claude, adopted_settings_json, [], [], []
+        return 2, adopted, [], [], []
 
     # Gitignore the user's local-overrides layer the moment Raven starts
     # owning settings.json -- fresh install or adoption -- not on every run
     # (see `ensure_settings_local_gitignored`).
-    if SETTINGS_JSON_PATH in plan.will_copy or adopted_settings_json:
+    if SETTINGS_JSON_PATH in plan.will_copy or SETTINGS_JSON_PATH in adopted_targets:
         ensure_settings_local_gitignored(destination)
 
     # Merge Raven's required `.gitattributes` lines on every apply, not just
@@ -649,12 +642,7 @@ def apply_plan(
     removed_deactivated = remove_orphans(destination, deactivated.removable, failed_deactivated)
 
     managed_paths = (
-        plan.copied
-        + plan.will_upgrade
-        + plan.overwritten
-        + plan.identical
-        + ([CLAUDE_PATH] if adopted_claude else [])
-        + ([SETTINGS_JSON_PATH] if adopted_settings_json else [])
+        plan.copied + plan.will_upgrade + plan.overwritten + plan.identical + adopted_targets
     )
     stale_records = (
         removed_orphans + orphans.already_gone + removed_deactivated + deactivated.absent
@@ -678,8 +666,7 @@ def apply_plan(
     exit_code = 1 if (failed_orphans or failed_deactivated) else 0
     return (
         exit_code,
-        adopted_claude,
-        adopted_settings_json,
+        adopted,
         merge_artifacts,
         removed_orphans,
         removed_deactivated,

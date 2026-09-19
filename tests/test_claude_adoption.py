@@ -23,7 +23,7 @@ class ClaudeAdoptionTests(RavenTestCase):
             self.destination,
         )
 
-        changed = raven.adopt_claude_md(self.destination, entries)
+        changed = raven.adopt_file(self.destination, entries, raven.ADOPTABLE_BY_PATH["CLAUDE.md"])
 
         self.assertEqual(changed, ["CLAUDE.md.bak", "CLAUDE.md"])
         self.assertEqual(
@@ -46,7 +46,7 @@ class ClaudeAdoptionTests(RavenTestCase):
         )
 
         with self.assertRaises(FileExistsError):
-            raven.adopt_claude_md(self.destination, entries)
+            raven.adopt_file(self.destination, entries, raven.ADOPTABLE_BY_PATH["CLAUDE.md"])
 
         self.assertEqual(
             (self.destination / "CLAUDE.md").read_text(encoding="utf-8"), "custom claude guidance\n"
@@ -68,8 +68,8 @@ class ClaudeAdoptionTests(RavenTestCase):
                 False,
                 False,
                 [],
-                adopt_claude_requested=True,
-                prompt_claude=False,
+                adopt_requested=["CLAUDE.md"],
+                prompt_adoption=False,
             )
 
         self.assertEqual(rc, 0)
@@ -78,7 +78,7 @@ class ClaudeAdoptionTests(RavenTestCase):
             (self.destination / "CLAUDE.md.bak").read_text(encoding="utf-8"),
             "custom claude guidance\n",
         )
-        self.assertIn("Adopted CLAUDE.md as Raven-managed", output.getvalue())
+        self.assertIn("Adopted as Raven-managed", output.getvalue())
         self.assertNotIn(
             "  CLAUDE.md\n", output.getvalue().split("Wrote guided merge artifacts", 1)[-1]
         )
@@ -97,8 +97,8 @@ class ClaudeAdoptionTests(RavenTestCase):
                 False,
                 False,
                 [],
-                adopt_claude_requested=True,
-                prompt_claude=False,
+                adopt_requested=["CLAUDE.md"],
+                prompt_adoption=False,
             )
 
         self.assertEqual(rc, 2)
@@ -121,14 +121,15 @@ class ClaudeAdoptionTests(RavenTestCase):
                 False,
                 True,
                 [],
-                adopt_claude_requested=True,
-                prompt_claude=False,
+                adopt_requested=["CLAUDE.md"],
+                prompt_adoption=False,
             )
 
         self.assertEqual(rc, 0)
         self.assertFalse((self.destination / "CLAUDE.md").is_symlink())
         self.assertFalse((self.destination / "CLAUDE.md.bak").exists())
-        self.assertIn("Would adopt CLAUDE.md as Raven-managed", output.getvalue())
+        self.assertIn("Would adopt as Raven-managed", output.getvalue())
+        self.assertIn("CLAUDE.md.bak", output.getvalue())
 
     def test_dry_run_with_adopt_claude_fails_if_backup_exists(self):
         (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
@@ -144,8 +145,8 @@ class ClaudeAdoptionTests(RavenTestCase):
                 False,
                 True,
                 [],
-                adopt_claude_requested=True,
-                prompt_claude=False,
+                adopt_requested=["CLAUDE.md"],
+                prompt_adoption=False,
             )
 
         self.assertEqual(rc, 2)
@@ -170,8 +171,8 @@ class ClaudeAdoptionTests(RavenTestCase):
                 False,
                 True,
                 [],
-                adopt_claude_requested=True,
-                prompt_claude=False,
+                adopt_requested=["CLAUDE.md"],
+                prompt_adoption=False,
             )
 
         self.assertEqual(rc, 2)
@@ -195,8 +196,8 @@ class ClaudeAdoptionTests(RavenTestCase):
                 False,
                 False,
                 [],
-                adopt_claude_requested=True,
-                prompt_claude=False,
+                adopt_requested=["CLAUDE.md"],
+                prompt_adoption=False,
             )
 
         self.assertEqual(rc, 2)
@@ -221,8 +222,8 @@ class ClaudeAdoptionTests(RavenTestCase):
                 False,
                 True,
                 [],
-                adopt_claude_requested=True,
-                prompt_claude=False,
+                adopt_requested=["CLAUDE.md"],
+                prompt_adoption=False,
             )
 
         self.assertEqual(rc, 2)

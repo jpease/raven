@@ -405,7 +405,7 @@ def _claude_finding(destination: Path) -> Finding:
         category=_INTEGRITY,
         title="CLAUDE.md does not import AGENTS.md",
         detail="expected a line containing `@AGENTS.md`",
-        fix="run `raven upgrade --adopt-claude` (or accept the interactive prompt)",
+        fix="run `raven upgrade --adopt CLAUDE.md` (or accept the interactive prompt)",
     )
 
 
@@ -483,10 +483,10 @@ def drift_findings(destination: Path) -> list[Finding]:
     # baseline: nothing upstream to merge, so these are informational, not drift
     # that needs action (e.g. an editor reformatting an installed file).
     local_only = sorted(set(classification.local_only) - set(pending))
-    # Files needing adoption consent (#200, currently only ever
-    # .claude/settings.json) never get a pending guided-merge artifact, so no
-    # `- set(pending)` subtraction is needed here, but it is harmless and kept
-    # for symmetry with the other buckets above.
+    # Files needing adoption consent (#200, #273 -- the
+    # `constants.ADOPTABLE_CONFIG_PATHS` set) never get a pending guided-merge
+    # artifact, so no `- set(pending)` subtraction is needed here, but it is
+    # harmless and kept for symmetry with the other buckets above.
     needs_adoption = sorted(set(classification.needs_adoption) - set(pending))
     if missing:
         findings.append(
@@ -533,6 +533,7 @@ def drift_findings(destination: Path) -> list[Finding]:
         )
 
     if needs_adoption:
+        adopt_flags = " ".join(f"--adopt {path}" for path in needs_adoption)
         findings.append(
             Finding(
                 id="doctor.drift.needs_adoption",
@@ -541,8 +542,8 @@ def drift_findings(destination: Path) -> list[Finding]:
                 title=f"{len(needs_adoption)} file(s) need consent to become Raven-managed",
                 detail=", ".join(needs_adoption),
                 fix=(
-                    "run `raven upgrade --adopt-settings-json` (or accept the interactive "
-                    "prompt) to let Raven manage it"
+                    f"run `raven upgrade {adopt_flags}` (or accept the interactive "
+                    "prompt) to let Raven manage them"
                 ),
             )
         )

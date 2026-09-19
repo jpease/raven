@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_EXCLUDES = {"README.md"}
@@ -26,14 +26,87 @@ MANIFEST_PATH = Path(".raven") / "manifest.json"
 MERGE_DIR = Path(".raven") / "merge"
 ROOT_INSTRUCTION_FILES = {"AGENTS.md", "CLAUDE.md"}
 CLAUDE_PATH = "CLAUDE.md"
-CLAUDE_BACKUP_PATH = "CLAUDE.md.bak"
-# .claude/settings.json adoption (#200): a pre-existing hand-written copy is
-# backed up here before Raven takes over the file, mirroring the CLAUDE.md
-# symlink-adoption precedent above -- but settings.json is a plain managed
-# file, not a symlink, so adoption backs up and overwrites real content
-# instead of redirecting a link.
+GEMINI_PATH = "GEMINI.md"
 SETTINGS_JSON_PATH = ".claude/settings.json"
-SETTINGS_JSON_BACKUP_PATH = ".claude/settings.json.bak"
+GEMINI_SETTINGS_JSON_PATH = ".gemini/settings.json"
+MCP_JSON_PATH = ".mcp.json"
+CODEX_CONFIG_PATH = ".codex/config.toml"
+
+
+class AdoptableFile(NamedTuple):
+    """A destination file Raven can take over outright instead of hand-merging.
+
+    Adoption (#200, #272, #273) moves a pre-existing hand-written file to
+    ``backup_path`` and writes Raven's version in its place, on one explicit
+    ``--adopt <path>`` consent (or its interactive prompt). It exists because
+    a guided merge is the wrong shape for these files: each is either a
+    one-line import or a config Raven renders wholesale, so there is nothing
+    to hand-merge -- only a "whose file is this?" question.
+
+    ``kind`` decides which classification state adoption resolves, and the two
+    are deliberately not interchangeable:
+
+    * ``root_instructions`` (CLAUDE.md, GEMINI.md) are ordinary managed
+      template files, so a pre-existing copy classifies as ``unknown_existing``
+      and a diverged tracked one as ``needs_merge``. Adoption covers both --
+      the tracked-but-diverged case is how a pre-#253 install's leftover
+      symlink is migrated to the plain ``@AGENTS.md`` file.
+    * ``config`` files get their own ``needs_adoption`` bucket, which only ever
+      holds an *untracked* existing file. A tracked one that diverged is a real
+      local edit of content Raven owns, and keeps the guided-merge path.
+    """
+
+    path: str
+    kind: Literal["root_instructions", "config"]
+    #: What Raven puts at this path, said to the user at the consent point.
+    summary: str
+
+    @property
+    def backup_path(self) -> str:
+        """Where adoption moves the user's existing file. Uniform ``.bak`` suffix."""
+        return f"{self.path}.bak"
+
+
+#: Every file `--adopt` accepts, in the order reports list them.
+ADOPTABLE_FILES: tuple[AdoptableFile, ...] = (
+    AdoptableFile(
+        CLAUDE_PATH,
+        "root_instructions",
+        "Raven installs CLAUDE.md as a one-line file that imports AGENTS.md (`@AGENTS.md`).",
+    ),
+    AdoptableFile(
+        GEMINI_PATH,
+        "root_instructions",
+        "Raven installs GEMINI.md as a one-line file that imports AGENTS.md (`@AGENTS.md`).",
+    ),
+    AdoptableFile(
+        SETTINGS_JSON_PATH,
+        "config",
+        "Raven owns .claude/settings.json outright; your own local overrides belong in "
+        ".claude/settings.local.json, which Raven never touches.",
+    ),
+    AdoptableFile(
+        CODEX_CONFIG_PATH,
+        "config",
+        "Raven renders .codex/config.toml from its MCP server definitions.",
+    ),
+    AdoptableFile(
+        GEMINI_SETTINGS_JSON_PATH,
+        "config",
+        "Raven renders .gemini/settings.json from its MCP server definitions and hook wiring.",
+    ),
+    AdoptableFile(
+        MCP_JSON_PATH,
+        "config",
+        "Raven renders .mcp.json from its MCP server definitions.",
+    ),
+)
+ADOPTABLE_BY_PATH: dict[str, AdoptableFile] = {f.path: f for f in ADOPTABLE_FILES}
+ADOPTABLE_PATHS: tuple[str, ...] = tuple(f.path for f in ADOPTABLE_FILES)
+#: The subset `classify` routes to the `needs_adoption` bucket (see `AdoptableFile`).
+ADOPTABLE_CONFIG_PATHS: frozenset[str] = frozenset(
+    f.path for f in ADOPTABLE_FILES if f.kind == "config"
+)
 # .gitattributes (#206) and .ignore (#238) each ship a real template file
 # under common/ -- unlike .gitignore, which has no template file at all and is
 # purely synthesized by blocks._ensure_gitignored -- but neither may ever be

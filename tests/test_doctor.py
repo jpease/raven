@@ -54,7 +54,7 @@ def _install(testcase, platform=None):
         overrides=[],
         dry_run=False,
         include_readme=False,
-        adopt_claude=False,
+        adopt=[],
         platform=platform,
     )
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -351,19 +351,18 @@ class DoctorDriftTests(RavenTestCase):
         self.assertNotIn("doctor.drift.modified", findings)
 
     def test_needs_adoption_is_warn_not_modified_and_suppresses_ok(self):
-        # #200: a file needing adoption consent (currently only ever
-        # .claude/settings.json) is real, actionable drift -- it must get its
-        # own WARN finding pointing at --adopt-settings-json, and must not be
-        # silently absorbed into (or masked by) the generic "modified"/"no
-        # drift" findings, which no longer see it since it left
-        # unknown_existing for its own classification bucket.
+        # #200/#273: a file needing adoption consent is real, actionable
+        # drift -- it must get its own WARN finding naming the exact `--adopt`
+        # invocation, and must not be silently absorbed into (or masked by)
+        # the generic "modified"/"no drift" findings, which no longer see it
+        # since it left unknown_existing for its own classification bucket.
         findings = self._drift(needs_merge=[], pending=[], needs_adoption=[".claude/settings.json"])
         self.assertIn("doctor.drift.needs_adoption", findings)
         finding = findings["doctor.drift.needs_adoption"]
         self.assertEqual(finding.severity, Severity.WARN)
         self.assertIn(".claude/settings.json", finding.detail)
         assert finding.fix is not None
-        self.assertIn("--adopt-settings-json", finding.fix)
+        self.assertIn("--adopt .claude/settings.json", finding.fix)
         self.assertNotIn("doctor.drift.modified", findings)
 
     def test_unsupported_template_drift_returns_error_not_false_ok(self):
@@ -1773,7 +1772,7 @@ class ComponentScopingTests(RavenTestCase):
             overrides=[],
             dry_run=False,
             include_readme=False,
-            adopt_claude=False,
+            adopt=[],
             platform=None,
         )
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):

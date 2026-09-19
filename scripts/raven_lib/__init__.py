@@ -9,15 +9,13 @@ from. It owns no logic of its own.
 from __future__ import annotations
 
 from .apply import (
-    adopt_claude_md,
-    adopt_settings_json,
+    adopt_file,
+    adoption_needed,
     classify,
-    claude_adoption_needed,
     copy_paths,
     find_path_collisions,
     find_state_symlink_collisions,
-    prompt_for_claude_adoption,
-    prompt_for_settings_json_adoption,
+    prompt_for_adoption,
     prompt_for_template_switch,
     reconcile_state,
 )
@@ -70,7 +68,10 @@ from .config import (
     template_excluded,
 )
 from .constants import (
-    CLAUDE_BACKUP_PATH,
+    ADOPTABLE_BY_PATH,
+    ADOPTABLE_CONFIG_PATHS,
+    ADOPTABLE_FILES,
+    ADOPTABLE_PATHS,
     CLAUDE_COMPONENT_PATHS,
     CLAUDE_PATH,
     CODEX_COMPONENT_PATHS,
@@ -95,9 +96,9 @@ from .constants import (
     RAVEN_BLOCK_END,
     REPO_ROOT,
     ROOT_INSTRUCTION_FILES,
-    SETTINGS_JSON_BACKUP_PATH,
     SETTINGS_JSON_PATH,
     STARTER_TOOL_CONFIG_PATHS,
+    AdoptableFile,
     _any_exists,
 )
 from .doctor import build_doctor_findings, merge_only_tracking_findings
@@ -130,14 +131,13 @@ from .models import (
     TemplateEntry,
 )
 from .plan import (
+    adoption_conflict,
     apply_plan,
     build_apply_plan,
-    claude_conflict,
     normalize_override,
     print_apply_summary,
     print_dry_run_plan,
     print_section,
-    settings_json_adoption_conflict,
 )
 from .render import (
     can_render_gemini_settings,
@@ -161,9 +161,12 @@ __all__ = [
     "MERGE_DIR",
     "ROOT_INSTRUCTION_FILES",
     "CLAUDE_PATH",
-    "CLAUDE_BACKUP_PATH",
     "SETTINGS_JSON_PATH",
-    "SETTINGS_JSON_BACKUP_PATH",
+    "AdoptableFile",
+    "ADOPTABLE_FILES",
+    "ADOPTABLE_BY_PATH",
+    "ADOPTABLE_PATHS",
+    "ADOPTABLE_CONFIG_PATHS",
     "GITATTRIBUTES_PATH",
     "IGNORE_PATH",
     "MERGE_ONLY_TEMPLATE_PATHS",
@@ -247,18 +250,15 @@ __all__ = [
     "find_path_collisions",
     "find_state_symlink_collisions",
     "reconcile_state",
-    "claude_adoption_needed",
-    "adopt_claude_md",
-    "prompt_for_claude_adoption",
-    "adopt_settings_json",
-    "prompt_for_settings_json_adoption",
+    "adoption_needed",
+    "adopt_file",
+    "prompt_for_adoption",
     "prompt_for_template_switch",
     # plan
     "print_section",
     "print_apply_summary",
     "build_apply_plan",
-    "claude_conflict",
-    "settings_json_adoption_conflict",
+    "adoption_conflict",
     "print_dry_run_plan",
     "apply_plan",
     "normalize_override",

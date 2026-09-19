@@ -4,7 +4,7 @@ import subprocess
 import sys
 import unittest
 
-from helpers import RAVEN_PATH, REPO_ROOT, RavenTestCase
+from helpers import RAVEN_PATH, REPO_ROOT, RavenTestCase, raven
 
 
 class CliTests(RavenTestCase):
@@ -53,7 +53,7 @@ class CliTests(RavenTestCase):
         self.assertIn("Supported languages:", result.stdout)
         self.assertNotIn("language_or_path", result.stdout)
 
-    def test_install_help_names_adopt_settings_json(self):
+    def test_install_help_names_the_adopt_flag_and_every_adoptable_path(self):
         result = subprocess.run(
             [sys.executable, str(RAVEN_PATH), "install", "--help"],
             capture_output=True,
@@ -62,10 +62,11 @@ class CliTests(RavenTestCase):
         )
 
         self.assertEqual(result.returncode, 0)
-        self.assertIn("--adopt-settings-json", result.stdout)
-        self.assertIn(".claude/settings.json.bak", result.stdout)
+        self.assertIn("--adopt PATH", result.stdout)
+        for path in raven.ADOPTABLE_PATHS:
+            self.assertIn(path, result.stdout)
 
-    def test_upgrade_help_names_adopt_settings_json(self):
+    def test_upgrade_help_names_the_adopt_flag_and_every_adoptable_path(self):
         result = subprocess.run(
             [sys.executable, str(RAVEN_PATH), "upgrade", "--help"],
             capture_output=True,
@@ -74,8 +75,9 @@ class CliTests(RavenTestCase):
         )
 
         self.assertEqual(result.returncode, 0)
-        self.assertIn("--adopt-settings-json", result.stdout)
-        self.assertIn(".claude/settings.json.bak", result.stdout)
+        self.assertIn("--adopt PATH", result.stdout)
+        for path in raven.ADOPTABLE_PATHS:
+            self.assertIn(path, result.stdout)
 
 
 class DoctorAssessCliTests(RavenTestCase):

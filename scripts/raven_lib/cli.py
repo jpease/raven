@@ -2,7 +2,7 @@
 
 Every mutating command (`cmd_install`, `cmd_upgrade`, `cmd_accept`) routes
 through `_run` or an equivalent preflight that checks path collisions and
-CLAUDE.md-adoption conflicts *before* writing, so a rejected request changes
+file-adoption conflicts *before* writing, so a rejected request changes
 nothing on disk -- see `_build_run_plan`'s docstring for the pure/impure split
 this module leans on throughout.
 """
@@ -18,12 +18,11 @@ from pathlib import Path
 from typing import Literal
 
 from .apply import (
+    adoption_needed,
     classify,
-    claude_adoption_needed,
     find_path_collisions,
     find_state_symlink_collisions,
-    prompt_for_claude_adoption,
-    prompt_for_settings_json_adoption,
+    prompt_for_adoption,
     prompt_for_template_switch,
 )
 from .assess import build_assess_findings
@@ -37,16 +36,15 @@ from .config import (
     template_excluded,
 )
 from .constants import (
-    CLAUDE_BACKUP_PATH,
-    CLAUDE_PATH,
+    ADOPTABLE_BY_PATH,
+    ADOPTABLE_FILES,
+    ADOPTABLE_PATHS,
     CONFIG_PATH,
     DEFAULT_EXCLUDES,
     MANIFEST_PATH,
     MERGE_DIR,
     NON_TEMPLATE_DIRS,
     REPO_ROOT,
-    SETTINGS_JSON_BACKUP_PATH,
-    SETTINGS_JSON_PATH,
     STARTER_TOOL_CONFIG_PATHS,
     SYMLINK_CHECKOUT_FIX,
     VALID_PLATFORMS,
@@ -68,14 +66,13 @@ from .manifest import load_manifest, update_manifest
 from .models import ApplyPlan, Classification, RavenConfig, TemplateEntry
 from .orphans import classify_orphans, shipped_relatives
 from .plan import (
+    adoption_conflict,
     apply_plan,
     build_apply_plan,
-    claude_conflict,
     normalize_override,
     print_apply_summary,
     print_dry_run_plan,
     print_section,
-    settings_json_adoption_conflict,
 )
 from .report import render_human, render_json, supports_unicode_marks
 from .template import broken_template_symlinks, entries_for_destination, iter_template_entries
@@ -201,10 +198,7 @@ def _planned_write_paths(plan: ApplyPlan) -> list[str]:
     paths.add(CONFIG_PATH.as_posix())
     paths.add(MANIFEST_PATH.as_posix())
     paths.update((MERGE_DIR / relative).as_posix() for relative in plan.guided_merge_paths)
-    if plan.adopt_claude:
-        paths.add(CLAUDE_PATH)
-    if plan.adopt_settings_json:
-        paths.add(SETTINGS_JSON_PATH)
+    paths.update(plan.adopt_paths)
     return sorted(paths)
 
 
@@ -234,15 +228,81 @@ def invalid_overrides(entries: dict[str, TemplateEntry], requested: list[str]) -
 def _adoption_decision(
     *, needed: bool, conflict: bool, requested: bool
 ) -> Literal["skip", "auto", "prompt"]:
-    """Whether to skip an adoption (CLAUDE.md or .claude/settings.json), auto-adopt it, or ask the user.
+    """Whether to skip one file's adoption, auto-adopt it, or ask the user.
 
-    "auto" when the relevant --adopt-* flag was passed explicitly; "prompt"
-    when adoption is needed and conflicts with the plan but wasn't
-    pre-authorized; "skip" otherwise.
+    "auto" when `--adopt` named the path (or `all`); "prompt" when adoption is
+    needed and conflicts with the plan but wasn't pre-authorized; "skip"
+    otherwise.
     """
     if not (needed and conflict):
         return "skip"
     return "auto" if requested else "prompt"
+
+
+def _normalize_adopt_requests(requested: list[str]) -> tuple[list[str], list[str]]:
+    """Split raw ``--adopt`` values into (requested adoptable paths, unrecognized values).
+
+    ``all`` expands to every adoptable path; a path is normalized the same way
+    an override path is (``./`` prefix, backslashes), so the two flags accept
+    the same spellings for the same file. An unrecognized value is returned
+    rather than ignored: silently dropping it would leave the user believing
+    they consented to an adoption that never happened.
+    """
+    resolved: set[str] = set()
+    invalid: list[str] = []
+    for raw in requested:
+        value = normalize_override(raw)
+        if value == "all":
+            resolved.update(ADOPTABLE_PATHS)
+        elif value in ADOPTABLE_BY_PATH:
+            resolved.add(value)
+        elif value:
+            invalid.append(value)
+    return sorted(resolved), invalid
+
+
+def _resolve_adoptions(
+    destination: Path,
+    classification: Classification,
+    entries: dict[str, TemplateEntry],
+    requested_overrides_norm: list[str],
+    adopt_requested_norm: list[str],
+    *,
+    dry_run: bool,
+    prompt_adoption: bool,
+) -> list[str]:
+    """Which adoptable files this run takes over, by flag or by interactive consent.
+
+    A file is only ever a candidate when it is unresolved *and* in this
+    template: ``--adopt all`` in a repo whose config turns the Gemini
+    components off adopts nothing there, because GEMINI.md and
+    `.gemini/settings.json` are not entries at all.
+
+    Whether "unresolved" is answered by the classification bucket or by a
+    filesystem probe depends on the adoptable's kind -- see `AdoptableFile`.
+    A dry run never prompts: it must not block on stdin.
+    """
+    requested = set(adopt_requested_norm)
+    adopt_paths: list[str] = []
+    for adoptable in ADOPTABLE_FILES:
+        if adoptable.path not in entries:
+            continue
+        if adoptable.kind == "config":
+            needed = adoptable.path in classification.needs_adoption
+        else:
+            needed = adoption_needed(destination, entries, adoptable)
+        conflict = needed and adoption_conflict(classification, requested_overrides_norm, adoptable)
+        decision = _adoption_decision(
+            needed=needed, conflict=conflict, requested=adoptable.path in requested
+        )
+        if decision == "auto" or (
+            decision == "prompt"
+            and not dry_run
+            and prompt_adoption
+            and prompt_for_adoption(destination, adoptable)
+        ):
+            adopt_paths.append(adoptable.path)
+    return adopt_paths
 
 
 def _template_switch_decision(
@@ -274,8 +334,9 @@ class RunPlan:
     plan: ApplyPlan
     collisions: list[str]
     state_symlinks: list[str]
-    backup_conflict: bool
-    settings_backup_conflict: bool = False
+    #: Adoptable paths whose ``.bak`` destination is already occupied, so
+    #: adopting them would silently discard whatever that backup holds.
+    backup_conflicts: list[str]
 
 
 def _build_run_plan(
@@ -283,8 +344,7 @@ def _build_run_plan(
     classification: Classification,
     requested_overrides_norm: list[str],
     existing_overrides: set[str],
-    adopt_claude: bool,
-    adopt_settings_json: bool = False,
+    adopt_paths: list[str] | None = None,
 ) -> RunPlan:
     """Compute the apply plan and every precondition `_run` must check before writing.
 
@@ -295,18 +355,18 @@ def _build_run_plan(
         classification,
         requested_overrides_norm,
         existing_overrides,
-        adopt_claude=adopt_claude,
-        adopt_settings_json=adopt_settings_json,
+        adopt_paths=adopt_paths,
     )
     collisions = find_path_collisions(destination, _planned_write_paths(plan))
     state_symlinks = find_state_symlink_collisions(
         destination, [CONFIG_PATH.as_posix(), MANIFEST_PATH.as_posix()]
     )
-    backup_conflict = plan.adopt_claude and _any_exists(destination / CLAUDE_BACKUP_PATH)
-    settings_backup_conflict = plan.adopt_settings_json and _any_exists(
-        destination / SETTINGS_JSON_BACKUP_PATH
-    )
-    return RunPlan(plan, collisions, state_symlinks, backup_conflict, settings_backup_conflict)
+    backup_conflicts = [
+        path
+        for path in plan.adopt_paths
+        if _any_exists(destination / ADOPTABLE_BY_PATH[path].backup_path)
+    ]
+    return RunPlan(plan, collisions, state_symlinks, backup_conflicts)
 
 
 def _symlink_checkout_refusal() -> int | None:
@@ -341,10 +401,8 @@ def _run(
     include_readme: bool,
     dry_run: bool,
     requested_overrides: list[str],
-    adopt_claude_requested: bool = False,
-    prompt_claude: bool = True,
-    adopt_settings_json_requested: bool = False,
-    prompt_settings_json: bool = True,
+    adopt_requested: list[str] | None = None,
+    prompt_adoption: bool = True,
     confirm_template_switch_requested: bool = False,
     prompt_template_switch: bool = True,
     platform_override: str | None = None,
@@ -402,6 +460,17 @@ def _run(
             print(f"  {path}", file=sys.stderr)
         return 2
 
+    adopt_requested_norm, invalid_adopt = _normalize_adopt_requests(adopt_requested or [])
+    if invalid_adopt:
+        print(
+            "Invalid --adopt path(s); Raven can only adopt the files it owns wholesale:",
+            file=sys.stderr,
+        )
+        for path in invalid_adopt:
+            print(f"  {path}", file=sys.stderr)
+        print(f"Adoptable: {', '.join(ADOPTABLE_PATHS)}, or `all`.", file=sys.stderr)
+        return 2
+
     manifest = load_manifest(destination)
 
     # A template switch turns every file the new template does not ship into an
@@ -436,33 +505,15 @@ def _run(
     orphans = classify_orphans(template, destination, manifest)
     deactivated = classify_deactivated(template, destination, manifest, config)
     existing_overrides = {p for p in requested_overrides_norm if _any_exists(destination / p)}
-    claude_needed = claude_adoption_needed(destination, entries)
-    conflict = claude_needed and claude_conflict(classification, requested_overrides_norm)
-    decision = _adoption_decision(
-        needed=claude_needed,
-        conflict=conflict,
-        requested=adopt_claude_requested,
+    adopt_paths = _resolve_adoptions(
+        destination,
+        classification,
+        entries,
+        requested_overrides_norm,
+        adopt_requested_norm,
+        dry_run=dry_run,
+        prompt_adoption=prompt_adoption,
     )
-    adopt_claude = decision == "auto"
-    if decision == "prompt" and not dry_run and prompt_claude:
-        adopt_claude = prompt_for_claude_adoption(destination)
-
-    # .claude/settings.json (#200): the classification bucket itself (
-    # "needs_adoption") already *is* the structural "adoption needed" check --
-    # unlike CLAUDE.md, there is no separate filesystem shape to probe -- so
-    # "needed" and "conflict" collapse to one membership test.
-    settings_adoption_needed = SETTINGS_JSON_PATH in classification.needs_adoption
-    settings_conflict = settings_adoption_needed and settings_json_adoption_conflict(
-        classification, requested_overrides_norm
-    )
-    settings_decision = _adoption_decision(
-        needed=settings_adoption_needed,
-        conflict=settings_conflict,
-        requested=adopt_settings_json_requested,
-    )
-    adopt_settings_json = settings_decision == "auto"
-    if settings_decision == "prompt" and not dry_run and prompt_settings_json:
-        adopt_settings_json = prompt_for_settings_json_adoption(destination)
 
     # Preflight the whole write set before printing the plan or touching the
     # destination, so a path collision fails the same way for dry-run and live
@@ -472,8 +523,7 @@ def _run(
         classification,
         requested_overrides_norm,
         existing_overrides,
-        adopt_claude,
-        adopt_settings_json,
+        adopt_paths,
     )
     plan = run_plan.plan
     collisions = run_plan.collisions
@@ -519,24 +569,16 @@ def _run(
         _print_hook_manager_notice(destination)
         return rc
 
-    # Validation has passed. Reject a doomed symlink/settings-json adoption
-    # before any durable write, then write configuration only once the
-    # request is known good, so a rejected install leaves config and managed
-    # files unchanged.
-    if run_plan.backup_conflict:
-        print(
-            f"error: {CLAUDE_BACKUP_PATH} already exists; "
-            "remove it before adopting the CLAUDE.md symlink.",
-            file=sys.stderr,
-        )
-        return 2
-
-    if run_plan.settings_backup_conflict:
-        print(
-            f"error: {SETTINGS_JSON_BACKUP_PATH} already exists; "
-            "remove it before adopting .claude/settings.json.",
-            file=sys.stderr,
-        )
+    # Validation has passed. Reject a doomed adoption before any durable
+    # write, then write configuration only once the request is known good, so
+    # a rejected install leaves config and managed files unchanged.
+    if run_plan.backup_conflicts:
+        for path in run_plan.backup_conflicts:
+            print(
+                f"error: {ADOPTABLE_BY_PATH[path].backup_path} already exists; "
+                f"remove it before adopting {path}.",
+                file=sys.stderr,
+            )
         return 2
 
     if write_config is not None:
@@ -546,8 +588,7 @@ def _run(
 
     (
         rc,
-        adopted_claude,
-        adopted_settings_json,
+        adopted,
         merge_artifacts,
         removed_orphans,
         removed_deactivated,
@@ -580,7 +621,7 @@ def _run(
         plan.copied,
         plan.will_upgrade,
         plan.overwritten,
-        adopted_claude,
+        adopted,
         plan.identical,
         plan.needs_merge,
         plan.unknown_existing,
@@ -590,7 +631,6 @@ def _run(
         deactivated_modified,
         deactivated.stale,
         deactivated.customized,
-        adopted_settings_json,
         plan.effective_classification.needs_adoption,
     )
     if merge_artifacts:
@@ -771,8 +811,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         include_readme,
         args.dry_run,
         overrides,
-        adopt_claude_requested=args.adopt_claude,
-        adopt_settings_json_requested=getattr(args, "adopt_settings_json", False),
+        adopt_requested=getattr(args, "adopt", None) or [],
         confirm_template_switch_requested=getattr(args, "confirm_template_switch", False),
         platform_override=platform,
         write_config=write_config,
@@ -818,8 +857,7 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
         include_readme,
         args.dry_run,
         args.overrides,
-        adopt_claude_requested=args.adopt_claude,
-        adopt_settings_json_requested=getattr(args, "adopt_settings_json", False),
+        adopt_requested=getattr(args, "adopt", None) or [],
         confirm_template_switch_requested=getattr(args, "confirm_template_switch", False),
     )
     _register_for_fleet(destination, rc, args.dry_run)
@@ -1087,6 +1125,20 @@ def build_parser() -> argparse.ArgumentParser:
     examples against this parser.
     """
     supported_languages = ", ".join(list_language_templates())
+    adopt_flag_help = (
+        "take over an existing file Raven owns wholesale: move it to <path>.bak and write "
+        f"Raven's version. Repeatable; `all` means every one. Adoptable: {', '.join(ADOPTABLE_PATHS)}"
+    )
+    adoption_help = "\n  ".join(
+        [
+            "An existing file at one of these paths is left untouched until you consent to",
+            "Raven taking it over, with `--adopt <path>` (repeatable, or `--adopt all`) or by",
+            "answering the interactive prompt. Adoption moves your file to <path>.bak first,",
+            "and fails rather than overwrite an existing backup.",
+            "",
+            *(f"{f.path:<24}{f.summary}" for f in ADOPTABLE_FILES),
+        ]
+    )
     parser = argparse.ArgumentParser(
         prog="raven",
         usage="raven [OPTIONS] COMMAND [ARGS]...",
@@ -1171,9 +1223,8 @@ File safety:
         help="first-time apply; creates config if needed and copies safe Raven files",
         description=(
             "Install a language template into the destination repo. Run with --dry-run first.\n"
-            "Existing files are preserved unless they are explicitly named as override paths,\n"
-            "--adopt-claude is approved for CLAUDE.md, or --adopt-settings-json is\n"
-            "approved for .claude/settings.json."
+            "Existing files are preserved unless they are explicitly named as override paths\n"
+            "or approved for take-over with --adopt."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
@@ -1181,8 +1232,8 @@ Examples:
   raven install python --dry-run
   raven install python
   raven install go --dry-run
-  raven install python --adopt-claude
-  raven install python --adopt-settings-json
+  raven install python --adopt CLAUDE.md
+  raven install python --adopt .claude/settings.json --adopt .mcp.json
   raven install python .claude/scripts/raven-tool-check.py
 
 Language:
@@ -1193,19 +1244,8 @@ Overrides:
   Override paths are template-relative files to force-copy. Use them only for
   files you know are Raven-owned.
 
-AGENTS.md and CLAUDE.md:
-  AGENTS.md is canonical; CLAUDE.md is normally installed as a one-line file
-  that imports it (`@AGENTS.md`). If CLAUDE.md already exists, Raven leaves it
-  untouched unless you pass --adopt-claude, which moves it to CLAUDE.md.bak
-  first.
-
-.claude/settings.json:
-  Raven manages .claude/settings.json as a template file, upgraded like any
-  other. If a hand-written settings.json already exists, Raven leaves it
-  untouched unless you pass --adopt-settings-json, which moves it to
-  .claude/settings.json.bak first. Put your own local overrides in
-  .claude/settings.local.json instead -- Raven never manages that file, and
-  installing/adopting settings.json gitignores it for you.
+Adoption:
+  {adoption_help}
 """,
     )
     install_parser.add_argument(
@@ -1231,20 +1271,11 @@ AGENTS.md and CLAUDE.md:
         help="include the language template README.md; overrides config include_readme=false",
     )
     install_parser.add_argument(
-        "--adopt-claude",
-        action="store_true",
-        help=(
-            "if CLAUDE.md exists, move it to CLAUDE.md.bak and write the `@AGENTS.md` "
-            "import file; fails if backup exists"
-        ),
-    )
-    install_parser.add_argument(
-        "--adopt-settings-json",
-        action="store_true",
-        help=(
-            "if .claude/settings.json exists but Raven does not manage it, move it to "
-            ".claude/settings.json.bak and install Raven's version; fails if backup exists"
-        ),
+        "--adopt",
+        action="append",
+        metavar="PATH",
+        default=[],
+        help=adopt_flag_help,
     )
     install_parser.add_argument(
         "--confirm-template-switch",
@@ -1270,30 +1301,19 @@ AGENTS.md and CLAUDE.md:
             "Only unchanged Raven-managed files are upgraded automatically; local edits require manual merge."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
 Examples:
   raven upgrade --dry-run
   raven upgrade
-  raven upgrade --adopt-claude
-  raven upgrade --adopt-settings-json
+  raven upgrade --adopt CLAUDE.md
+  raven upgrade --adopt .gemini/settings.json --adopt .codex/config.toml
   raven upgrade .claude/scripts/raven-tool-check.py
 
 Override paths force-copy specific template-relative files. Use them only for
 files you know are Raven-owned.
 
-AGENTS.md and CLAUDE.md:
-  AGENTS.md is canonical; CLAUDE.md is normally installed as a one-line file
-  that imports it (`@AGENTS.md`). If CLAUDE.md already exists, Raven leaves it
-  untouched unless you pass --adopt-claude, which moves it to CLAUDE.md.bak
-  first.
-
-.claude/settings.json:
-  Raven manages .claude/settings.json as a template file, upgraded like any
-  other. If a hand-written settings.json already exists, Raven leaves it
-  untouched unless you pass --adopt-settings-json, which moves it to
-  .claude/settings.json.bak first. Put your own local overrides in
-  .claude/settings.local.json instead -- Raven never manages that file, and
-  installing/adopting settings.json gitignores it for you.
+Adoption:
+  {adoption_help}
 """,
     )
     upgrade_parser.add_argument(
@@ -1312,20 +1332,11 @@ AGENTS.md and CLAUDE.md:
         help="include the language template README.md; overrides config include_readme=false",
     )
     upgrade_parser.add_argument(
-        "--adopt-claude",
-        action="store_true",
-        help=(
-            "if CLAUDE.md exists, move it to CLAUDE.md.bak and write the `@AGENTS.md` "
-            "import file; fails if backup exists"
-        ),
-    )
-    upgrade_parser.add_argument(
-        "--adopt-settings-json",
-        action="store_true",
-        help=(
-            "if .claude/settings.json exists but Raven does not manage it, move it to "
-            ".claude/settings.json.bak and install Raven's version; fails if backup exists"
-        ),
+        "--adopt",
+        action="append",
+        metavar="PATH",
+        default=[],
+        help=adopt_flag_help,
     )
     upgrade_parser.add_argument(
         "--confirm-template-switch",

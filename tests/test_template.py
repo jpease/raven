@@ -179,7 +179,7 @@ paths = [".claude/skills/raven-plan/**"]
                             args=[language],
                             include_readme=False,
                             dry_run=False,
-                            adopt_claude=False,
+                            adopt=[],
                         )
                     )
                 with contextlib.redirect_stdout(upgrade_output):
@@ -189,7 +189,7 @@ paths = [".claude/skills/raven-plan/**"]
                             overrides=[],
                             include_readme=False,
                             dry_run=True,
-                            adopt_claude=False,
+                            adopt=[],
                         )
                     )
 

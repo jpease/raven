@@ -439,7 +439,7 @@ class ConfigTests(RavenTestCase):
                     overrides=[],
                     dry_run=False,
                     include_readme=False,
-                    adopt_claude=False,
+                    adopt=[],
                     platform="github",
                 )
             )
@@ -700,7 +700,7 @@ class PlatformDryRunTests(RavenTestCase):
             overrides=[],
             dry_run=dry_run,
             include_readme=False,
-            adopt_claude=False,
+            adopt=[],
             platform="github",
         )
 

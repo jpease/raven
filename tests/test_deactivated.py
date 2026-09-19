@@ -502,7 +502,7 @@ def _install_ns(destination: Path, *, language: str, platform: str | None) -> ar
         overrides=[],
         dry_run=False,
         include_readme=False,
-        adopt_claude=False,
+        adopt=[],
         platform=platform,
     )
 
@@ -515,7 +515,7 @@ def _upgrade_ns(
         overrides=[],
         dry_run=dry_run,
         include_readme=False,
-        adopt_claude=False,
+        adopt=[],
         confirm_template_switch=confirm_template_switch,
     )
 

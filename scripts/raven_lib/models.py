@@ -112,8 +112,8 @@ class Classification:
     # them untouched and writes no guided-merge artifact; doctor reports them
     # informationally rather than as drift requiring action.
     local_only: list[str] = field(default_factory=list)
-    # Files that exist, differ from the template, and have no manifest record --
-    # currently only ever `.claude/settings.json` (#200). Unlike
+    # Files that exist, differ from the template, and have no manifest record,
+    # restricted to `constants.ADOPTABLE_CONFIG_PATHS` (#200, #273). Unlike
     # `unknown_existing`, these never get a guided-merge artifact: Raven can
     # take the file over outright (backup-then-replace) given consent, so there
     # is nothing to hand-merge. Left untouched without consent.
@@ -197,11 +197,11 @@ class ApplyPlan:
     needs_merge: list[str]
     unknown_existing: list[str]
     effective_classification: Classification
-    adopt_claude: bool
     guided_merge_paths: list[str]
-    # Defaulted (unlike `adopt_claude`) so existing callers/fixtures
-    # that predate #200 keep constructing an `ApplyPlan` without naming it.
-    adopt_settings_json: bool = False
+    #: Destination-relative paths this run takes over wholesale, backing up the
+    #: user's existing file first -- a resolved subset of
+    #: `constants.ADOPTABLE_PATHS`, decided by flag or prompt before planning.
+    adopt_paths: list[str] = field(default_factory=list)
 
     @property
     def copied(self) -> list[str]:

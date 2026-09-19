@@ -16,7 +16,12 @@ from helpers import (
     raven,
     upgrade_ns,
 )
-from raven_lib.cli import _adoption_decision, _build_run_plan, invalid_overrides
+from raven_lib.cli import (
+    _adoption_decision,
+    _build_run_plan,
+    _normalize_adopt_requests,
+    invalid_overrides,
+)
 
 # Which byte-identical files each adapter subdirectory unifies (issue #165).
 UNIFIED_BY_SUBDIR = {
@@ -318,8 +323,8 @@ rules = false
                 False,
                 False,
                 [],
-                adopt_claude_requested=False,
-                prompt_claude=False,
+                adopt_requested=[],
+                prompt_adoption=False,
             )
 
         self.assertEqual(rc, 0, output.getvalue())
@@ -356,11 +361,27 @@ def _classification(**overrides):
 
 
 class BuildApplyPlanTests(unittest.TestCase):
-    def test_claude_symlink_conflict_respects_overrides(self):
+    def test_claude_adoption_conflict_respects_overrides(self):
+        claude = raven.ADOPTABLE_BY_PATH["CLAUDE.md"]
         classification = _classification(needs_merge=["CLAUDE.md", "AGENTS.md"])
-        self.assertTrue(raven.claude_conflict(classification, []))
+        self.assertTrue(raven.adoption_conflict(classification, [], claude))
         # An explicit override for CLAUDE.md removes it from the conflict set.
-        self.assertFalse(raven.claude_conflict(classification, ["CLAUDE.md"]))
+        self.assertFalse(raven.adoption_conflict(classification, ["CLAUDE.md"], claude))
+
+    def test_config_adoption_conflict_reads_the_needs_adoption_bucket(self):
+        settings = raven.ADOPTABLE_BY_PATH[".claude/settings.json"]
+        # A config adoptable in needs_merge is a local edit of Raven-owned
+        # content, not an adoption question: only needs_adoption counts.
+        self.assertFalse(
+            raven.adoption_conflict(
+                _classification(needs_merge=[".claude/settings.json"]), [], settings
+            )
+        )
+        self.assertTrue(
+            raven.adoption_conflict(
+                _classification(needs_adoption=[".claude/settings.json"]), [], settings
+            )
+        )
 
     def test_build_apply_plan_is_pure_and_routes_overrides(self):
         classification = _classification(
@@ -370,26 +391,40 @@ class BuildApplyPlanTests(unittest.TestCase):
             classification,
             ["c.md"],
             existing_overrides={"c.md"},
-            adopt_claude=False,
         )
         self.assertEqual(plan.will_copy, ["a.md"])
         self.assertEqual(plan.overwritten, ["c.md"])
         self.assertEqual(plan.needs_merge, [])  # removed by override
-        self.assertFalse(plan.adopt_claude)
+        self.assertEqual(plan.adopt_paths, [])
 
     def test_build_apply_plan_adopts_claude_symlink_when_decided(self):
         classification = _classification(needs_merge=["CLAUDE.md"])
         plan = raven.build_apply_plan(
-            classification, [], existing_overrides=set(), adopt_claude=True
+            classification, [], existing_overrides=set(), adopt_paths=["CLAUDE.md"]
         )
-        self.assertTrue(plan.adopt_claude)
+        self.assertEqual(plan.adopt_paths, ["CLAUDE.md"])
         self.assertNotIn("CLAUDE.md", plan.needs_merge)
+
+    def test_build_apply_plan_keeps_config_adoptable_on_the_merge_path(self):
+        # Kind-keyed removal: naming a config adoptable must never pull it out
+        # of needs_merge, where it means a genuine local edit to hand-merge.
+        classification = _classification(needs_merge=[".mcp.json"])
+        plan = raven.build_apply_plan(
+            classification, [], existing_overrides=set(), adopt_paths=[".mcp.json"]
+        )
+        self.assertIn(".mcp.json", plan.needs_merge)
+        self.assertIn(".mcp.json", plan.guided_merge_paths)
+
+    def test_build_apply_plan_drops_adopted_config_from_needs_adoption(self):
+        classification = _classification(needs_adoption=[".gemini/settings.json"])
+        plan = raven.build_apply_plan(
+            classification, [], existing_overrides=set(), adopt_paths=[".gemini/settings.json"]
+        )
+        self.assertEqual(plan.effective_classification.needs_adoption, [])
 
     def test_local_only_files_get_no_guided_merge(self):
         classification = _classification(local_only=["notes.md"], needs_merge=["real.md"])
-        plan = raven.build_apply_plan(
-            classification, [], existing_overrides=set(), adopt_claude=False
-        )
+        plan = raven.build_apply_plan(classification, [], existing_overrides=set())
         # local_only is left untouched: it carries no merge artifact, while a
         # genuine needs_merge file still does.
         self.assertNotIn("notes.md", plan.guided_merge_paths)
@@ -419,7 +454,7 @@ class InvalidOverridesTests(unittest.TestCase):
 
 
 class SymlinkAdoptionDecisionTests(unittest.TestCase):
-    """The CLAUDE.md symlink-adoption decision, separated from the prompt."""
+    """The per-file adoption decision, separated from the prompt."""
 
     def test_skips_when_adoption_is_not_needed(self):
         for requested in (False, True):
@@ -446,13 +481,13 @@ class SymlinkAdoptionDecisionTests(unittest.TestCase):
 class BuildRunPlanTests(RavenTestCase):
     """`_build_run_plan` computes every precondition `_run` checks before writing."""
 
-    def _plan(self, adopt_claude=False):
+    def _plan(self, adopt_paths=None):
         return _build_run_plan(
             self.destination,
             _classification(will_copy=["AGENTS.md"]),
             [],
             set(),
-            adopt_claude,
+            adopt_paths,
         )
 
     def test_clean_destination_has_no_blocking_preconditions(self):
@@ -460,7 +495,7 @@ class BuildRunPlanTests(RavenTestCase):
 
         self.assertEqual(run_plan.collisions, [])
         self.assertEqual(run_plan.state_symlinks, [])
-        self.assertFalse(run_plan.backup_conflict)
+        self.assertEqual(run_plan.backup_conflicts, [])
         self.assertEqual(run_plan.plan.will_copy, ["AGENTS.md"])
 
     def test_reports_ancestor_collision_for_state_writes(self):
@@ -478,13 +513,21 @@ class BuildRunPlanTests(RavenTestCase):
         self.assertEqual(run_plan.state_symlinks, [".raven/config.toml"])
 
     def test_backup_conflict_only_when_adopting_over_an_existing_backup(self):
-        (self.destination / raven.CLAUDE_BACKUP_PATH).write_text("old\n", encoding="utf-8")
+        (self.destination / "CLAUDE.md.bak").write_text("old\n", encoding="utf-8")
 
-        self.assertFalse(self._plan(adopt_claude=False).backup_conflict)
-        self.assertTrue(self._plan(adopt_claude=True).backup_conflict)
+        self.assertEqual(self._plan().backup_conflicts, [])
+        self.assertEqual(self._plan(adopt_paths=["CLAUDE.md"]).backup_conflicts, ["CLAUDE.md"])
 
     def test_no_backup_conflict_when_adopting_without_a_backup(self):
-        self.assertFalse(self._plan(adopt_claude=True).backup_conflict)
+        self.assertEqual(self._plan(adopt_paths=["CLAUDE.md"]).backup_conflicts, [])
+
+    def test_backup_conflicts_report_each_adopted_path(self):
+        (self.destination / "CLAUDE.md.bak").write_text("old\n", encoding="utf-8")
+        (self.destination / ".mcp.json.bak").write_text("old\n", encoding="utf-8")
+
+        run_plan = self._plan(adopt_paths=["CLAUDE.md", ".mcp.json"])
+
+        self.assertEqual(sorted(run_plan.backup_conflicts), [".mcp.json", "CLAUDE.md"])
 
 
 class SettingsJsonClassificationTests(RavenTestCase):
@@ -527,7 +570,9 @@ class SettingsJsonClassificationTests(RavenTestCase):
 
 
 class SettingsJsonAdoptionUnitTests(RavenTestCase):
-    """Unit tests for `adopt_settings_json`, mirroring `ClaudeSymlinkTests`."""
+    """Unit tests for `adopt_file` on .claude/settings.json, mirroring `ClaudeSymlinkTests`."""
+
+    adoptable = raven.ADOPTABLE_BY_PATH[".claude/settings.json"]
 
     def _entries(self):
         return raven.entries_for_destination(
@@ -537,7 +582,7 @@ class SettingsJsonAdoptionUnitTests(RavenTestCase):
     def test_first_install_writes_template_with_no_backup(self):
         entries = self._entries()
 
-        changed = raven.adopt_settings_json(self.destination, entries)
+        changed = raven.adopt_file(self.destination, entries, self.adoptable)
 
         self.assertEqual(changed, [".claude/settings.json"])
         self.assertFalse((self.destination / ".claude" / "settings.json.bak").exists())
@@ -552,7 +597,7 @@ class SettingsJsonAdoptionUnitTests(RavenTestCase):
         (self.destination / ".claude" / "settings.json").write_text(original, encoding="utf-8")
         entries = self._entries()
 
-        changed = raven.adopt_settings_json(self.destination, entries)
+        changed = raven.adopt_file(self.destination, entries, self.adoptable)
 
         self.assertEqual(changed, [".claude/settings.json.bak", ".claude/settings.json"])
         # Byte-for-byte: the backup must be provably lossless.
@@ -576,7 +621,7 @@ class SettingsJsonAdoptionUnitTests(RavenTestCase):
         entries = self._entries()
 
         with self.assertRaises(FileExistsError):
-            raven.adopt_settings_json(self.destination, entries)
+            raven.adopt_file(self.destination, entries, self.adoptable)
 
         self.assertEqual(
             (self.destination / ".claude" / "settings.json").read_text(encoding="utf-8"),
@@ -595,7 +640,7 @@ class SettingsJsonAdoptionUnitTests(RavenTestCase):
         )
         entries = self._entries()
 
-        changed = raven.adopt_settings_json(self.destination, entries)
+        changed = raven.adopt_file(self.destination, entries, self.adoptable)
 
         self.assertEqual(changed, [])
         self.assertFalse((self.destination / ".claude" / "settings.json.bak").exists())
@@ -619,7 +664,7 @@ class SettingsJsonAdoptionRunTests(RavenTestCase):
                 False,
                 False,
                 [],
-                prompt_settings_json=False,
+                prompt_adoption=False,
             )
 
         self.assertEqual(rc, 0)
@@ -631,7 +676,7 @@ class SettingsJsonAdoptionRunTests(RavenTestCase):
         self.assertFalse(
             (self.destination / ".raven" / "merge" / ".claude" / "settings.json.diff").exists()
         )
-        self.assertIn("--adopt-settings-json", output.getvalue())
+        self.assertIn("--adopt .claude/settings.json", output.getvalue())
 
     def test_run_with_adopt_settings_json_backs_up_and_installs_template(self):
         (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
@@ -648,8 +693,8 @@ class SettingsJsonAdoptionRunTests(RavenTestCase):
                 False,
                 False,
                 [],
-                adopt_settings_json_requested=True,
-                prompt_settings_json=False,
+                adopt_requested=[".claude/settings.json"],
+                prompt_adoption=False,
             )
 
         self.assertEqual(rc, 0)
@@ -661,7 +706,8 @@ class SettingsJsonAdoptionRunTests(RavenTestCase):
             (self.destination / ".claude" / "settings.json").read_text(encoding="utf-8"),
             (self.template / ".claude" / "settings.json").read_text(encoding="utf-8"),
         )
-        self.assertIn("Adopted .claude/settings.json", output.getvalue())
+        self.assertIn("Adopted as Raven-managed", output.getvalue())
+        self.assertIn(".claude/settings.json.bak", output.getvalue())
         manifest = raven.load_manifest(self.destination)
         self.assertIn(".claude/settings.json", manifest.get("files", {}))
 
@@ -684,8 +730,8 @@ class SettingsJsonAdoptionRunTests(RavenTestCase):
                 False,
                 False,
                 [],
-                adopt_settings_json_requested=True,
-                prompt_settings_json=False,
+                adopt_requested=[".claude/settings.json"],
+                prompt_adoption=False,
             )
 
         self.assertEqual(rc, 2)
@@ -714,8 +760,8 @@ class SettingsJsonAdoptionRunTests(RavenTestCase):
                 False,
                 True,
                 [],
-                adopt_settings_json_requested=True,
-                prompt_settings_json=False,
+                adopt_requested=[".claude/settings.json"],
+                prompt_adoption=False,
             )
 
         self.assertEqual(rc, 0)
@@ -723,7 +769,8 @@ class SettingsJsonAdoptionRunTests(RavenTestCase):
             (self.destination / ".claude" / "settings.json").read_text(encoding="utf-8"), original
         )
         self.assertFalse((self.destination / ".claude" / "settings.json.bak").exists())
-        self.assertIn("Would adopt .claude/settings.json", output.getvalue())
+        self.assertIn("Would adopt as Raven-managed", output.getvalue())
+        self.assertIn(".claude/settings.json.bak", output.getvalue())
 
     def test_clean_install_writes_settings_json_as_managed_no_merge_artifact(self):
         output = io.StringIO()
@@ -763,8 +810,8 @@ class SettingsJsonAdoptionRunTests(RavenTestCase):
                 False,
                 False,
                 [],
-                adopt_settings_json_requested=True,
-                prompt_settings_json=False,
+                adopt_requested=[".claude/settings.json"],
+                prompt_adoption=False,
             )
 
         gitignore = (self.destination / ".gitignore").read_text(encoding="utf-8")
@@ -788,8 +835,8 @@ class SettingsJsonAdoptionRunTests(RavenTestCase):
                 False,
                 False,
                 [],
-                adopt_settings_json_requested=True,
-                prompt_settings_json=False,
+                adopt_requested=[".claude/settings.json"],
+                prompt_adoption=False,
             )
 
         (self.destination / ".claude" / "settings.json").write_text(
@@ -820,8 +867,8 @@ class SettingsJsonAdoptionRunTests(RavenTestCase):
                 False,
                 False,
                 [],
-                adopt_settings_json_requested=True,
-                prompt_settings_json=False,
+                adopt_requested=[".claude/settings.json"],
+                prompt_adoption=False,
             )
         self.assertEqual(first_rc, 0)
 
@@ -839,15 +886,15 @@ class SettingsJsonAdoptionRunTests(RavenTestCase):
                 False,
                 False,
                 [],
-                # No adopt_settings_json_requested and no prompt override: if
-                # the second run still needed consent, a non-interactive test
-                # process answers "no" to any prompt reached, which would then
-                # surface as a spurious re-adoption request in the output.
+                # No --adopt request and no prompt override: if the second run
+                # still needed consent, a non-interactive test process answers
+                # "no" to any prompt reached, which would then surface as a
+                # spurious re-adoption request in the output.
             )
 
         self.assertEqual(second_rc, 0)
-        self.assertNotIn("Adopted .claude/settings.json", output.getvalue())
-        self.assertNotIn("--adopt-settings-json", output.getvalue())
+        self.assertNotIn("Adopted as Raven-managed", output.getvalue())
+        self.assertNotIn("--adopt .claude/settings.json", output.getvalue())
         # The original backup from the first adoption is untouched -- no
         # second backup was ever attempted.
         self.assertEqual(
@@ -865,10 +912,9 @@ class BuildApplyPlanSettingsJsonTests(unittest.TestCase):
             classification,
             [],
             existing_overrides=set(),
-            adopt_claude=False,
-            adopt_settings_json=True,
+            adopt_paths=[".claude/settings.json"],
         )
-        self.assertTrue(plan.adopt_settings_json)
+        self.assertEqual(plan.adopt_paths, [".claude/settings.json"])
         self.assertNotIn(".claude/settings.json", plan.effective_classification.needs_adoption)
 
     def test_leaves_needs_adoption_when_not_decided(self):
@@ -877,10 +923,8 @@ class BuildApplyPlanSettingsJsonTests(unittest.TestCase):
             classification,
             [],
             existing_overrides=set(),
-            adopt_claude=False,
-            adopt_settings_json=False,
         )
-        self.assertFalse(plan.adopt_settings_json)
+        self.assertEqual(plan.adopt_paths, [])
         self.assertIn(".claude/settings.json", plan.effective_classification.needs_adoption)
 
     def test_override_removes_settings_json_from_needs_adoption(self):
@@ -889,11 +933,168 @@ class BuildApplyPlanSettingsJsonTests(unittest.TestCase):
             classification,
             [".claude/settings.json"],
             existing_overrides={".claude/settings.json"},
-            adopt_claude=False,
-            adopt_settings_json=False,
         )
         self.assertNotIn(".claude/settings.json", plan.effective_classification.needs_adoption)
         self.assertIn(".claude/settings.json", plan.overwritten)
+
+    def test_override_wins_over_an_adopt_request_for_the_same_path(self):
+        # An explicit override already force-copies the file; counting it as
+        # an adoption too would back the file up for a write that happens
+        # anyway.
+        classification = _classification(needs_adoption=[".claude/settings.json"])
+        plan = raven.build_apply_plan(
+            classification,
+            [".claude/settings.json"],
+            existing_overrides={".claude/settings.json"},
+            adopt_paths=[".claude/settings.json"],
+        )
+        self.assertEqual(plan.adopt_paths, [])
+
+
+class NormalizeAdoptRequestsTests(unittest.TestCase):
+    """`--adopt` value parsing: what the flag accepts and what it rejects."""
+
+    def test_all_expands_to_every_adoptable_path(self):
+        resolved, invalid = _normalize_adopt_requests(["all"])
+        self.assertEqual(resolved, sorted(raven.ADOPTABLE_PATHS))
+        self.assertEqual(invalid, [])
+
+    def test_paths_are_normalized_like_override_paths(self):
+        resolved, invalid = _normalize_adopt_requests(["./CLAUDE.md", ".claude\\settings.json"])
+        self.assertEqual(resolved, [".claude/settings.json", "CLAUDE.md"])
+        self.assertEqual(invalid, [])
+
+    def test_repeats_collapse_and_unknown_values_are_reported(self):
+        resolved, invalid = _normalize_adopt_requests([".mcp.json", ".mcp.json", "justfile"])
+        self.assertEqual(resolved, [".mcp.json"])
+        self.assertEqual(invalid, ["justfile"])
+
+
+class RenderedFileAdoptionTests(RavenTestCase):
+    """#273: `.mcp.json` and `.codex/config.toml` are rendered at install time.
+
+    Their `TemplateEntry.source` need not exist on disk at all, so adoption
+    must write `rendered_content` -- copying the source path would raise or
+    install the wrong bytes.
+    """
+
+    def _entries(self):
+        return raven.entries_for_destination(
+            self.template, self.excludes, raven.load_config(self.destination), self.destination
+        )
+
+    def test_adopting_mcp_json_writes_rendered_content(self):
+        (self.destination / ".mcp.json").write_text('{"local": true}\n', encoding="utf-8")
+        entries = self._entries()
+
+        changed = raven.adopt_file(self.destination, entries, raven.ADOPTABLE_BY_PATH[".mcp.json"])
+
+        self.assertEqual(changed, [".mcp.json.bak", ".mcp.json"])
+        self.assertEqual(
+            (self.destination / ".mcp.json.bak").read_text(encoding="utf-8"), '{"local": true}\n'
+        )
+        written = (self.destination / ".mcp.json").read_bytes()
+        self.assertEqual(written, entries[".mcp.json"].rendered_content)
+        self.assertIn("mcpServers", json.loads(written))
+
+    def test_adopting_codex_config_writes_rendered_content(self):
+        (self.destination / ".codex").mkdir(parents=True)
+        (self.destination / ".codex" / "config.toml").write_text("local = true\n", encoding="utf-8")
+        entries = self._entries()
+
+        changed = raven.adopt_file(
+            self.destination, entries, raven.ADOPTABLE_BY_PATH[".codex/config.toml"]
+        )
+
+        self.assertEqual(changed, [".codex/config.toml.bak", ".codex/config.toml"])
+        self.assertEqual(
+            (self.destination / ".codex" / "config.toml").read_bytes(),
+            entries[".codex/config.toml"].rendered_content,
+        )
+
+    def test_run_adopting_a_rendered_file_tracks_it_in_the_manifest(self):
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / ".mcp.json").write_text('{"local": true}\n', encoding="utf-8")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+                adopt_requested=[".mcp.json"],
+                prompt_adoption=False,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertIn(".mcp.json", raven.load_manifest(self.destination).get("files", {}))
+        # Adoption replaces the guided merge, never runs alongside it.
+        self.assertFalse((self.destination / ".raven" / "merge" / ".mcp.json.diff").exists())
+
+
+class GeminiRootInstructionAdoptionTests(RavenTestCase):
+    """#272: GEMINI.md gets the same adoption path CLAUDE.md has."""
+
+    def _enable_gemini(self):
+        (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_text(
+            'schema = 1\ntemplate = "python"\n\n[components.gemini]\nroot_instructions = true\n',
+            encoding="utf-8",
+        )
+
+    def test_run_adopts_existing_gemini_md(self):
+        self._enable_gemini()
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / "GEMINI.md").write_text("custom gemini guidance\n", encoding="utf-8")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+                adopt_requested=["GEMINI.md"],
+                prompt_adoption=False,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            (self.destination / "GEMINI.md.bak").read_text(encoding="utf-8"),
+            "custom gemini guidance\n",
+        )
+        self.assertEqual(
+            (self.destination / "GEMINI.md").read_text(encoding="utf-8").strip(), "@AGENTS.md"
+        )
+
+    def test_adopt_all_skips_a_path_this_template_does_not_ship(self):
+        # Gemini components are off by default, so GEMINI.md is not an entry:
+        # `--adopt all` must leave the user's file alone rather than adopting
+        # a file Raven is not installing here.
+        (self.destination / "AGENTS.md").write_text("# Existing AGENTS\n", encoding="utf-8")
+        (self.destination / "GEMINI.md").write_text("custom gemini guidance\n", encoding="utf-8")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination,
+                raven.load_config(self.destination),
+                "python",
+                False,
+                False,
+                [],
+                adopt_requested=["all"],
+                prompt_adoption=False,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertFalse((self.destination / "GEMINI.md.bak").exists())
+        self.assertEqual(
+            (self.destination / "GEMINI.md").read_text(encoding="utf-8"),
+            "custom gemini guidance\n",
+        )
 
 
 class GeminiComponentLifecycleTests(RavenTestCase):
@@ -932,7 +1133,7 @@ class GeminiComponentLifecycleTests(RavenTestCase):
             overrides=[],
             dry_run=False,
             include_readme=False,
-            adopt_claude=False,
+            adopt=[],
             platform=None,
         )
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -944,7 +1145,7 @@ class GeminiComponentLifecycleTests(RavenTestCase):
             overrides=[],
             dry_run=False,
             include_readme=False,
-            adopt_claude=False,
+            adopt=[],
             confirm_template_switch=False,
         )
         buf = io.StringIO()
@@ -1078,7 +1279,7 @@ class GeminiSettingsRendererTests(RavenTestCase):
             overrides=[],
             dry_run=False,
             include_readme=False,
-            adopt_claude=False,
+            adopt=[],
             platform=None,
         )
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -1090,7 +1291,7 @@ class GeminiSettingsRendererTests(RavenTestCase):
             overrides=[],
             dry_run=dry_run,
             include_readme=False,
-            adopt_claude=False,
+            adopt=[],
             confirm_template_switch=False,
         )
         buf = io.StringIO()
@@ -1362,7 +1563,7 @@ class GeminiTemplateShipmentTests(RavenTestCase):
             overrides=[],
             dry_run=False,
             include_readme=False,
-            adopt_claude=False,
+            adopt=[],
             platform=None,
         )
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):

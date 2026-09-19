@@ -511,8 +511,7 @@ class BuildParserContractTests(unittest.TestCase):
         self.assertEqual(
             all_flags,
             {
-                "--adopt-claude",
-                "--adopt-settings-json",
+                "--adopt",
                 "--confirm-template-switch",
                 "--destination",
                 "--dry-run",
