@@ -360,16 +360,22 @@ def mirror_project_skills(destination: Path) -> tuple[list[str], list[str]]:
         mirrored.append(f"{SKILLS_COMPAT_PATH}/{relative.as_posix()}")
     ignored = [
         skill
-        for skill in sorted(_git_ignored_skills(destination, source_root))
+        for skill in sorted(_git_ignored_skills(destination, SKILLS_SOURCE_PATH, source_root))
         if (compat_root / skill).is_dir()
     ]
-    if ignored:
-        ensure_skill_mirrors_gitignored(destination, ignored)
+    # An entry for a mirror git already ignores is noise, and a repository
+    # that ignores `.claude/` wholesale would otherwise collect one line per
+    # skill it never needed. Ask about the compat paths too, and write only
+    # what a rule does not already cover.
+    covered = _git_ignored_skills(destination, SKILLS_COMPAT_PATH, compat_root)
+    uncovered = [skill for skill in ignored if skill not in covered]
+    if uncovered:
+        ensure_skill_mirrors_gitignored(destination, uncovered)
     return mirrored, diverged
 
 
-def _git_ignored_skills(destination: Path, source_root: Path) -> set[str]:
-    """Names of `.agents/skills/<name>` directories git ignores; empty when it cannot tell.
+def _git_ignored_skills(destination: Path, prefix: str, root: Path) -> set[str]:
+    """Names of ``<prefix>/<name>`` directories git ignores; empty when it cannot tell.
 
     One batched ``git check-ignore --stdin`` rather than a call per skill.
     Exit 0 lists the ignored paths, exit 1 means none matched, and anything
@@ -377,13 +383,15 @@ def _git_ignored_skills(destination: Path, source_root: Path) -> set[str]:
     "none", because an unanswerable question must not start gitignoring a
     project's own skills.
     """
-    names = sorted(path.name for path in source_root.iterdir() if path.is_dir())
+    if not root.is_dir():
+        return set()
+    names = sorted(path.name for path in root.iterdir() if path.is_dir())
     if not names:
         return set()
     try:
         result = subprocess.run(
             ["git", "-C", str(destination), "check-ignore", "--stdin"],
-            input="\n".join(f"{SKILLS_SOURCE_PATH}/{name}" for name in names),
+            input="\n".join(f"{prefix}/{name}" for name in names),
             capture_output=True,
             text=True,
             check=False,

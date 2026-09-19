@@ -275,6 +275,29 @@ class SkillsTests(RavenTestCase):
         self.assertIn(".claude/skills/tool-thing/SKILL.md", output.getvalue())
         self.assertIn("differ from their .agents/skills source", output.getvalue())
 
+    def test_a_mirror_git_already_ignores_gets_no_redundant_entry(self):
+        # A repo that ignores `.claude/` wholesale would otherwise collect
+        # one .gitignore line per skill, none of which change anything.
+        subprocess.run(
+            ["git", "init", "--quiet", str(self.destination)], check=True, capture_output=True
+        )
+        (self.destination / ".gitignore").write_text(
+            ".agents/skills/toolskill/\n.claude/\n", encoding="utf-8"
+        )
+        source = self.destination / ".agents" / "skills" / "toolskill" / "SKILL.md"
+        source.parent.mkdir(parents=True)
+        source.write_text("tool installed\n", encoding="utf-8")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+        self.assertEqual(rc, 0)
+        gitignore = (self.destination / ".gitignore").read_text(encoding="utf-8")
+        self.assertNotIn("mirrors of untracked", gitignore)
+        self.assertNotIn(".claude/skills/toolskill/", gitignore)
+
     def test_hook_bytecode_is_gitignored(self):
         # Raven's own hooks and scripts are Python, so importing one leaves
         # __pycache__ beside it. A non-Python destination has no reason to
