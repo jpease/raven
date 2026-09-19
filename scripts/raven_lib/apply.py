@@ -304,8 +304,8 @@ def migrate_skills_compat_dir(destination: Path) -> bool:
     return True
 
 
-def mirror_project_skills(destination: Path) -> list[str]:
-    """Copy destination-owned skills into `.claude/skills`, and report what changed.
+def mirror_project_skills(destination: Path) -> tuple[list[str], list[str]]:
+    """Copy destination-owned skills into `.claude/skills`; report written and diverged.
 
     A project's own skills live beside Raven's under `.agents/skills`, and
     Claude Code reads only `.claude/skills`. While that path was a symlink
@@ -313,13 +313,20 @@ def mirror_project_skills(destination: Path) -> list[str]:
     covers only the paths Raven ships, so without this a project would lose
     its own skills from Claude Code the moment it upgraded.
 
-    The copies are deliberately untracked by Raven: they are the
-    destination's content, not Raven's, so no manifest record is written and
-    no upgrade ever removes one. `.agents/skills` is the canonical side -- a
-    copy whose source differs is rewritten from it, which is also why the
-    authority map says never to edit the mirror. A copy whose source is gone
-    is left alone rather than deleted: Raven does not own it, and a project
-    may have put it there directly.
+    Create-only. A copy that already exists with different content is left
+    alone and returned in the second list, never overwritten: both sides
+    belong to the destination, and Raven has no way to tell which one is
+    newer. Rewriting from `.agents/skills` on the assumption that it is
+    canonical destroyed real content in the field -- a code-intelligence tool
+    installs a Claude-flavoured skill under `.claude/skills` and an older
+    Codex-flavoured one under `.agents/skills`, and the mirror silently
+    replaced the better copy with the worse one. An out-of-date mirror is a
+    reported nuisance; a deleted one is unrecoverable unless it was
+    committed.
+
+    The copies are untracked by Raven either way: they are the destination's
+    content, so no manifest record is written and no upgrade removes one. A
+    copy whose source is gone is likewise left alone.
 
     A source skill that *git* ignores (a machine-local install, e.g. a tool
     that writes its own skills) gets its mirror gitignored too. It still
@@ -336,14 +343,17 @@ def mirror_project_skills(destination: Path) -> list[str]:
     source_root = destination / SKILLS_SOURCE_PATH
     compat_root = destination / SKILLS_COMPAT_PATH
     if not source_root.is_dir() or compat_root.is_symlink():
-        return []
+        return [], []
     mirrored: list[str] = []
+    diverged: list[str] = []
     for source in sorted(source_root.rglob("*")):
         if source.is_dir() or source.is_symlink():
             continue
         relative = source.relative_to(source_root)
         copy = compat_root / relative
-        if copy.is_file() and file_sha256(copy) == file_sha256(source):
+        if _any_exists(copy):
+            if not copy.is_file() or file_sha256(copy) != file_sha256(source):
+                diverged.append(f"{SKILLS_COMPAT_PATH}/{relative.as_posix()}")
             continue
         copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, copy)
@@ -355,7 +365,7 @@ def mirror_project_skills(destination: Path) -> list[str]:
     ]
     if ignored:
         ensure_skill_mirrors_gitignored(destination, ignored)
-    return mirrored
+    return mirrored, diverged
 
 
 def _git_ignored_skills(destination: Path, source_root: Path) -> set[str]:

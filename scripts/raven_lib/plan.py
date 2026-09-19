@@ -628,7 +628,15 @@ def apply_plan(
     # (#274). Mirroring runs on every apply, like the `.ignore` merge below
     # and for the same reason: the source side can change between runs.
     if not component_disabled(SKILLS_COMPAT_PATH, config):
-        mirror_project_skills(destination)
+        _, diverged = mirror_project_skills(destination)
+        if diverged:
+            print()
+            print_section(
+                "Project-owned skill copies that differ from their .agents/skills source; "
+                "left as they are (Raven owns neither side, so it cannot tell which is "
+                "current -- reconcile them yourself):",
+                diverged,
+            )
 
     # Merge Raven's required `.gitattributes` lines on every apply, not just
     # first install (#206): unlike the single fixed settings.local.json

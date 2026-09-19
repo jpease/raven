@@ -225,7 +225,7 @@ class SkillsTests(RavenTestCase):
         self.assertNotIn(".claude/skills", files)
         self.assertIn(".claude/skills/raven-commit/SKILL.md", files)
 
-    def test_a_project_owned_skill_is_mirrored_and_refreshed(self):
+    def test_a_project_owned_skill_is_mirrored_once(self):
         # A skill the project owns is not a template entry, so per-file
         # copying alone would drop it from Claude Code's only skills path.
         with contextlib.redirect_stdout(io.StringIO()):
@@ -248,13 +248,32 @@ class SkillsTests(RavenTestCase):
             ".claude/skills/project-thing/SKILL.md", raven.load_manifest(self.destination)["files"]
         )
 
-        source.write_text("project skill v2\n", encoding="utf-8")
+    def test_a_diverged_project_skill_copy_is_reported_not_overwritten(self):
+        # Both sides are the destination's, and Raven cannot tell which is
+        # current. Overwriting from `.agents/skills` destroyed real content
+        # in the field: a tool installs a Claude-flavoured skill under
+        # `.claude/skills` and an older copy under `.agents/skills`.
         with contextlib.redirect_stdout(io.StringIO()):
             raven._run(
                 self.destination, raven.load_config(self.destination), "python", False, False, []
             )
+        source = self.destination / ".agents" / "skills" / "tool-thing" / "SKILL.md"
+        source.parent.mkdir(parents=True)
+        source.write_text("older codex-flavoured copy\n", encoding="utf-8")
+        copy = self.destination / ".claude" / "skills" / "tool-thing" / "SKILL.md"
+        copy.parent.mkdir(parents=True)
+        copy.write_text("newer claude-flavoured copy\n", encoding="utf-8")
+        output = io.StringIO()
 
-        self.assertEqual(mirrored.read_text(encoding="utf-8"), "project skill v2\n")
+        with contextlib.redirect_stdout(output):
+            rc = raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(copy.read_text(encoding="utf-8"), "newer claude-flavoured copy\n")
+        self.assertIn(".claude/skills/tool-thing/SKILL.md", output.getvalue())
+        self.assertIn("differ from their .agents/skills source", output.getvalue())
 
     def test_a_claude_only_skill_is_never_removed(self):
         # The mirror copies one way. A skill placed directly under
