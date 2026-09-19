@@ -40,7 +40,7 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=328ff75cee2dbbfa3e5b6d6a870eaba5fe1151930a03f83fc438671b63125612 -->
+<!-- RAVEN:BEGIN sha256=e59fc7c693292777d914c2f418c16cbec99f241082f2cbf0d991c81c3f75a167 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -51,7 +51,7 @@ Be effective while preserving context. Prefer targeted retrieval, summaries, and
 
 - `AGENTS.md` is the authoritative root instruction file.
 - `.agents/skills/` is the canonical location for reusable skills.
-- Agent-specific skill paths (e.g. `.claude/skills`) should point to `.agents/skills`, not duplicate content.
+- Agent-specific skill paths (e.g. `.claude/skills`) mirror `.agents/skills`; edit the canonical copy, never the mirror.
 - When a `raven-*` skill and a generic skill cover the same intent, prefer the `raven-*` one — it encodes this project's guardrails.
 - Deeper guidance lives in `.claude/docs/raven-*.md`: guardrails, authority map, coding principles, namespace, agent compatibility, LSP defaults, and the antipattern registry. Read one when its subject comes up.
 - If another tool inserts a managed block in `AGENTS.md`, treat it as authoritative for that tool's commands, syntax, and resource names — not as an override of these workflow guardrails.

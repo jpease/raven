@@ -1,0 +1,16 @@
+extends: existence
+message: "'%s' is a hard ban. Cut it as a modifier; write accurate, discloses, or acknowledges when it is the sentence's verb."
+level: warning
+ignorecase: true
+# Own file rather than a PlainWords entry: the fix is conditional, not a
+# single swap. As a modifier ("an honest 404 rather than HTML with a 200") it
+# deletes clean, same as genuine. As the sentence's verb ("deployment.md is
+# honest that shared_buffers=256MB is...") deletion breaks the sentence, but
+# swapping in documents/discloses/accurate loses nothing.
+# See docs/superpowers/plans/2026-08-27-words-list-history.md.
+#
+# Gated on a dozen spot-checked sentences, not the fuller 120-use
+# false-positive sample vacuous itself got -- read this rule with that
+# caveat.
+tokens:
+  - honest(ly)?

@@ -30,3 +30,12 @@ TODO.md
 
 # Machine-local just recipes, pulled in by `import? 'private.just'`
 private.just
+
+# Raven: mirrors of untracked .agents/skills entries (.claude/skills is what Claude Code reads)
+.claude/skills/.remember/
+.claude/skills/gitnexus-cli/
+.claude/skills/gitnexus-debugging/
+.claude/skills/gitnexus-exploring/
+.claude/skills/gitnexus-guide/
+.claude/skills/gitnexus-impact-analysis/
+.claude/skills/gitnexus-refactoring/
