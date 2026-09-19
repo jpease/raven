@@ -378,6 +378,25 @@ class ConfigTests(RavenTestCase):
         self.assertIn("tool_configs = true", text)
         self.assertIn("[exclude]", text)
 
+    def test_default_config_declares_every_gemini_component(self):
+        # The Gemini adapter shipped (#262) with no line in the starter
+        # config, so a repo regenerating its config to pick up the current
+        # shape still could not discover the adapter existed. Keyed off the
+        # constant, so a component added there fails here until the template
+        # documents it too.
+        config = raven.default_config_text("python", False)
+        self.assertIn("[components.gemini]", config)
+        for name in raven.DEFAULT_GEMINI_COMPONENTS:
+            self.assertIn(f"{name} = false", config)
+
+    def test_rendered_config_gemini_values_match_the_shipped_defaults(self):
+        # The file must state what Raven actually does: a `true` typo in the
+        # template would silently turn the opt-in adapter on for every fresh
+        # install.
+        raw = raven.parse_simple_toml(raven.default_config_text("python", False))
+        config = raven.build_config(raw, exists=True)
+        self.assertEqual(config.gemini_components, raven.DEFAULT_GEMINI_COMPONENTS)
+
     def test_default_config_includes_lifecycle_section(self):
         config = raven.default_config_text("python", False)
         self.assertIn("[lifecycle]", config)

@@ -92,6 +92,33 @@ subagents = true
 # Codex rules are experimental and complement, not replace, hook guardrails.
 rules = true
 
+[components.gemini]
+# Gemini CLI adapter files. Every entry here is off by default, unlike the
+# Claude and Codex sets above: set the ones you want to true and re-run
+# `raven upgrade`. Gemini CLI skips a project's .gemini layer until you trust
+# the folder, which `raven doctor` reports.
+
+# GEMINI.md, a one-line file importing AGENTS.md, matching CLAUDE.md.
+root_instructions = false
+
+# Gemini CLI settings at .gemini/settings.json, rendered from Raven's MCP
+# server definitions and hook wiring.
+settings = false
+
+# Gemini CLI hook scripts under .gemini/hooks/raven-*.
+hooks = false
+
+# Gemini CLI helper scripts under .gemini/scripts/raven-*.
+# Skills invoke these directly, so they stay installed even with hooks off.
+scripts = false
+
+# Gemini CLI subagent definitions under .gemini/agents/raven-*.md.
+subagents = false
+
+# Gemini CLI command approval policy at .gemini/policies/raven.toml and
+# scoped rule files under .gemini/rules/raven-*.
+rules = false
+
 [exclude]
 # Additional template-relative paths to exclude from apply operations.
 # Use exact paths or glob patterns. A trailing /** excludes a directory tree.
