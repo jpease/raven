@@ -605,8 +605,26 @@ def validate_installed_shape() -> None:
         raise SystemExit("CLAUDE.md must be a plain file (not a symlink), see #253")
     if not claude.is_file() or claude.read_text(encoding="utf-8").strip() != "@AGENTS.md":
         raise SystemExit("CLAUDE.md must be a plain file containing exactly '@AGENTS.md'")
-    if not claude_skills.is_symlink() or os.readlink(claude_skills) != "../.agents/skills":
-        raise SystemExit(".claude/skills must be a symlink to ../.agents/skills")
+    # #274: an installed .claude/skills is a per-file copy of .agents/skills,
+    # never a symlink -- a symlink does not survive a checkout without symlink
+    # support, and every skill under it must be a real file for the same
+    # reason.
+    if claude_skills.is_symlink():
+        raise SystemExit(".claude/skills must be a real directory, not a symlink, see #274")
+    if not claude_skills.is_dir():
+        raise SystemExit(".claude/skills must be a directory of installed skill files")
+    agents_skills = REPO_ROOT / ".agents" / "skills"
+    missing = sorted(
+        skill.name
+        for skill in agents_skills.iterdir()
+        # An empty directory is not a skill and carries nothing to mirror;
+        # git does not track one either.
+        if skill.is_dir()
+        and any(child.is_file() for child in skill.rglob("*"))
+        and not (claude_skills / skill.name).is_dir()
+    )
+    if missing:
+        raise SystemExit(f".claude/skills is missing installed skill(s): {', '.join(missing)}")
     print("installed shape ok")
 
 

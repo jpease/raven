@@ -31,6 +31,15 @@ SETTINGS_JSON_PATH = ".claude/settings.json"
 GEMINI_SETTINGS_JSON_PATH = ".gemini/settings.json"
 MCP_JSON_PATH = ".mcp.json"
 CODEX_CONFIG_PATH = ".codex/config.toml"
+#: Where skills live, and the Claude Code compatibility copy of them. The
+#: template ships `.claude/skills` as a symlink to `.agents/skills`, but a
+#: destination never receives that link: `entries_for_destination` expands it
+#: into a per-file copy of every skill (#274). A symlink here is the shape a
+#: Windows checkout without symlink support flattens into a regular file
+#: holding the literal target text, which leaves Claude Code finding no skills
+#: at all -- the same failure #253 removed from CLAUDE.md.
+SKILLS_SOURCE_PATH = ".agents/skills"
+SKILLS_COMPAT_PATH = ".claude/skills"
 
 
 class AdoptableFile(NamedTuple):

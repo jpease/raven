@@ -17,7 +17,7 @@ Do not duplicate canonical guidance into agent-specific files unless the target 
 Claude-specific files:
 
 - `CLAUDE.md`: a plain one-line file importing `AGENTS.md` (`@AGENTS.md`), not a symlink — a symlink breaks on a Windows checkout without symlink support (#253).
-- `.claude/skills`: compatibility symlink to `.agents/skills`.
+- `.claude/skills`: a per-file copy of `.agents/skills`, not a symlink, for the same reason (#274). The same skill therefore exists at two paths: `.agents/skills` is the one to edit, and `raven upgrade` refreshes the `.claude/skills` copy from it — editing the copy does not change `.agents/skills`.
 - `.claude/agents/raven-*.md`: Claude Code subagents.
 - `.claude/hooks/raven-*.py`: Claude Code hook scripts.
 - `.claude/rules/raven-*.md`: Claude Code scoped rules.
@@ -101,7 +101,7 @@ trees — all three are deliberate.
 | Category | Meaning | Files |
 |---|---|---|
 | **Byte-identical (unified)** | One real file under `common/.claude/`; the `.codex/` and `.gemini/` paths are template-internal symlinks to it. Nothing to keep in sync. | `scripts/raven-capability-roster.py`, `scripts/raven-session.py`, `scripts/raven-skeleton.py`, `scripts/raven-tool-check.py`, `hooks/raven-run-hook.sh` (Claude and Gemini), `hooks/raven-post-bash-summarize.py`, `hooks/raven-post-edit-format.py`, `hooks/raven-pre-bash-guard.py`, `hooks/raven-pre-bash-test-scope.py`, `hooks/raven-pre-bash-cd-scope.py`, `hooks/raven-pre-edit-guard.py` (reads its adapter directory from its install path to pick `ask` on Claude and a context warning on Codex, #247), `hooks/raven-session-checkpoint.py` (computes its own adapter directory at runtime, same pattern as `raven-tool-check.py`, instead of hardcoding one — issue #195), `hooks/raven-post-bash-truncate.py` (Claude and Gemini), `hooks/raven-pre-read-secret-guard.py` (Claude and Gemini), `hooks/raven-skeleton-read-guard.py` (Claude and Gemini) |
-| **Schema-translated** | Same role, different file format required by the harness. Not comparable line-by-line. | `.claude/agents/raven-*.md` ↔ `.codex/agents/raven-*.toml` ↔ `.gemini/agents/raven-*.md`; `.claude/settings.json` ↔ `.codex/hooks.json` ↔ `.gemini/settings.json`; `.claude/rules/raven-security.md` ↔ `.codex/rules/raven.rules` ↔ `.gemini/policies/raven.toml`; `.claude/skills` symlink ↔ Codex reading `.agents/skills` directly ↔ Gemini reading `.agents/skills` directly; `CLAUDE.md` ↔ `GEMINI.md` |
+| **Schema-translated** | Same role, different file format required by the harness. Not comparable line-by-line. | `.claude/agents/raven-*.md` ↔ `.codex/agents/raven-*.toml` ↔ `.gemini/agents/raven-*.md`; `.claude/settings.json` ↔ `.codex/hooks.json` ↔ `.gemini/settings.json`; `.claude/rules/raven-security.md` ↔ `.codex/rules/raven.rules` ↔ `.gemini/policies/raven.toml`; `.claude/skills` as a per-file copy of `.agents/skills` ↔ Codex reading `.agents/skills` directly ↔ Gemini reading `.agents/skills` directly; `CLAUDE.md` ↔ `GEMINI.md` |
 | **Intentionally asymmetric** | Exists for one harness only, because the underlying capability does not exist in the other. See Known Asymmetries below. | `hooks/raven-skeleton-read-guard.py` and `hooks/raven-post-bash-truncate.py` (Claude and Gemini only); `.codex/config.toml` (Codex-only) |
 
 ### How the unified files stay unified
@@ -122,13 +122,18 @@ dereference behavior, and `tests/test_apply.py` installs a Claude-disabled desti
 prove real files arrive.
 
 Consequently these links never reach a destination, so `.raven/manifest.json` records the
-installed files as `KIND_FILE`, not `KIND_SYMLINK`. `KIND_SYMLINK` remains correct for a
-link that is *meant* to reach a destination, such as `.claude/skills` — `CLAUDE.md` no
-longer belongs on that list (#253): it ships as a plain `@AGENTS.md` import file so it
-survives a destination-repo checkout without symlink support, which `.claude/skills` and
-the Codex hook/script symlinks still do not.
-This also means the unification needs no symlink support on the destination platform:
-a destination never receives one of these links.
+installed files as `KIND_FILE`, not `KIND_SYMLINK`. Since #274 that is true of the whole
+template walk, not just these links: `.claude/skills` is expanded into per-file copies
+instead of being installed as a link, so a destination now receives no symlink from the
+template at all, and needs no symlink support to use what it receives. `CLAUDE.md` left
+the symlink list first (#253), shipping as a plain `@AGENTS.md` import so it survives a
+destination-repo checkout without symlink support; `.claude/skills` followed for the same
+reason — on such a checkout git materializes a symlink as a regular file holding the
+literal target text, which leaves Claude Code finding no skills at all. The Codex hook and
+script links were never in this category: they are template-internal and dereferenced into
+real files on the way in. `KIND_SYMLINK` remains only for reading a manifest written
+before #274; `raven upgrade` unlinks that legacy `.claude/skills` symlink and prunes its
+record.
 
 Runtime-derived adapter identity: because one file serves every harness, a unified script
 cannot embed its own adapter directory as a literal. `raven-tool-check.py` derives it from

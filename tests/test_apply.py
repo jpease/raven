@@ -2,7 +2,6 @@ import argparse
 import contextlib
 import io
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -49,10 +48,13 @@ class ApplyTests(RavenTestCase):
         self.assertEqual(classification.needs_merge, [])
         self.assertEqual(classification.excluded, ["README.md"])
 
-    def test_apply_preserves_compatibility_symlinks(self):
+    def test_apply_installs_the_skills_compat_dir_as_real_files(self):
+        # #274: the template's `.claude/skills` symlink never reaches a
+        # destination -- it expands into per-file copies, so a checkout
+        # without symlink support still finds the skills.
         paths = [
             ".agents/skills/raven-tool-bootstrap/SKILL.md",
-            ".claude/skills",
+            ".claude/skills/raven-tool-bootstrap/SKILL.md",
             "CLAUDE.md",
         ]
 
@@ -66,9 +68,16 @@ class ApplyTests(RavenTestCase):
                 self.destination / ".agents" / "skills" / "raven-tool-bootstrap" / "SKILL.md"
             ).is_file()
         )
-        self.assertTrue(claude_skills.is_symlink())
-        self.assertEqual(os.readlink(claude_skills), "../.agents/skills")
-        self.assertTrue((claude_skills / "raven-tool-bootstrap" / "SKILL.md").is_file())
+        self.assertFalse(claude_skills.is_symlink())
+        self.assertTrue(claude_skills.is_dir())
+        copied = claude_skills / "raven-tool-bootstrap" / "SKILL.md"
+        self.assertFalse(copied.is_symlink())
+        self.assertEqual(
+            copied.read_text(encoding="utf-8"),
+            (self.template / ".agents" / "skills" / "raven-tool-bootstrap" / "SKILL.md").read_text(
+                encoding="utf-8"
+            ),
+        )
         # CLAUDE.md is a plain @AGENTS.md import file, not a symlink (#253).
         self.assertFalse(claude_md.is_symlink())
         self.assertEqual(claude_md.read_text(encoding="utf-8").strip(), "@AGENTS.md")

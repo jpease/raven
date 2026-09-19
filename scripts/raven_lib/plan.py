@@ -14,6 +14,8 @@ from .apply import (
     adopt_file,
     adoption_needed,
     copy_paths,
+    migrate_skills_compat_dir,
+    mirror_project_skills,
 )
 from .blocks import (
     ensure_gitattributes_lines,
@@ -27,6 +29,7 @@ from .constants import (
     ADOPTABLE_FILES,
     GITATTRIBUTES_PATH,
     SETTINGS_JSON_PATH,
+    SKILLS_COMPAT_PATH,
     AdoptableFile,
     _any_exists,
 )
@@ -585,6 +588,11 @@ def apply_plan(
             adopted.extend(written)
             adopted_targets.append(path)
 
+    # Before any copy: a pre-#274 install has `.claude/skills` as a symlink,
+    # and the entries below write individual files underneath it. Writing
+    # through the link would put them in `.agents/skills` instead.
+    migrated_skills_link = migrate_skills_compat_dir(destination)
+
     try:
         if plan.requested_overrides:
             copy_paths(template, destination, plan.requested_overrides, config, entries=entries)
@@ -609,6 +617,13 @@ def apply_plan(
     if SETTINGS_JSON_PATH in plan.will_copy or SETTINGS_JSON_PATH in adopted_targets:
         ensure_settings_local_gitignored(destination)
 
+    # Raven's own skills arrive as ordinary entries above; a skill the project
+    # owns is not an entry at all, and Claude Code reads only `.claude/skills`
+    # (#274). Mirroring runs on every apply, like the `.ignore` merge below
+    # and for the same reason: the source side can change between runs.
+    if not component_disabled(SKILLS_COMPAT_PATH, config):
+        mirror_project_skills(destination)
+
     # Merge Raven's required `.gitattributes` lines on every apply, not just
     # first install (#206): unlike the single fixed settings.local.json
     # gitignore entry above, `.gitattributes`' required set can grow in a
@@ -632,7 +647,12 @@ def apply_plan(
     ensure_ignore_lines(destination)
 
     failed_orphans: list[str] = []
-    removed_orphans = remove_orphans(destination, orphans.will_remove, failed_orphans)
+    # The migrated symlink is already gone, and the path now holds the copies
+    # written above -- letting remove_orphans near it would try to unlink a
+    # non-empty directory. Its manifest record is pruned through
+    # `stale_records` below instead.
+    orphaned = [path for path in orphans.will_remove if path != SKILLS_COMPAT_PATH]
+    removed_orphans = remove_orphans(destination, orphaned, failed_orphans)
     # Deactivated-by-config skills reuse remove_orphans as-is: it is a pure
     # delete-and-prune-empty-parents filesystem primitive that does not care
     # *why* a path is being removed, only that the baseline safety gate
@@ -645,7 +665,11 @@ def apply_plan(
         plan.copied + plan.will_upgrade + plan.overwritten + plan.identical + adopted_targets
     )
     stale_records = (
-        removed_orphans + orphans.already_gone + removed_deactivated + deactivated.absent
+        removed_orphans
+        + orphans.already_gone
+        + removed_deactivated
+        + deactivated.absent
+        + ([SKILLS_COMPAT_PATH] if migrated_skills_link else [])
     )
     if managed_paths or stale_records:
         update_manifest(

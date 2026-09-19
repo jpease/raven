@@ -8,7 +8,7 @@ Be effective while preserving context. Prefer targeted retrieval, summaries, and
 
 - `AGENTS.md` is the authoritative root instruction file.
 - `.agents/skills/` is the canonical location for reusable skills.
-- Agent-specific skill paths (e.g. `.claude/skills`) should point to `.agents/skills`, not duplicate content.
+- Agent-specific skill paths (e.g. `.claude/skills`) mirror `.agents/skills`; edit the canonical copy, never the mirror.
 - When a `raven-*` skill and a generic skill cover the same intent, prefer the `raven-*` one — it encodes this project's guardrails.
 - Deeper guidance lives in `.claude/docs/raven-*.md`: guardrails, authority map, coding principles, namespace, agent compatibility, LSP defaults, and the antipattern registry. Read one when its subject comes up.
 - If another tool inserts a managed block in `AGENTS.md`, treat it as authoritative for that tool's commands, syntax, and resource names — not as an override of these workflow guardrails.

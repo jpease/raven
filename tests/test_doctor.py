@@ -508,18 +508,33 @@ class DoctorDeactivatedTests(RavenTestCase):
         ok_modified = findings.get("doctor.drift.modified")
         self.assertFalse(ok_modified and ok_modified.severity == Severity.OK)
 
+    # Since #274 each skill is installed twice -- `.agents/skills/<name>` and
+    # its `.claude/skills/<name>` copy -- and the two are classified
+    # independently. These tests act on both copies, so each asserts one
+    # logical skill's disposition rather than accidentally leaving an
+    # untouched twin in a different bucket.
+    SKILL_TWINS = (
+        ".agents/skills/raven-github-issues/SKILL.md",
+        ".claude/skills/raven-github-issues/SKILL.md",
+    )
+
+    def _rewrite_twin_records(self, **record) -> None:
+        manifest_path = self.destination / ".raven" / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for rel in self.SKILL_TWINS:
+            manifest["files"][rel] = {"kind": "file", **record}
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
     def test_doctor_reports_preserved_deactivated_skill(self) -> None:
         _install(self, platform="github")
-        skill_path = self.destination / ".agents" / "skills" / "raven-github-issues" / "SKILL.md"
-        skill_path.write_text("edited locally\n", encoding="utf-8")
+        for rel in self.SKILL_TWINS:
+            (self.destination / rel).write_text("edited locally\n", encoding="utf-8")
         self._switch_platform("gitlab")
         findings = {f.id: f for f in drift_findings(self.destination)}
         self.assertIn("doctor.deactivated.preserved", findings)
         self.assertEqual(findings["doctor.deactivated.preserved"].severity, Severity.WARN)
-        self.assertIn(
-            ".agents/skills/raven-github-issues/SKILL.md",
-            findings["doctor.deactivated.preserved"].detail,
-        )
+        for rel in self.SKILL_TWINS:
+            self.assertIn(rel, findings["doctor.deactivated.preserved"].detail)
         self.assertNotIn("doctor.deactivated.removable", findings)
 
     def test_matching_platform_reports_no_deactivation(self) -> None:
@@ -536,24 +551,17 @@ class DoctorDeactivatedTests(RavenTestCase):
         # preserved, and distinct wording naming `raven accept` as the fix
         # rather than accusing the user of modifying the file.
         _install(self, platform="github")
-        skill_path = self.destination / ".agents" / "skills" / "raven-github-issues" / "SKILL.md"
-        self.assertTrue(skill_path.exists())
-        manifest_path = self.destination / ".raven" / "manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        rel = ".agents/skills/raven-github-issues/SKILL.md"
+        for rel in self.SKILL_TWINS:
+            self.assertTrue((self.destination / rel).exists())
         stale_hash = "a" * 64
-        manifest["files"][rel] = {
-            "kind": "file",
-            "installedSha256": stale_hash,
-            "sourceSha256": stale_hash,
-        }
-        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self._rewrite_twin_records(installedSha256=stale_hash, sourceSha256=stale_hash)
         self._switch_platform("gitlab")
 
         findings = {f.id: f for f in drift_findings(self.destination)}
         self.assertIn("doctor.deactivated.stale", findings)
         self.assertEqual(findings["doctor.deactivated.stale"].severity, Severity.WARN)
-        self.assertIn(rel, findings["doctor.deactivated.stale"].detail)
+        for rel in self.SKILL_TWINS:
+            self.assertIn(rel, findings["doctor.deactivated.stale"].detail)
         assert findings["doctor.deactivated.stale"].fix is not None
         self.assertIn("raven accept", findings["doctor.deactivated.stale"].fix)
         self.assertNotIn("doctor.deactivated.preserved", findings)
@@ -566,17 +574,11 @@ class DoctorDeactivatedTests(RavenTestCase):
         # WARN, mirroring the doctor.drift.local precedent for accepted
         # local customizations elsewhere in this module.
         _install(self, platform="github")
-        skill_path = self.destination / ".agents" / "skills" / "raven-github-issues" / "SKILL.md"
         rel = ".agents/skills/raven-github-issues/SKILL.md"
         manifest_path = self.destination / ".raven" / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         sha = manifest["files"][rel]["installedSha256"]
-        manifest["files"][rel] = {
-            "kind": "file",
-            "installedSha256": sha,
-            "sourceSha256": "b" * 64,
-        }
-        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self._rewrite_twin_records(installedSha256=sha, sourceSha256="b" * 64)
         self._switch_platform("gitlab")
 
         findings = {f.id: f for f in drift_findings(self.destination)}
@@ -586,7 +588,7 @@ class DoctorDeactivatedTests(RavenTestCase):
         self.assertNotIn("doctor.deactivated.preserved", findings)
         self.assertNotIn("doctor.deactivated.removable", findings)
         self.assertNotIn("doctor.deactivated.stale", findings)
-        self.assertTrue(skill_path.exists())
+        self.assertTrue((self.destination / rel).exists())
 
     def test_customized_deactivated_skill_does_not_block_matching_ok(self) -> None:
         # An INFO-only customized finding must not itself count as an ERROR,
@@ -635,14 +637,20 @@ class DoctorMissingFilesTests(RavenTestCase):
         # The no-drift OK finding must not claim health while a file is missing.
         self.assertNotIn("doctor.drift.modified", findings)
 
-    def test_deleted_expected_symlink_is_reported(self):
+    def test_deleted_skills_compat_file_is_reported(self):
+        # #274: `.claude/skills` installs as per-file copies, so a deleted
+        # copy is ordinary missing drift -- the same as any other file.
         _install(self)
-        symlink = self.destination / ".claude" / "skills"
-        self.assertTrue(symlink.is_symlink())
-        symlink.unlink()
+        skills = self.destination / ".claude" / "skills"
+        self.assertFalse(skills.is_symlink())
+        deleted = skills / "raven-commit" / "SKILL.md"
+        self.assertTrue(deleted.is_file())
+        deleted.unlink()
         findings = {f.id: f for f in drift_findings(self.destination)}
         self.assertIn("doctor.drift.missing", findings)
-        self.assertIn(".claude/skills", findings["doctor.drift.missing"].detail)
+        self.assertIn(
+            ".claude/skills/raven-commit/SKILL.md", findings["doctor.drift.missing"].detail
+        )
         self.assertNotIn("doctor.drift.modified", findings)
 
 
@@ -1305,13 +1313,12 @@ class DoctorFlattenedSymlinkTests(RavenTestCase):
         self.assertIn("core.symlinks", finding.fix)
 
     def test_flattened_installed_symlink_is_an_error(self):
-        # `.claude/skills` is the only path Raven currently installs into a
-        # destination as a real symlink (CLAUDE.md no longer is, #253), and
-        # test_flattened_installed_directory_symlink_is_an_error already
-        # covers it. `_flattened_install_findings` is otherwise generic over
-        # any KIND_SYMLINK manifest entry, so exercise that directly with a
-        # fabricated file-kind entry rather than depending on a real
-        # installed path that happens to be one.
+        # A fresh install now plants no symlink in a destination at all
+        # (CLAUDE.md since #253, `.claude/skills` since #274), so this
+        # exercises `_flattened_install_findings`' generic handling of any
+        # KIND_SYMLINK manifest entry directly, with a fabricated record
+        # rather than a real installed path. The legacy `.claude/skills`
+        # case has its own test below.
         _install(self)
         before = self._ids(build_doctor_findings(self.destination, _fake_toolcheck_runner([])))
         self.assertNotIn("doctor.install.flattened", before)
@@ -1338,13 +1345,26 @@ class DoctorFlattenedSymlinkTests(RavenTestCase):
         self.assertIn(relative, ids["doctor.install.flattened"].detail)
         self.assertEqual(exit_code(findings), 1)
 
-    def test_flattened_installed_directory_symlink_is_an_error(self):
+    def test_flattened_legacy_skills_symlink_is_an_error(self):
+        # A pre-#274 install recorded `.claude/skills` as a symlink. Clone
+        # that repo on Windows without symlink support and git writes a
+        # regular file holding the target text in its place -- the exact
+        # shape #274 stops creating, and the one doctor still has to name for
+        # a repo that has not upgraded yet.
         _install(self)
         skills = self.destination / ".claude" / "skills"
-        self.assertTrue(skills.is_symlink())
-        target = os.readlink(skills)
-        skills.unlink()
-        skills.write_text(target + "\n", encoding="utf-8")
+        self.assertFalse(skills.is_symlink())
+        shutil.rmtree(skills)
+        skills.write_text("../.agents/skills\n", encoding="utf-8")
+        manifest_path = self.destination / ".raven" / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"][".claude/skills"] = {
+            "kind": "symlink",
+            "target": "../.agents/skills",
+            "sourceSha256": "0" * 64,
+            "installedSha256": "0" * 64,
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
         ids = self._ids(build_doctor_findings(self.destination, _fake_toolcheck_runner([])))
         self.assertIn("doctor.install.flattened", ids)

@@ -1,4 +1,8 @@
+import contextlib
+import io
 import re
+import shutil
+import subprocess
 import unittest
 
 from helpers import REPO_ROOT, RavenTestCase, raven
@@ -164,6 +168,144 @@ class SkillsTests(RavenTestCase):
 
         self.assertEqual((existing / "SKILL.md").read_text(encoding="utf-8"), "existing\n")
         self.assertTrue((self.destination / path).is_file())
+
+    def test_install_writes_real_files_not_a_symlink(self):
+        # #274: a destination never receives the template's `.claude/skills`
+        # symlink -- it does not survive a checkout without symlink support.
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+        self.assertEqual(rc, 0)
+        skills = self.destination / ".claude" / "skills"
+        self.assertFalse(skills.is_symlink())
+        installed = skills / "raven-commit" / "SKILL.md"
+        self.assertTrue(installed.is_file())
+        self.assertFalse(installed.is_symlink())
+        manifest = raven.load_manifest(self.destination)["files"]
+        self.assertIn(".claude/skills/raven-commit/SKILL.md", manifest)
+        self.assertNotIn(".claude/skills", manifest)
+
+    def test_upgrade_migrates_a_legacy_symlink_to_real_files(self):
+        # The pre-#274 shape: upgrade must unlink it *and* write the copies.
+        # Classification sees those copies through the link as `identical`
+        # unless it accounts for the legacy shape, which would unlink the
+        # symlink and leave Claude Code with no skills at all.
+        with contextlib.redirect_stdout(io.StringIO()):
+            raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+        skills = self.destination / ".claude" / "skills"
+        shutil.rmtree(skills)
+        skills.symlink_to("../.agents/skills")
+        manifest = raven.load_manifest(self.destination)
+        manifest["files"] = {
+            key: value
+            for key, value in manifest["files"].items()
+            if not key.startswith(".claude/skills/")
+        }
+        manifest["files"][".claude/skills"] = {
+            "kind": "symlink",
+            "target": "../.agents/skills",
+            "sourceSha256": "0" * 64,
+            "installedSha256": "0" * 64,
+        }
+        raven.save_manifest(self.destination, manifest)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertFalse(skills.is_symlink())
+        self.assertTrue((skills / "raven-commit" / "SKILL.md").is_file())
+        files = raven.load_manifest(self.destination)["files"]
+        self.assertNotIn(".claude/skills", files)
+        self.assertIn(".claude/skills/raven-commit/SKILL.md", files)
+
+    def test_a_project_owned_skill_is_mirrored_and_refreshed(self):
+        # A skill the project owns is not a template entry, so per-file
+        # copying alone would drop it from Claude Code's only skills path.
+        with contextlib.redirect_stdout(io.StringIO()):
+            raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+        source = self.destination / ".agents" / "skills" / "project-thing" / "SKILL.md"
+        source.parent.mkdir(parents=True)
+        source.write_text("project skill v1\n", encoding="utf-8")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+        mirrored = self.destination / ".claude" / "skills" / "project-thing" / "SKILL.md"
+        self.assertEqual(mirrored.read_text(encoding="utf-8"), "project skill v1\n")
+        # Untracked: Raven copies it but does not own it.
+        self.assertNotIn(
+            ".claude/skills/project-thing/SKILL.md", raven.load_manifest(self.destination)["files"]
+        )
+
+        source.write_text("project skill v2\n", encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+        self.assertEqual(mirrored.read_text(encoding="utf-8"), "project skill v2\n")
+
+    def test_a_claude_only_skill_is_never_removed(self):
+        # The mirror copies one way. A skill placed directly under
+        # `.claude/skills`, with no `.agents/skills` counterpart, is the
+        # destination's own file and Raven leaves it alone.
+        claude_only = self.destination / ".claude" / "skills" / "claude-only" / "SKILL.md"
+        claude_only.parent.mkdir(parents=True)
+        claude_only.write_text("claude only\n", encoding="utf-8")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(claude_only.read_text(encoding="utf-8"), "claude only\n")
+
+    def test_a_gitignored_source_skill_gets_a_gitignored_mirror(self):
+        # A machine-local skill (a tool installs its own, and the project
+        # gitignores them) must still reach Claude Code, but its mirror must
+        # not become the thing a broad `git add` publishes.
+        subprocess.run(
+            ["git", "init", "--quiet", str(self.destination)], check=True, capture_output=True
+        )
+        (self.destination / ".gitignore").write_text(
+            ".agents/skills/toolskill/\n", encoding="utf-8"
+        )
+        source = self.destination / ".agents" / "skills" / "toolskill" / "SKILL.md"
+        source.parent.mkdir(parents=True)
+        source.write_text("tool installed\n", encoding="utf-8")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = raven._run(
+                self.destination, raven.load_config(self.destination), "python", False, False, []
+            )
+
+        self.assertEqual(rc, 0)
+        mirrored = self.destination / ".claude" / "skills" / "toolskill" / "SKILL.md"
+        self.assertEqual(mirrored.read_text(encoding="utf-8"), "tool installed\n")
+        ignored = subprocess.run(
+            ["git", "-C", str(self.destination), "check-ignore", ".claude/skills/toolskill/"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(ignored.returncode, 0, "the mirror of an untracked skill must be ignored")
+        # A tracked skill's mirror is left tracked: only the untracked ones
+        # get an entry, and they share one block rather than one each.
+        gitignore = (self.destination / ".gitignore").read_text(encoding="utf-8")
+        self.assertNotIn(".claude/skills/raven-commit/", gitignore)
+        self.assertEqual(gitignore.count("mirrors of untracked"), 1)
 
 
 class ImplementFeatureSkillTests(unittest.TestCase):

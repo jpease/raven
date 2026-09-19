@@ -200,10 +200,19 @@ paths = [".claude/skills/raven-plan/**"]
                 self.assertEqual(
                     (destination / "CLAUDE.md").read_text(encoding="utf-8").strip(), "@AGENTS.md"
                 )
-                self.assertTrue((destination / ".claude" / "skills").is_symlink())
-                self.assertEqual(
-                    os.readlink(destination / ".claude" / "skills"), "../.agents/skills"
+                skills = destination / ".claude" / "skills"
+                self.assertFalse(skills.is_symlink())
+                self.assertTrue((skills / "raven-security-review" / "SKILL.md").is_file())
+                # #274/#253: an install plants no symlink in a destination at
+                # all, so a checkout without symlink support gets the same
+                # tree. `.git`/`.githooks` are git's, not the template's.
+                planted_links = sorted(
+                    path.relative_to(destination).as_posix()
+                    for path in destination.rglob("*")
+                    if path.is_symlink()
+                    and path.relative_to(destination).parts[0] not in {".git", ".githooks"}
                 )
+                self.assertEqual(planted_links, [], f"{language} installed symlink(s)")
                 self.assertTrue((destination / ".codex" / "config.toml").is_file())
                 self.assertTrue((destination / ".codex" / "hooks.json").is_file())
                 self.assertTrue(

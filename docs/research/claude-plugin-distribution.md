@@ -18,6 +18,8 @@ Measured directly against two real installs (`raven install python` and `raven i
 
 **Method:** for each install, count every regular file under the destination (excluding `.git/`), then separately count files literally under `.claude/` (not following the `.claude/skills` symlink — `find DIR -type f` without `-L` does not descend into a symlinked subdirectory) and files under `.agents/skills/` (the real, shared location `.claude/skills` points to, and the location `.codex/` also reads from directly).
 
+Those counts predate #274. A destination now receives `.claude/skills` as a per-file copy of `.agents/skills` rather than a symlink, so the two rows below overlap instead of partitioning the tree; the combined figure the argument rests on — what a plugin would have to carry — is unchanged.
+
 | | python template | go template |
 | --- | --- | --- |
 | Total files (excl. `.git/`) | 79 | 78 |

@@ -25,6 +25,8 @@ from .constants import (
     RAVEN_BLOCK_END,
     REPO_ROOT,
     ROOT_INSTRUCTION_FILES,
+    SKILLS_COMPAT_PATH,
+    SKILLS_SOURCE_PATH,
     _any_exists,
 )
 from .hashing import sha256_bytes
@@ -634,6 +636,38 @@ def ensure_settings_local_gitignored(destination: Path) -> None:
         ".claude/settings.local.json",
         "Raven: your local Claude Code settings overlay (see .claude/settings.json)",
     )
+
+
+def ensure_skill_mirrors_gitignored(destination: Path, skills: list[str]) -> None:
+    """Ignore each mirrored `.claude/skills/<skill>/` copy, in one .gitignore block.
+
+    Called for the skills whose `.agents/skills` source git already ignores
+    (#274). Mirroring makes a machine-local skill visible to Claude Code,
+    which reads only `.claude/skills`; without this the copy would land on a
+    tracked path and the next broad `git add` would publish a skill the
+    project deliberately kept untracked.
+
+    One block for all of them, rather than `_ensure_gitignored` per skill: a
+    tool that installs a dozen local skills would otherwise write a dozen
+    comment headers into every destination's .gitignore. Already-present
+    entries are skipped, so the block only ever names what is new.
+    """
+    gitignore = destination / ".gitignore"
+    existing_text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+    existing = _existing_ignore_patterns(existing_text)
+    missing = [
+        entry for skill in skills if (entry := f"{SKILLS_COMPAT_PATH}/{skill}/") not in existing
+    ]
+    if not missing:
+        return
+    prefix = "" if not existing_text or existing_text.endswith("\n") else "\n"
+    body = "\n".join(missing)
+    comment = (
+        f"# Raven: mirrors of untracked {SKILLS_SOURCE_PATH} entries "
+        f"({SKILLS_COMPAT_PATH} is what Claude Code reads)"
+    )
+    with gitignore.open("a", encoding="utf-8") as f:
+        f.write(f"{prefix}\n{comment}\n{body}\n")
 
 
 def _gitattributes_required_lines() -> list[str]:

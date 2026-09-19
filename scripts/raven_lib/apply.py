@@ -10,20 +10,28 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Literal
 
-from .blocks import BlockState, block_managed_state, update_raven_block
+from .blocks import (
+    BlockState,
+    block_managed_state,
+    ensure_skill_mirrors_gitignored,
+    update_raven_block,
+)
 from .constants import (
     ADOPTABLE_CONFIG_PATHS,
     KIND_FILE,
     KIND_SYMLINK,
+    SKILLS_COMPAT_PATH,
+    SKILLS_SOURCE_PATH,
     AdoptableFile,
     _any_exists,
 )
-from .hashing import destination_fingerprint, entry_fingerprint, same_content
+from .hashing import destination_fingerprint, entry_fingerprint, file_sha256, same_content
 from .manifest import load_manifest, parse_record
 from .models import Classification, Fingerprint, ManifestRecord, RavenConfig, TemplateEntry
 from .template import entries_for_destination, iter_template_entries
@@ -196,9 +204,20 @@ def classify(
         "local_only": [],
         "needs_adoption": [],
     }
+    # A pre-#274 install still has `.claude/skills` as a symlink, so every
+    # compat copy under it resolves *through* the link onto the real
+    # `.agents/skills` file and would otherwise classify `identical` -- with
+    # nothing copied, `migrate_skills_compat_dir` would then unlink the
+    # symlink and leave Claude Code with no skills at all. Treat the copies as
+    # absent while the link stands: they genuinely do not exist yet at their
+    # own paths.
+    legacy_skills_link = (destination / SKILLS_COMPAT_PATH).is_symlink()
+    compat_prefix = f"{SKILLS_COMPAT_PATH}/"
     for entry in entry_iter:
         target = destination / entry.relative
-        target_exists = _any_exists(target)
+        target_exists = _any_exists(target) and not (
+            legacy_skills_link and entry.relative.startswith(compat_prefix)
+        )
         content_matches = False
         block_state = None
         fingerprint = None
@@ -253,12 +272,110 @@ def find_path_collisions(destination: Path, relatives: Iterable[str]) -> list[st
         for depth in range(1, len(parts)):
             ancestor_rel = "/".join(parts[:depth])
             ancestor = destination / ancestor_rel
+            if ancestor_rel == SKILLS_COMPAT_PATH and ancestor.is_symlink():
+                # The one ancestor an apply repairs instead of refusing: a
+                # pre-#274 install left `.claude/skills` as a symlink, and
+                # `migrate_skills_compat_dir` unlinks it before any write. Safe
+                # whatever the link points at, precisely because it is removed
+                # rather than written through -- but only while that migration
+                # runs first, which `apply_plan` guarantees.
+                continue
             # A symlink ancestor would route writes through its target (escaping
             # the destination), and any non-directory ancestor would make the
             # parent mkdir fail. Both are collisions; a real directory is fine.
             if _any_exists(ancestor) and (ancestor.is_symlink() or not ancestor.is_dir()):
                 collisions.add(ancestor_rel)
     return sorted(collisions)
+
+
+def migrate_skills_compat_dir(destination: Path) -> bool:
+    """Remove a pre-#274 `.claude/skills` symlink so per-file copies can land.
+
+    Returns whether a link was removed, which the caller turns into a manifest
+    prune: the old symlink record describes a path that no longer exists in
+    that shape. Writing the per-file copies without this would follow the link
+    and scatter them through `.agents/skills` instead, recording paths the
+    manifest then cannot reconcile.
+    """
+    target = destination / SKILLS_COMPAT_PATH
+    if not target.is_symlink():
+        return False
+    target.unlink()
+    return True
+
+
+def mirror_project_skills(destination: Path) -> list[str]:
+    """Copy destination-owned skills into `.claude/skills`, and report what changed.
+
+    A project's own skills live beside Raven's under `.agents/skills`, and
+    Claude Code reads only `.claude/skills`. While that path was a symlink
+    (pre-#274), a project skill was visible there for free; per-file copying
+    covers only the paths Raven ships, so without this a project would lose
+    its own skills from Claude Code the moment it upgraded.
+
+    The copies are deliberately untracked by Raven: they are the
+    destination's content, not Raven's, so no manifest record is written and
+    no upgrade ever removes one. `.agents/skills` is the canonical side -- a
+    copy whose source differs is rewritten from it, which is also why the
+    authority map says never to edit the mirror. A copy whose source is gone
+    is left alone rather than deleted: Raven does not own it, and a project
+    may have put it there directly.
+
+    A source skill that *git* ignores (a machine-local install, e.g. a tool
+    that writes its own skills) gets its mirror gitignored too. It still
+    reaches Claude Code, which is the point, but a broad `git add` cannot
+    publish a skill the project deliberately kept untracked.
+    """
+    source_root = destination / SKILLS_SOURCE_PATH
+    compat_root = destination / SKILLS_COMPAT_PATH
+    if not source_root.is_dir() or compat_root.is_symlink():
+        return []
+    mirrored: list[str] = []
+    for source in sorted(source_root.rglob("*")):
+        if source.is_dir() or source.is_symlink():
+            continue
+        relative = source.relative_to(source_root)
+        copy = compat_root / relative
+        if copy.is_file() and file_sha256(copy) == file_sha256(source):
+            continue
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, copy)
+        mirrored.append(f"{SKILLS_COMPAT_PATH}/{relative.as_posix()}")
+    ignored = [
+        skill
+        for skill in sorted(_git_ignored_skills(destination, source_root))
+        if (compat_root / skill).is_dir()
+    ]
+    if ignored:
+        ensure_skill_mirrors_gitignored(destination, ignored)
+    return mirrored
+
+
+def _git_ignored_skills(destination: Path, source_root: Path) -> set[str]:
+    """Names of `.agents/skills/<name>` directories git ignores; empty when it cannot tell.
+
+    One batched ``git check-ignore --stdin`` rather than a call per skill.
+    Exit 0 lists the ignored paths, exit 1 means none matched, and anything
+    else -- git missing, not a repository, a broken index -- is answered
+    "none", because an unanswerable question must not start gitignoring a
+    project's own skills.
+    """
+    names = sorted(path.name for path in source_root.iterdir() if path.is_dir())
+    if not names:
+        return set()
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(destination), "check-ignore", "--stdin"],
+            input="\n".join(f"{SKILLS_SOURCE_PATH}/{name}" for name in names),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return set()
+    if result.returncode != 0:
+        return set()
+    return {Path(line).name for line in result.stdout.splitlines() if line.strip()}
 
 
 def find_state_symlink_collisions(destination: Path, relatives: Iterable[str]) -> list[str]:

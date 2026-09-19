@@ -18,6 +18,8 @@ from .constants import (
     INTERNAL_TEMPLATE_PATHS,
     MERGE_ONLY_TEMPLATE_PATHS,
     REPO_ROOT,
+    SKILLS_COMPAT_PATH,
+    SKILLS_SOURCE_PATH,
     STARTER_TOOL_CONFIG_PATHS,
     _any_exists,
 )
@@ -190,32 +192,35 @@ def entries_for_destination(
     """Template entries adjusted for what already exists at ``destination``.
 
     Two destination-aware rewrites on top of the policy-neutral `iter_template_
-    entries` walk: a starter tool config (e.g. ``pyproject.toml``) is dropped
+    entries` walk. A starter tool config (e.g. ``pyproject.toml``) is dropped
     entirely once the destination already has one, since Raven never re-copies
-    over a project's own config; and if ``.claude/skills`` exists at the
-    destination as a real directory (not the usual symlink to ``.agents/
-    skills``), the symlink entry is replaced with individual file copies so the
-    destination's directory is not clobbered by a symlink.
+    over a project's own config.
+
+    And the ``.claude/skills`` symlink entry is always replaced with individual
+    file copies (#274). The template keeps the link -- it is how one skill tree
+    serves both paths inside the Raven checkout -- but a destination never
+    receives it: git materializes a symlink as a regular file holding the
+    target text on a checkout without symlink support, which leaves Claude
+    Code finding no skills at all. That is the failure #253 removed from
+    CLAUDE.md, and the installed shape has to be the same everywhere, because
+    whatever lands gets committed and cloned onto every other platform. This
+    rewrite was already the fallback for a destination that happened to have a
+    real directory there; making it unconditional is what stops installed
+    shape from depending on what was on disk the first time Raven ran.
     """
     entries = {entry.relative: entry for entry in iter_template_entries(template, excludes, config)}
     for relative in STARTER_TOOL_CONFIG_PATHS:
         if relative in entries and _any_exists(destination / relative):
             entries.pop(relative)
 
-    skills_entry = entries.get(".claude/skills")
-    target = destination / ".claude" / "skills"
-    if (
-        skills_entry
-        and skills_entry.copy_as_symlink
-        and target.exists()
-        and target.is_dir()
-        and not target.is_symlink()
-    ):
-        entries.pop(".claude/skills")
+    skills_entry = entries.get(SKILLS_COMPAT_PATH)
+    if skills_entry and skills_entry.copy_as_symlink:
+        entries.pop(SKILLS_COMPAT_PATH)
+        source_prefix = f"{SKILLS_SOURCE_PATH}/"
         for relative, entry in list(entries.items()):
-            if relative.startswith(".agents/skills/") and not entry.copy_as_symlink:
-                suffix = relative.removeprefix(".agents/skills/")
-                new_relative = f".claude/skills/{suffix}"
+            if relative.startswith(source_prefix) and not entry.copy_as_symlink:
+                suffix = relative.removeprefix(source_prefix)
+                new_relative = f"{SKILLS_COMPAT_PATH}/{suffix}"
                 if is_excluded(entry.source, new_relative, excludes, config):
                     continue
                 entries[new_relative] = TemplateEntry(
