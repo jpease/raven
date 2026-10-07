@@ -11,10 +11,11 @@ Use this skill after a feature, behavior change, template change, workflow chang
 
 1. Identify the changed behavior and its audience: users, maintainers, agents, or template consumers.
 2. Check project-owned documentation that describes that behavior, such as `README.md`, `AGENTS.md`, `CHANGELOG.md`, docs pages, examples, and template-specific guidance.
-3. Update only documentation that is stale or missing because of the change.
-4. Keep generated or managed files aligned through the repository's documented generation path instead of editing generated output directly.
-5. Verify links, commands, filenames, and examples against the implementation.
-6. If documentation work is durable but out of scope, create or update a follow-up issue instead of silently leaving it in chat.
+3. Update only documentation that is stale or missing because of the change. Rewrite a changed fact in place; do not append an amendment, a `[DEPRECATED]` marker, or a "previously we did X" note. A superseded statement left in a doc keeps the old behavior in context and invites the agent to follow it. History belongs in the commit message or the plan's Alternatives section.
+4. Trim after updating: delete text the update made redundant, and split or merge a doc that has drifted out of one subject.
+5. Keep generated or managed files aligned through the repository's documented generation path instead of editing generated output directly.
+6. Verify links, commands, filenames, and examples against the implementation.
+7. If documentation work is durable but out of scope, create or update a follow-up issue instead of silently leaving it in chat.
 
 ## Checklist
 
@@ -27,6 +28,7 @@ Use this skill after a feature, behavior change, template change, workflow chang
 
 ## Avoid
 
+- Do not log every tweak, restate what the code already shows, or record requirements nobody asked for.
 - Do not rewrite unrelated docs for style.
 - Do not document behavior that was not implemented.
 - Do not update generated files by hand when the repo provides a generator.

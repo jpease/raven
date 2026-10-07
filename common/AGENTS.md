@@ -10,7 +10,16 @@ Be effective while preserving context. Prefer targeted retrieval, summaries, and
 - `.agents/skills/` is the canonical location for reusable skills.
 - Agent-specific skill paths (e.g. `.claude/skills`) mirror `.agents/skills`; edit the canonical copy, never the mirror.
 - When a `raven-*` skill and a generic skill cover the same intent, prefer the `raven-*` one — it encodes this project's guardrails.
-- Deeper guidance lives in `.claude/docs/raven-*.md`: guardrails, authority map, coding principles, namespace, agent compatibility, LSP defaults, and the antipattern registry. Read one when its subject comes up.
+- Deeper guidance in `.claude/docs/raven-*.md`; open one when its trigger matches:
+  - `guardrails`: relaxing a gate or adding a suppression.
+  - `authority-map`: deciding which doc to trust.
+  - `coding-principles`: structuring or reviewing code.
+  - `namespace`: adding or placing a Raven-owned file.
+  - `agent-compatibility`: editing client adapter files.
+  - `lsp-mcp`: language server setup.
+  - `semgrep`: Semgrep setup.
+  - `tool-assessment`: choosing retrieval tools.
+  - `antipatterns`: working where a repeat failure is recorded.
 - If another tool inserts a managed block in `AGENTS.md`, treat it as authoritative for that tool's commands, syntax, and resource names — not as an override of these workflow guardrails.
 
 ## Retrieval Discipline
