@@ -1413,8 +1413,15 @@ class RunnerTests(unittest.TestCase):
         fake_bin_dir = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, fake_bin_dir, ignore_errors=True)
         fake_gemini = fake_bin_dir / "gemini"
+        # A shebang cannot hold a space, and sys.executable can (a checkout on
+        # a path with a space made exec fail with ENOENT). A shell shim quotes
+        # the interpreter path instead.
         fake_gemini.write_text(
-            f"""#!{sys.executable}
+            f'#!/bin/sh\nexec "{sys.executable}" "{fake_bin_dir / "gemini_impl.py"}" "$@"\n',
+            encoding="utf-8",
+        )
+        (fake_bin_dir / "gemini_impl.py").write_text(
+            """
 import json, os, sys
 from pathlib import Path
 
@@ -1423,9 +1430,9 @@ assert trust.is_file()
 assert list(json.loads(trust.read_text()).values()) == ["TRUST_FOLDER"]
 home = Path(os.environ["GEMINI_CLI_HOME"])
 assert home.name == "gemini-home"
-print(json.dumps({{"type": "init", "session_id": "mock", "model": "mock-gemini"}}))
-print(json.dumps({{"type": "message", "role": "assistant", "content": "OK", "delta": True}}))
-print(json.dumps({{"type": "result", "status": "success", "stats": {{"total_tokens": 7, "input_tokens": 6, "output_tokens": 1, "cached": 0, "input": 0, "duration_ms": 1, "tool_calls": 0, "models": {{}}}}}}))
+print(json.dumps({"type": "init", "session_id": "mock", "model": "mock-gemini"}))
+print(json.dumps({"type": "message", "role": "assistant", "content": "OK", "delta": True}))
+print(json.dumps({"type": "result", "status": "success", "stats": {"total_tokens": 7, "input_tokens": 6, "output_tokens": 1, "cached": 0, "input": 0, "duration_ms": 1, "tool_calls": 0, "models": {}}}))
 """,
             encoding="utf-8",
         )
