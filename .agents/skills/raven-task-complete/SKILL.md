@@ -76,12 +76,12 @@ When gaps exist:
 
 Always:
 
-> Needs review: [the parts a human should read, most consequential first, each with the reason]. If none: `Needs review: none — the gates cover this diff.`
-
-Always:
-
 > Intent: [what forced this design — the constraint, the rejected alternative, or the non-obvious behavior a future reader would trip on]. If none: `Intent: none — mechanical rename, no design decision.`
 
 Always:
 
 > Discovered work: [each item's disposition per `raven-triage-discovery`]. If none: `Discovered work: none.`
+
+Always, as the last line of the report, so it sits next to the input prompt and cannot scroll out of view:
+
+> Needs review: [the parts a human should read, most consequential first, each with the reason]. If none: `Needs review: none — the gates cover this diff.`

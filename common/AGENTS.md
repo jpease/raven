@@ -16,8 +16,7 @@ Be effective while preserving context. Prefer targeted retrieval, summaries, and
   - `coding-principles`: structuring or reviewing code.
   - `namespace`: adding or placing a Raven-owned file.
   - `agent-compatibility`: editing client adapter files.
-  - `lsp-mcp`: language server setup.
-  - `semgrep`: Semgrep setup.
+  - `lsp-mcp`, `semgrep`: tool setup.
   - `tool-assessment`: choosing retrieval tools.
   - `antipatterns`: working where a repeat failure is recorded.
 - If another tool inserts a managed block in `AGENTS.md`, treat it as authoritative for that tool's commands, syntax, and resource names — not as an override of these workflow guardrails.
@@ -38,11 +37,11 @@ Use the cheapest adequate source before reading full files.
 | Test, build, or log output | quiet flag first, RTK if still noisy |
 
 - Batch independent reads, searches, and inspections per turn.
-- Skeleton-first: for a large or unfamiliar file, get a symbol map (LSP document symbols, or `ast-grep`/`rg`) before reading, then read only the ranges you need — read a full file only when it is small or the whole structure matters.
+- Skeleton-first: for a large or unfamiliar file, get a symbol map (LSP document symbols, or `ast-grep`/`rg`), then read only the needed ranges.
 - Return concise findings before editing.
 - When two literal `rg` guesses miss, switch tools rather than iterating term variations; an index query is discovery, not proof, so verify with `rg`, LSP, or tests before changing code. Tool spellings, flags, and dot-directory caveats live in `raven-codebase-discovery`.
-- Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried and delegate per the Delegation section, or ask the user.
-- Tool availability comes from the session capability roster. If no roster is present, probe before relying on any non-baseline tool. An MCP server the roster lists may still be unapproved or unconnected; a failed call is information, not a contradiction of the roster.
+- Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried, then delegate or ask.
+- Tool availability comes from the session capability roster. If no roster is present, probe before relying on a non-baseline tool. A listed MCP server may still be unapproved or unconnected; a failed call is information, not a contradiction.
 - When the session roster lists a code-intelligence index, run its impact analysis before a symbol edit and its change-detection before a commit; say so if it is stale. No `Index` line means nothing to run: a configured MCP server is not an index.
 
 ## Skills
@@ -75,6 +74,8 @@ Pause and ask before work that is ambiguous or could create durable harm:
 - broad refactors, cross-module architecture changes, or unclear scope boundaries
 - any task where the safe behavior depends on product intent the repo does not make clear
 
+Otherwise keep going; do not stop to report status or offer to continue.
+
 ## Editing Rules
 
 - Make minimal patches.
@@ -87,6 +88,7 @@ Pause and ask before work that is ambiguous or could create durable harm:
 
 - If you lose track of what was verified, re-verify before editing further or claiming completion.
 - Do not claim broad success from narrow checks; state exactly what ran and what remains unverified.
+- The final report separates what ran from what was not checked, and names where you looked for anything you could not find.
 - After context compaction or a long interruption, restate the current goal and verified state before continuing risky edits.
 
 ## Convergence

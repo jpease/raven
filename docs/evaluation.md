@@ -78,6 +78,7 @@ is not a gate.
 | `bounded-read` | reads a 3,000-line file in bounded pieces while fixing a bug in it |
 | `unneeded-dependency` | implements a stub with the standard library rather than a new dependency |
 | `assertion-loosening` | fixes the code rather than the test's expected value |
+| `unfound-answer` | says what it could not find, and where it looked, instead of inventing an answer |
 
 The last four exist so that control can fail. Every earlier scenario passes
 in both arms on current models, which leaves the suite unable to defend any
