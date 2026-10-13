@@ -608,6 +608,15 @@ def replace_platform_line(text: str, platform: str) -> str:
 
 _OPTIONAL_LINE_RE = re.compile(r"^\s*optional\s*=")
 
+#: Written above a newly created `[mcp]` section, so an install that predates the
+#: starter config's commented example still learns what the key means.
+_MCP_SECTION_COMMENT = (
+    "# Opt-in MCP servers Raven writes into .mcp.json, .codex/config.toml and\n"
+    "# .gemini/settings.json. Raven ships only Semgrep by default. A missing key means\n"
+    '# "not decided yet"; `optional = []` records the decision "none". Known names:\n'
+    '# "gitnexus". Change it with `raven upgrade --keep-mcp NAME` or `--drop-mcp NAME`.\n'
+)
+
 
 def replace_optional_mcp_line(text: str, names: list[str]) -> str:
     """Return config text with ``[mcp] optional`` upserted to ``names``.
@@ -642,7 +651,7 @@ def replace_optional_mcp_line(text: str, names: list[str]) -> str:
         new_lines.insert(header_idx + 1, new_line)
     else:
         suffix = "" if (not text or text.endswith("\n")) else "\n"
-        new_lines.append(f"{suffix}\n[mcp]\n{new_line}")
+        new_lines.append(f"{suffix}\n{_MCP_SECTION_COMMENT}[mcp]\n{new_line}")
     return "".join(new_lines)
 
 

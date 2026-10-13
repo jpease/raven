@@ -357,3 +357,54 @@ class OptionalMcpDoctorTests(RavenTestCase):
             '[mcp]\noptional = ["gitnexus"]\n', servers=["semgrep", "gitnexus"], index=True
         )
         self.assertEqual(ids, {})
+
+
+class OptionalMcpCleanupTests(RavenTestCase):
+    def test_new_mcp_section_is_written_with_an_explanatory_comment(self):
+        text = replace_optional_mcp_line('template = "python"\n', [])
+        self.assertIn("Opt-in MCP servers", text)
+        self.assertEqual(_config(text).optional_mcp, [])
+
+    def test_known_code_index_tools_all_exist_in_the_tool_check_list(self):
+        from helpers import REPO_ROOT, load_script_module
+        from raven_lib.optional_mcp import CODE_INDEX_DIRS
+
+        script = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-tool-check.py"
+        module = load_script_module("raven_tool_check_cleanup", script)
+        ids = {tool["id"] for tool in module.TOOLS}
+        self.assertEqual(set(CODE_INDEX_DIRS) - ids, set())
+
+    def test_doctor_flags_the_vendor_block_and_names_the_fix(self):
+        (self.destination / "AGENTS.md").write_text(
+            "# x\n<!-- gitnexus:start -->\nMUST run impact\n<!-- gitnexus:end -->\n",
+            encoding="utf-8",
+        )
+        findings = {
+            f.id: f
+            for f in optional_mcp_findings(self.destination, _config('template = "python"\n'))
+        }
+        finding = findings["doctor.mcp.gitnexus_block"]
+        self.assertEqual(finding.severity.value, "info")
+        self.assertIn("skipContextFiles", finding.fix or "")
+
+    def test_no_vendor_block_means_no_finding(self):
+        (self.destination / "AGENTS.md").write_text("# x\n", encoding="utf-8")
+        ids = {
+            f.id for f in optional_mcp_findings(self.destination, _config('template = "python"\n'))
+        }
+        self.assertNotIn("doctor.mcp.gitnexus_block", ids)
+
+    def test_deliberate_removal_gets_no_wire_it_up_hint(self):
+        from raven_lib.doctor import _code_index_finding
+
+        finding = _code_index_finding("gitnexus", "GitNexus", True, False, {}, decided_none=True)
+        self.assertIn("removed by choice", finding.title)
+        self.assertIsNone(finding.fix)
+
+    def test_diff_instructions_warn_that_local_additions_look_like_removals(self):
+        from raven_lib.blocks import guided_merge_instructions
+
+        body = guided_merge_instructions(
+            ".mcp.json", ".raven/merge/.mcp.json.raven", None, ".raven/merge/.mcp.json.diff"
+        )
+        self.assertIn("shows up as a removal", body)

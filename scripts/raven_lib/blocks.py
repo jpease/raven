@@ -504,6 +504,9 @@ def guided_merge_instructions(
             "pending merge). This records your merged file as the new baseline and removes "
             "these artifacts, so future upgrades will not prompt again until the template "
             "changes.\n\n"
+            "Read the diff direction carefully: it runs from your file to the template, so a "
+            "server, setting, or line you added yourself shows up as a removal. Keep those; "
+            "only take the changes you want from the template.\n\n"
             "Do not apply the template blindly if the repository already has stronger local settings.\n"
         )
     if patch is not None:

@@ -211,7 +211,26 @@ repository declares it:
 | no | no | not used | info |
 
 Any other missing tool that has an "optional when" note is still reported as a warning,
-now labelled `[optional]`.
+now labelled `[optional]`. An index you removed on purpose (`optional = []`) reads
+"installed, not configured (removed by choice)" and carries no hint to wire it up.
+
+`raven doctor` also notes when `AGENTS.md` carries GitNexus's own generated block (between
+`gitnexus:start` and `gitnexus:end`). That block says to run impact analysis before every
+edit and `detect_changes` before every commit, which contradicts the guidance above it.
+Add `{"skipContextFiles": true}` to `.gitnexusrc` so `gitnexus analyze` stops writing it,
+then delete the block.
+
+### Two things to expect when you merge or keep
+
+- **A guided merge can show your own additions as removals.** The diff runs from your file
+  to the template, so a server or setting you added yourself (a `semble` entry in
+  `.mcp.json`, `max_depth` in `.codex/config.toml`) appears as a deleted line. Remove only
+  the server you dropped, keep your additions, then run `raven accept <file>`.
+- **A kept GitNexus loses its permission pre-approvals.** Raven's shipped
+  `.claude/settings.json` no longer pre-allows `mcp__gitnexus__impact` and
+  `mcp__gitnexus__detect_changes`, because the file is the same for every repository.
+  Claude Code asks the first time it calls them. To pre-approve them for yourself, add
+  both to `permissions.allow` in `.claude/settings.local.json`.
 
 ## Adopting a file Raven owns
 

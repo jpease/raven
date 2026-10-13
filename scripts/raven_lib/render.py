@@ -187,9 +187,10 @@ def render_mcp_json(
     `json.dumps` without `sort_keys` walks a dict in insertion order, which is
     also what `load_mcp_servers` produces: every common baseline server (in
     the order `common/.raven/mcp.json` declares them), then every per-language
-    addition not already present. That is what makes this byte-identical to
-    the checked-in per-language `.mcp.json` files it replaces (#271) -- sorting
-    keys would reorder `semgrep`/`gitnexus` alphabetically and break that.
+    addition not already present, with any opted-in optional servers between the two.
+    That is what keeps a repository that opts in byte-identical to the file Raven wrote
+    before those servers became optional (#271) -- sorting keys would reorder them
+    alphabetically and break that.
     """
     servers = _drop_plugin_covered_lsp(
         load_mcp_servers(template, common_root, optional), template.name

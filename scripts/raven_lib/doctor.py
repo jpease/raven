@@ -70,7 +70,7 @@ from .git_hooks import (
 )
 from .manifest import ManifestStatus, git_ref, validate_manifest
 from .models import RavenConfig, SourceSpec
-from .optional_mcp import servers_configured_in
+from .optional_mcp import CODE_INDEX_DIRS, gitnexus_block_in_agents_md, servers_configured_in
 from .orphans import classify_orphans
 from .render import optional_mcp_catalog
 from .runner import Runner, probe_runner
@@ -940,11 +940,17 @@ def missing_gate_tools(
 
 #: Tools that are code-intelligence indexes. Their MCP server name equals the tool id, so
 #: "configured" can be read from the rendered MCP files rather than guessed from the binary.
-_CODE_INDEX_TOOLS = ("gitnexus", "codegraph")
+_CODE_INDEX_TOOLS = tuple(CODE_INDEX_DIRS)
 
 
 def _code_index_finding(
-    tool_id: str, name: str, installed: bool, configured: bool, result: dict[str, object]
+    tool_id: str,
+    name: str,
+    installed: bool,
+    configured: bool,
+    result: dict[str, object],
+    *,
+    decided_none: bool = False,
 ) -> Finding:
     """One finding for an index tool, from two facts: is it installed, is it configured.
 
@@ -962,6 +968,17 @@ def _code_index_finding(
             detail=f"installed and configured as an MCP server. {purpose}".strip(),
         )
     if installed:
+        if decided_none:
+            return Finding(
+                id=f"doctor.tool.{tool_id}",
+                severity=Severity.INFO,
+                category=_TOOLCHAIN,
+                title=f"{name} installed, not configured (removed by choice)",
+                detail=(
+                    f"{name} is on this machine; `[mcp] optional = []` records that this "
+                    "repository does not use it."
+                ),
+            )
         return Finding(
             id=f"doctor.tool.{tool_id}",
             severity=Severity.INFO,
@@ -1017,6 +1034,7 @@ def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list
         return findings
 
     configured_servers = servers_configured_in(destination)
+    index_config = load_config(destination)
     seen_ids: set[str] = set()
     for result in results:
         if not isinstance(result, dict):
@@ -1028,7 +1046,14 @@ def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list
         optional_when = result.get("optionalWhen")
         if tool_id in _CODE_INDEX_TOOLS:
             findings.append(
-                _code_index_finding(tool_id, name, available, tool_id in configured_servers, result)
+                _code_index_finding(
+                    tool_id,
+                    name,
+                    available,
+                    tool_id in configured_servers,
+                    result,
+                    decided_none=index_config.optional_mcp == [],
+                )
             )
         elif available:
             findings.append(
@@ -1326,9 +1351,6 @@ def merge_only_tracking_findings(destination: Path) -> list[Finding]:
     ]
 
 
-_OPTIONAL_MCP_INDEX_DIRS = {"gitnexus": ".gitnexus"}
-
-
 def optional_mcp_findings(destination: Path, config: RavenConfig) -> list[Finding]:
     """Report an optional MCP server whose state the config and the files disagree on.
 
@@ -1387,7 +1409,7 @@ def optional_mcp_findings(destination: Path, config: RavenConfig) -> list[Findin
         for n in catalog
         if config.optional_mcp is None
         and n not in configured
-        and (destination / _OPTIONAL_MCP_INDEX_DIRS.get(n, f".{n}")).is_dir()
+        and (destination / CODE_INDEX_DIRS.get(n, f".{n}")).is_dir()
     ]
     if unwired:
         findings.append(
@@ -1401,6 +1423,26 @@ def optional_mcp_findings(destination: Path, config: RavenConfig) -> list[Findin
                     "wire up its MCP server and `[mcp] optional` is not set."
                 ),
                 fix="add the name to `[mcp] optional` in .raven/config.toml, or set `optional = []`",
+            )
+        )
+
+    if gitnexus_block_in_agents_md(destination):
+        findings.append(
+            Finding(
+                id="doctor.mcp.gitnexus_block",
+                severity=Severity.INFO,
+                category=_DRIFT,
+                title="AGENTS.md carries GitNexus's own instruction block",
+                detail=(
+                    "GitNexus writes a block of MUST-style rules (run impact analysis before "
+                    "every edit, run detect_changes before every commit) outside Raven's "
+                    "block. It contradicts Raven's guidance that a code index is an optional "
+                    "aid, and `gitnexus analyze` rewrites it each run."
+                ),
+                fix=(
+                    'add {"skipContextFiles": true} to .gitnexusrc, then delete the block '
+                    "between the gitnexus:start and gitnexus:end markers"
+                ),
             )
         )
     return findings

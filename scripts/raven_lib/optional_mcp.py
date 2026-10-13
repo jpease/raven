@@ -29,6 +29,24 @@ MCP_CONFIG_PATHS = (".mcp.json", ".codex/config.toml", ".gemini/settings.json")
 
 _TOML_SERVER_RE = re.compile(r"^\[mcp_servers\.([A-Za-z0-9_-]+)\]", re.MULTILINE)
 
+#: Code-intelligence tools Raven knows: tool id (also the MCP server name) -> the index
+#: directory the tool leaves in a repository. `raven doctor` and the tool-check script
+#: both key on these ids; a test keeps the tool-check list in step.
+CODE_INDEX_DIRS = {"gitnexus": ".gitnexus", "codegraph": ".codegraph"}
+
+#: The marker GitNexus wraps around the block it writes into AGENTS.md.
+GITNEXUS_BLOCK_MARKER = "<!-- gitnexus:start -->"
+
+
+def gitnexus_block_in_agents_md(destination: Path) -> bool:
+    """Whether AGENTS.md carries GitNexus's own generated instruction block."""
+    try:
+        text = (destination / "AGENTS.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return GITNEXUS_BLOCK_MARKER in text
+
+
 #: One sentence of per-server advice appended to the prompt, where Raven has any.
 SERVER_HINTS = {
     "gitnexus": (
@@ -93,8 +111,8 @@ def prompt_to_keep_optional_server(name: str) -> bool:
     print(f"'{name}' is now an optional MCP server in Raven.")
     print(
         "Raven no longer installs it by default. In Raven's agent-task tests, grep and a "
-        "language server found as many callers as a code-graph tool and cost less; the one "
-        "measured gain was cheaper exploration questions, from CodeGraph."
+        "language server found as many callers as a code-graph tool and cost less; a code "
+        "index only made exploration questions cheaper."
     )
     print(
         f"This repository has a '{name}' server configured. Keeping it records "
