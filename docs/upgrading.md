@@ -199,6 +199,20 @@ no configured server. It warns when `[mcp] optional` names a server that none of
 the MCP files declares, usually a pending guided merge. An explicit
 `optional = []` stays silent.
 
+For each code-intelligence tool (GitNexus, CodeGraph), `raven doctor` also says which of
+four things is true, from whether the command is installed and whether an MCP file in the
+repository declares it:
+
+| Installed | Configured | Reported as | Level |
+| --- | --- | --- | --- |
+| yes | yes | in use | ok |
+| yes | no | installed, not configured | info |
+| no | yes | missing (configured but not installed) | warning |
+| no | no | not used | info |
+
+Any other missing tool that has an "optional when" note is still reported as a warning,
+now labelled `[optional]`.
+
 ## Adopting a file Raven owns
 
 Adoption is the same one-flag deal for every file Raven owns wholesale rather

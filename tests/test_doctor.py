@@ -821,6 +821,61 @@ class DoctorToolchainTests(RavenTestCase):
         self.assertEqual(match.severity, Severity.WARN)
         self.assertFalse(any(f.severity == Severity.ERROR for f in findings))
 
+    def test_missing_optional_tool_is_still_flagged_but_annotated_optional(self):
+        from raven_lib.doctor import toolchain_findings
+        from raven_lib.findings import Severity
+
+        self._config()
+        results = [
+            {
+                "id": "jq",
+                "name": "jq",
+                "available": False,
+                "purpose": "json",
+                "optionalWhen": "no JSON is parsed",
+            },
+            {"id": "fd", "name": "fd", "available": False, "purpose": "f", "optionalWhen": None},
+        ]
+        findings = {
+            f.id: f for f in toolchain_findings(self.destination, _fake_toolcheck_runner(results))
+        }
+        self.assertEqual(findings["doctor.tool.jq"].title, "jq missing [optional]")
+        self.assertEqual(findings["doctor.tool.jq"].severity, Severity.WARN)
+        self.assertEqual(findings["doctor.tool.fd"].title, "fd missing")
+
+    def test_code_index_tool_reports_one_of_four_states(self):
+        import json as _json
+
+        from raven_lib.doctor import toolchain_findings
+        from raven_lib.findings import Severity
+
+        self._config()
+        cases = [
+            # (installed, configured, title, severity)
+            (True, True, "GitNexus in use", Severity.OK),
+            (True, False, "GitNexus installed, not configured", Severity.INFO),
+            (False, True, "GitNexus missing (configured but not installed)", Severity.WARN),
+            (False, False, "GitNexus not used", Severity.INFO),
+        ]
+        for installed, configured, title, severity in cases:
+            with self.subTest(installed=installed, configured=configured):
+                servers = {"semgrep": {}, **({"gitnexus": {}} if configured else {})}
+                (self.destination / ".mcp.json").write_text(
+                    _json.dumps({"mcpServers": servers}), encoding="utf-8"
+                )
+                results = [
+                    {
+                        "id": "gitnexus",
+                        "name": "GitNexus",
+                        "available": installed,
+                        "purpose": "graph",
+                        "optionalWhen": "grep is enough",
+                    }
+                ]
+                findings = toolchain_findings(self.destination, _fake_toolcheck_runner(results))
+                match = next(f for f in findings if f.id == "doctor.tool.gitnexus")
+                self.assertEqual((match.title, match.severity), (title, severity))
+
     def test_gofmt_present_is_ok_despite_unsupported_version_flag(self):
         # gofmt has no --version flag: it exits 2 with "flag provided but not
         # defined: -version" even when the binary is installed and working.

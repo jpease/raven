@@ -938,6 +938,62 @@ def missing_gate_tools(
     return [tool for tool in spec.tools if not _gate_tool_found(tool, runner, destination)]
 
 
+#: Tools that are code-intelligence indexes. Their MCP server name equals the tool id, so
+#: "configured" can be read from the rendered MCP files rather than guessed from the binary.
+_CODE_INDEX_TOOLS = ("gitnexus", "codegraph")
+
+
+def _code_index_finding(
+    tool_id: str, name: str, installed: bool, configured: bool, result: dict[str, object]
+) -> Finding:
+    """One finding for an index tool, from two facts: is it installed, is it configured.
+
+    "Present" alone hid the case that matters here: a repository can have the binary on
+    the machine and no MCP server wired up (so agents never use it), or a server wired up
+    and no binary (so every call fails).
+    """
+    purpose = str(result.get("purpose", ""))
+    if installed and configured:
+        return Finding(
+            id=f"doctor.tool.{tool_id}",
+            severity=Severity.OK,
+            category=_TOOLCHAIN,
+            title=f"{name} in use",
+            detail=f"installed and configured as an MCP server. {purpose}".strip(),
+        )
+    if installed:
+        return Finding(
+            id=f"doctor.tool.{tool_id}",
+            severity=Severity.INFO,
+            category=_TOOLCHAIN,
+            title=f"{name} installed, not configured",
+            detail=(
+                f"{name} is on this machine, but no MCP file in this repository declares it, "
+                "so agents here do not use it."
+            ),
+            fix=f'to use it here, add "{tool_id}" to `[mcp] optional` in .raven/config.toml',
+        )
+    if configured:
+        return Finding(
+            id=f"doctor.tool.{tool_id}",
+            severity=Severity.WARN,
+            category=_TOOLCHAIN,
+            title=f"{name} missing (configured but not installed)",
+            detail=f"an MCP file declares {name}, but the command is not on PATH.",
+            fix=(
+                f"install {name} (see `raven-tool-bootstrap`), or remove it with "
+                f"`raven upgrade --drop-mcp {tool_id}`"
+            ),
+        )
+    return Finding(
+        id=f"doctor.tool.{tool_id}",
+        severity=Severity.INFO,
+        category=_TOOLCHAIN,
+        title=f"{name} not used",
+        detail=f"{name} is neither installed nor configured here. It is optional.",
+    )
+
+
 def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list[Finding]:
     """Report tool-check results (found/missing recommended tools), or warn if the script failed."""
     findings: list[Finding] = []
@@ -960,6 +1016,7 @@ def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list
         )
         return findings
 
+    configured_servers = servers_configured_in(destination)
     seen_ids: set[str] = set()
     for result in results:
         if not isinstance(result, dict):
@@ -969,7 +1026,11 @@ def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list
         name = str(result.get("name", tool_id))
         available = bool(result.get("available"))
         optional_when = result.get("optionalWhen")
-        if available:
+        if tool_id in _CODE_INDEX_TOOLS:
+            findings.append(
+                _code_index_finding(tool_id, name, available, tool_id in configured_servers, result)
+            )
+        elif available:
             findings.append(
                 Finding(
                     id=f"doctor.tool.{tool_id}",
@@ -980,15 +1041,16 @@ def toolchain_findings(destination: Path, runner: Runner = probe_runner) -> list
                 )
             )
         else:
+            is_optional = isinstance(optional_when, str) and bool(optional_when)
             detail = f"{name} not installed or configured"
-            if isinstance(optional_when, str) and optional_when:
+            if is_optional:
                 detail += f" (optional when {optional_when})"
             findings.append(
                 Finding(
                     id=f"doctor.tool.{tool_id}",
                     severity=Severity.WARN,
                     category=_TOOLCHAIN,
-                    title=f"{name} missing",
+                    title=f"{name} missing" + (" [optional]" if is_optional else ""),
                     detail=detail,
                     fix="see `raven-tool-bootstrap` skill for install guidance",
                 )
