@@ -227,3 +227,12 @@ warn_negated_closing_keyword = true
 # "missing".
 # kind = "claude-plugin"
 # required = false
+
+# [mcp]
+# Opt-in MCP servers Raven can write into .mcp.json, .codex/config.toml and
+# .gemini/settings.json. Raven ships only Semgrep by default; code-intelligence
+# indexes are optional because grep and LSP were as accurate in Raven's tests.
+# Commented out on purpose: a missing key means "not decided yet", and an
+# uncommented `optional = []` records the decision "none".
+# Known names today: "gitnexus".
+# optional = ["gitnexus"]

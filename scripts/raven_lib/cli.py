@@ -35,6 +35,7 @@ from .config import (
     platform_excluded,
     sync_config_sections,
     template_excluded,
+    update_config_optional_mcp,
 )
 from .constants import (
     ADOPTABLE_BY_PATH,
@@ -71,6 +72,7 @@ from .git_hooks import (
 )
 from .manifest import load_manifest, update_manifest
 from .models import ApplyPlan, Classification, RavenConfig, TemplateEntry
+from .optional_mcp import OptionalMcpDecision, decide_optional_mcp, unknown_names
 from .orphans import classify_orphans, shipped_relatives
 from .plan import (
     adoption_conflict,
@@ -81,6 +83,7 @@ from .plan import (
     print_dry_run_plan,
     print_section,
 )
+from .render import optional_mcp_catalog
 from .report import render_human, render_json, supports_unicode_marks
 from .template import broken_template_symlinks, entries_for_destination, iter_template_entries
 from .tracking import untracked_merge_only_paths
@@ -872,6 +875,27 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     platform = getattr(args, "platform", None)
     sync_config = getattr(args, "sync_config", False)
 
+    keep_mcp = list(getattr(args, "keep_mcp", None) or [])
+    drop_mcp = list(getattr(args, "drop_mcp", None) or [])
+    catalog = list(optional_mcp_catalog(REPO_ROOT / template_name))
+    bad = unknown_names([*keep_mcp, *drop_mcp], catalog)
+    if bad or set(keep_mcp) & set(drop_mcp):
+        if bad:
+            print(
+                f"error: unknown optional MCP server(s) {bad}; known: {sorted(catalog)}",
+                file=sys.stderr,
+            )
+        else:
+            both = sorted(set(keep_mcp) & set(drop_mcp))
+            print(f"error: {both} passed to both --keep-mcp and --drop-mcp", file=sys.stderr)
+        return 2
+    mcp = decide_optional_mcp(
+        destination, config, catalog, keep=keep_mcp, drop=drop_mcp, dry_run=args.dry_run
+    )
+    if mcp.names != (config.optional_mcp or []):
+        config = replace(config, optional_mcp=mcp.names)
+    _report_optional_mcp(mcp, dry_run=args.dry_run)
+
     def write_config() -> int:
         # Staged as a callback for the same reason `cmd_install` stages its
         # own: `_run` can still reject the request, and a rejected upgrade
@@ -879,6 +903,8 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
         # sync sees (and therefore keeps) the value this run just set.
         if platform is not None:
             _update_config_platform(destination / CONFIG_PATH, platform)
+        if mcp.write:
+            update_config_optional_mcp(destination / CONFIG_PATH, mcp.names)
         if sync_config:
             appended = sync_config_sections(destination, template_name)
             print()
@@ -899,10 +925,31 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
         wire_hooks=getattr(args, "wire_hooks", False),
         confirm_template_switch_requested=getattr(args, "confirm_template_switch", False),
         platform_override=platform,
-        write_config=write_config if (platform is not None or sync_config) else None,
+        write_config=(write_config if (platform is not None or sync_config or mcp.write) else None),
     )
     _register_for_fleet(destination, rc, args.dry_run)
     return rc
+
+
+def _report_optional_mcp(mcp: OptionalMcpDecision, *, dry_run: bool) -> None:
+    """Tell the user about any optional MCP server this run kept without being asked."""
+    if dry_run and mcp.pending:
+        print_section(
+            "Decision needed: these MCP servers are configured here but are now optional in "
+            "Raven. A real `raven upgrade` asks whether to keep each one (it keeps them when "
+            "there is no terminal). Pass --keep-mcp NAME or --drop-mcp NAME to decide ahead "
+            "of time:",
+            mcp.pending,
+        )
+        print()
+    elif mcp.kept_unasked:
+        print_section(
+            "Kept without asking (no terminal): these MCP servers are now optional in Raven. "
+            'Recorded as `[mcp] optional` in .raven/config.toml. To remove one, run '
+            "`raven upgrade --drop-mcp NAME`:",
+            mcp.kept_unasked,
+        )
+        print()
 
 
 @dataclass
@@ -1388,6 +1435,26 @@ Adoption:
         metavar="PATH",
         default=[],
         help=adopt_flag_help,
+    )
+    upgrade_parser.add_argument(
+        "--keep-mcp",
+        action="append",
+        metavar="NAME",
+        default=[],
+        help=(
+            "keep an optional MCP server (for example gitnexus) in the rendered MCP files and "
+            "record it in `[mcp] optional`; repeatable; skips the interactive question"
+        ),
+    )
+    upgrade_parser.add_argument(
+        "--drop-mcp",
+        action="append",
+        metavar="NAME",
+        default=[],
+        help=(
+            "remove an optional MCP server from `[mcp] optional` and from the rendered MCP "
+            "files; repeatable; skips the interactive question"
+        ),
     )
     upgrade_parser.add_argument(
         "--confirm-template-switch",

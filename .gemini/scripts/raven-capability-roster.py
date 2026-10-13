@@ -335,8 +335,8 @@ def read_index_meta(root: Path) -> dict | None:
 
 #: Returned when git could not answer, so "checked and current" and "could not
 #: check" do not render identically. Reporting an unanswered check as `current`
-#: asserts freshness nothing verified, which matters because the managed
-#: guidance requires impact analysis against this index before a symbol edit.
+#: asserts freshness nothing verified, which matters because an agent that trusts a stale
+#: index acts on a graph that no longer matches the code.
 STALENESS_UNKNOWN = "unknown"
 
 

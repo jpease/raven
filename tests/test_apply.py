@@ -1459,7 +1459,7 @@ class McpAndCodexConfigRendererTests(RavenTestCase):
 
         servers = run1["mcpServers"]
         self.assertIn("semgrep", servers)
-        self.assertIn("gitnexus", servers)
+        self.assertNotIn("gitnexus", servers)  # opt-in via `[mcp] optional`
         # self.template is "python", which ships an official Claude Code
         # pyright-lsp plugin -- the bridge must not duplicate it (#271).
         self.assertNotIn("lsp", servers)
@@ -1472,7 +1472,7 @@ class McpAndCodexConfigRendererTests(RavenTestCase):
 
         config = raven.parse_simple_toml(run1)
         self.assertIn("mcp_servers.semgrep", config)
-        self.assertIn("mcp_servers.gitnexus", config)
+        self.assertNotIn("mcp_servers.gitnexus", config)  # opt-in via `[mcp] optional`
         # Unlike .mcp.json, Codex has no plugin alternative and always wants
         # the bridge, even for python (#271).
         lsp = config["mcp_servers.lsp"]

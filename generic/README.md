@@ -13,8 +13,9 @@ tool config. A repo with no build system has no gate for `just check` to run,
 and a `raven-generic.md` rules file would have no language whose idioms it could
 describe — `AGENTS.md`, `raven-prose.md`, and `raven-security.md` already carry
 everything that applies. `.mcp.json` and `.codex/config.toml` declare `semgrep`
-and `gitnexus` but no `lsp` server, since there is no language to point
-`mcp-language-server` at.
+but no `lsp` server, since there is no language to point
+`mcp-language-server` at. A GitNexus server is not a default; opt in with
+`[mcp] optional = ["gitnexus"]` in `.raven/config.toml`.
 
 If your repo *is* one of the nine stacks, install that template instead: it adds
 the language's rules file, its `just check` gate, and its language server on top

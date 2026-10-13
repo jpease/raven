@@ -78,6 +78,10 @@ class RavenConfig:
     # `[sources.<name>]` section suffix; empty when the config declares none.
     sources: dict[str, SourceSpec] = field(default_factory=dict)
     gemini_components: dict[str, bool] = field(default_factory=dict)
+    # `[mcp] optional`: opt-in MCP servers from the template's optional catalog.
+    # None means the key is absent (the user has not decided); an empty list is
+    # an explicit "none". Only the absent case ever triggers the upgrade prompt.
+    optional_mcp: list[str] | None = None
 
 
 @dataclass(frozen=True)

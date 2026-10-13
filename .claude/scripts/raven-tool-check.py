@@ -63,6 +63,24 @@ TOOLS = [
                 "validate native Windows vs WSL for this repo"
             ),
         },
+        "optionalWhen": (
+            "grep and the language server answer the question; opt in with `[mcp] optional` in "
+            ".raven/config.toml to have Raven configure its MCP server"
+        ),
+    },
+    {
+        "id": "codegraph",
+        "name": "CodeGraph",
+        "commands": [["codegraph", "--version"]],
+        "purpose": "pre-indexed exploration and caller lookup",
+        "install": (
+            "official install docs: https://github.com/colbymchenry/codegraph#get-started; "
+            "set CODEGRAPH_TELEMETRY=0 to turn its usage telemetry off"
+        ),
+        "optionalWhen": (
+            "grep and the language server answer the question; a code index did not improve "
+            "caller-lookup accuracy in Raven's tests and only helped exploration questions"
+        ),
     },
     {
         "id": "mcp-language-server",

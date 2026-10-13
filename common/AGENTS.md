@@ -30,8 +30,8 @@ Use the cheapest adequate source before reading full files.
 | Exact string, symbol, config key, or error | `rg` |
 | File discovery by name, type, or extension | `fd` |
 | Definition, references, type info, diagnostics | LSP |
-| "How does X work?" / conceptual flow discovery | `mcp__gitnexus__query` |
-| Blast-radius before editing a symbol | `mcp__gitnexus__impact` |
+| "How does X work?" / conceptual flow discovery | Listed code index, else `rg` and LSP |
+| Blast-radius before editing a symbol | LSP references, else `rg` |
 | Syntax-aware pattern or mechanical rewrite | ast-grep or Semgrep |
 | Large diff before commit | `git diff --stat`, then targeted hunks |
 | Test, build, or log output | quiet flag first, RTK if still noisy |
@@ -42,7 +42,7 @@ Use the cheapest adequate source before reading full files.
 - When two literal `rg` guesses miss, switch tools rather than iterating term variations; an index query is discovery, not proof, so verify with `rg`, LSP, or tests before changing code. Tool spellings, flags, and dot-directory caveats live in `raven-codebase-discovery`.
 - Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried, then delegate or ask.
 - Tool availability comes from the session capability roster. If no roster is present, probe before relying on a non-baseline tool. A listed MCP server may still be unapproved or unconnected; a failed call is information, not a contradiction.
-- When the session roster lists a code-intelligence index, run its impact analysis before a symbol edit and its change-detection before a commit; say so if it is stale. No `Index` line means nothing to run: a configured MCP server is not an index.
+- A listed code index is an optional aid: its result is discovery, not proof; say so if it is stale. A configured MCP server is not an index.
 
 ## Skills
 
@@ -79,7 +79,7 @@ Otherwise keep going; do not stop to report status or offer to continue.
 ## Editing Rules
 
 - Make minimal patches.
-- Before changing public APIs, check references with LSP and repo-configured impact analysis.
+- Before changing public APIs, check references with LSP, then confirm with `rg`.
 - Before large mechanical edits, use ast-grep or Semgrep.
 - Run the narrowest relevant test first.
 - If tests fail, inspect only failing output first.

@@ -231,8 +231,9 @@ def entries_for_destination(
 
     gemini_settings_rel = ".gemini/settings.json"
     common = resolve_common_root(template)
+    optional = tuple(config.optional_mcp or ()) if config is not None else ()
     if gemini_settings_rel in entries:
-        rendered_str = render_gemini_settings(template, common_root=common)
+        rendered_str = render_gemini_settings(template, common_root=common, optional=optional)
         entries[gemini_settings_rel] = TemplateEntry(
             relative=gemini_settings_rel,
             source=entries[gemini_settings_rel].source,
@@ -246,7 +247,7 @@ def entries_for_destination(
                 destination / gemini_settings_rel, gemini_settings_rel, excludes, config
             )
         )
-        and can_render_gemini_settings(template, common_root=common)
+        and can_render_gemini_settings(template, common_root=common, optional=optional)
         and (
             (template / gemini_settings_rel).exists()
             or (common / gemini_settings_rel).exists()
@@ -260,7 +261,7 @@ def entries_for_destination(
             if (common / gemini_settings_rel).exists()
             else template / gemini_settings_rel
         )
-        rendered_str = render_gemini_settings(template, common_root=common)
+        rendered_str = render_gemini_settings(template, common_root=common, optional=optional)
         entries[gemini_settings_rel] = TemplateEntry(
             relative=gemini_settings_rel,
             source=source_path,
@@ -272,23 +273,27 @@ def entries_for_destination(
     if (
         config is None
         or not is_excluded(destination / mcp_json_rel, mcp_json_rel, excludes, config)
-    ) and can_render_mcp_json(template, common_root=common):
+    ) and can_render_mcp_json(template, common_root=common, optional=optional):
         entries[mcp_json_rel] = TemplateEntry(
             relative=mcp_json_rel,
             source=template / mcp_json_rel,
             copy_as_symlink=False,
-            rendered_content=render_mcp_json(template, common_root=common).encode("utf-8"),
+            rendered_content=render_mcp_json(
+                template, common_root=common, optional=optional
+            ).encode("utf-8"),
         )
 
     codex_config_rel = ".codex/config.toml"
     if (
         config is None
         or not is_excluded(destination / codex_config_rel, codex_config_rel, excludes, config)
-    ) and can_render_codex_config_toml(template, common_root=common):
+    ) and can_render_codex_config_toml(template, common_root=common, optional=optional):
         entries[codex_config_rel] = TemplateEntry(
             relative=codex_config_rel,
             source=template / codex_config_rel,
             copy_as_symlink=False,
-            rendered_content=render_codex_config_toml(template, common_root=common).encode("utf-8"),
+            rendered_content=render_codex_config_toml(
+                template, common_root=common, optional=optional
+            ).encode("utf-8"),
         )
     return {key: entries[key] for key in sorted(entries)}

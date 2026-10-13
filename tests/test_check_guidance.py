@@ -512,6 +512,8 @@ class BuildParserContractTests(unittest.TestCase):
             all_flags,
             {
                 "--adopt",
+                "--keep-mcp",
+                "--drop-mcp",
                 "--sync-config",
                 "--wire-hooks",
                 "--confirm-template-switch",

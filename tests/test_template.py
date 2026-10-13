@@ -465,11 +465,11 @@ paths = [".claude/skills/raven-plan/**"]
         rule = stack / ".claude" / "rules" / "raven-dotfiles.md"
         self.assertTrue(rule.is_file())
 
-        # Rendered .mcp.json ships semgrep/gitnexus but intentionally no lsp server.
+        # Rendered .mcp.json ships semgrep and intentionally no lsp server; gitnexus is opt-in.
         mcp = json.loads(render_mcp_json(stack))
         servers = mcp["mcpServers"]
         self.assertIn("semgrep", servers)
-        self.assertIn("gitnexus", servers)
+        self.assertNotIn("gitnexus", servers)
         self.assertNotIn("lsp", servers)
 
         # Global, description-gated skill lives in common/.
@@ -502,12 +502,12 @@ paths = [".claude/skills/raven-plan/**"]
             with self.subTest(rule=name):
                 self.assertTrue((rules / name).is_symlink())
 
-        # Rendered .mcp.json ships semgrep/gitnexus and, like dotfiles, no lsp
-        # server: there is no language to point mcp-language-server at.
+        # Rendered .mcp.json ships semgrep and, like dotfiles, no lsp server: there is no
+        # language to point mcp-language-server at. gitnexus is opt-in.
         mcp = json.loads(render_mcp_json(stack))
         servers = mcp["mcpServers"]
         self.assertIn("semgrep", servers)
-        self.assertIn("gitnexus", servers)
+        self.assertNotIn("gitnexus", servers)
         self.assertNotIn("lsp", servers)
 
         codex_config = render_codex_config_toml(stack)

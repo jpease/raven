@@ -70,7 +70,9 @@ from .git_hooks import (
 )
 from .manifest import ManifestStatus, git_ref, validate_manifest
 from .models import RavenConfig, SourceSpec
+from .optional_mcp import servers_configured_in
 from .orphans import classify_orphans
+from .render import optional_mcp_catalog
 from .runner import Runner, probe_runner
 from .template import (
     broken_template_symlinks,
@@ -1262,6 +1264,86 @@ def merge_only_tracking_findings(destination: Path) -> list[Finding]:
     ]
 
 
+_OPTIONAL_MCP_INDEX_DIRS = {"gitnexus": ".gitnexus"}
+
+
+def optional_mcp_findings(destination: Path, config: RavenConfig) -> list[Finding]:
+    """Report an optional MCP server whose state the config and the files disagree on.
+
+    Three states, none of them an ERROR:
+
+    * a catalog server is configured and `[mcp] optional` is absent: the keep-or-remove
+      question `raven upgrade` asks has not been answered yet (INFO);
+    * the config opts a server in but no rendered MCP file declares it: a pending
+      guided merge, a disabled component, or an unrun upgrade (WARN);
+    * a server's index directory exists but the config never mentions it: the repository
+      has an index Raven does not wire up (INFO).
+
+    An explicit `optional = []` is a recorded decision and stays silent, even with an
+    index present: that is a legitimate user-scope setup.
+    """
+    template_dir = REPO_ROOT / (config.template or "generic")
+    catalog = list(optional_mcp_catalog(template_dir))
+    configured = servers_configured_in(destination)
+    opted_in = config.optional_mcp or []
+    findings: list[Finding] = []
+
+    undecided = [n for n in catalog if config.optional_mcp is None and n in configured]
+    if undecided:
+        findings.append(
+            Finding(
+                id="doctor.mcp.optional_undecided",
+                severity=Severity.INFO,
+                category=_DRIFT,
+                title=f"optional MCP server not decided yet: {', '.join(undecided)}",
+                detail=(
+                    "Raven no longer installs this server by default, and this repository "
+                    "has it configured without a recorded choice in `[mcp] optional`."
+                ),
+                fix="run `raven upgrade` and answer the keep-or-remove question",
+            )
+        )
+
+    missing = [n for n in opted_in if n in catalog and n not in configured]
+    if missing:
+        findings.append(
+            Finding(
+                id="doctor.mcp.optional_not_rendered",
+                severity=Severity.WARN,
+                category=_DRIFT,
+                title=f"opted-in MCP server not configured: {', '.join(missing)}",
+                detail=(
+                    "`[mcp] optional` names this server, but none of .mcp.json, "
+                    ".codex/config.toml or .gemini/settings.json declares it."
+                ),
+                fix="run `raven upgrade` (finish any pending merge with `raven accept`)",
+            )
+        )
+
+    unwired = [
+        n
+        for n in catalog
+        if config.optional_mcp is None
+        and n not in configured
+        and (destination / _OPTIONAL_MCP_INDEX_DIRS.get(n, f".{n}")).is_dir()
+    ]
+    if unwired:
+        findings.append(
+            Finding(
+                id="doctor.mcp.index_without_server",
+                severity=Severity.INFO,
+                category=_DRIFT,
+                title=f"index present but no MCP server configured: {', '.join(unwired)}",
+                detail=(
+                    "The repository has this tool's index directory, but Raven does not "
+                    "wire up its MCP server and `[mcp] optional` is not set."
+                ),
+                fix="add the name to `[mcp] optional` in .raven/config.toml, or set `optional = []`",
+            )
+        )
+    return findings
+
+
 _SOURCES = "Sources"
 
 # Where Claude Code records the plugins it has installed, relative to the
@@ -1661,5 +1743,6 @@ def build_doctor_findings(destination: Path, runner: Runner = probe_runner) -> l
     config = load_config(destination)
     if config.exists:
         findings.extend(drift_findings(destination))
+        findings.extend(optional_mcp_findings(destination, config))
     findings.extend(sources_findings(destination, config))
     return findings

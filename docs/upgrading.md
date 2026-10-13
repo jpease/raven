@@ -167,6 +167,38 @@ the template.
 - Once adopted or freshly installed, it is tracked in the manifest and
   upgrades like any other managed file.
 
+## Optional MCP servers
+
+GitNexus is no longer a default MCP server. `.raven/config.toml` accepts:
+
+```toml
+[mcp]
+optional = ["gitnexus"]
+```
+
+A missing key means undecided; an empty list means none.
+
+On `raven upgrade`, when a GitNexus server is configured in `.mcp.json`,
+`.codex/config.toml`, or `.gemini/settings.json` and no decision is recorded:
+
+- An interactive terminal prompts keep-or-remove and records the answer.
+- A non-interactive run (CI, pipe) keeps the server, records that, and prints
+  a notice with how to remove it.
+- `--keep-mcp NAME` and `--drop-mcp NAME` (both repeatable) decide without a
+  prompt.
+- `--dry-run` never prompts or writes, and prints a "decision needed" section.
+- A repo with no GitNexus server configured is never asked.
+
+If you keep it and had edited `.mcp.json`, no merge artifact is produced for
+that entry. If you remove it and had edited `.mcp.json`, the guided-merge
+artifact shows the removal.
+
+`raven doctor` reports three states. It notes a configured server with no recorded
+decision, and an index directory (`.gitnexus/`) with no `[mcp] optional` key and
+no configured server. It warns when `[mcp] optional` names a server that none of
+the MCP files declares, usually a pending guided merge. An explicit
+`optional = []` stays silent.
+
 ## Adopting a file Raven owns
 
 Adoption is the same one-flag deal for every file Raven owns wholesale rather

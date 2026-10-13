@@ -5,12 +5,6 @@
       "args": [
         "mcp"
       ]
-    },
-    "gitnexus": {
-      "command": "gitnexus",
-      "args": [
-        "mcp"
-      ]
     }
   }
 }

@@ -1143,7 +1143,7 @@ class DebloatSkillTests(unittest.TestCase):
         region = section_region(self.lowered, "## required constraints")
 
         self.assertIn("lsp", region)
-        self.assertIn("gitnexus", region)
+        self.assertIn("index", region)
         self.assertIn("text search", region)
 
     def test_no_automatic_deletion(self):

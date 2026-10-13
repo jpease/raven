@@ -23,7 +23,7 @@ description: Use when reviewing a diff, branch, or proposed patch for correctnes
 1. Inspect changed files and diff summary.
 2. Use full diff when necessary.
 3. Use LSP diagnostics on changed files.
-4. Use GitNexus for changed public APIs or shared modules.
+4. Use LSP references or `rg` for changed public APIs or shared modules.
 5. Use tests and build output through RTK.
 6. Report issues by severity: correctness, safety/security, maintainability, test coverage, and performance.
 7. Check findings against `.claude/docs/raven-antipatterns.md`. Cite a matching entry instead of re-explaining it; on a genuine second occurrence, propose a new entry per that doc's format and write it only once the user authorizes.

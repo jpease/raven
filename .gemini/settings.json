@@ -118,12 +118,6 @@
     ]
   },
   "mcpServers": {
-    "gitnexus": {
-      "args": [
-        "mcp"
-      ],
-      "command": "gitnexus"
-    },
     "lsp": {
       "args": [
         "--workspace",

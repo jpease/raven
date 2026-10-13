@@ -12,7 +12,8 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 | `fd` | File discovery by name, extension, type, or pattern | Faster and friendlier than `find`. Use to locate files before reading them. |
 | `just` | Consistent task runner for test, lint, format, typecheck, and hook installation | Use `just --list` to discover available recipes. Prefer `just check` over invoking tools directly. |
 | LSP | Definitions, references, hover/type info, diagnostics, rename safety | Best once a symbol is known. Prefer client-native LSP integrations when available; otherwise use `mcp-language-server` plus the relevant language server. |
-| GitNexus | Architecture, dependency, call-path, and blast-radius reasoning | Best for structural questions. Treat as a graph/static-analysis layer, not as a replacement for LSP. Disk footprint reaches hundreds of MB even for small repos, is gitignored (not committed), and regenerates fully on reindex rather than updating incrementally. Contributors on constrained disk may leave unconfigured and rely on the `rg`+LSP fallback documented in the retrieval ladder. |
+| CodeGraph | Pre-indexed exploration and caller lookup (`mcp__codegraph__codegraph_explore`; CLI `codegraph explore\|impact\|callers\|callees\|affected`) | Recommended optional exploration aid. The index auto-syncs. Telemetry is on by default; turn it off with `CODEGRAPH_TELEMETRY=0`. Its `upgrade` command can rewrite a global `AGENTS.md` outside its markers (issue #2506), so run it with care. Output is discovery, not proof. |
+| GitNexus | Architecture, dependency, call-path, and blast-radius reasoning | Optional alternative. Raven no longer ships it as a default MCP server; opt in with `[mcp] optional = ["gitnexus"]` in `.raven/config.toml`. Treat as a graph/static-analysis layer, not as a replacement for LSP. Add `.gitnexusrc` with `{"skipContextFiles": true}` so `gitnexus analyze` does not inject a MUST-style block into `AGENTS.md`. License: PolyForm Noncommercial License 1.0.0 (per the LICENSE file in its repository); check it fits your use. Disk footprint reaches hundreds of MB even for small repos, is gitignored (not committed), and regenerates fully on reindex rather than updating incrementally. Contributors on constrained disk may leave it unconfigured and rely on the `rg`+LSP fallback documented in the retrieval ladder. |
 | ast-grep | Syntax-aware search and mechanical rewrites | Best when code shape matters more than raw text. A structural edit is reviewable because `-r` without `-U` prints the diff and leaves the file alone; `-U` then applies it to every match with no diff and no prompt, and `-i` confirms match by match in a full-screen TUI that needs a human at a terminal. |
 | Semgrep | Security, policy, and multi-language static-analysis rules | Best for finding risky patterns and enforcing rules across codebases. Heavier than ast-grep for simple rewrites. |
 | Gitleaks | Deterministic secret scanning | Best for checking staged changes with `gitleaks git --staged` (gitleaks >= 8.19) or `gitleaks protect --staged` (older releases) and repository history with `gitleaks git` / `gitleaks detect`. |
@@ -30,6 +31,7 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 | `fd` | Yes | Yes | Yes | Yes |
 | `just` | Yes | Yes | Yes | Yes |
 | `mcp-language-server` LSP bridge | Yes, requires Go and language server | Yes, requires Go and language server | Likely, validate PATH/toolchain behavior | Yes |
+| CodeGraph | Validate locally | Validate locally | Validate locally | Validate locally |
 | GitNexus | Validate locally | Validate locally | Validate locally | Validate locally |
 | ast-grep | Yes | Yes | Yes | Yes |
 | Semgrep | Yes | Yes | Supported, but confirm current CLI behavior | Yes |
@@ -65,10 +67,17 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 - `ast-grep run` exits 1 on zero matches, the grep convention. Read that as "ran fine, matched nothing" — not as a failed command, and not as proof the shape is absent. `rg` is what proves absence.
 - Before believing an empty ast-grep result, print the parse with `--debug-query=ast`. It requires `--lang` explicitly and hard-errors without it: `error: the following required arguments were not provided: --lang <LANG>`. Add `--inspect summary` for scanned and skipped file counts on stderr, which changes no results.
 - `rg`, `fd`, and ast-grep all skip dot-directories by default, and Raven's installed `.ignore` re-admits `.agents/`, `.claude/`, `.codex/`, and `.raven/`. Two trees it does not cover: one Raven never installed into, and `$HOME`, where the installer deliberately writes nothing because `.claude/` there is Claude Code's runtime state rather than shipped guidance. In those, pass `--hidden`, or `--no-ignore hidden` for ast-grep. Its other `--no-ignore` values are `dot`, `exclude`, `global`, `parent`, and `vcs`; `dot` does not affect dot-name filtering.
-- Use `mcp__gitnexus__query` for conceptual discovery when relevant code may not share obvious names with the query.
+- Use a code-intelligence index (CodeGraph, GitNexus, or another), if you have opted into one, for conceptual discovery when relevant code may not share obvious names with the query.
 - After a conceptual query returns candidate snippets, verify with `rg`, LSP, targeted file reads, or tests before editing.
 - Do not use a conceptual query for exhaustive proof that something does not exist. `rg` is what proves absence.
 - Treat token-reduction claims as retrieval-efficiency claims unless validated end-to-end in the local coding workflow.
+
+## Evidence on code-intelligence indexes
+
+- In agent-task runs on Sonnet, caller-listing accuracy was equal with and without a graph tool, and grep-only was cheapest.
+- For exploration questions, CodeGraph cut cost about 43% against grep-only.
+- Static caller recall varied by language and repo layout. A Go module nested below the repo root cut CodeGraph recall, and so did pnpm workspace packages whose `main`/`exports` point at build output.
+- An outside evaluation of GitNexus (its issue #3500) found no accuracy gain and usually higher cost.
 
 ## Verification Sources
 

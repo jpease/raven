@@ -23,9 +23,9 @@ AGENTS.md Retrieval Discipline and Verification State already govern batching, v
 
 ## Process
 
-1. Discover existing patterns with `rg`, or with `mcp__gitnexus__query` where an index is configured. If a similar pattern is already known, `ast-grep` its shape for a more targeted result than a fresh text search.
+1. Discover existing patterns with `rg`, or with a configured code-intelligence index, if any. If a similar pattern is already known, `ast-grep` its shape for a more targeted result than a fresh text search.
 2. Use LSP to inspect relevant definitions and types.
-3. Before picking an integration point, check whether the feature needs symbols from two components that do not already depend on each other. If so, resolve the dependency-direction question first — which side may legally import the other, or whether a new shared location is needed — using GitNexus or the project's dependency graph/build manifest (package config, module map, import-boundary rules). Do this before choosing where the code lives, not while writing it.
+3. Before picking an integration point, check whether the feature needs symbols from two components that do not already depend on each other. If so, resolve the dependency-direction question first — which side may legally import the other, or whether a new shared location is needed — using the project's dependency graph/build manifest (package config, module map, import-boundary rules). Do this before choosing where the code lives, not while writing it.
 4. Identify the smallest integration point consistent with that direction.
 5. Before editing, state:
    - the observable behavior change, in one or two sentences

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import fnmatch
 import functools
+import json
 import re
 import string
 from pathlib import Path
@@ -306,6 +307,20 @@ def build_config(raw: dict, *, exists: bool) -> RavenConfig:
         raise ConfigError(
             f"[issue_tracker].platform must be one of {list(VALID_PLATFORMS)}, got {raw_platform!r}"
         )
+    raw_mcp = raw.get("mcp")
+    raw_optional_mcp = raw_mcp.get("optional") if isinstance(raw_mcp, dict) else None
+    # Same absent-versus-explicit rule as `platform`: no key means "undecided"
+    # (None), `[]` means "decided none". A wrong shape fails closed, since this
+    # list decides which MCP servers Raven writes into the user's repo.
+    optional_mcp: list[str] | None
+    if raw_optional_mcp is None:
+        optional_mcp = None
+    elif isinstance(raw_optional_mcp, list) and all(isinstance(n, str) for n in raw_optional_mcp):
+        optional_mcp = list(raw_optional_mcp)
+    else:
+        raise ConfigError(
+            f"[mcp].optional must be a list of server names, got {raw_optional_mcp!r}"
+        )
     raw_include_readme = raw.get("include_readme", False)
     if not isinstance(raw_include_readme, bool):
         raise ConfigError(f"include_readme must be true or false, got {raw_include_readme!r}")
@@ -326,6 +341,7 @@ def build_config(raw: dict, *, exists: bool) -> RavenConfig:
         platform=platform,
         exists=exists,
         sources=_build_sources(raw),
+        optional_mcp=optional_mcp,
     )
 
 
@@ -588,6 +604,52 @@ def replace_platform_line(text: str, platform: str) -> str:
         suffix = "" if (not text or text.endswith("\n")) else "\n"
         new_lines.append(f"{suffix}\n[issue_tracker]\n{new_platform}")
     return "".join(new_lines)
+
+
+_OPTIONAL_LINE_RE = re.compile(r"^\s*optional\s*=")
+
+
+def replace_optional_mcp_line(text: str, names: list[str]) -> str:
+    """Return config text with ``[mcp] optional`` upserted to ``names``.
+
+    Pure, and shaped like `replace_platform_line`: rewrites only the first
+    uncommented ``optional =`` line inside a real ``[mcp]`` header, so the
+    commented example in the starter config is never mistaken for a decision.
+    A header with no active key gets the line right after it; no header at all
+    appends a new ``[mcp]`` section at the end of the file.
+    """
+    lines = text.splitlines(keepends=True)
+    new_line = f"optional = {json.dumps(list(names))}\n"
+
+    in_mcp = False
+    header_idx: int | None = None
+    key_idx: int | None = None
+    for i, line in enumerate(lines):
+        m = _ISSUE_TRACKER_SECTION_RE.match(line)
+        if m:
+            in_mcp = m.group(1).strip() == "mcp"
+            if in_mcp:
+                header_idx = i
+            continue
+        if in_mcp and _OPTIONAL_LINE_RE.match(line):
+            key_idx = i
+            break
+
+    new_lines = list(lines)
+    if key_idx is not None:
+        new_lines[key_idx] = new_line
+    elif header_idx is not None:
+        new_lines.insert(header_idx + 1, new_line)
+    else:
+        suffix = "" if (not text or text.endswith("\n")) else "\n"
+        new_lines.append(f"{suffix}\n[mcp]\n{new_line}")
+    return "".join(new_lines)
+
+
+def update_config_optional_mcp(config_path: Path, names: list[str]) -> None:
+    """Record the user's `[mcp] optional` decision in ``config_path``."""
+    text = config_path.read_text(encoding="utf-8")
+    config_path.write_text(replace_optional_mcp_line(text, names), encoding="utf-8")
 
 
 def _update_config_platform(config_path: Path, platform: str) -> None:

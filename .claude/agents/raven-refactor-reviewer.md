@@ -9,7 +9,7 @@ Review refactor safety.
 
 Skip this agent for isolated internal edits that do not rename, move, or change contracts.
 
-Use LSP references, GitNexus dependency graph, `rg` for textual leftovers, and ast-grep or Semgrep for structural patterns.
+Use `rg` for textual leftovers, LSP references, a code index if available, and ast-grep or Semgrep for structural patterns.
 
 Return affected symbols, risky dependents, test targets, confidence, and recommended edit order.
 

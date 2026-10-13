@@ -126,19 +126,21 @@ repository's manifest. See [docs/commands.md](docs/commands.md#raven-fleet).
 
 ## Optional Tooling
 
-Raven's templates recommend `rg`, `fd`, `just`, GitNexus, ast-grep, Semgrep,
+Raven's templates recommend `rg`, `fd`, `just`, ast-grep, Semgrep,
 Gitleaks, OSV-Scanner, Vale, `jq`, `yq`, RTK, and a language server over MCP,
 but require none of them. Run `raven doctor` after installing; its Toolchain
 section reports which ones you have.
 
-Two of those are named directly in the guidance Raven installs, so it is worth
-knowing what they are before you read `AGENTS.md` and wonder: **RTK** is a CLI
-proxy that compresses noisy command output before it reaches the model, and
-**GitNexus** indexes the repository so an agent can ask what a change would
-break. Both are optional. Without RTK the hint that suggests it stays silent;
-without a GitNexus index the guidance that leans on it does not apply. Install
-commands and the per-language LSP defaults are in
-[docs/tooling.md](docs/tooling.md).
+Raven ships Semgrep (and the language server bridge where applicable) as MCP
+defaults. A code-intelligence index such as CodeGraph or GitNexus is optional;
+opt into a GitNexus MCP server with `[mcp] optional = ["gitnexus"]` in
+`.raven/config.toml`. An index's output is discovery, not proof: `rg` and LSP
+come first.
+
+**RTK**, named directly in the installed guidance, is a CLI proxy that
+compresses noisy command output before it reaches the model. It is optional;
+without it the hint that suggests it stays silent. Install commands and the
+per-language LSP defaults are in [docs/tooling.md](docs/tooling.md).
 
 ## External Skill Libraries
 

@@ -69,7 +69,7 @@ class CodexMcpServerNamesFromTomlTests(RavenTestCase):
     def test_real_shipped_codex_config_parses(self):
         # Pinned against the rendered template output so the reader and the
         # shipped config cannot drift.
-        text = render_codex_config_toml(REPO_ROOT / "python")
+        text = render_codex_config_toml(REPO_ROOT / "python", optional=["gitnexus"])
         names = self.module._codex_mcp_server_names_from_toml(text)
         self.assertIn("semgrep", names)
         self.assertIn("gitnexus", names)
@@ -89,6 +89,16 @@ class ToolCheckTests(RavenTestCase):
         self.assertIn("gitleaks", tool_ids)
         self.assertIn("jq", tool_ids)
         self.assertIn("yq", tool_ids)
+
+    def test_code_index_tools_are_registered_as_optional_not_required(self):
+        # A code index is an optional aid (Raven's agent-task tests showed no accuracy gain),
+        # so each must carry an `optionalWhen` note and must not be nagged as a gap.
+        module = load_script_module("raven_tool_check_indexes", TOOL_CHECK_SCRIPT)
+        for tool_id in ("gitnexus", "codegraph"):
+            tool = next(tool for tool in module.TOOLS if tool["id"] == tool_id)
+            self.assertTrue(tool.get("optionalWhen"), tool_id)
+        codegraph = next(tool for tool in module.TOOLS if tool["id"] == "codegraph")
+        self.assertEqual({c[0] for c in codegraph["commands"]}, {"codegraph"})
 
     def test_osv_scanner_is_registered_as_optional(self):
         # #135 -- osv-scanner backs `just audit`, which is deliberately not a

@@ -93,3 +93,6 @@ platform = "github"      # dogfooding: raven repo uses GitHub Issues
 # repository breaks when the plugin is absent.
 kind = "claude-plugin"
 required = false
+
+[mcp]
+optional = []

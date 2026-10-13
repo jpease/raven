@@ -40,7 +40,12 @@ This repository is Raven itself: the reusable template library and installer for
 - The block between `RAVEN:BEGIN` and `RAVEN:END` is managed template content used to test safe block upgrades.
 - Do not edit inside the managed block directly; update the source template instead.
 
-<!-- RAVEN:BEGIN sha256=81aacf8cfbd47defb40da6417abe1529cf9e3a521bf0d5c6d3b26b75f68de176 -->
+## Code Indexes
+
+- This repository records `[mcp] optional = []` in `.raven/config.toml` and wires no code-index MCP server. Dogfooding the shipped guidance means `rg` and LSP first.
+- A maintainer who wants GitNexus or CodeGraph adds the server in `.claude/settings.local.json` or user-level MCP config. Keep `.gitnexusrc` at `{"skipContextFiles": true}` so `gitnexus analyze` does not write a MUST-style block into this file.
+
+<!-- RAVEN:BEGIN sha256=42bb46cd7c165b46f82b3b97d650dc66ee7d1f839e2ba2c5389ac36bab7cff3e -->
 # AGENTS.md
 
 ## Primary Objective
@@ -73,8 +78,8 @@ Use the cheapest adequate source before reading full files.
 | Exact string, symbol, config key, or error | `rg` |
 | File discovery by name, type, or extension | `fd` |
 | Definition, references, type info, diagnostics | LSP |
-| "How does X work?" / conceptual flow discovery | `mcp__gitnexus__query` |
-| Blast-radius before editing a symbol | `mcp__gitnexus__impact` |
+| "How does X work?" / conceptual flow discovery | Listed code index, else `rg` and LSP |
+| Blast-radius before editing a symbol | LSP references, else `rg` |
 | Syntax-aware pattern or mechanical rewrite | ast-grep or Semgrep |
 | Large diff before commit | `git diff --stat`, then targeted hunks |
 | Test, build, or log output | quiet flag first, RTK if still noisy |
@@ -85,7 +90,7 @@ Use the cheapest adequate source before reading full files.
 - When two literal `rg` guesses miss, switch tools rather than iterating term variations; an index query is discovery, not proof, so verify with `rg`, LSP, or tests before changing code. Tool spellings, flags, and dot-directory caveats live in `raven-codebase-discovery`.
 - Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried, then delegate or ask.
 - Tool availability comes from the session capability roster. If no roster is present, probe before relying on a non-baseline tool. A listed MCP server may still be unapproved or unconnected; a failed call is information, not a contradiction.
-- When the session roster lists a code-intelligence index, run its impact analysis before a symbol edit and its change-detection before a commit; say so if it is stale. No `Index` line means nothing to run: a configured MCP server is not an index.
+- A listed code index is an optional aid: its result is discovery, not proof; say so if it is stale. A configured MCP server is not an index.
 
 ## Skills
 
@@ -122,7 +127,7 @@ Otherwise keep going; do not stop to report status or offer to continue.
 ## Editing Rules
 
 - Make minimal patches.
-- Before changing public APIs, check references with LSP and repo-configured impact analysis.
+- Before changing public APIs, check references with LSP, then confirm with `rg`.
 - Before large mechanical edits, use ast-grep or Semgrep.
 - Run the narrowest relevant test first.
 - If tests fail, inspect only failing output first.
@@ -155,49 +160,3 @@ Otherwise keep going; do not stop to report status or offer to continue.
 - When the roster reports a recommended tool missing, do not install it or silence the reminder without the user's say; `raven-tool-bootstrap` records their answer.
 - Prefer portable commands and hooks; guidance is shared across macOS, Linux, Windows, and WSL.
 <!-- RAVEN:END -->
-
-<!-- gitnexus:start -->
-# GitNexus — Code Intelligence
-
-This project is indexed by GitNexus as **raven**.
-
-> Index stale? Run `node .gitnexus/run.cjs analyze --index-only` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? Bootstrap with `npx`, `bunx`, or `pnpm dlx` — e.g. `bunx gitnexus@latest analyze` (npm 11 npx crash; #1939).
-
-## Always Do
-
-- **MUST run impact analysis before editing.** Use `impact({target: "symbolName", direction: "upstream"})` (MCP) or `node .gitnexus/run.cjs impact "symbolName" --direction upstream --repo .` (CLI fallback); report callers, processes, and risk. Never substitute grep for graph analysis.
-- **MUST analyze graph changes before committing.** Use `detect_changes({scope: "all"})` (MCP) or `node .gitnexus/run.cjs detect-changes --scope all --repo .` (CLI fallback). `partial: true` or `truncated: true` is not a clean check — a zero means unseen, not unaffected; re-run it. For regression review: `detect_changes({scope: "compare", base_ref: "main"})` or `node .gitnexus/run.cjs detect-changes --scope compare --base-ref "main" --repo .`.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- **MUST treat `risk: UNKNOWN` as unresolved, not as low.** An empty caller set is not evidence the symbol is unused — it can also mean the callers are not resolvable by the index (plain-object property access, dynamic dispatch, cross-language calls). `impact` pairs `UNKNOWN` with a `riskNote` saying so. Confirm with a text search before treating the symbol as safe to change or delete; do not proceed on the strength of a zero.
-- When exploring unfamiliar code, use `query({search_query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
-- For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
-
-## Never Do
-
-- NEVER edit a function, class, or method before MCP/CLI impact analysis.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis, and never read `UNKNOWN` as an all-clear — it means the walk could not answer, which is the one verdict that requires confirming by other means.
-- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
-- NEVER commit before MCP/CLI graph change analysis.
-
-## Resources
-
-| Resource | Use for |
-| --- | --- |
-| `gitnexus://repo/raven/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/raven/clusters` | All functional areas |
-| `gitnexus://repo/raven/processes` | All execution flows |
-| `gitnexus://repo/raven/process/{name}` | Step-by-step execution trace |
-
-## CLI
-
-| Task | Read this skill file |
-| --- | --- |
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
-
-<!-- gitnexus:end -->

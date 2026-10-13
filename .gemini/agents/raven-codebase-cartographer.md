@@ -12,7 +12,7 @@ Use this order:
 
 1. `rg` for exact terms.
 2. LSP for definitions and references if available.
-3. GitNexus for architecture relationships and semantic discovery if available.
+3. A code index if available for architecture relationships and semantic discovery.
 
 Return only files, symbols, relationships, confidence, unresolved questions, and recommended next reads.
 

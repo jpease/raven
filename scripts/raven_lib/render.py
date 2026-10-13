@@ -8,10 +8,12 @@ shared wiring in `common/` and per-language MCP server definitions (#265,
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from .constants import MCP_DEFINITION_PATH, REPO_ROOT
+from .config import ConfigError
+from .constants import MCP_DEFINITION_PATH, MCP_OPTIONAL_DEFINITION_PATH, REPO_ROOT
 
 
 def resolve_common_root(template: Path, common_root: Path | None = None) -> Path:
@@ -41,12 +43,24 @@ def _extract_mcp_servers(path: Path) -> dict[str, Any]:
     return {}
 
 
-def load_mcp_servers(template: Path, common_root: Path | None = None) -> dict[str, Any]:
+def optional_mcp_catalog(template: Path, common_root: Path | None = None) -> dict[str, Any]:
+    """The opt-in MCP servers a config may name in `[mcp] optional`, keyed by server name."""
+    common = resolve_common_root(template, common_root)
+    return _extract_mcp_servers(common / MCP_OPTIONAL_DEFINITION_PATH)
+
+
+def load_mcp_servers(
+    template: Path,
+    common_root: Path | None = None,
+    optional: Sequence[str] = (),
+) -> dict[str, Any]:
     """Load per-language MCP servers, merging baseline common servers with template servers.
 
     Resolution order:
     1. Common baseline: `common/.raven/mcp.json` or fallback `common/.mcp.json`.
-    2. Template overrides/additions: `template/.raven/mcp.json` or fallback `template/.mcp.json`.
+    2. Opt-in servers named in `optional` (from `[mcp] optional` in `.raven/config.toml`),
+       looked up in `common/.raven/mcp-optional.json`. An unknown name raises `ConfigError`.
+    3. Template overrides/additions: `template/.raven/mcp.json` or fallback `template/.mcp.json`.
     """
     common = resolve_common_root(template, common_root)
     common_servers: dict[str, Any] = {}
@@ -73,6 +87,16 @@ def load_mcp_servers(template: Path, common_root: Path | None = None) -> dict[st
                 break
 
     merged = dict(common_servers)
+    if optional:
+        catalog = _extract_mcp_servers(common / MCP_OPTIONAL_DEFINITION_PATH)
+        unknown = sorted(set(optional) - set(catalog))
+        if unknown:
+            raise ConfigError(
+                f"[mcp].optional names unknown server(s) {unknown}; "
+                f"known optional servers: {sorted(catalog)}"
+            )
+        # Catalog order, not config order, so the same set always renders the same bytes.
+        merged.update({name: server for name, server in catalog.items() if name in optional})
     merged.update(template_servers)
     return merged
 
@@ -127,7 +151,9 @@ def _drop_plugin_covered_lsp(servers: dict[str, Any], template_name: str) -> dic
     return {name: value for name, value in servers.items() if name != "lsp"}
 
 
-def render_gemini_settings(template: Path, common_root: Path | None = None) -> str:
+def render_gemini_settings(
+    template: Path, common_root: Path | None = None, optional: Sequence[str] = ()
+) -> str:
     """Render `.gemini/settings.json` deterministically with sorted keys and 2-space indents.
 
     Every MCP server, always -- Gemini CLI has no marketplace LSP plugin
@@ -135,23 +161,27 @@ def render_gemini_settings(template: Path, common_root: Path | None = None) -> s
     `render_codex_config_toml` does, unlike `render_mcp_json`.
     """
     settings = load_gemini_base_settings(template, common_root)
-    mcp_servers = load_mcp_servers(template, common_root)
+    mcp_servers = load_mcp_servers(template, common_root, optional)
     if mcp_servers:
         settings["mcpServers"] = mcp_servers
     return json.dumps(settings, indent=2, sort_keys=True) + "\n"
 
 
-def can_render_gemini_settings(template: Path, common_root: Path | None = None) -> bool:
+def can_render_gemini_settings(
+    template: Path, common_root: Path | None = None, optional: Sequence[str] = ()
+) -> bool:
     """Whether inputs exist to render `.gemini/settings.json` for `template`."""
     common = resolve_common_root(template, common_root)
     if (common / ".gemini" / "settings.json").is_file():
         return True
     if (template / ".gemini" / "settings.json").is_file():
         return True
-    return bool(load_mcp_servers(template, common_root))
+    return bool(load_mcp_servers(template, common_root, optional))
 
 
-def render_mcp_json(template: Path, common_root: Path | None = None) -> str:
+def render_mcp_json(
+    template: Path, common_root: Path | None = None, optional: Sequence[str] = ()
+) -> str:
     """Render `.mcp.json` deterministically, preserving common-then-template key order.
 
     `json.dumps` without `sort_keys` walks a dict in insertion order, which is
@@ -161,13 +191,19 @@ def render_mcp_json(template: Path, common_root: Path | None = None) -> str:
     the checked-in per-language `.mcp.json` files it replaces (#271) -- sorting
     keys would reorder `semgrep`/`gitnexus` alphabetically and break that.
     """
-    servers = _drop_plugin_covered_lsp(load_mcp_servers(template, common_root), template.name)
+    servers = _drop_plugin_covered_lsp(
+        load_mcp_servers(template, common_root, optional), template.name
+    )
     return json.dumps({"mcpServers": servers}, indent=2) + "\n"
 
 
-def can_render_mcp_json(template: Path, common_root: Path | None = None) -> bool:
+def can_render_mcp_json(
+    template: Path, common_root: Path | None = None, optional: Sequence[str] = ()
+) -> bool:
     """Whether inputs exist to render `.mcp.json` for `template`."""
-    return bool(_drop_plugin_covered_lsp(load_mcp_servers(template, common_root), template.name))
+    return bool(
+        _drop_plugin_covered_lsp(load_mcp_servers(template, common_root, optional), template.name)
+    )
 
 
 #: Templates with a Claude Code marketplace LSP plugin (`raven-lsp-mcp.md`'s
@@ -216,7 +252,9 @@ def _toml_mcp_server_table(name: str, server: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def render_codex_config_toml(template: Path, common_root: Path | None = None) -> str:
+def render_codex_config_toml(
+    template: Path, common_root: Path | None = None, optional: Sequence[str] = ()
+) -> str:
     """Render `.codex/config.toml` deterministically: every MCP server, always.
 
     Unlike `.mcp.json`/`.gemini/settings.json`, this never drops the `lsp`
@@ -225,7 +263,7 @@ def render_codex_config_toml(template: Path, common_root: Path | None = None) ->
     server` entry always lands (#271).
     """
     description = CODEX_CONFIG_DESCRIPTIONS.get(template.name, f"{template.name} repositories.")
-    servers = load_mcp_servers(template, common_root)
+    servers = load_mcp_servers(template, common_root, optional)
     sections = [_toml_mcp_server_table(name, server) for name, server in servers.items()]
     body = "\n\n".join(sections)
     header = (
@@ -238,8 +276,10 @@ def render_codex_config_toml(template: Path, common_root: Path | None = None) ->
     return f"{header}\n\n{body}\n" if body else f"{header}\n"
 
 
-def can_render_codex_config_toml(template: Path, common_root: Path | None = None) -> bool:
+def can_render_codex_config_toml(
+    template: Path, common_root: Path | None = None, optional: Sequence[str] = ()
+) -> bool:
     """Whether inputs exist to render `.codex/config.toml` for `template`."""
-    return bool(load_mcp_servers(template, common_root)) or template.name in (
+    return bool(load_mcp_servers(template, common_root, optional)) or template.name in (
         CODEX_CONFIG_DESCRIPTIONS
     )

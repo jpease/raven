@@ -28,8 +28,9 @@ tools over and over.
 
 ## Recommended tools
 
-`rg`, `fd`, `just`, GitNexus, `mcp-language-server`, ast-grep, Semgrep,
-Gitleaks, OSV-Scanner, Vale, `jq`, `yq`, and RTK.
+`rg`, `fd`, `just`, `mcp-language-server`, ast-grep, Semgrep, Gitleaks,
+OSV-Scanner, Vale, `jq`, `yq`, RTK, and optionally a code-intelligence index
+(CodeGraph or GitNexus).
 
 None is required. Two are worth a word because the installed `AGENTS.md` names
 them by name, which makes them look mandatory when they are not:
@@ -37,11 +38,11 @@ them by name, which makes them look mandatory when they are not:
 | Tool | What it is | Install |
 |---|---|---|
 | RTK | A CLI proxy that compresses noisy command output before it reaches the model. `AGENTS.md` routes test, build, and log commands through it. | `brew install rtk` — [rtk-ai.app](https://www.rtk-ai.app/) |
-| GitNexus | Indexes the repository into a call graph so an agent can ask what a change breaks. `AGENTS.md` treats its impact analysis as mandatory *where an index is configured*, and silent everywhere else. | `npx gitnexus analyze` |
+| Code-intelligence index | An index of the repository's symbols and call graph (CodeGraph, GitNexus, or another) that answers exploration questions in fewer reads. Its output is discovery, not proof: confirm with `rg` and LSP. CodeGraph is the recommended optional aid; GitNexus is a supported alternative. | Follow the tool's own install docs; GitNexus: `npx gitnexus analyze` |
 
 Skip either one and nothing breaks. The RTK hint is emitted by a hook that
-checks `PATH` first and says nothing when RTK is absent, and the GitNexus
-guidance is scoped to repositories that have an index.
+checks `PATH` first and says nothing when RTK is absent, and the index guidance
+applies only where an index exists.
 
 ## Vale takes a second step
 
@@ -69,8 +70,10 @@ performs.
 
 ## Language servers over MCP
 
-Language templates ship `.mcp.json` defaults for Semgrep and GitNexus. Which
-of them also ships an `lsp` server depends on the harness, because the two
+Language templates ship `.mcp.json` defaults for Semgrep. Code-intelligence
+indexes are not default MCP servers; opt into one with
+`[mcp] optional = ["gitnexus"]` in `.raven/config.toml`. Which of the templates
+also ships an `lsp` server depends on the harness, because the two
 harnesses do not start language servers the same way.
 
 Claude Code has official marketplace LSP plugins that launch the language
