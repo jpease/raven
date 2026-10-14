@@ -226,9 +226,9 @@
       "sourceSha256": "89dce95d326a4108ae27ff4fa206cae6d875fc8ea87f894d190efed23d9de3a0"
     },
     ".claude/docs/raven-tool-assessment.md": {
-      "installedSha256": "3de1821667b3b4a001a2596aaa36a9d53f7897d8bd6457a5f6d870f1e3469152",
+      "installedSha256": "b88b5ade68fb0d6d3ef91e4dc5c897ed2b7fcae8ab13dc91b68f05e8cb609f82",
       "kind": "file",
-      "sourceSha256": "3de1821667b3b4a001a2596aaa36a9d53f7897d8bd6457a5f6d870f1e3469152"
+      "sourceSha256": "b88b5ade68fb0d6d3ef91e4dc5c897ed2b7fcae8ab13dc91b68f05e8cb609f82"
     },
     ".claude/hooks/raven-post-bash-summarize.py": {
       "installedSha256": "458d52c4e1acaad2370a6753e756203b6d0c1d103d1deff8a6665b6a17a5b222",
@@ -766,8 +766,8 @@
     "pyright",
     "pytest"
   ],
-  "ravenVersion": "eb6a28b7a72c-dirty",
+  "ravenVersion": "d234d2192d52-dirty",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-10-13T23:18:17.318537+00:00"
+  "updatedAt": "2026-10-14T00:32:21.270475+00:00"
 }

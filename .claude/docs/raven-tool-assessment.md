@@ -79,6 +79,17 @@ This template intentionally separates tool roles. No single retrieval tool shoul
 - Static caller recall varied by language and repo layout. A Go module nested below the repo root cut CodeGraph recall, and so did pnpm workspace packages whose `main`/`exports` point at build output.
 - An outside evaluation of GitNexus (its issue #3500) found no accuracy gain and usually higher cost.
 
+## Using CodeGraph
+
+Raven does not install CodeGraph or write its MCP server for you. To use it in a repository:
+
+- Run `codegraph init` once in each clone or worktree. The MCP server never builds the index; without one, CodeGraph reports that no index exists and the agent falls back to `rg` and file reads.
+- Keep the index out of git. Add `.codegraph/` to `.gitignore`; `codegraph init` also writes a `.codegraph/.gitignore` that ignores everything but itself.
+- Add the server to `.mcp.json` (Claude Code reads that file) with `CODEGRAPH_TELEMETRY=0` in its `env`. Codex and Gemini need the same server in their own configs. Raven renders those files from its own catalog, which has no CodeGraph entry, so a hand edit makes the file "locally modified": finish it with `raven accept .mcp.json`.
+- A server launched through `npx` works, but `raven doctor` probes `codegraph --version` on `PATH`, so it reports that setup as "missing (configured but not installed)". Install the CLI to clear it.
+- After the first `init` the index updates itself while an agent session has the server connected: a file watcher re-indexes changed files after about two seconds, and a tool response that touches a still-pending file carries a warning to read that file directly. Edits made while no session is running are picked up when the next one starts. `codegraph sync` forces an update, and `codegraph status` lists pending files.
+- Ask it exploration questions ("how does X reach Y"), where it saves reads. For a complete caller list, use LSP references or `rg`: in Raven's tests an index added cost and no accuracy there.
+
 ## Verification Sources
 
 - Claude Code supports macOS, Windows, Ubuntu, Debian, Alpine, and WSL configurations; native Windows lacks sandboxing while WSL supports it.
