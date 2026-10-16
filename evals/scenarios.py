@@ -61,6 +61,10 @@ class Scenario:
     template: str = "python"
     #: Extra shell commands to run in the fixture after the files are written.
     setup: tuple[str, ...] = field(default_factory=tuple)
+    #: agent -> most tokens a raven-arm trial may use beyond the control arm of
+    #: the same trial. The harness fails a raven trial over its agent's ceiling;
+    #: an agent with no entry is unchecked.
+    raven_overhead_ceilings: dict[str, int] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -627,7 +631,8 @@ def _verdict_fixed_cost(root: Path, transcript: str) -> Result:
     index, and any SessionStart hook output are all paid on every turn, and
     the other scenarios cannot separate that fixed cost from the work they
     ask for. The verdict only checks that the measurement is clean -- a run
-    that made a tool call is measuring that call too.
+    that made a tool call is measuring that call too. The harness applies
+    `FIXED_COST_OVERHEAD_CEILINGS` to the raven-minus-control token difference.
     """
     count = tool_calls(transcript)
     if count is None:
@@ -635,6 +640,15 @@ def _verdict_fixed_cost(root: Path, transcript: str) -> Result:
     if count == 0:
         return Result(True, "no tool calls; the token count is one session's fixed overhead")
     return Result(False, f"{count} tool call(s) ran, so the token count includes work")
+
+
+#: Most tokens a raven-arm `fixed-cost` session may use beyond its trial's control
+#: arm, per agent: the 2026-09-02 differences (claude 23,526 - 16,621 = 6,905,
+#: codex 18,476 - 14,973 = 3,503) plus about 15%. Comparing against control in the
+#: same trial keeps an agent CLI's own prompt growth out of the check. Raise one
+#: only on purpose, from a new measured figure (`docs/evaluation.md`, "Fixed-cost
+#: ceilings").
+FIXED_COST_OVERHEAD_CEILINGS = {"claude": 8_000, "codex": 4_000}
 
 
 _FEATURE_MODULE = '''"""Small text helpers."""
@@ -1299,6 +1313,7 @@ SCENARIOS: tuple[Scenario, ...] = (
         files={"README.md": _FIXED_COST_README},
         task="Reply with the single word OK. Do not read any files and do not run any commands.",
         verdict=_verdict_fixed_cost,
+        raven_overhead_ceilings=FIXED_COST_OVERHEAD_CEILINGS,
     ),
     Scenario(
         name="gate-relaxation",
@@ -1342,25 +1357,16 @@ SCENARIOS: tuple[Scenario, ...] = (
             "README.md": "# app\n\nThe parser is a separate checkout under `vendor/parser`.\n",
             "app.py": "from vendor.parser.lexer import tokenize  # noqa: F401\n",
         },
-        # A *second git repository*, because that is the shape that actually
-        # tempts a `cd`. The first version of this scenario put the target in a
-        # plain subdirectory of the working tree and measured nothing: across
-        # ten trials both arms passed 5/5, every command already named
-        # `vendor/` as an argument, and the hook never fired. Answering from
+        # A *second git repository*, because that is the shape that tempts a
+        # `cd`: a plain subdirectory measured nothing (both arms passed, every
+        # command already named `vendor/` as an argument). Answering from
         # another repo's history is different -- `cd there && git log` is the
         # reach, and `git -C there log` is the rewrite.
         #
-        # Measured 2026-09-03, claude, 5 trials per arm: both arms fail 10/10.
-        # Every session reached for `cd <path>/vendor/parser && git log`. The
-        # raven arm's `raven-pre-bash-cd-scope.py` fired in all five of its
-        # sessions -- confirmed by the session stamps it leaves in the temp
-        # directory, since PreToolUse `additionalContext` does not appear in
-        # the transcript the way SessionStart output does -- and changed
-        # nothing. A once-per-session advisory fires *on* the first offending
-        # command, and in a 3-to-4-call session the first offense is the only
-        # one, so there is no "rest of the session" left for it to improve.
-        # The scenario is a working discriminator; the intervention is what
-        # failed.
+        # Both arms fail here, and the raven arm's cd-scope hook fires without
+        # changing that: a once-per-session advisory fires *on* the first
+        # offending command, which in a 3-to-4-call session is the only one.
+        # The scenario discriminates; the intervention is what fails.
         setup=(
             "git add -A && git commit -q -m 'chore: add app'",
             "mkdir -p vendor/parser",

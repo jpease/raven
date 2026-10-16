@@ -12,12 +12,14 @@ is pinned in both directions.
 
 from __future__ import annotations
 
+import io
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -1497,6 +1499,135 @@ print(json.dumps({"type": "result", "status": "success", "stats": {"total_tokens
             [TrialOutcome("x", "control", 1, True, "e")], "claude", 1, "2026-01-01"
         )
         self.assertNotIn("## Token usage", report)
+
+    def test_a_row_both_arms_passed_on_every_trial_is_marked_no_signal(self):
+        from eval import TrialOutcome, render_markdown
+
+        outcomes = [
+            TrialOutcome("quiet", "control", 1, True, "e"),
+            TrialOutcome("quiet", "control", 2, True, "e"),
+            TrialOutcome("quiet", "raven", 1, True, "e"),
+            TrialOutcome("quiet", "raven", 2, True, "e"),
+            TrialOutcome("split", "control", 1, True, "e"),
+            TrialOutcome("split", "control", 2, False, "e"),
+            TrialOutcome("split", "raven", 1, True, "e"),
+            TrialOutcome("split", "raven", 2, True, "e"),
+        ]
+        report = render_markdown(outcomes, "claude", 2, "2026-01-01")
+        self.assertIn("| `quiet` |  | 2/2 | 2/2 | none |", report)
+        self.assertIn("| `split` |  | 1/2 | 2/2 |  |", report)
+        self.assertIn("1 of 2 scenario(s) passed in both arms on every trial", report)
+
+
+class PublishedTrialsGuardTests(unittest.TestCase):
+    """`--out` writes the committed results, so it needs enough trials to mean something."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _main(self, *argv):
+        import contextlib
+        import io
+
+        import eval as harness
+
+        stderr = io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                mock.patch.object(sys, "argv", ["eval.py", "--agent", "claude", *argv])
+            )
+            stack.enter_context(
+                mock.patch.object(harness.shutil, "which", return_value="/usr/bin/claude")
+            )
+            run = stack.enter_context(mock.patch.object(harness, "run", return_value=[]))
+            stack.enter_context(mock.patch.object(harness, "REPO_ROOT", self.tmp))
+            stack.enter_context(mock.patch("sys.stderr", stderr))
+            stack.enter_context(mock.patch("sys.stdout", io.StringIO()))
+            code = harness.main()
+        return code, run, stderr.getvalue()
+
+    def test_out_refuses_one_trial_below_the_minimum_before_running(self):
+        code, run, stderr = self._main("--trials", "4", "--out", str(self.tmp / "out"))
+        self.assertEqual(code, 1)
+        run.assert_not_called()
+        self.assertIn("--out", stderr)
+        self.assertIn("--trials 5", stderr)
+        self.assertFalse((self.tmp / "out").exists())
+
+    def test_out_accepts_the_minimum(self):
+        code, run, _ = self._main("--trials", "5", "--out", str(self.tmp / "out"))
+        self.assertEqual(code, 0)
+        run.assert_called_once()
+        self.assertTrue((self.tmp / "out" / "results-claude.md").is_file())
+
+    def test_a_run_without_out_is_not_restricted(self):
+        code, run, _ = self._main("--trials", "1")
+        self.assertEqual(code, 0)
+        run.assert_called_once()
+        self.assertTrue(any((self.tmp / "evals" / "runs").glob("results-claude-*.md")))
+
+
+class FixedCostCeilingTests(unittest.TestCase):
+    """`fixed-cost`'s raven arm fails once it costs more than its ceiling over control."""
+
+    def setUp(self):
+        self.bin_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.bin_dir, ignore_errors=True)
+        # A shell shim, because a shebang cannot hold the space a checkout path may.
+        claude = self.bin_dir / "claude"
+        claude.write_text(
+            f'#!/bin/sh\nexec "{sys.executable}" "{self.bin_dir / "claude_impl.py"}" "$@"\n',
+            encoding="utf-8",
+        )
+        # Control reports CONTROL_TOKENS, raven RAVEN_TOKENS; the raven fixture has AGENTS.md.
+        (self.bin_dir / "claude_impl.py").write_text(
+            "import json, os, pathlib\n"
+            'arm = "RAVEN" if pathlib.Path("AGENTS.md").exists() else "CONTROL"\n'
+            'raw = os.environ[arm + "_TOKENS"]\n'
+            'event = {"type": "system"}\n'
+            'if raw != "none":\n'
+            '    usage = {"input_tokens": int(raw), "output_tokens": 0}\n'
+            '    event = {"type": "result", "usage": usage}\n'
+            "print(json.dumps(event))\n",
+            encoding="utf-8",
+        )
+        claude.chmod(0o755)
+        self.ceiling = sc.FIXED_COST_OVERHEAD_CEILINGS["claude"]
+
+    def _run(self, control, raven):
+        from eval import run
+
+        env = {
+            "PATH": f"{self.bin_dir}:{os.environ.get('PATH', '')}",
+            "CONTROL_TOKENS": str(control),
+            "RAVEN_TOKENS": str(raven),
+        }
+        with mock.patch.dict(os.environ, env), redirect_stdout(io.StringIO()):
+            control_outcome, raven_outcome = run([_by_name("fixed-cost")], "claude", 1)
+        self.assertEqual((control_outcome.arm, raven_outcome.arm), ("control", "raven"))
+        return control_outcome, raven_outcome
+
+    def test_raven_overhead_at_the_ceiling_passes(self):
+        _, raven = self._run(20_000, 20_000 + self.ceiling)
+        self.assertTrue(raven.passed, raven.evidence)
+        self.assertEqual(raven.total_tokens, 20_000 + self.ceiling)
+
+    def test_raven_overhead_over_the_ceiling_fails(self):
+        _, raven = self._run(20_000, 20_000 + self.ceiling + 1)
+        self.assertFalse(raven.passed)
+        self.assertIn("over the raven ceiling", raven.evidence)
+
+    def test_missing_usage_fails_raven(self):
+        for control, raven_tokens in (("none", 20_000), (20_000, "none")):
+            with self.subTest(control=control, raven=raven_tokens):
+                _, raven = self._run(control, raven_tokens)
+                self.assertFalse(raven.passed)
+                self.assertIn("no token usage reported", raven.evidence)
+
+    def test_the_ceiling_never_fails_control(self):
+        control, _ = self._run(20_000, 20_000 + self.ceiling + 1)
+        self.assertTrue(control.passed, control.evidence)
 
 
 if __name__ == "__main__":

@@ -17,7 +17,8 @@ with Raven installed, one without. The number worth reading is the difference
 between the two columns, not either column alone.
 
 Exit codes: 0 (the run completed), 1 (nothing ran -- unknown agent, missing
-CLI, or no scenario matched), 2 (a tooling problem stopped the run).
+CLI, no scenario matched, or `--out` with fewer than `MIN_PUBLISHED_TRIALS`
+trials), 2 (a tooling problem stopped the run).
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -51,6 +52,11 @@ from evals.scenarios import (  # noqa: E402 -- needs the path inserts
 #: How long one agent run may take before the harness gives up on it. A hung
 #: run is a failed trial, never a hung harness.
 TIMEOUT_SECONDS = 600
+
+#: Fewest trials per arm a run written with `--out` may use. `--out` writes the
+#: committed results; below this a result is an anecdote, so it stays in
+#: `evals/runs/`.
+MIN_PUBLISHED_TRIALS = 5
 
 #: Written into every fixture that does not ship its own. Any real Python
 #: repository ignores these; a fixture that did not handed the Raven arm
@@ -496,6 +502,24 @@ def run_one(
         )
 
 
+def _apply_overhead_ceiling(
+    scenario: Scenario, agent: str, control: TrialOutcome, raven: TrialOutcome
+) -> TrialOutcome:
+    """Fail ``raven`` when it used more tokens over ``control`` than the agent's ceiling."""
+    ceiling = scenario.raven_overhead_ceilings.get(agent)
+    if ceiling is None or not raven.passed:
+        return raven
+    if control.total_tokens is None or raven.total_tokens is None:
+        evidence = f"no token usage reported, so the {ceiling:,} overhead ceiling went unchecked"
+        return replace(raven, passed=False, evidence=evidence)
+    overhead = raven.total_tokens - control.total_tokens
+    if overhead > ceiling:
+        evidence = f"{overhead:,} tokens over control is over the raven ceiling of {ceiling:,}"
+        return replace(raven, passed=False, evidence=evidence)
+    evidence = f"{raven.evidence}; {overhead:,} tokens over control, ceiling {ceiling:,}"
+    return replace(raven, evidence=evidence)
+
+
 def run(
     scenarios: list[Scenario], agent: str, trials: int, transcripts: Path | None = None
 ) -> list[TrialOutcome]:
@@ -503,22 +527,27 @@ def run(
     outcomes: list[TrialOutcome] = []
     for scenario in scenarios:
         for trial in range(1, trials + 1):
-            for with_raven in (False, True):
-                outcome = run_one(
-                    scenario, agent, with_raven=with_raven, trial=trial, transcripts=transcripts
-                )
-                mark = "pass" if outcome.passed else "FAIL"
-                tokens = (
-                    f"  {outcome.total_tokens:,}tok" if outcome.total_tokens is not None else ""
-                )
-                calls = f"  {outcome.tool_calls}calls" if outcome.tool_calls is not None else ""
-                print(
-                    f"  {scenario.name:22} {outcome.arm:8} trial {trial}  {mark}{tokens}{calls}"
-                    f"  {outcome.evidence}",
-                    flush=True,
-                )
-                outcomes.append(outcome)
+            control = run_one(
+                scenario, agent, with_raven=False, trial=trial, transcripts=transcripts
+            )
+            _report(scenario, trial, control)
+            raven = run_one(scenario, agent, with_raven=True, trial=trial, transcripts=transcripts)
+            raven = _apply_overhead_ceiling(scenario, agent, control, raven)
+            _report(scenario, trial, raven)
+            outcomes += [control, raven]
     return outcomes
+
+
+def _report(scenario: Scenario, trial: int, outcome: TrialOutcome) -> None:
+    """Print one trial's progress line."""
+    mark = "pass" if outcome.passed else "FAIL"
+    tokens = f"  {outcome.total_tokens:,}tok" if outcome.total_tokens is not None else ""
+    calls = f"  {outcome.tool_calls}calls" if outcome.tool_calls is not None else ""
+    print(
+        f"  {scenario.name:22} {outcome.arm:8} trial {trial}  {mark}{tokens}{calls}"
+        f"  {outcome.evidence}",
+        flush=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -562,18 +591,29 @@ def render_markdown(outcomes: list[TrialOutcome], agent: str, trials: int, stamp
         "has no Raven installed, `raven` does. Only the difference between the two",
         "columns says anything about the guidance.",
         "",
-        "| Scenario | Measures | control | raven |",
-        "|---|---|---|---|",
+        "| Scenario | Measures | control | raven | signal |",
+        "|---|---|---|---|---|",
     ]
     names = list(dict.fromkeys(o.scenario for o in outcomes))
     by_name = {s.name: s for s in SCENARIOS}
+    no_signal = 0
     for name in names:
         control_pass, control_n = _rate(outcomes, name, "control")
         raven_pass, raven_n = _rate(outcomes, name, "raven")
         measures = by_name[name].measures if name in by_name else ""
+        both_passed = 0 < control_n == control_pass and 0 < raven_n == raven_pass
+        no_signal += both_passed
+        signal = "none" if both_passed else ""
         lines.append(
-            f"| `{name}` | {measures} | {control_pass}/{control_n} | {raven_pass}/{raven_n} |"
+            f"| `{name}` | {measures} | {control_pass}/{control_n} "
+            f"| {raven_pass}/{raven_n} | {signal} |"
         )
+    lines += [
+        "",
+        f"{no_signal} of {len(names)} scenario(s) passed in both arms on every trial, so",
+        "their pass/fail cells carry no signal about the guidance (`none` in the",
+        "signal column).",
+    ]
 
     if any(o.total_tokens is not None for o in outcomes):
         lines += [
@@ -660,7 +700,10 @@ def main() -> int:
     parser.add_argument("--agent", choices=sorted(AGENTS), required=True)
     parser.add_argument("--trials", type=int, default=1, help="runs per arm (default 1)")
     parser.add_argument("--scenario", action="append", help="run only these (repeatable)")
-    parser.add_argument("--out", help="directory to write the results file into")
+    parser.add_argument(
+        "--out",
+        help=f"directory for the published results file; needs --trials >= {MIN_PUBLISHED_TRIALS}",
+    )
     parser.add_argument("--json", action="store_true", help="also print raw outcomes as JSON")
     parser.add_argument(
         "--transcripts",
@@ -672,6 +715,14 @@ def main() -> int:
         help="date string for the report header; pass one for a reproducible file",
     )
     args = parser.parse_args()
+
+    if args.out and args.trials < MIN_PUBLISHED_TRIALS:
+        print(
+            f"error: --out publishes results and needs --trials {MIN_PUBLISHED_TRIALS} or more"
+            f" (got {args.trials}). Drop --out to write a smaller run to evals/runs/.",
+            file=sys.stderr,
+        )
+        return 1
 
     if shutil.which(args.agent) is None:
         print(f"error: `{args.agent}` is not on PATH.", file=sys.stderr)
