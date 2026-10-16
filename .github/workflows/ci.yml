@@ -57,6 +57,9 @@ jobs:
       - name: pyright
         run: pyright
 
+      - name: prose budgets
+        run: python scripts/check-prose.py
+
       - name: Unit tests
         run: python -m pytest tests
         env:

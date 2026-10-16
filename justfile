@@ -88,8 +88,13 @@ hygiene:
 relaxation:
     ./scripts/check-staged-relaxation.py
 
+# Prose budgets for docs, shipped guidance, and comment blocks (see AGENTS.md's
+# "Prose Budget" section). Repo-only, like `hygiene` and `relaxation`.
+prose:
+    ./scripts/check-prose.py
+
 # Fast static checks for the pre-commit hook (no type check, no tests)
-check-fast: lint fmt-check hygiene relaxation
+check-fast: lint fmt-check hygiene relaxation prose
 
 # Run the standard local verification set (also runs in the pre-push hook).
 # A successful run credits the pre-push stamp too, so a manual `just check`
