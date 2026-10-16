@@ -471,6 +471,59 @@ class TestRemovalTests(RelaxationCheckerTestCase):
         self._assert_clean()
 
 
+class GateLimitTests(RelaxationCheckerTestCase):
+    PROSE = "scripts/check-prose.py"
+
+    def test_raising_a_prose_budget_blocks(self):
+        self._commit(self.PROSE, "PARAGRAPH_WORDS = 120\n")
+        self._stage(self.PROSE, "PARAGRAPH_WORDS = 150\n")
+
+        self._assert_blocks(f"{self.PROSE}:1:", "PARAGRAPH_WORDS from 120 to 150")
+
+    def test_lowering_a_prose_budget_passes(self):
+        self._commit(self.PROSE, "PARAGRAPH_WORDS = 120\n")
+        self._stage(self.PROSE, "PARAGRAPH_WORDS = 100\n")
+
+        self._assert_clean()
+
+    def test_a_marked_raise_passes(self):
+        self._commit(self.PROSE, "MARKER_BUDGET = 9\n")
+        self._stage(self.PROSE, f"MARKER_BUDGET = 10  # {MARKER} -- new fixture-free example\n")
+
+        self._assert_clean()
+
+    def test_raising_one_dict_entry_reports_that_entry(self):
+        before = 'THRESHOLDS = {\n    "a.md": 75,\n    "b.md": 80,\n}\n'
+        self._commit("scripts/self-check.py", before)
+        self._stage("scripts/self-check.py", before.replace("80", "90").replace("75", "70"))
+
+        self._assert_blocks("scripts/self-check.py:3:", "THRESHOLDS['b.md'] from 80 to 90")
+
+    def test_removing_a_limit_entry_blocks(self):
+        self._commit("evals/scenarios.py", 'FIXED_COST_OVERHEAD_CEILINGS = {"claude": 8000}\n')
+        self._stage("evals/scenarios.py", "FIXED_COST_OVERHEAD_CEILINGS = {}\n")
+
+        self._assert_blocks("removes a gate limit")
+
+    def test_lowering_the_published_trial_minimum_blocks(self):
+        self._commit("scripts/eval.py", "MIN_PUBLISHED_TRIALS = 5\n")
+        self._stage("scripts/eval.py", "MIN_PUBLISHED_TRIALS = 3\n")
+
+        self._assert_blocks("MIN_PUBLISHED_TRIALS from 5 to 3")
+
+    def test_dropping_a_gate_from_check_fast_blocks(self):
+        self._commit("justfile", "check-fast: lint hygiene prose\n")
+        self._stage("justfile", "check-fast: lint hygiene\n")
+
+        self._assert_blocks("dropped prose")
+
+    def test_adding_a_gate_to_check_fast_passes(self):
+        self._commit("justfile", "check-fast: lint\n")
+        self._stage("justfile", "check-fast: lint prose\n")
+
+        self._assert_clean()
+
+
 class CleanStateTests(RelaxationCheckerTestCase):
     def test_an_empty_index_passes(self):
         self._assert_clean()

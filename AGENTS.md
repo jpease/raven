@@ -29,7 +29,8 @@ This repository is Raven itself: the reusable template library and installer for
 - `just check-fast` runs `scripts/check-staged-relaxation.py`, which enforces Raven's rule against weakening a gate. It blocks a staged change that:
   - adds a `.py` suppression with no rule code or no reason (`# noqa`, `# type: ignore`, `# pyright: ignore`, file-level `ruff: noqa`, `mypy: ignore-errors`);
   - edits `pyproject.toml`, `ruff.toml`, `pyrightconfig.json`, `mypy.ini`, `setup.cfg`, `tsconfig.json`, or `Cargo.toml` so it checks less;
-  - switches a test off: an unconditional skip, or fewer test functions in a file than before.
+  - switches a test off: an unconditional skip, or fewer test functions in a file than before;
+  - loosens one of Raven's own gate limits (`LIMIT_CONSTANTS` in the script), or drops a gate from `check-fast`.
 - Tightening passes silently. A suppression the committed file already had is grandfathered, including one that moved or was renamed with its file.
 - `raven-hygiene: allow` suppresses a finding on its line. A test-count finding has no line, so a marker on any added line of that file suppresses it.
 - `raven assess` reports the same relaxations as standing state. The shipped `common/.raven/git-hooks/lib/check-gate-relaxation.py` blocks blanket suppressions in destination repos for all eight template languages. Each script's docstring holds its detection rules and the reasons for what it leaves out.
@@ -39,7 +40,7 @@ This repository is Raven itself: the reusable template library and installer for
 - `just check-fast` and CI run `scripts/check-prose.py` over the staged versions of shipped guidance (`common/` and each language tree), the root docs, `docs/*.md`, `project-skills/`, and non-test Python.
 - Budgets: 120 words per paragraph or list item, 2,500 per document, 300 per `##` section of `AGENTS.md` and `common/AGENTS.md`, one `X, not Y` contrast per heading section, and 10 lines per Python comment block.
 - Shipped files and root `AGENTS.md` carry no bare issue references: a destination repo cannot resolve them, and in agent-loaded text they are history. Link an upstream issue by URL; put Raven's own history in the commit message. Shipped `SKILL.md` files stay under 1,200 words.
-- Over budget means cut or split. Raising a budget constant is a gate relaxation and gets argued in the commit like one.
+- Over budget means cut or split. A raised budget constant is reported by `check-staged-relaxation.py` unless its line carries a marker and a reason.
 - `raven-hygiene: allow` exempts a line that has to keep its shape, such as an example teaching the pattern; a marker quoted in backticks does not count. Document and section budgets take no marker, and real markers outside `tests/` are capped by `MARKER_BUDGET`.
 
 ## Local Instruction Boundary

@@ -16,7 +16,7 @@ that does nothing (`assess._hook_is_trivial`), a recipe nothing reaches
 (`gate_evidence`). Config relaxation is the case where the gate is wired,
 reachable, and able to fail, and has been configured not to look.
 
-Three detectors run over the staged index:
+Five detectors run over the staged index:
 
 1. **An unexplained suppression comment** added to a `.py` file. A
    suppression with no rule code silences everything on its line; one with a
@@ -53,6 +53,14 @@ Three detectors run over the staged index:
    diff with fewer test functions than it started with reports the net loss:
    renaming or replacing a test adds one back and stays silent.
 
+4. **A gate limit moved the loose way.** `LIMIT_CONSTANTS` names Raven's own
+   budgets (`check-prose.py`, `self-check.py`, the eval ceilings and trial
+   minimum) and which direction loosens each. Both versions are parsed and
+   every number compared; a removed entry counts as loosened.
+
+5. **A gate dropped from `check-fast`** in the root justfile, which is what
+   the pre-commit hook runs.
+
 A line carrying the literal marker `raven-hygiene: allow` is exempt -- the
 same single-line, diff-visible escape hatch `check-staged-hygiene.py`
 established, and for the same reason: a legitimate relaxation must stay
@@ -77,6 +85,7 @@ a tooling/environment problem, not a content finding).
 
 from __future__ import annotations
 
+import ast
 import re
 import subprocess
 import sys
@@ -311,6 +320,132 @@ def _config_findings() -> list[Finding]:
     return findings
 
 
+#: Raven's own gate limits, by file: constant name -> the direction that loosens it.
+LIMIT_CONSTANTS: dict[str, dict[str, str]] = {
+    "scripts/check-prose.py": dict.fromkeys(
+        (
+            "PARAGRAPH_WORDS",
+            "DOC_WORDS",
+            "SKILL_WORDS",
+            "AGENTS_SECTION_WORDS",
+            "COMMENT_BLOCK_LINES",
+            "MARKER_BUDGET",
+        ),
+        "up",
+    ),
+    "scripts/self-check.py": {
+        "THRESHOLDS": "up",
+        "PROFILES": "up",
+        "SKILL_DESCRIPTION_AGGREGATE_LIMIT": "up",
+    },
+    "evals/scenarios.py": {"FIXED_COST_OVERHEAD_CEILINGS": "up"},
+    "scripts/eval.py": {"MIN_PUBLISHED_TRIALS": "down"},
+}
+
+#: The gates `check-fast` (the pre-commit hook) must keep running.
+_CHECK_FAST_RE = re.compile(r"^check-fast\s*:(?P<deps>[^#\n]*)", re.MULTILINE)
+
+_LIMIT_HINT = (
+    "Keep the limit and fix what exceeds it, or mark the changed line with a trailing "
+    f"`{ALLOW_MARKER}` comment that says why the limit moves."
+)
+
+
+def _limit_values(text: str, names: dict[str, str]) -> dict[tuple[str, str], tuple[float, int]]:
+    """(constant, key) -> (number, line) for every number a named constant holds.
+
+    A plain number has key ""; a dict maps each key to its number, or to the
+    first number of a tuple value (`PROFILES` holds `(budget, path)`).
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return {}
+    values: dict[tuple[str, str], tuple[float, int]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target, value = node.targets[0], node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            target, value = node.target, node.value
+        else:
+            continue
+        if not isinstance(target, ast.Name) or target.id not in names:
+            continue
+        if isinstance(value, ast.Dict):
+            items = [(k, v) for k, v in zip(value.keys, value.values) if k is not None]
+            for key_node, item in items:
+                if isinstance(item, ast.Tuple) and item.elts:
+                    item = item.elts[0]
+                if (
+                    isinstance(key_node, ast.Constant)
+                    and isinstance(item, ast.Constant)
+                    and isinstance(item.value, (int, float))
+                ):
+                    values[(target.id, str(key_node.value))] = (item.value, item.lineno)
+        elif isinstance(value, ast.Constant) and isinstance(value.value, (int, float)):
+            values[(target.id, "")] = (value.value, value.lineno)
+    return values
+
+
+def _limit_findings() -> list[Finding]:
+    """Report a named gate limit that moved in its loosening direction, or vanished."""
+    findings: list[Finding] = []
+    changed = set(iter_changed_paths())
+    for path, names in sorted(LIMIT_CONSTANTS.items()):
+        if path not in changed:
+            continue
+        after_text = index_blob(path) or ""
+        after_lines = after_text.splitlines()
+        before = _limit_values(head_blob(path) or "", names)
+        after = _limit_values(after_text, names)
+        for (name, key), (old, _line) in sorted(before.items()):
+            label = f"{name}[{key!r}]" if key else name
+            if (name, key) not in after:
+                findings.append((path, 0, label, "staged edit removes a gate limit", _LIMIT_HINT))
+                continue
+            new, line = after[(name, key)]
+            loosened = new > old if names[name] == "up" else new < old
+            if loosened and not has_marker(after_lines[line - 1]):
+                findings.append(
+                    (
+                        path,
+                        line,
+                        after_lines[line - 1].strip(),
+                        f"staged edit loosens gate limit {label} from {old} to {new}",
+                        _LIMIT_HINT,
+                    )
+                )
+    return findings
+
+
+def _check_fast_deps(text: str) -> tuple[set[str], str]:
+    match = _CHECK_FAST_RE.search(text)
+    if match is None:
+        return set(), ""
+    line = text.splitlines()[text.count("\n", 0, match.start())]
+    return set(match.group("deps").split()), line
+
+
+def _check_fast_findings() -> list[Finding]:
+    """Report a gate dropped from the root justfile's `check-fast` recipe."""
+    if "justfile" not in set(iter_changed_paths()):
+        return []
+    before, _ = _check_fast_deps(head_blob("justfile") or "")
+    after, line = _check_fast_deps(index_blob("justfile") or "")
+    dropped = sorted(before - after)
+    if not dropped or has_marker(line):
+        return []
+    return [
+        (
+            "justfile",
+            0,
+            f"check-fast: dropped {', '.join(dropped)}",
+            "staged edit removes a gate from the pre-commit hook",
+            _LIMIT_HINT,
+        )
+    ]
+
+
 def _without_marked_lines(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if not has_marker(line))
 
@@ -374,10 +509,12 @@ def _test_findings(diff_text: str) -> list[Finding]:
 
 
 def find_findings(diff_text: str) -> list[Finding]:
-    """Every relaxation the staged diff introduces, across all three detectors."""
+    """Every relaxation the staged diff introduces, across all five detectors."""
     findings: list[Finding] = _suppression_findings()
     findings.extend(_config_findings())
     findings.extend(_test_findings(diff_text))
+    findings.extend(_limit_findings())
+    findings.extend(_check_fast_findings())
     return findings
 
 
