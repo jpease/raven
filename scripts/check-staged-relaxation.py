@@ -96,6 +96,7 @@ from raven_lib.gate_config import (  # noqa: E402 -- needs the sys.path insert a
 from staged_diff import (  # noqa: E402 -- needs the sys.path insert above
     ALLOW_MARKER,
     covered_index_lines,
+    has_marker,
     head_blob,
     index_blob,
     iter_added_lines,
@@ -233,7 +234,7 @@ def _offending_suppressions(text: str):
     committed side never counted it either.
     """
     for line_no, content in enumerate(text.splitlines(), start=1):
-        if ALLOW_MARKER in content:
+        if has_marker(content):
             continue
         found = _offending_suppression(content)
         if found is not None:
@@ -311,7 +312,7 @@ def _config_findings() -> list[Finding]:
 
 
 def _without_marked_lines(text: str) -> str:
-    return "\n".join(line for line in text.splitlines() if ALLOW_MARKER not in line)
+    return "\n".join(line for line in text.splitlines() if not has_marker(line))
 
 
 def _test_findings(diff_text: str) -> list[Finding]:
@@ -333,7 +334,7 @@ def _test_findings(diff_text: str) -> list[Finding]:
     for path, line_no, content in iter_added_lines(diff_text):
         if line_no is None or not _is_test_file(path):
             continue
-        if ALLOW_MARKER in content:
+        if has_marker(content):
             marked_files.add(path)
             continue
         if line_no in covered_index_lines(path, covered_cache):

@@ -78,9 +78,10 @@ _MESSAGE_PATTERN = re.compile(
 #: module is repo-only tooling that never ships into an installed project.
 #: `test_allow_marker_matches_the_staged_diff_marker` pins the two together.
 #:
-#: Substring only. staged_diff also extends a marker on a closing bracket back
-#: over the call it closes; porting that would duplicate real logic by hand.
+#: Substring outside backticks. staged_diff also extends a marker on a closing
+#: bracket back over the call it closes; porting that would duplicate real logic.
 ALLOW_MARKER = "raven-hygiene: allow"
+_INLINE_CODE_RE = re.compile(r"`[^`]*`")
 
 
 def _raven_config_module():
@@ -178,7 +179,9 @@ def _scan(added_lines: list[str], label: str) -> int:
     taken.
     """
     hits = [
-        line for line in added_lines if _CONTENT_PATTERN.search(line) and ALLOW_MARKER not in line
+        line
+        for line in added_lines
+        if _CONTENT_PATTERN.search(line) and ALLOW_MARKER not in _INLINE_CODE_RE.sub("", line)
     ]
     if not hits:
         return 0

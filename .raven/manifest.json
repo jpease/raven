@@ -701,14 +701,14 @@
       "sourceSha256": "054f83e53e195b05f580d0ecb2fd87f83010f32f43c9b0b84596019f6eed16c4"
     },
     ".raven/git-hooks/lib/check-ai-attribution-content.py": {
-      "installedSha256": "162fcd66cdcd381af3ad2db0b91b4bc5a764239e1cc6fdb3e118be00ef17a4f3",
+      "installedSha256": "31550831b5efb8fb1721127f6109867fb3f6843f84400326b0f6cd619987c380",
       "kind": "file",
-      "sourceSha256": "162fcd66cdcd381af3ad2db0b91b4bc5a764239e1cc6fdb3e118be00ef17a4f3"
+      "sourceSha256": "31550831b5efb8fb1721127f6109867fb3f6843f84400326b0f6cd619987c380"
     },
     ".raven/git-hooks/lib/check-gate-relaxation.py": {
-      "installedSha256": "dc15f131086a14abedd466e10d8ce6be79ca1b08b30d6fc3d38eefcf355249bb",
+      "installedSha256": "ae4ac39d21f1b3271d19cb6a76f6fc62c39cb9448441fc012860d7440b0782b0",
       "kind": "file",
-      "sourceSha256": "dc15f131086a14abedd466e10d8ce6be79ca1b08b30d6fc3d38eefcf355249bb"
+      "sourceSha256": "ae4ac39d21f1b3271d19cb6a76f6fc62c39cb9448441fc012860d7440b0782b0"
     },
     ".raven/git-hooks/lib/check-managed-block-integrity.py": {
       "installedSha256": "508902afa30443d28befbce03c80c2f1d34b029d05dbfa43c6ae740eba0fbff6",
@@ -766,8 +766,8 @@
     "pyright",
     "pytest"
   ],
-  "ravenVersion": "7c10510c01b0-dirty",
+  "ravenVersion": "d047fe8d8875-dirty",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-10-16T23:28:01.917704+00:00"
+  "updatedAt": "2026-10-16T23:28:04.176377+00:00"
 }

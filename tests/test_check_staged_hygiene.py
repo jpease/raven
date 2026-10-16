@@ -149,6 +149,17 @@ class CheckStagedHygieneTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_marker_quoted_in_backticks_does_not_suppress(self):
+        # Prose about the marker is not a use of it.
+        self._stage(
+            "docs/plan.md",
+            "cd /Users/exampleuser/Developer/thing per the `raven-hygiene: allow` rule\n",  # raven-hygiene: allow
+        )
+
+        result = self._run_checker()
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
     def test_allow_marker_only_suppresses_its_own_line(self):
         # A marker on one line must not blanket-suppress a different
         # offending line in the same staged diff.

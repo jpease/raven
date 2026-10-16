@@ -594,6 +594,16 @@ class AiAttributionContentHookTests(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("staged diff", err)
 
+    def test_marker_quoted_in_backticks_does_not_suppress(self):
+        self._commit("README.md", "# repo\n")
+        self._stage(
+            "notes.py", attribution_line("Claude").rstrip("\n") + " `raven-hygiene: allow`\n"
+        )
+
+        rc, _ = self._run("staged")
+
+        self.assertEqual(rc, 1)
+
     def test_marker_suppresses_only_the_line_carrying_it(self):
         self._commit("README.md", "# repo\n")
         self._stage(

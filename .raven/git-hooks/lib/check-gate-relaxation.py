@@ -110,6 +110,13 @@ from pathlib import Path
 #: because it already ships in ``python/pyproject.toml`` and in the
 #: attribution scanner; renaming it would silently drop those exemptions.
 ALLOW_MARKER = "raven-hygiene: allow"
+_INLINE_CODE_RE = re.compile(r"`[^`]*`")
+
+
+def _has_marker(line: str) -> bool:
+    """True if ``line`` carries the marker; one quoted in backticks is prose about it."""
+    return ALLOW_MARKER in _INLINE_CODE_RE.sub("", line)
+
 
 #: One finding: (path, line number in the staged file, content, reason).
 Finding = tuple[str, int, str, str]
@@ -388,7 +395,7 @@ def _blanket_suppressions(text: str, detectors):
     file-level form rather than as a line-level one.
     """
     for line_no, content in enumerate(text.splitlines(), start=1):
-        if ALLOW_MARKER in content:
+        if _has_marker(content):
             continue
         for pattern, reason in detectors:
             if pattern.search(content):

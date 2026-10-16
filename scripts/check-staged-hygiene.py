@@ -96,6 +96,7 @@ from pathlib import Path
 from staged_diff import (
     ALLOW_MARKER,
     covered_index_lines,
+    has_marker,
     iter_added_lines,
     iter_changed_paths,
     staged_diff,
@@ -351,7 +352,7 @@ def find_findings(diff_text: str, denylist: Denylist | None) -> list[Finding]:
 
         if (
             path in EXCLUDED_PATHS
-            or ALLOW_MARKER in content
+            or has_marker(content)
             or line_no in covered_index_lines(path, covered_cache)
         ):
             prev = None

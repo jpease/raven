@@ -171,6 +171,11 @@ class SuppressionCommentTests(RelaxationCheckerTestCase):
 
         self._assert_clean()
 
+    def test_marker_quoted_in_backticks_does_not_suppress(self):
+        self._stage("app.py", f"x = 1  # {_NOQA}  see `{MARKER}`\n")
+
+        self._assert_blocks("app.py:1:", "no rule code")
+
     def test_a_non_python_file_is_not_scanned_for_suppressions(self):
         # The eight guidance files issue #229 lists quote these tokens as
         # prose; a doc that names a suppression is not one.

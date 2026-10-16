@@ -200,6 +200,12 @@ class GateRelaxationHookTests(unittest.TestCase):
                 rc, err = self._run()
                 self.assertEqual(rc, 0, f"{case.language}: marker ignored\n{err}")
 
+    def test_marker_quoted_in_backticks_does_not_suppress(self):
+        case = CASES[0]
+        self._stage(case.path, case.blanket.replace("\n", f" `{ALLOW_MARKER}`\n", 1))
+        rc, err = self._run()
+        self.assertEqual(rc, 1, err)
+
     # ---- grandfathering (#233): a pre-existing suppression never reports ----
 
     def test_reformat_of_a_file_holding_blanket_suppressions_passes(self):

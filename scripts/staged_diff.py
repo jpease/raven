@@ -26,6 +26,13 @@ import tokenize
 #: `.py` file the line a marker sits on can reach back over the construct a
 #: closing bracket ends; see `marker_covered_lines`.
 ALLOW_MARKER = "raven-hygiene: allow"
+_INLINE_CODE_RE = re.compile(r"`[^`]*`")
+
+
+def has_marker(line: str) -> bool:
+    """True if `line` carries the marker; one quoted in backticks is prose about it."""
+    return ALLOW_MARKER in _INLINE_CODE_RE.sub("", line)
+
 
 #: Token types that say nothing about what a line holds: comments, both
 #: newline forms, and the block-structure tokens carrying an empty string.
@@ -276,7 +283,7 @@ def marker_covered_lines(text: str, path: str) -> set[int]:
     can only ever under-suppress.
     """
     covered = {
-        line_no for line_no, line in enumerate(text.splitlines(), start=1) if ALLOW_MARKER in line
+        line_no for line_no, line in enumerate(text.splitlines(), start=1) if has_marker(line)
     }
     if not covered or not path.endswith(".py"):
         return covered
