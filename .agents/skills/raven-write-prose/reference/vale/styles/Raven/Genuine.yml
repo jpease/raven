@@ -7,7 +7,7 @@ ignorecase: true
 # developed repos) looked like domain need, but striking the word from every
 # sampled sentence never lost a fact -- "a genuinely local-only case (a
 # private-repo symlink target)" loses nothing, because the parenthetical was
-# already proving it. See docs/superpowers/plans/2026-08-27-words-list-history.md.
+# already proving it. See https://github.com/jpease/raven/blob/dbe671857a8c6e600691fb5f5d19a80c5438219d/docs/superpowers/plans/2026-08-27-words-list-history.md.
 #
 # Gated on the same spot-check evidence vacuous's rule was, not the fuller
 # 120-use false-positive sample vacuous itself got -- read the counts above

@@ -17,7 +17,8 @@ This repository is Raven itself: the reusable template library and installer for
 
 ## Public Repository Hygiene
 
-- This repository is public. Everything committed here — including `docs/superpowers/` specs and plans — is world-readable.
+- This repository is public. Everything committed here is world-readable.
+- Agent plans and specs are working notes and stay out of the tree. Superpowers specs and plans go to `.raven/plans/` (gitignored) instead of `docs/superpowers/`, and are never committed.
 - Dogfooding and downstream validation happen in private repos. Refer to them by role, never by name: "a private iOS app repo", "the #60 reporter", "a downstream Node consumer".
 - Do not commit local absolute paths. Write repro steps as `cd <downstream-repo> && raven doctor`, not `cd /Users/<name>/Developer/...`.
 - This matters most in specs and plans, which are written during dogfooding — exactly when naming the real test repo is the natural thing to type.

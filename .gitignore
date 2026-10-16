@@ -21,6 +21,11 @@ TODO.md
 # Local Claude session memory
 .remember/
 
+# Agent plans and specs (Superpowers, raven-plan). Working notes, not public
+# docs; check-prose.py rejects any that get force-added.
+.raven/plans/
+docs/superpowers/
+
 # Tool-installed local agent skills; regenerate with GitNexus when needed.
 # GitNexus writes one directory per skill (gitnexus-cli/, gitnexus-guide/,
 # etc.), not a single gitnexus/ directory, so the pattern must match both
