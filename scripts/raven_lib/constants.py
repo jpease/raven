@@ -116,23 +116,13 @@ ADOPTABLE_PATHS: tuple[str, ...] = tuple(f.path for f in ADOPTABLE_FILES)
 ADOPTABLE_CONFIG_PATHS: frozenset[str] = frozenset(
     f.path for f in ADOPTABLE_FILES if f.kind == "config"
 )
-# .gitattributes (#206) and .ignore (#238) each ship a real template file
-# under common/ -- unlike .gitignore, which has no template file at all and is
-# purely synthesized by blocks._ensure_gitignored -- but neither may ever be
-# whole-file copied onto a destination: most destination repos already carry
-# their own .gitattributes (binary handling, diff drivers, language-specific
-# normalization) and their own .ignore (build output, vendored trees, fixture
-# data) for reasons unrelated to Raven, unlike .claude/settings.json (#200),
-# which destination repos rarely hand-write before Raven arrives. Kept out of
-# DEFAULT_EXCLUDES on purpose: DEFAULT_EXCLUDES is toggled off by
-# --include-readme (see cli.py), a flag with nothing to do with either path,
-# so folding them in there would make --include-readme accidentally re-enable
-# whole-file copy. `is_excluded` checks this set directly and unconditionally
-# instead, so the walk never turns one into a normal will_copy/will_upgrade
-# TemplateEntry; `blocks.ensure_gitattributes_lines` and
-# `blocks.ensure_ignore_lines` merge their required lines into the
-# destination's own file, the same idempotent-append shape
-# `_ensure_gitignored` already established for .gitignore.
+# .gitattributes and .ignore ship real template files under common/, but are
+# never whole-file copied: destination repos usually carry their own for
+# reasons unrelated to Raven. Kept out of DEFAULT_EXCLUDES because
+# --include-readme toggles that off and would re-enable whole-file copy.
+# `is_excluded` checks these unconditionally; `blocks.ensure_gitattributes_lines`
+# and `blocks.ensure_ignore_lines` merge their required lines into the
+# destination's file, the idempotent-append shape `_ensure_gitignored` uses.
 GITATTRIBUTES_PATH = ".gitattributes"
 IGNORE_PATH = ".ignore"
 MERGE_ONLY_TEMPLATE_PATHS = {GITATTRIBUTES_PATH, IGNORE_PATH}
@@ -253,27 +243,15 @@ NON_TEMPLATE_DIRS = {"common", "docs", "evals", "project-skills", "scripts", "te
 KIND_FILE = "file"
 KIND_SYMLINK = "symlink"
 # Every symlink the template tree under `common/` ships, as `common/`-relative
-# POSIX paths. A checkout made without symlink support -- git for Windows
-# without Developer Mode or the "create symbolic links" privilege, or
-# `core.symlinks=false` -- materializes each of these as a *regular file whose
-# entire content is the target path string*. Raven's walk then classifies them
-# as ordinary files and copies that placeholder text into the destination as if
-# it were real content; two of them are Codex security hooks, which afterwards
-# fail open rather than blocking anything (#177).
-#
-# Raven does not support no-symlink checkouts: `broken_template_symlinks` turns
-# this registry into a preflight that refuses install/upgrade/accept, and a
-# `doctor` check that reports the same condition. Reconstructing the intended
-# symlinks from the placeholder text would mean the installer guessing at the
-# contents of security-enforcement hooks; re-cloning with symlinks enabled is
-# both cheap and unambiguous.
-#
-# Every language template reaches these same files through its own directory
-# symlink into `common/` (e.g. `python/.codex/hooks -> ../../common/.codex/
-# hooks`), which the walk follows, so checking `common/` alone covers all of
-# them. Deliberately pinned by hand rather than globbed: a new `common/` symlink
-# must be an explicit edit here, and `test_template.py`'s registry canary fails
-# until it is.
+# POSIX paths. A checkout without symlink support (git for Windows without
+# Developer Mode, or `core.symlinks=false`) turns each into a regular file
+# holding the target path, which the walk would copy as content; two are Codex
+# security hooks that would then fail open. `broken_template_symlinks` turns
+# this into an install/upgrade/accept preflight and a `doctor` check; re-cloning
+# with symlinks enabled beats guessing at security-hook contents.
+# Language templates reach these through directory symlinks, so `common/`
+# covers all. Pinned by hand: `test_template.py`'s canary fails until a new
+# `common/` symlink is added here.
 EXPECTED_TEMPLATE_SYMLINKS = frozenset(
     {
         ".claude/skills",

@@ -40,7 +40,7 @@ staged blobs are each reduced to a multiset of the suppressions that would
 report, and only a staged one with no committed counterpart is a finding.
 Reading added diff lines instead would make a whitespace-only reformat report
 every suppression the file already had, which is what made the repo-owned
-checker impossible to adopt on a codebase that has any (#233). A suppression
+checker impossible to adopt on a codebase that has any. A suppression
 that only moved, or was reindented, or travelled through a rename matches
 itself and stays silent; a second copy of one does not.
 
@@ -58,7 +58,7 @@ smaller parser:
   ``ruff.toml``, ``pyrightconfig.json``, ``mypy.ini``, ``setup.cfg``,
   ``tsconfig.json``, and ``Cargo.toml``, and reports a widened ``ignore``, a
   lowered ``typeCheckingMode``, a disabled ``strict``/``noImplicitAny``/
-  ``strictNullChecks``, or a Cargo lint moved to ``warn``/``allow`` (#245).
+  ``strictNullChecks``, or a Cargo lint moved to ``warn``/``allow``.
   This shipped checker still does none of that for any language, deliberately
   -- config comparison stays repo-only, in ``gate_config.py``. What has no
   rules at all, in that module or here, is ESLint (a JS file, not a static
@@ -68,7 +68,7 @@ smaller parser:
   floor cannot read the first without a dependency or a parser whose failure
   mode is a false accusation, and the second means running it.
 * **No test-deletion detector.** ``def test_`` is Python. The equivalent for
-  eight toolchains is its own piece of work (#231's own "out of scope").
+  eight toolchains is its own piece of work.
 * **No reason requirement.** The repo-owned checker also reports a suppression
   that names a rule code but gives no reason, because that is Raven's own
   house rule. Only Python has a settled place to put one; requiring a reason
@@ -77,7 +77,7 @@ smaller parser:
   demonstrates.
 * **No bracket-reaching marker.** ``staged_diff.marker_covered_lines`` extends
   a marker on a closing bracket back over the call it closes, because
-  ``ruff format`` splits a long decorator and strands the marker (#237). That
+  ``ruff format`` splits a long decorator and strands the marker. That
   applies to the test-skip detector, which is not shipped here, and every
   suppression this file reports is a comment that cannot be split across
   lines by any of the nine formatters. A plain substring rule is what the
@@ -140,27 +140,16 @@ _PY_LINE_BLANKETS = (
 )
 _PYTHON = _PY_FILE_BLANKETS + _PY_LINE_BLANKETS
 
-# --- TypeScript and JavaScript ----------------------------------------------
-# tsc 5 (checked 2026-08-25, re-verified 2026-09-03 for #127):
+# --- TypeScript and JavaScript (tsc 5) --------------------------------------
 #   https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-9.html
 #   https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-7.html
-# Observed: on a line with a type error, the ignore and expect-error forms are
-# both quiet. On a line with no error, expect-error raises TS2578 ("Unused
-# '@ts-expect-error' directive") and the ignore form stays silent -- so only
-# the ignore form can rot unnoticed, and only it is reported here.
-# `@ts-nocheck` silenced the whole file.
-# #127, tsc 5.9.3: tsc recognizes the directive only when it is the first
-# thing in a `//` line comment (mod leading whitespace) -- trailing text after
-# it is fine, but any character before it, or a `/* */` block form, is not.
-# `// `@ts-nocheck`; explained here` still reported the file's type error, so
-# both patterns require the token to sit immediately after `//`, the same
-# marker-then-token adjacency every other detector below already requires.
-# ESLint 9: https://eslint.org/docs/latest/use/configure/rules
-# Observed on a file violating no-unused-vars and eqeqeq: the file-level
-# `eslint-disable` with no rule names reported 0 problems, while the same
-# comment naming one rule still reported eqeqeq. `eslint-disable-next-line`
-# with no rule name silences everything on the following line. A trailing
-# `-- description` is part of the directive, so it does not make one narrow.
+# On a line with no error, expect-error raises TS2578 and the ignore form stays
+# silent, so only the ignore form can rot unnoticed and only it is reported.
+# `@ts-nocheck` silences the whole file. tsc honors a directive only right
+# after `//` (leading whitespace allowed), so the patterns require that too.
+# ESLint 9 (https://eslint.org/docs/latest/use/configure/rules): `eslint-disable`
+# and `eslint-disable-next-line` with no rule names silence everything; a
+# trailing `-- description` does not narrow them.
 _TYPESCRIPT = (
     (re.compile(r"//\s*@ts-nocheck\b"), "a file-level TypeScript check disable"),
     (
@@ -315,7 +304,7 @@ def _repo_root() -> Path:
 
     Three parents up from this file's own directory is the install-layout
     candidate; the shared walk confirms it or climbs further. Never shells out
-    to git, so an inherited ``GIT_DIR`` cannot corrupt the answer (#202).
+    to git, so an inherited ``GIT_DIR`` cannot corrupt the answer.
     """
     candidate = Path(__file__).resolve().parents[3]
     return _raven_config_module().resolve_repo_root(candidate)

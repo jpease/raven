@@ -395,10 +395,9 @@ class PipeToShellIsHookOnlyTests(unittest.TestCase):
 
 class NoCautionOrEditRuleAdditionsSlippedIntoDenyTests(unittest.TestCase):
     """Sanity check on the deny list's shape: only Read(...) and Bash(...)
-    rules are expected. An Edit(...)/Write(...) rule would be redundant --
-    a Read(...) deny already blocks Edit/Write on the same path -- and
-    would signal a drift from the "rely on Read blocking Edit too" decision
-    this issue made (see raven-guardrails.md).
+    rules are expected. Edit and Write protection for secret paths comes from
+    `raven-pre-edit-guard.py`'s `BLOCKED` list, so an Edit(...)/Write(...)
+    deny rule would be a second, unsynced copy of it.
     """
 
     def test_every_deny_rule_is_a_read_or_bash_rule(self):

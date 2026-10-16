@@ -55,7 +55,7 @@ Each row names the artifact, the test, and the fix. The delete tests apply to wh
 | Essence-framing | "what this really means", "at its core", "boils down to", "the real question is" | Delete the frame; state the claim directly. |
 | Stakes-inflation | "changes everything", "cannot be overstated", "game-changer", "turning point" | Cut it, or replace with the number that earns the claim. |
 
-`X, not Y` needs judgment. "Green tests prove behavior, not design health" survives the delete test; "It's not about speed. It's about correctness" does not. Most instances of the broad form rule out a real misreading, so judge by the test and not by the shape.
+`X, not Y` gets one use per section. Keep the one whose negated half rules out a misreading the reader would otherwise make: "Green tests prove behavior, not design health" survives the delete test; "It's not about speed. It's about correctness" does not. Restate the others directly. A run of them is a tell even when each one passes alone.
 
 The tag on a heading, a commit subject, or an issue title gets through the delete test, so a title takes a second one: **does the negated half rule out something the reader would otherwise have expected?** `not cwd` does; "measured rather than assumed" rates the method, and the replacement is the number that earned the claim.
 

@@ -10,8 +10,8 @@ adapters, so naming either one here would be wrong in the other.
 Probes inline rather than caching. Probing all recommended tools costs about
 3 ms because the prober short-circuits to ``shutil.which`` unless
 ``RAVEN_TOOL_CHECK_EXECUTE=1``; a cache plus a background refresh would have
-cost a second ~140 ms interpreter start to defer that. See
-docs/superpowers/specs/2026-08-11-session-capability-roster-design.md.
+cost a second ~140 ms interpreter start to defer that. See the design spec:
+https://github.com/jpease/raven/blob/d914652fd672689bcb1e5d69b2e1b888763d37cc/docs/superpowers/specs/2026-08-11-session-capability-roster-design.md
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ def resolve_repo_root_for_payload(payload: dict | None, start: Path) -> Path | N
     hook payload's ``cwd`` takes precedence when present.
 
     Named distinctly from -- and delegates its walk to -- the shared
-    ``raven_config.resolve_repo_root(start) -> Path`` (issue #202): that
+    ``raven_config.resolve_repo_root(start) -> Path``: that
     function never returns ``None`` (it falls back to ``start`` itself), but
     ``build_roster`` uses ``None`` here to mean "no repo found at all," which
     skips every repo-specific roster section (template, gates, MCP servers,

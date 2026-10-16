@@ -74,8 +74,7 @@ was in the uncollected half, among them `_effective_bar_width(10, 52)  # -> 4`
 for a function returning 3, with arithmetic beside it summing to 56 against a
 52-pixel budget. Form is a hint and the runner is the fact: 24 of the
 uncollected examples were already in `>>>` form, which buys nothing where
-nothing collects it. Find out what executes an example before trusting it, and
-verify by hand the ones nothing does.
+nothing collects it. Find out what executes an example before trusting it.
 
 The changelog comment and the dangling reference share a cause. Both address a
 reader who sat through the change, assuming the diff, the conversation, and the
@@ -185,11 +184,9 @@ nothing to fire on. What is left is the tag: `X, not Y` hung off the end.
 The tag earns its place when the negated half names what the change replaced —
 `not cwd`, `not the checked-out branch` — because a reader who knew the old
 behavior needs telling it is gone. It does not when the negated half rates how
-the work was done: "measured, not inferred", "verified, not assumed", "earned,
-not claimed". Nobody was going to assume otherwise, so the tag adds no fact and
-reads as self-congratulation. This one was reported from outside, on an issue
-an agent filed after loading these rules, which is why it now has a row.
-The measurement behind it is in `SKILL.md` under the `not X, but Y` tell.
+the work was done: `measured, not inferred`, `verified, not assumed`, `earned,
+not claimed`. Nobody was going to assume otherwise, so the tag adds no fact and
+reads as self-congratulation.
 
 A title that needs the method is a title missing a number: "measured across
 nine documents" beats both versions.

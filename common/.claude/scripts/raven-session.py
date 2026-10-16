@@ -219,8 +219,8 @@ def _validate_issue_ref(issue_ref: str) -> str | None:
         )
     if not re.fullmatch(_ISSUE_REF_SHAPE, issue_ref):
         return (
-            "issue reference must match the shape '#123', 'group/project#123', or"
-            " 'group/sub/project#7': no internal whitespace, and it must end in '#'"
+            "issue reference must match the shape `#123`, `group/project#123`, or"
+            " `group/sub/project#7`: no internal whitespace, and it must end in '#'"
             " followed by one or more digits"
         )
     return None
@@ -469,7 +469,7 @@ def cmd_link(args: list[str]) -> int:
 
     ``<issue>`` must match ``_ISSUE_REF_SHAPE``: no newline, carriage return,
     or ``→`` (session.md's own field delimiter), no internal whitespace, and
-    it must end in ``#`` followed by one or more digits. ``#123``,
+    it must end in ``#`` followed by one or more digits. A bare ``#<n>``,
     ``group/project#123``, and ``group/sub/project#7`` all satisfy that shape
     and round-trip unchanged; anything else is rejected with an error rather
     than being stored and silently mangled on the next parse. No

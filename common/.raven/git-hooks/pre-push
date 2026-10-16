@@ -52,13 +52,11 @@ head_sha=$(git rev-parse HEAD 2>/dev/null) || head_sha=""
 # check`; it says nothing about a different commit being pushed (a different
 # branch than the one checked out here, or a commit made in another worktree
 # sharing this git dir). Without this check, a stamped worktree on `main`
-# could rubber-stamp `git push origin feature` with zero checks run
-# (issue #80).
+# could rubber-stamp `git push origin feature` with zero checks run.
 #
 # stdin can only be drained once, so the loop also reaccumulates the plan into
 # push_plan to hand to the attribution scan below -- otherwise that scan has no
-# idea which refs are being pushed and falls back to guessing from HEAD (issue
-# #126). Building the string by concatenation (rather than re-reading stdin, a
+# idea which refs are being pushed and falls back to guessing from HEAD. Building the string by concatenation (rather than re-reading stdin, a
 # here-doc, or a temp file) keeps the loop in the current shell so has_work and
 # refs_match_head survive, needs no cleanup path, and never re-parses ref names.
 has_work=0
@@ -86,7 +84,7 @@ done
 # The captured plan goes in on stdin (--push-plan), so the scan covers the
 # commits actually being pushed rather than whatever this worktree has checked
 # out -- `git push origin feature` from a worktree sitting on `main` used to
-# scan `main` and wave the feature branch through (issue #126). An older lib
+# scan `main` and wave the feature branch through. An older lib
 # without --push-plan ignores the extra arguments and falls back to its previous
 # behavior instead of erroring.
 attribution_check="$repo_root/.raven/git-hooks/lib/check-ai-attribution-content.py"
@@ -121,7 +119,7 @@ fi
 # so it is never committed and is wiped on re-clone. Skip the wrapper
 # entirely (falling back to a plain, uncached run) if the lib script is
 # missing (a stale/partial install) rather than hard-failing.
-# The justfile presence test matches pre-commit's (issue #225): a template that
+# The justfile presence test matches pre-commit's: a template that
 # ships no justfile must skip this gate, not have every push refused by
 # `just check` failing with "error: no justfile found".
 if command -v just >/dev/null 2>&1 && { [ -n "$JUST_JUSTFILE" ] || [ -f justfile ] || [ -f Justfile ] || [ -f .justfile ]; }; then

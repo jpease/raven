@@ -82,16 +82,13 @@ def reconcile_state(
         and template_fp.kind == KIND_FILE
     ):
         # A symlink standing where the template ships a regular file is drift,
-        # never a customization: it holds no content of the user's to lose, and
-        # it is the pre-#253 shape that a Windows checkout without symlink
-        # support materializes as a file containing the literal target path.
-        # Without this, a tree reverted to the symlink after its baseline had
-        # already migrated reads as `local_only` -- template unchanged, file
-        # "edited" -- and every future upgrade leaves it alone (#261).
+        # never a customization: it holds no user content, and it is the old
+        # shape a Windows checkout without symlink support materializes as a
+        # file holding the target path. Otherwise it reads as `local_only` and
+        # every future upgrade leaves it alone.
         #
-        # Deliberately one-directional. The mirror case, a regular file where
-        # the template ships a symlink, can hold real content, so it keeps the
-        # existing merge path rather than being overwritten here.
+        # One-directional: a regular file where the template ships a symlink
+        # can hold real content, so it keeps the merge path.
         return "will_upgrade"
     if not template_changed:
         # Raven's template is unchanged since the baseline. If the file still

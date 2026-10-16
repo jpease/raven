@@ -136,7 +136,7 @@ paths = []
 checkpoint_enforcement = true
 
 [edit_guard]
-# Project-declared protected paths (issue #247). AGENTS.md's Pause-And-Ask
+# Project-declared protected paths. AGENTS.md's Pause-And-Ask
 # categories are prose; this is the mechanical backstop for the ones a project
 # can spell as paths. A PreToolUse hook matches each edited path, relative to
 # the repository root, against these fnmatch globs (`*` crosses directory
@@ -205,10 +205,10 @@ block_ai_attribution_content = true
 block_gate_relaxation = true
 
 # Warn (never block) when a commit message pairs a closing keyword with a
-# negation near an issue number, e.g. "did not fix #123" -- GitHub's and
+# negation near an issue number, e.g. `did not fix #123` -- GitHub's and
 # GitLab's closing-keyword parsers match keyword+number proximity only, not
-# grammar, and still auto-close #123 on merge despite the negation. Suggests
-# "Refs: #123" instead when a fix attempt failed. Runs in commit-msg.
+# grammar, and still auto-close `#123` on merge despite the negation. Suggests
+# `Refs: #123` instead when a fix attempt failed. Runs in commit-msg.
 warn_negated_closing_keyword = true
 
 # [sources.superpowers]

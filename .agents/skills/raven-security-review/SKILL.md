@@ -48,9 +48,9 @@ Use this skill when a change touches:
 | "This change is small, it probably doesn't need review" | Check `Trigger Heuristics`. Size doesn't determine risk — boundary contact does. |
 | "Semgrep came back clean, we're good" | A clean scan is evidence for mechanical patterns only, not proof of security. |
 | "I already reviewed something similar earlier" | `Skip When` requires the same *unchanged* diff. Re-review if the diff moved. |
-| "This is an internal tool, exposure is low" | Trust boundaries and reachability decide whether a finding matters, not deployment context. |
-| "It's just a markdown skill file, not code" | Skills and agent configs execute with the agent's full permissions (shell, filesystem, credentials, memory). Treat unfamiliar ones as an executable trust boundary, not documentation. |
-| "The scrubber has a rule for that field" | A rule proves the field is handled, not that the value is gone. Search the whole serialized event for the raw value. |
+| "This is an internal tool, exposure is low" | Trust boundaries and reachability decide whether a finding matters; deployment context doesn't. |
+| "It's just a markdown skill file; it isn't code" | Skills and agent configs execute with the agent's full permissions (shell, filesystem, credentials, memory). Treat unfamiliar ones as an executable trust boundary. |
+| "The scrubber has a rule for that field" | A rule proves the field is handled. It doesn't prove the value is gone. Search the whole serialized event for the raw value. |
 
 ## Process
 

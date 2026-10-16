@@ -25,7 +25,7 @@ _AI_TRAILER = re.compile(
 )
 
 # GitHub/GitLab's closing-keyword parser matches keyword+issue-number proximity
-# only, not grammar -- "did not fix #123" still auto-closes #123 on merge to
+# only, not grammar -- `did not fix #123` still auto-closes `#123` on merge to
 # the default branch. Flags (does not block) a negation word within ~40 chars
 # before a closing keyword that is itself within ~10 chars of a "#<number>".
 # The apostrophe in "didn't"/"doesn't" is matched with `.` so both the
@@ -47,7 +47,7 @@ def _raven_config_module():
     (``.raven/git-hooks/lib/raven_config.py``) always ship together in the
     "hooks" component, one level apart -- resolved via this file's own
     location. ``_repo_root()`` below is now also derived from this same
-    file location (issue #202), rather than an independently injectable
+    file location, rather than an independently injectable
     value: a test exercising a fixture repo now installs this script (and
     its ``lib/raven_config.py`` sibling) at the fixture's own matching
     relative offset, rather than pointing an isolated ``_repo_root()`` at it.
@@ -104,7 +104,7 @@ def _repo_root() -> Path:
     walk never shells out to git, so it is immune to an inherited
     ``GIT_DIR``/``GIT_WORK_TREE`` corrupting the answer -- see that
     function's own docstring for why that class of bug motivated dropping
-    the subprocess call entirely (issue #202).
+    the subprocess call entirely.
     """
     candidate = Path(__file__).resolve().parents[2]
     return _raven_config_module().resolve_repo_root(candidate)

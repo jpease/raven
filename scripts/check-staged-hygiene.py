@@ -102,17 +102,11 @@ from staged_diff import (
 )
 
 #: Tracked paths this check does not scan even though they hold staged text.
-#: Kept tiny and explicit: excluding docs/specs/plans is exactly what the
-#: escape-hatch design forbids, so nothing doc/spec/plan-shaped belongs in
-#: this set. `uv.lock` was removed from this set by #181: word-boundary +
-#: minimum-length denylist matching (see `_denylist_hit`) already makes
-#: routine hash/version-bump noise very unlikely to false-positive, so the
-#: exclusion's only remaining effect was a real gap -- a `uv.lock`
-#: git-source dependency URL can legitimately leak a private repo name.
-#: Empty is the current state, not dead infrastructure: kept as the
-#: documented escape hatch for a future tracked path that legitimately
-#: can't be scanned (its previous and only entry, the symlink removed by
-#: #204, is gone).
+#: Kept tiny and explicit: the escape-hatch design forbids excluding
+#: docs/specs/plans. `uv.lock` is scanned because a git-source dependency URL
+#: can leak a private repo name, and `_denylist_hit`'s matching keeps hash
+#: noise from false-positiving. Empty on purpose: the documented escape hatch
+#: for a future tracked path that legitimately can't be scanned.
 EXCLUDED_PATHS: frozenset[str] = frozenset()
 
 #: Denylist entries shorter than this are dropped at load time (see

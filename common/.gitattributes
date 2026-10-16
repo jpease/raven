@@ -1,5 +1,5 @@
 # Raven: normalize line endings so shipped hooks/scripts with a `#!` shebang
-# never break from a Windows-checked-out CRLF (#206). Only the two blanket
+# never break from a Windows-checked-out CRLF. Only the two blanket
 # rules and the explicit per-path entries below are copied into a
 # destination's own .gitattributes -- see blocks.ensure_gitattributes_lines
 # and common/.claude/docs/raven-namespace.md for how this file is merged

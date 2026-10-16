@@ -212,7 +212,7 @@ repository declares it:
 
 Any other missing tool that has an "optional when" note is still reported as a warning,
 now labelled `[optional]`. An index you removed on purpose (`optional = []`) reads
-"installed, not configured (removed by choice)" and carries no hint to wire it up.
+`installed, not configured (removed by choice)` and carries no hint to wire it up.
 
 `raven doctor` also notes when `AGENTS.md` carries GitNexus's own generated block (between
 `gitnexus:start` and `gitnexus:end`). That block says to run impact analysis before every

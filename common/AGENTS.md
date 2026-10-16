@@ -41,8 +41,8 @@ Use the cheapest adequate source before reading full files.
 - Return concise findings before editing.
 - When two literal `rg` guesses miss, switch tools rather than iterating term variations; an index query is discovery, not proof, so verify with `rg`, LSP, or tests before changing code. Tool spellings, flags, and dot-directory caveats live in `raven-codebase-discovery`.
 - Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried, then delegate or ask.
-- Tool availability comes from the session capability roster. If no roster is present, probe before relying on a non-baseline tool. A listed MCP server may still be unapproved or unconnected; a failed call is information, not a contradiction.
-- A listed code index is an optional aid: its result is discovery, not proof; say so if it is stale. A configured MCP server is not an index.
+- Tool availability comes from the session capability roster. If no roster is present, probe before relying on a non-baseline tool. A listed MCP server may still be unapproved or unconnected; treat a failed call as information about the session.
+- A listed code index is an optional aid whose results are discovery only; say so if it is stale. A configured MCP server is not an index.
 
 ## Skills
 

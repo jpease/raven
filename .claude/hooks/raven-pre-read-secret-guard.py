@@ -2,7 +2,7 @@
 """PreToolUse hook: deny a ``Read`` of a secret-bearing path.
 
 This replaces the 21 ``Read(...)`` entries that used to sit in
-``permissions.deny`` (#260). Those rules used gitignore semantics, where a bare
+``permissions.deny``. Those rules used gitignore semantics, where a bare
 filename matches at any depth -- ``Read(*.pem)`` covered every ``.pem``
 anywhere, which is what made them worth having. Claude Code 2.1.259 began
 evaluating a Bash command's implied read scope against the same rules at

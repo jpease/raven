@@ -16,8 +16,8 @@ Do not duplicate canonical guidance into agent-specific files unless the target 
 
 Claude-specific files:
 
-- `CLAUDE.md`: a plain one-line file importing `AGENTS.md` (`@AGENTS.md`), not a symlink — a symlink breaks on a Windows checkout without symlink support (#253).
-- `.claude/skills`: a per-file copy of `.agents/skills`, not a symlink, for the same reason (#274). The same skill therefore exists at two paths: `.agents/skills` is the one to edit, and `raven upgrade` refreshes the `.claude/skills` copy from it — editing the copy does not change `.agents/skills`.
+- `CLAUDE.md`: a plain one-line file importing `AGENTS.md` (`@AGENTS.md`), not a symlink — a symlink breaks on a Windows checkout without symlink support.
+- `.claude/skills`: a per-file copy of `.agents/skills`, for the same reason. The same skill therefore exists at two paths: `.agents/skills` is the one to edit, and `raven upgrade` refreshes the `.claude/skills` copy from it — editing the copy does not change `.agents/skills`.
 - `.claude/agents/raven-*.md`: Claude Code subagents.
 - `.claude/hooks/raven-*.py`: Claude Code hook scripts.
 - `.claude/rules/raven-*.md`: Claude Code scoped rules.
@@ -31,12 +31,10 @@ resumes on your next prompt" (`code.claude.com/docs/en/skills.md`, fetched 2026-
 
 So `model: haiku` on a skill does not buy a cheap skill — it downgrades every step that
 follows it in the same turn. For Raven's skills that is precisely backwards: they are
-procedures that precede work, not ones that conclude it. Even the end-of-unit skills are
-not terminal — a commit is routinely followed by more work in the same turn. Four skills
-(`raven-commit`, `raven-doc-sync`, `raven-tool-bootstrap`, and the since-removed
-`raven-context-hygiene`) carried the field until issue #208; it is now removed everywhere,
-and `tests/test_skills.py::SkillModelOverrideTests` fails if one reappears without a
-registered reason.
+procedures that precede work rather than conclude it. Even the end-of-unit skills are
+not terminal — a commit is routinely followed by more work in the same turn. The field
+is removed from every shipped skill, and `tests/test_skills.py::SkillModelOverrideTests`
+fails if one reappears without a registered reason.
 
 A skill that genuinely wants a smaller model should use `context: fork`, which scopes the
 model to a forked subagent instead of the caller's turn. This is a Claude-only field —
@@ -58,12 +56,13 @@ Every file under `.codex/` is inert until the project is trusted. Codex loads a 
 `.codex/` layer — config, hooks, rules, and custom agents — only for a project whose
 `[projects."<path>"] trust_level = "trusted"` entry exists in the user's `config.toml`, which
 the TUI writes when the user accepts the trust prompt; a `-c projects.<path>.trust_level`
-command-line override does not grant it. Each hook additionally needs a one-time review
-in `/hooks`, keyed on the hook's hash, so an upgraded `hooks.json` goes back to skipped
-until reviewed again. `AGENTS.md` and `.agents/skills` load regardless of trust. Verified
-live against codex-cli 0.152.1 on 2026-09-02: a SessionStart hook in an untrusted
-throwaway repository never ran; the same hook in a trusted tree did. `raven doctor` cannot
-see Codex's trust store, so this is the one adapter-level failure it does not report.
+command-line override does not grant it. `AGENTS.md` and `.agents/skills` load regardless of trust.
+
+Each hook additionally needs a one-time review in `/hooks`, keyed on the hook's hash, so an
+upgraded `hooks.json` goes back to skipped until reviewed again. Verified live against
+codex-cli 0.152.1 on 2026-09-02: a SessionStart hook in an untrusted throwaway repository
+never ran; the same hook in a trusted tree did. `raven doctor` cannot see Codex's trust
+store, so this is the one adapter-level failure it does not report.
 
 Codex reads `.agents/skills` directly, so Raven does not install a `.codex/skills` copy.
 Per the Codex skills documentation, "Codex scans `.agents/skills` in every directory from
@@ -100,7 +99,7 @@ trees — all three are deliberate.
 
 | Category | Meaning | Files |
 |---|---|---|
-| **Byte-identical (unified)** | One real file under `common/.claude/`; the `.codex/` and `.gemini/` paths are template-internal symlinks to it. Nothing to keep in sync. | `scripts/raven-capability-roster.py`, `scripts/raven-session.py`, `scripts/raven-skeleton.py`, `scripts/raven-tool-check.py`, `hooks/raven-run-hook.sh` (Claude and Gemini), `hooks/raven-post-bash-summarize.py`, `hooks/raven-post-edit-format.py`, `hooks/raven-pre-bash-guard.py`, `hooks/raven-pre-bash-test-scope.py`, `hooks/raven-pre-bash-cd-scope.py`, `hooks/raven-pre-edit-guard.py` (reads its adapter directory from its install path to pick `ask` on Claude and a context warning on Codex, #247), `hooks/raven-session-checkpoint.py` (computes its own adapter directory at runtime, same pattern as `raven-tool-check.py`, instead of hardcoding one — issue #195), `hooks/raven-post-bash-truncate.py` (Claude and Gemini), `hooks/raven-pre-read-secret-guard.py` (Claude and Gemini), `hooks/raven-skeleton-read-guard.py` (Claude and Gemini) |
+| **Byte-identical (unified)** | One real file under `common/.claude/`; the `.codex/` and `.gemini/` paths are template-internal symlinks to it. Nothing to keep in sync. | `scripts/raven-capability-roster.py`, `scripts/raven-session.py`, `scripts/raven-skeleton.py`, `scripts/raven-tool-check.py`, `hooks/raven-run-hook.sh` (Claude and Gemini), `hooks/raven-post-bash-summarize.py`, `hooks/raven-post-edit-format.py`, `hooks/raven-pre-bash-guard.py`, `hooks/raven-pre-bash-test-scope.py`, `hooks/raven-pre-bash-cd-scope.py`, `hooks/raven-pre-edit-guard.py` (reads its adapter directory from its install path to pick `ask` on Claude and a context warning on Codex), `hooks/raven-session-checkpoint.py` (computes its own adapter directory at runtime, same pattern as `raven-tool-check.py`, instead of hardcoding one), `hooks/raven-post-bash-truncate.py` (Claude and Gemini), `hooks/raven-pre-read-secret-guard.py` (Claude and Gemini), `hooks/raven-skeleton-read-guard.py` (Claude and Gemini) |
 | **Schema-translated** | Same role, different file format required by the harness. Not comparable line-by-line. | `.claude/agents/raven-*.md` ↔ `.codex/agents/raven-*.toml` ↔ `.gemini/agents/raven-*.md`; `.claude/settings.json` ↔ `.codex/hooks.json` ↔ `.gemini/settings.json`; `.claude/rules/raven-security.md` ↔ `.codex/rules/raven.rules` ↔ `.gemini/policies/raven.toml`; `.claude/skills` as a per-file copy of `.agents/skills` ↔ Codex reading `.agents/skills` directly ↔ Gemini reading `.agents/skills` directly; `CLAUDE.md` ↔ `GEMINI.md` |
 | **Intentionally asymmetric** | Exists for one harness only, because the underlying capability does not exist in the other. See Known Asymmetries below. | `hooks/raven-skeleton-read-guard.py` and `hooks/raven-post-bash-truncate.py` (Claude and Gemini only); `.codex/config.toml` (Codex-only) |
 
@@ -122,36 +121,36 @@ dereference behavior, and `tests/test_apply.py` installs a Claude-disabled desti
 prove real files arrive.
 
 Consequently these links never reach a destination, so `.raven/manifest.json` records the
-installed files as `KIND_FILE`, not `KIND_SYMLINK`. Since #274 that is true of the whole
-template walk, not just these links: `.claude/skills` is expanded into per-file copies
-instead of being installed as a link, so a destination now receives no symlink from the
-template at all, and needs no symlink support to use what it receives. `CLAUDE.md` left
-the symlink list first (#253), shipping as a plain `@AGENTS.md` import so it survives a
-destination-repo checkout without symlink support; `.claude/skills` followed for the same
-reason — on such a checkout git materializes a symlink as a regular file holding the
-literal target text, which leaves Claude Code finding no skills at all. The Codex hook and
-script links were never in this category: they are template-internal and dereferenced into
-real files on the way in. `KIND_SYMLINK` remains only for reading a manifest written
-before #274; `raven upgrade` unlinks that legacy `.claude/skills` symlink and prunes its
-record.
+installed files as `KIND_FILE`, not `KIND_SYMLINK`. The same holds for the whole template
+walk: `.claude/skills` is expanded into per-file copies instead of being installed as a
+link, so a destination receives no symlink from the template at all and needs no symlink
+support to use what it receives.
+
+`CLAUDE.md` ships as a plain `@AGENTS.md` import so it survives a destination-repo checkout
+without symlink support, and `.claude/skills` is copied for the same reason: on such a
+checkout git materializes a symlink as a regular file holding the literal target text,
+which leaves Claude Code finding no skills at all. The Codex hook and script links were
+never in this category: they are template-internal and dereferenced into real files on the
+way in. `KIND_SYMLINK` remains only for reading an older manifest; `raven upgrade` unlinks
+that legacy `.claude/skills` symlink and prunes its record.
 
 Runtime-derived adapter identity: because one file serves every harness, a unified script
 cannot embed its own adapter directory as a literal. `raven-tool-check.py` derives it from
 its install layout (`_adapter_directory_from_install_layout`) for both the project root and
 the directory named in `--help` and remediation text. Deliberately *not* symlink-resolving:
-adapter identity follows the path the script was invoked through, not where its bytes live.
+adapter identity follows the path the script was invoked through rather than where its bytes live.
 
 ### Why `.codex/hooks.json` repeats its launcher six times
 
-It cannot be hoisted into a shared file, and this has already been tried. Codex can invoke
+It cannot be hoisted into a shared file; this has already been tried. Codex can invoke
 a hook with a process cwd outside the project, so the launcher must parse the JSON payload
-on stdin to find the project root *before* any relative path resolves — which means no
-relative path to a shim script resolves either, and Codex offers no project-directory
-variable (`$CLAUDE_PROJECT_DIR` is Claude-only, which is why Codex needs the expression at
-all). Commit `aa4ec79` replaced a `git rev-parse` wrapper with the inline expression for
-exactly this reason. The six copies are therefore irreducible without generating
-`hooks.json` at install time; the drift guard in `tests/test_agent_hooks.py` makes a missed
-copy fail loudly instead. Do not re-file this as duplication to clean up.
+on stdin to find the project root *before* any relative path resolves — so no relative
+path to a shim script resolves either, and Codex offers no project-directory variable
+(`$CLAUDE_PROJECT_DIR` is Claude-only, which is why Codex needs the expression at all).
+Commit `aa4ec79` replaced a `git rev-parse` wrapper with the inline expression for this
+reason. The six copies are irreducible without generating `hooks.json` at install time;
+the drift guard in `tests/test_agent_hooks.py` makes a missed copy fail loudly instead.
+Do not re-file this as duplication to clean up.
 
 ## Known Asymmetries
 
@@ -165,12 +164,12 @@ Recorded here so audits don't re-flag them:
   (symlinked, see the classification table above) but has no `.codex/hooks/` counterpart
   and no entry in `.codex/hooks.json`. Codex has no discrete, universally matchable `Read`
   tool — its `PreToolUse` hook coverage is `Bash`, `apply_patch`, and MCP calls only, so
-  there is nothing to gate the same way. Gemini CLI does have a discrete, matchable
-  `read_file` tool and supports `BeforeTool` interception on it, so it gets the real gate
-  rather than being grouped with Codex (`docs/research/gemini-cli-adapter.md` §3, #267).
-  See `docs/research/hook-read-interception.md` for the Claude/Codex capability comparison
-  and `docs/superpowers/plans/2026-06-18-skeleton-first-reads.md` for the decision to keep
-  Codex at advisory guidance (rung 0/1) instead of a deny gate.
+  there is nothing to gate the same way. Gemini CLI has a discrete, matchable `read_file`
+  tool with `BeforeTool` interception, so it gets the real gate
+  (`docs/research/gemini-cli-adapter.md` §3). See `docs/research/hook-read-interception.md`
+  for the Claude/Codex capability comparison and the
+  [skeleton-first reads plan](https://github.com/jpease/raven/blob/08d18adfb76c6cf54eeb25f873df335d8393df9e/docs/superpowers/plans/2026-06-18-skeleton-first-reads.md)
+  for the decision to keep Codex at advisory guidance (rung 0/1) instead of a deny gate.
 
   Unifying the byte-identical hook scripts must not sweep this one along: giving it a
   `.codex/hooks/` counterpart would wire a gate Codex cannot fire. Its continued absence is

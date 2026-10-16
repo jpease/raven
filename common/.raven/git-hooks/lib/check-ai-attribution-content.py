@@ -73,16 +73,13 @@ _MESSAGE_PATTERN = re.compile(
 
 
 #: Per-line escape for a content hit, matched as a substring anywhere on the
-#: added line. Deliberately a copy of `scripts/staged_diff.py`'s `ALLOW_MARKER`
-#: literal rather than an import, for the same reason `_MESSAGE_PATTERN` copies
-#: commit-msg's `_AI_TRAILER`: that module is Raven's own repo-only tooling and
-#: never ships into an installed project, so importing it would name a file no
-#: fresh install puts on disk. `test_allow_marker_matches_the_staged_diff_marker`
-#: pins the two together so they cannot drift.
+#: added line. A copy of `scripts/staged_diff.py`'s `ALLOW_MARKER` rather than
+#: an import (as `_MESSAGE_PATTERN` copies commit-msg's `_AI_TRAILER`): that
+#: module is repo-only tooling that never ships into an installed project.
+#: `test_allow_marker_matches_the_staged_diff_marker` pins the two together.
 #:
-#: Substring only. staged_diff additionally extends a marker on a closing
-#: bracket back over the call it closes (#237); porting that here would be a
-#: second copy of real logic kept in sync by hand, which issue #231 owns.
+#: Substring only. staged_diff also extends a marker on a closing bracket back
+#: over the call it closes; porting that would duplicate real logic by hand.
 ALLOW_MARKER = "raven-hygiene: allow"
 
 
@@ -149,7 +146,7 @@ def _repo_root() -> Path:
     walk never shells out to git, so it is immune to an inherited
     ``GIT_DIR``/``GIT_WORK_TREE`` corrupting the answer -- see that
     function's own docstring for why that class of bug motivated dropping
-    the subprocess call entirely (issue #202).
+    the subprocess call entirely.
     """
     candidate = Path(__file__).resolve().parents[3]
     return _raven_config_module().resolve_repo_root(candidate)
@@ -459,7 +456,7 @@ def main() -> int:
             return 0
         # Deliberately no fallback to the HEAD-relative range here: when a plan
         # was supplied, HEAD may be an unrelated branch, and scanning it is the
-        # bug this path exists to fix (issue #126).
+        # bug this path exists to fix.
         return _scan_push_plan(plan_text, remote)
     return _scan_outbound()
 

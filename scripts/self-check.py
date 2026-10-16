@@ -224,48 +224,21 @@ def validate_context_budget() -> None:
     Every always-loaded rules file must have a threshold entry -- a new one
     with no entry fails loudly rather than silently going unbudgeted.
     """
-    # Always-loaded tier. Raise a threshold only for a failure someone observed -- a
-    # correction that had to be made, a guardrail an agent worked around -- and record
-    # that event in the comment beside the raise. An anticipated failure mode reads as
-    # justification too, which is how a context window fills with plausible guidance
-    # nobody measured. Same standard as `.claude/docs/raven-namespace.md`.
+    # Always-loaded tier. Raise a threshold only for an observed failure (a
+    # correction someone had to make, a guardrail an agent worked around) and name
+    # it beside the raise; anticipated failures fill context with unmeasured
+    # guidance. Same standard as `.claude/docs/raven-namespace.md`.
     #
-    # Removals carry the same bar, and this gate cannot enforce it: it only ever
-    # says "too big", so a raise needs documented evidence while a trim needs
-    # none. Deleting always-loaded guidance is the cheapest way to pass, and the
-    # deleted line is the one no longer in context when an agent needs it. Say
-    # what the removed guidance was for and why it stopped earning its place.
-    # Lower the threshold in the same commit when a trim opens real headroom --
-    # a limit nothing is near has stopped constraining anything.
+    # Removals carry the same bar, which this gate cannot enforce: deleting
+    # guidance is the cheapest pass. Say what removed guidance was for and why it
+    # stopped earning its place. Lower the threshold in the same commit when a
+    # trim opens real headroom.
     THRESHOLDS: dict[str, int] = {
-        # Raised 1110 -> 1140 deliberately: two Safety Rules bullets on what to
-        # do when a guardrail blocks a command. A downstream agent hit a hard
-        # deny on `git reset --hard`, asked for approval a deny cannot grant,
-        # then reached the same outcome with an allowed equivalent. Only
-        # always-loaded guidance is in context at the moment that choice is made.
-        #
-        # Raised 1140 -> 1255 deliberately (#230): the Convergence section, 111
-        # words. The file had one approved exit from hard work -- the
-        # retrieval-failure stop in `raven-debug-failure`, for when ownership is
-        # never found -- and none for the case where ownership is known, the
-        # cause is understood, and successive patches are not converging. With
-        # only "keep patching" or "declare success" available, `Verification
-        # State` above governs how honestly the second one is reported and
-        # nothing offers the first way out. The trip conditions are countable on
-        # purpose, and the decision to stop is made from what is already in
-        # context at that moment, which is why they are here and not only in the
-        # skill.
-        #
-        # Raised 1255 -> 1301 deliberately (#234): the hidden-directory bullet
-        # was factually wrong -- it claimed `rg pattern common/` "finds nothing
-        # and reads as clean", which this repo's own `.ignore` has made false
-        # for some time, and it named a path no installed project has. Its
-        # replacement scopes the hazard to the two trees #238's `.ignore` does
-        # not reach, and a second bullet gives ast-grep's invocation form and
-        # the check that separates an empty result from a wrong pattern. Both
-        # are read at the moment a search comes back empty, which is why the
-        # compact form is here; `raven-tool-assessment.md` carries the exit
-        # code, `--inspect summary`, and the `--no-ignore` value list.
+        # Raised for observed failures: guardrail-block handling (an agent asked
+        # approval a deny cannot grant, then used an allowed equivalent), the
+        # Convergence section (no approved exit when patches stop converging),
+        # and corrected `rg`/ast-grep empty-result guidance. Each is needed at
+        # the moment of the decision, so it lives in always-loaded context.
         "common/AGENTS.md": 1301,
         # language-specific rules files
         "python/.claude/rules/raven-python.md": 760,
@@ -413,34 +386,12 @@ def validate_aggregate_budget() -> None:
     ]
     PROFILES: dict[str, tuple[int, str]] = {
         # language: (aggregate word budget, language rules file)
-        # Raised 1998 -> 2017 deliberately (#229): three cross-references in
-        # `raven-python.md`, each naming what the mechanical check actually
-        # observes -- a `typecheck` gate below the template's floor, a diff
-        # that ends with fewer test functions than it started with, a rule
-        # code with no reason beside it. The rules file was prose an agent
-        # could read, agree with, and then edit the config anyway; the
-        # observable form is what makes the rule checkable, and it is only
-        # useful in the file that is already loaded when the edit is made.
-        #
-        # Every profile then rose again by the same 111 words (#230):
-        # `common/AGENTS.md` is shared by all of them and gained the
-        # Convergence section, so the raise is one event, not nine. Each
-        # figure below is the measured total plus ten words of headroom, and
-        # each still sits under the sum of its per-file thresholds, which is
-        # what keeps this the tighter of the two caps.
-        #
-        # Every profile then rose again by the same 46 words (#234), again one
-        # event rather than nine: `common/AGENTS.md` traded a wrong `rg`
-        # hidden-files bullet for a correct one and gained an ast-grep bullet
-        # covering the invocation form and the empty-result check. The 46 is
-        # the net of the rewrite and the addition, not the addition alone.
-        #
-        # Every profile then rose again by the same 75 words, one event rather
-        # than nine: the shared `raven-comments.md` joined SHARED. Raven told an
-        # agent nothing about what a code comment should hold, and the failure
-        # it now names -- a comment restating the line below it, process
-        # narration left in, an unverified "the usual case" -- is only
-        # correctable in guidance loaded at the moment the comment is written.
+        # Each figure is the measured total plus ten words of headroom, and
+        # stays under the sum of its per-file thresholds so this is the tighter
+        # cap. A raise to shared `common/AGENTS.md` or a SHARED rules file is one
+        # event applied to every profile. Raises so far: observable checks in
+        # `raven-python.md`, AGENTS.md's Convergence section and search bullets,
+        # and `raven-comments.md` joining SHARED.
         "python": (2249, "python/.claude/rules/raven-python.md"),
         "elixir": (2283, "elixir/.claude/rules/raven-elixir.md"),
         "rust": (2206, "rust/.claude/rules/raven-rust.md"),
@@ -504,26 +455,15 @@ def _parse_frontmatter_description(text: str) -> str | None:
     return None
 
 
-# Each skill's `description:` frontmatter is injected into every session's skill
-# index whether or not the skill is invoked, so it is an always-loaded surface
-# like AGENTS.md and the rules files — but the per-file and aggregate rules
-# budgets never see it. Cap the SUM so the index cannot bloat unnoticed, and cap
-# each single description so one skill cannot eat the pool. Skills are canonical
-# in common/.agents/skills (language trees symlink to it), so counting common/
-# once matches what a session actually loads.
+# Each skill's `description:` is injected into every session's skill index, an
+# always-loaded surface the rules budgets never see. Cap the SUM so the index
+# cannot bloat unnoticed, and each description so one skill cannot eat the pool.
+# Skills are canonical in common/.agents/skills, so counting common/ once
+# matches what a session loads.
 #
-# 388 words in-tree + 4 words of slack. The slack is deliberately tight: it is
-# the same 4 words every previous limit left, so unplanned description growth
-# still trips this. Raised from 376 for raven-triage-discovery, a deliberate
-# skill addition, not drift -- a new skill needs a description, and the old
-# ceiling had no room for one. This is the second such sanctioned raise (the
-# first was 362 -> 376 for issue #124's raven-debloat). Raise this only
-# alongside a new skill, and only to the new in-tree total plus that same slack.
-#
-# Module-level so tests can read the real numbers. They previously restated them
-# and drifted to a stale 362, which left the aggregate test's fixture clearing
-# the true limit by 4 words -- still passing, but one raise away from silently
-# testing nothing.
+# Keep about 4 words of slack so unplanned growth trips this. Raise only
+# alongside a new skill, to the new in-tree total plus that slack.
+# Module-level so tests read the real numbers instead of restating them.
 SKILL_DESCRIPTION_AGGREGATE_LIMIT = 435
 SKILL_DESCRIPTION_PER_SKILL_LIMIT = 30
 
@@ -681,32 +621,15 @@ def warn_stale_docs() -> None:
         )
 
 
-# Drift this repository is expected to carry. Raven is both the template source
-# and an installed consumer of itself, so a handful of managed files legitimately
-# differ from what the template ships. Each entry is an explicit, reviewed
-# decision -- the gate fails on anything not listed, which is the point.
+# Drift this repository is expected to carry: Raven installs itself, so some
+# managed files differ from the template. Each entry is a reviewed decision; the
+# gate fails on anything unlisted.
 #
-# Two distinct kinds of expected drift get two distinct representations, so
-# reporting can tell them apart instead of flattening both into one silent
-# allowlist (issue #162):
-#
-# `_APPROVED_CUSTOMIZATION`: permanent, intentional divergence. Reported as
-# approved and does not affect the verdict -- there is nothing to converge.
-#
-# `_RECONCILIATION_DEBT`: known drift that is NOT endorsement, only tracked so
-# the gate can enforce today instead of waiting on a content decision. Each
-# entry carries a tracking issue reference (a debt entry without one is a
-# structural error -- see `_validate_debt_entries`) and is named individually,
-# by path, in the success message every green run prints, so a passing gate
-# still says out loud what remains unconverged. `RAVEN_SELF_CHECK_STRICT_DEBT=1`
-# turns that into a hard failure for maintainers who want it.
-#
-# Deliberately no calendar-based expiry: a date-based gate turns red on
-# whichever contributor's branch happens to be open that day, for divergence
-# unrelated to their change and which they have no context to resolve -- the
-# same failure mode the `audit` recipe in this justfile documents and refuses.
-# An issue reference plus an opt-in strict mode gives accountability without
-# the time bomb.
+# `_APPROVED_CUSTOMIZATION`: permanent divergence, reported, verdict unaffected.
+# `_RECONCILIATION_DEBT`: tracked drift, not endorsement. Each entry needs a
+# tracking reference (`_validate_debt_entries`) and is named in every green run's
+# message; `RAVEN_SELF_CHECK_STRICT_DEBT=1` makes it fail. No calendar expiry:
+# a date gate turns red on unrelated branches, as the justfile `audit` recipe notes.
 _APPROVED_CUSTOMIZATION: dict[str, str] = {
     "justfile": ("carries repo-only recipes (`hygiene`, `relaxation`) the template does not ship."),
     "pyproject.toml": (

@@ -26,11 +26,11 @@ Advisories are evidence, not instructions. Classify before acting.
 - A **vulnerability** advisory claims the package has a flaw. Assess reachability, then patch or record the risk.
 - A **malicious package** advisory claims the artifact is not the project it says it is. That is a falsifiable provenance claim, and the class where automated reports are most often wrong: a project that renamed a dependency looks identical to typosquat substitution to a heuristic scanner.
 
-Check a provenance claim against the upstream project, not the advisory text. Prefer deterministic evidence over reading.
+Check a provenance claim against the upstream project; the advisory text is the claim under test. Prefer deterministic evidence over reading.
 
 - Look the advisory up by ID in the canonical advisory database (OSV, or the ecosystem's own). Bulk automated submissions are often withdrawn or disputed there, and the record names the reporting source.
 - Verify build provenance or signature attestations where the ecosystem publishes them. That settles "was this artifact built from that source" far better than comparing manifests by hand.
-- Otherwise, read the source: does the project's own tree, at that version's tag, declare what the advisory calls foreign? Who publishes the packages it names as look-alikes? Workspace and monorepo references resolving to concrete versions are expected, not tampering.
+- Otherwise, read the source: does the project's own tree, at that version's tag, declare what the advisory calls foreign? Who publishes the packages it names as look-alikes? Workspace and monorepo references resolving to concrete versions are expected and are not evidence of tampering.
 - These checks refute a claim; they do not clear a package. Anything short of a refutation: treat the advisory as true and escalate.
 - Record a refuted claim in the project's audit-exception mechanism, with evidence and an expiry.
 

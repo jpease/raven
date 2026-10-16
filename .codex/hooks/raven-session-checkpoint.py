@@ -15,7 +15,7 @@ from pathlib import Path
 
 # This file is shared byte-for-byte between the Claude and Codex adapters (the
 # `.codex/hooks/raven-session-checkpoint.py` copy is a template-internal symlink
-# to this one, issue #195). It used to be two near-identical real files that
+# to this one). It used to be two near-identical real files that
 # each hardcoded their own adapter's scripts directory in the subprocess.run
 # call below; that let the Claude copy gain a bugfix (the isinstance guard in
 # _load_payload) without the Codex copy ever being touched. Computing the
@@ -79,7 +79,7 @@ def _root_from_cwd() -> Path | None:
     """Nearest enclosing project directory at or above the process cwd.
 
     Delegates the walk to the shared ``.raven/git-hooks/lib/raven_config.py``
-    module's ``resolve_repo_root`` (issue #202) rather than duplicating it.
+    module's ``resolve_repo_root`` rather than duplicating it.
     """
     try:
         cwd = Path.cwd().resolve()

@@ -98,7 +98,7 @@ STRUCTURAL_RULES: dict[str, str] = {
 # only lexical/variable declarations whose initializer is itself a function
 # (arrow or function-expression), and its rows are merged with the --kind
 # rows in astgrep_skeleton. Verified against ast-grep 0.44.1 and exercised by
-# golden tests (issue #110).
+# golden tests.
 LEXICAL_FUNCTION_LANGS: frozenset[str] = frozenset({"typescript", "tsx", "javascript"})
 
 

@@ -359,7 +359,7 @@ def command_works(command: list[str]) -> bool:
 def _top_level_mcp_server_names(value: object) -> set[str]:
     """MCP server names from a flat top-level ``mcpServers`` dict.
 
-    Non-recursive on purpose (#194): this is the only shape ``.mcp.json`` and
+    Non-recursive on purpose: this is the only shape ``.mcp.json`` and
     ``~/.claude/settings.json`` ever use, and it is also how ``~/.claude.json``
     names servers available to every project. It must not walk into nested
     values -- ``~/.claude.json`` nests other, unrelated data (including every
@@ -404,8 +404,8 @@ def _claude_json_project_mcp_server_names(value: object, root: Path) -> set[str]
 
     ``~/.claude.json`` nests MCP config per project under absolute-path keys;
     every other project's entry must be ignored, or a server configured only
-    for another repo on the machine gets reported as configured for this one
-    (#194). Keys are compared canonicalized (symlink-resolved, normalized) so
+    for another repo on the machine gets reported as configured for this one.
+    Keys are compared canonicalized (symlink-resolved, normalized) so
     a symlinked repo root or a trailing path separator on either side still
     matches. Tolerant of any unrecognized shape -- a non-dict ``value``, a
     non-dict ``projects``, a non-dict project entry -- which all yield no
@@ -492,7 +492,7 @@ def _root_from_cwd() -> Path | None:
     """Nearest enclosing project directory at or above the process cwd.
 
     Delegates the walk to the shared ``.raven/git-hooks/lib/raven_config.py``
-    module's ``resolve_repo_root`` (issue #202) rather than duplicating it.
+    module's ``resolve_repo_root`` rather than duplicating it.
     """
     try:
         cwd = Path.cwd().resolve()
@@ -681,7 +681,7 @@ def gemini_mcp_server_configured(server_name: str, root: Path | None = None) -> 
 def _claude_mcp_server_names_from_cli() -> tuple[frozenset[str], bool]:
     """Best-effort supplement: MCP servers ``claude mcp list`` reports.
 
-    Decision record (#194): kept, not dropped, but strictly additive. Every
+    Kept, not dropped, but strictly additive. Every
     caller (``claude_mcp_server_status``, ``_claude_mcp_server_names``) only
     unions this result on top of the config-file names -- a parsing miss here
     (the human-readable output format drifts, the CLI times out, ``claude``

@@ -19,13 +19,13 @@ AGENTS.md Retrieval Discipline and Verification State already govern batching, v
 - Do not introduce dependencies or new architecture patterns by default.
 - Take a third-party API's shape from the installed version, not from memory. Confirm the symbol with LSP against the installed package before calling it — a name renamed a major ago still writes fluently from training and fails at runtime.
 - Run at least one relevant verification command when the project has an applicable test or check.
-- Work that exceeds the stated scope ceiling requires stopping and asking per AGENTS.md Pause And Ask, not silent expansion.
+- Work that exceeds the stated scope ceiling requires stopping and asking per AGENTS.md Pause And Ask. Don't expand silently.
 
 ## Process
 
 1. Discover existing patterns with `rg`, or with a configured code-intelligence index, if any. If a similar pattern is already known, `ast-grep` its shape for a more targeted result than a fresh text search.
 2. Use LSP to inspect relevant definitions and types.
-3. Before picking an integration point, check whether the feature needs symbols from two components that do not already depend on each other. If so, resolve the dependency-direction question first — which side may legally import the other, or whether a new shared location is needed — using the project's dependency graph/build manifest (package config, module map, import-boundary rules). Do this before choosing where the code lives, not while writing it.
+3. Before picking an integration point, check whether the feature needs symbols from two components that do not already depend on each other. If so, resolve the dependency-direction question first — which side may legally import the other, or whether a new shared location is needed — using the project's dependency graph/build manifest (package config, module map, import-boundary rules). Settle this before choosing where the code lives.
 4. Identify the smallest integration point consistent with that direction.
 5. Before editing, state:
    - the observable behavior change, in one or two sentences

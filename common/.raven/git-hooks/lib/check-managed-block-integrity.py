@@ -77,7 +77,7 @@ def _normalize_markdown_table_row(line: str) -> str | None:
 
 
 def _identity_block_content(text: str) -> str:
-    """Whitespace- and table-style-invariant, newline-preserving (issue #118).
+    """Whitespace- and table-style-invariant, newline-preserving.
 
     Must stay byte-identical in behavior to ``identity_block_content`` in
     scripts/raven_lib/blocks.py; tests/test_managed_block_integrity_hook.py's
@@ -97,7 +97,7 @@ def _block_sha256(content: str) -> str:
 
 
 def _legacy_block_sha256(content: str) -> str:
-    """The pre-#118 hash, still accepted so blocks written before it stay valid."""
+    """The legacy whitespace-sensitive hash, still accepted so older blocks stay valid."""
     return hashlib.sha256(_normalized_block_content(content).encode("utf-8")).hexdigest()
 
 
@@ -122,9 +122,8 @@ def _raven_config_module():
     ``raven_config.py`` ships in -- a fixed, flat sibling resolution, the
     same one ``check-ai-attribution-content.py``'s own ``_raven_config_module``
     uses for the same reason (this file has no adapter-directory ambiguity
-    to resolve, unlike ``raven-tool-check.py``). This script did not need
-    the shared config parser before issue #202; it needs it now only for
-    ``resolve_repo_root``. Same ``spec_from_file_location`` +
+    to resolve, unlike ``raven-tool-check.py``). This script needs the
+    shared config parser only for ``resolve_repo_root``. Same ``spec_from_file_location`` +
     ``SourceFileLoader`` mechanism used throughout the other rewired
     callers.
     """
@@ -154,7 +153,7 @@ def _repo_root() -> Path:
     this replaces, the shared walk never shells out to git, so it is immune
     to an inherited ``GIT_DIR``/``GIT_WORK_TREE`` corrupting the answer --
     see that function's own docstring for why that class of bug motivated
-    dropping the subprocess call entirely (issue #202).
+    dropping the subprocess call entirely.
     """
     candidate = Path(__file__).resolve().parents[3]
     return _raven_config_module().resolve_repo_root(candidate)
@@ -233,7 +232,7 @@ def main() -> int:
         if block is None:
             continue
         declared_sha256, content = block
-        # Accept the legacy hash too: blocks written before the #118 identity
+        # Accept the legacy hash too: blocks written before the identity
         # change declare it, and the hook has no template at commit time to
         # tell "stale marker" from "hand-edited". `raven upgrade` migrates the
         # marker to the current hash.

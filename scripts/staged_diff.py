@@ -44,16 +44,11 @@ _OPENING_BRACKETS = "([{"
 _CLOSING_BRACKETS = ")]}"
 
 #: Matches a standard unified-diff hunk header, e.g. `@@ -1,2 +1,3 @@`
-#: (an optional trailing function-context suffix like ` def foo():` is fine
-#: -- `.match` only anchors the start). Deliberately does NOT match a git
-#: "combined diff" header (`@@@ -a,b -c,d +e,f @@@`, emitted when a
-#: diff-generating command shows a merge -- see `iter_added_lines`): no
-#: known real invocation of `git diff --cached` (what this module actually
-#: runs) produces that shape, and parsing multi-parent combined-diff line
-#: prefixes correctly is real complexity for a case no caller can observe
-#: in practice (#193). A hunk header this pattern doesn't match is
-#: therefore treated as unscannable, not silently skipped -- see
-#: `iter_added_lines`.
+#: (a trailing function-context suffix is fine; `.match` anchors the start).
+#: Deliberately does NOT match a combined-diff header (`@@@ -a,b -c,d +e,f @@@`):
+#: `git diff --cached` doesn't produce one, and parsing multi-parent prefixes
+#: is complexity for an unobservable case. An unmatched hunk header is treated
+#: as unscannable, never silently skipped -- see `iter_added_lines`.
 HUNK_HEADER_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
 

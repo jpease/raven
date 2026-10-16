@@ -271,17 +271,11 @@ def _program_and_args(segment: list[str]) -> tuple[str, list[str]] | None:
             index += 1
             continue
         if token.rsplit("/", 1)[-1] == "rtk":
-            # `rtk <cmd>` is a transparent proxy: AGENTS.md tells agents to route
-            # noisy commands through it, and the hook that rewrites `git status`
-            # into `rtk git status` does so silently, so this is a spelling the
-            # guard produces for itself rather than one a user has to type. Only
-            # `rtk proxy` was stepped over, which is the *rarest* form -- the
-            # explicit escape hatch -- while every ordinary `rtk git clean -fdx`
-            # resolved to a program called "rtk" and matched nothing.
-            #
-            # RTK's own meta commands (`rtk gain`, `rtk discover`) resolve to a
-            # program named "gain" or "discover", which no rule matches, so they
-            # need no special case.
+            # `rtk <cmd>` is a transparent proxy: AGENTS.md routes noisy commands
+            # through it and a hook rewrites `git status` into `rtk git status`
+            # silently, so step over it (and `rtk proxy`) or `rtk git clean -fdx`
+            # resolves to a program called "rtk" and matches nothing.
+            # Meta commands (`rtk gain`) resolve to programs no rule matches.
             index += 1
             if segment[index : index + 1] == ["proxy"]:
                 index += 1
@@ -294,13 +288,10 @@ def _program_and_args(segment: list[str]) -> tuple[str, list[str]] | None:
 
 #: Options whose value is a *separate* following token, keyed by program.
 #:
-#: Such a value is an ordinary token, so without skipping it the value lands in
-#: the positionals and pushes the token that carries the meaning out of first
-#: place: `git -c core.pager=cat clean -fdx` reads as subcommand
+#: Unskipped, the value lands in the positionals and displaces the meaningful
+#: token: `git -c core.pager=cat clean -fdx` reads as subcommand
 #: "core.pager=cat", and `ssh -p 2222 host "kubectl delete pod"` reads 2222 as
-#: the destination and `host ...` as the remote command. Both then match
-#: nothing. The valueless spellings (`git --no-pager clean -fdx`) were never
-#: affected, which is what made the gap easy to miss.
+#: the destination. Both then match nothing.
 #:
 #: Only the separated spelling needs listing. `--git-dir=/x` and `-C/tmp` are
 #: single tokens that never displace a positional.
@@ -440,40 +431,22 @@ def _nested_payloads(program: str, args: list[str]) -> list[str]:
         return args[index + 1 : index + 2]
     if program == "ssh":
         # The first operand is the destination; everything after it is the remote
-        # command, sliced verbatim so it keeps its own flags. Rebuilding from
-        # `_normalize_options`' positionals instead worked only for the quoted
-        # spelling, where the remote command is a single token that survives
-        # intact; the equally legal bare spelling `ssh host rm -rf /` lost `-rf`
-        # to the flag set and reduced to `/` (issue #215).
-        #
-        # Joined with plain spaces because that is what ssh(1) itself does: it
-        # concatenates the remaining arguments and hands the result to the remote
-        # *shell* as a string. So `ssh host sh -c 'rm -rf /'` really does run
-        # `sh -c rm -rf /` remotely, and reproducing that faithfully means not
-        # re-quoting. `xargs` below is the opposite case for the same reason.
+        # command, sliced verbatim so it keeps its own flags (rebuilding from
+        # positionals reduces `ssh host rm -rf /` to `/`).
+        # Joined with plain spaces because ssh(1) does the same: it concatenates
+        # the arguments and hands the string to the remote *shell*, so
+        # `ssh host sh -c 'rm -rf /'` really runs `sh -c rm -rf /`. Don't re-quote.
         index = _first_operand_index(args, _value_options_for(program))
         return [" ".join(args[index + 1 :])] if index + 1 < len(args) else []
     if program == "xargs":
         # Followed whatever flags are present. Claude Code treats only a flagless
-        # `xargs` as transparent, which is right for an *allow* rule -- granting
-        # through a wrapper you have not fully parsed over-grants. A deny rule
-        # wants the opposite: `xargs -I{} kubectl delete pod {}` still runs
-        # `kubectl delete`, so not looking is the unsafe direction.
-        #
-        # Sliced out of the original tokens rather than rebuilt from the
-        # positionals, because the command `xargs` runs is unquoted and
-        # multi-token: its flags sit in `args` alongside `xargs`' own, so
-        # `_normalize_options` strips them and `xargs rm -rf /` reduces to
-        # `rm /` -- which no flag-keyed rule matches, and is not what was typed
-        # either (issue #214). Only the rules keyed on a positional (`kubectl
-        # delete pod`) survived that, which is why the gap stayed invisible.
-        #
-        # Re-quoted rather than space-joined, the opposite of `ssh` above and for
-        # the same reason: `xargs` execs the argv it was given instead of
-        # flattening it into a string, so a token that arrived quoted is still
-        # one argument. Space-joining collapsed `["sh", "-c", "rm -rf /"]` into
-        # `sh -c rm -rf /`, where `-c`'s operand reads as the bare word `rm` and
-        # the payload disappears one level down (issue #215).
+        # `xargs` as transparent, which suits an *allow* rule; a deny rule must
+        # look, since `xargs -I{} kubectl delete pod {}` still runs it.
+        # Sliced from the original tokens: rebuilding from positionals strips the
+        # run command's flags, so `xargs rm -rf /` would reduce to `rm /`.
+        # Re-quoted, unlike `ssh`: xargs execs the argv it was given, so a quoted
+        # token stays one argument. Space-joining would turn
+        # `["sh", "-c", "rm -rf /"]` into `sh -c rm -rf /` and lose the payload.
         index = _first_operand_index(args, _value_options_for(program))
         return [shlex.join(args[index:])] if index < len(args) else []
     return []
@@ -652,7 +625,7 @@ def _matched_rule(program: str, args: list[str], segment: list[str]) -> str | No
     One dispatcher for every per-segment rule, so `_find_destructive_rule` can
     apply all of them at every nesting level. Keeping the option-normalized
     rules in a second, flat pass is exactly what let `sh -c 'rm -rf ~'` through
-    while `sh -c 'dropdb prod'` was denied (issue #209): a new rule added to
+    while `sh -c 'dropdb prod'` was denied: a new rule added to
     that pass would have inherited the same gap silently.
     """
     flags, positionals = _normalize_options(args, _value_options_for(program))
@@ -754,7 +727,7 @@ def _is_catastrophic_target(arg: str) -> bool:
     tool is most likely to produce, since anything that resolves a path before
     handing it over emits it. Matching it needs the real home, so that branch is
     separate: a tilde path and its expanded absolute twin name the same
-    directory, and used to get opposite verdicts (issue #211).
+    directory, and used to get opposite verdicts.
     """
     if arg in _CATASTROPHIC_TARGETS:
         return True

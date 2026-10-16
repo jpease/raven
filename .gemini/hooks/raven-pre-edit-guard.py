@@ -96,7 +96,7 @@ def parse_protected_paths(text: str) -> tuple[list[str], str]:
     glob against the edited path relative to the repository root, where ``*``
     crosses directory separators, so ``migrations/*`` covers the whole tree
     beneath it. ``protected_paths_decision`` is ``"ask"`` (default) or
-    ``"warn"``. Issue #247: the Pause-And-Ask categories in ``AGENTS.md`` are
+    ``"warn"``. The Pause-And-Ask categories in ``AGENTS.md`` are
     prose, and this is the backstop for the ones a project can spell as paths.
     """
     try:
@@ -194,7 +194,7 @@ BLOCKED = [
     # `.env` is the spelling projects use *least* for real values: the committed
     # template is `.env.example` and the secrets live in `.env.local`,
     # `.env.production`, `.env.development`. `.envrc` (direnv) is a shell script
-    # that commonly exports them (issue #213).
+    # that commonly exports them.
     r"(^|/)\.env(\.[^/]*)?$",
     r"(^|/)\.envrc$",
     # Anchored to a path segment: a bare `secrets` substring also blocks
@@ -202,8 +202,7 @@ BLOCKED = [
     r"(^|/)secrets?(\.|/|$)",
     # Anchored to a path segment, same shape as `secrets` above: a bare
     # `credentials` substring also blocked `docs/credentials-design.md`,
-    # `tests/test_credentials_helper.py`, and `src/credentialsProvider.ts`
-    # (issue #197).
+    # `tests/test_credentials_helper.py`, and `src/credentialsProvider.ts`.
     r"(^|/)credentials?(\.|/|$)",
 ]
 CAUTION = [

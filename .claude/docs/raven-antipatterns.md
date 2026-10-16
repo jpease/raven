@@ -5,7 +5,7 @@ Raven prescribes. Raven ships this file almost empty on purpose: the content is
 inherently repo-specific, and a template that pre-fills code-shape opinions would
 be prescribing style, not process.
 
-Loaded on demand (`.claude/docs/`, not `.claude/rules/`): a registry that is meant
+Loaded on demand (from `.claude/docs/` rather than `.claude/rules/`): a registry that is meant
 to grow should not cost every session's context budget. `raven-review-pr`
 references it by path when relevant instead of it being always-loaded.
 
@@ -46,7 +46,7 @@ Each entry is a level-3 heading (the pattern's short name) with four fields:
    consuming reviewer attention, since the gate catches it now.
 3. `retired` — the motivating conditions are gone (code refactored away, check
    removed, pattern stopped recurring). Delete retired entries the next time
-   this file is edited; this is a working registry, not a changelog, and a
+   this file is edited. This is a working registry rather than a changelog, and a
    registry that only grows is worse than no registry.
 
 ## Semgrep Is Optional

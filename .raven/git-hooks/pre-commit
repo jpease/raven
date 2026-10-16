@@ -25,7 +25,7 @@ cd "$repo_root" || exit 0
 # pre-push, not here, to keep the commit loop quick. If `just` is not installed,
 # skip rather than hard-failing.
 #
-# The justfile has to be there too, not just the binary (issue #225). The
+# The justfile has to be there too, not just the binary. The
 # `dotfiles` and `generic` templates ship no justfile by design, so on a machine
 # that has `just` installed `just check-fast` printed "error: no justfile found"
 # and exited 1 -- which this hook turned into a refused commit, every time. We
@@ -70,7 +70,7 @@ if command -v gitleaks >/dev/null 2>&1; then
     # `git` subcommand's error text for "unknown command" -- that text is
     # not a stable contract, and a reword or locale change would silently
     # stop the old fallback from ever firing, blocking every commit on an
-    # old gitleaks (issue #198). Tolerate an optional leading v/V in case a
+    # old gitleaks. Tolerate an optional leading v/V in case a
     # repackaged build prefixes the version. An unparseable version fails
     # closed to the modern `git` subcommand and shows its output: an
     # unrecognized gitleaks is more likely to be newer than 8.19 -- which

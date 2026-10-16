@@ -13,8 +13,7 @@
 # Claude-only, by construction. `.codex/hooks.json` cannot use this shim: a
 # Codex hook may run with a process cwd outside the project, so nothing
 # repo-relative can be located until the JSON payload on stdin has been parsed
-# (see CANONICAL_CODEX_LAUNCHER in tests/test_agent_hooks.py, and issues #115
-# and #129). Claude Code exports $CLAUDE_PROJECT_DIR, which is what makes a
+# (see CANONICAL_CODEX_LAUNCHER in tests/test_agent_hooks.py). Claude Code exports $CLAUDE_PROJECT_DIR, which is what makes a
 # fixed shim path resolvable here and not there.
 #
 # Usage: raven-run-hook.sh <script> [args...]
