@@ -2,6 +2,8 @@
 
 Run 2026-09-02 against the local `claude` CLI, 1 trial(s) per arm.
 
+**Preliminary.** This run predates the five-trial minimum `--out` now enforces; treat every cell as an anecdote until a five-trial run replaces it.
+
 Each scenario runs twice in identical throwaway repositories: `control`
 has no Raven installed, `raven` does. Only the difference between the two
 columns says anything about the guidance.

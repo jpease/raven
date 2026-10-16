@@ -766,8 +766,8 @@
     "pyright",
     "pytest"
   ],
-  "ravenVersion": "1165bcbd73e0-dirty",
+  "ravenVersion": "013bf578117d-dirty",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-10-16T23:28:09.688300+00:00"
+  "updatedAt": "2026-10-16T23:28:11.284602+00:00"
 }
