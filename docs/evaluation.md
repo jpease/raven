@@ -192,7 +192,7 @@ plus about 15%.
 | Agent | Ceiling | Measured difference (raven - control) |
 |---|---|---|
 | claude | 10,100 | 8,815 = 24,613 - 15,798 (mean of 5 trials, 2026-10-16) |
-| codex | 4,000 | 3,503 = 18,476 - 14,973 (2026-09-02) |
+| codex | 3,900 | 3,406 = 17,731 - 14,325 (mean of 5 trials, 2026-10-16) |
 
 Gemini has no measured figure, so it has no ceiling. Control arms are never
 failed by the ceiling. A raven trial fails when either arm of its trial reports
