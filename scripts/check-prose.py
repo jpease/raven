@@ -27,6 +27,7 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+from gate_limits import limit_lines  # noqa: E402 -- needs the sys.path insert above
 from raven_lib.constants import NON_TEMPLATE_DIRS  # noqa: E402 -- needs the sys.path insert above
 from staged_diff import has_marker  # noqa: E402 -- needs the sys.path insert above
 
@@ -363,7 +364,12 @@ def find_findings(repo_root: Path = REPO_ROOT) -> list[Finding]:
         if text is None:
             continue
         if counts_toward_marker_budget(entry.path):
-            markers += sum(has_marker(line) for line in text.splitlines())
+            exempt = limit_lines(entry.path, text)
+            markers += sum(
+                has_marker(line)
+                for line_no, line in enumerate(text.splitlines(), start=1)
+                if line_no not in exempt
+            )
         for check in _checks_for(entry.path):
             findings.extend(check(entry.path, text))
     if markers > MARKER_BUDGET:

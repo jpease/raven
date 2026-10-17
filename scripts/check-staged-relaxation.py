@@ -85,7 +85,6 @@ a tooling/environment problem, not a content finding).
 
 from __future__ import annotations
 
-import ast
 import re
 import subprocess
 import sys
@@ -97,6 +96,7 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+from gate_limits import LIMIT_CONSTANTS, limit_values  # noqa: E402 -- needs the sys.path insert above
 from raven_lib.gate_config import (  # noqa: E402 -- needs the sys.path insert above
     is_known_config,
     read_config_text,
@@ -320,28 +320,6 @@ def _config_findings() -> list[Finding]:
     return findings
 
 
-#: Raven's own gate limits, by file: constant name -> the direction that loosens it.
-LIMIT_CONSTANTS: dict[str, dict[str, str]] = {
-    "scripts/check-prose.py": dict.fromkeys(
-        (
-            "PARAGRAPH_WORDS",
-            "DOC_WORDS",
-            "SKILL_WORDS",
-            "AGENTS_SECTION_WORDS",
-            "COMMENT_BLOCK_LINES",
-            "MARKER_BUDGET",
-        ),
-        "up",
-    ),
-    "scripts/self-check.py": {
-        "THRESHOLDS": "up",
-        "PROFILES": "up",
-        "SKILL_DESCRIPTION_AGGREGATE_LIMIT": "up",
-    },
-    "evals/scenarios.py": {"FIXED_COST_OVERHEAD_CEILINGS": "up"},
-    "scripts/eval.py": {"MIN_PUBLISHED_TRIALS": "down"},
-}
-
 #: The gates `check-fast` (the pre-commit hook) must keep running.
 _CHECK_FAST_RE = re.compile(r"^check-fast\s*:(?P<deps>[^#\n]*)", re.MULTILINE)
 
@@ -349,42 +327,6 @@ _LIMIT_HINT = (
     "Keep the limit and fix what exceeds it, or mark the changed line with a trailing "
     f"`{ALLOW_MARKER}` comment that says why the limit moves."
 )
-
-
-def _limit_values(text: str, names: dict[str, str]) -> dict[tuple[str, str], tuple[float, int]]:
-    """(constant, key) -> (number, line) for every number a named constant holds.
-
-    A plain number has key ""; a dict maps each key to its number, or to the
-    first number of a tuple value (`PROFILES` holds `(budget, path)`).
-    """
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return {}
-    values: dict[tuple[str, str], tuple[float, int]] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and len(node.targets) == 1:
-            target, value = node.targets[0], node.value
-        elif isinstance(node, ast.AnnAssign) and node.value is not None:
-            target, value = node.target, node.value
-        else:
-            continue
-        if not isinstance(target, ast.Name) or target.id not in names:
-            continue
-        if isinstance(value, ast.Dict):
-            items = [(k, v) for k, v in zip(value.keys, value.values) if k is not None]
-            for key_node, item in items:
-                if isinstance(item, ast.Tuple) and item.elts:
-                    item = item.elts[0]
-                if (
-                    isinstance(key_node, ast.Constant)
-                    and isinstance(item, ast.Constant)
-                    and isinstance(item.value, (int, float))
-                ):
-                    values[(target.id, str(key_node.value))] = (item.value, item.lineno)
-        elif isinstance(value, ast.Constant) and isinstance(value.value, (int, float)):
-            values[(target.id, "")] = (value.value, value.lineno)
-    return values
 
 
 def _limit_findings() -> list[Finding]:
@@ -396,8 +338,8 @@ def _limit_findings() -> list[Finding]:
             continue
         after_text = index_blob(path) or ""
         after_lines = after_text.splitlines()
-        before = _limit_values(head_blob(path) or "", names)
-        after = _limit_values(after_text, names)
+        before = limit_values(head_blob(path) or "", names)
+        after = limit_values(after_text, names)
         for (name, key), (old, _line) in sorted(before.items()):
             label = f"{name}[{key!r}]" if key else name
             if (name, key) not in after:
@@ -411,7 +353,7 @@ def _limit_findings() -> list[Finding]:
                         path,
                         line,
                         after_lines[line - 1].strip(),
-                        f"staged edit loosens gate limit {label} from {old} to {new}",
+                        f"a looser gate limit: {label} from {old} to {new}",
                         _LIMIT_HINT,
                     )
                 )

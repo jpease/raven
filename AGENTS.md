@@ -41,7 +41,7 @@ This repository is Raven itself: the reusable template library and installer for
 - Budgets: 120 words per paragraph or list item, 2,500 per document, 300 per `##` section of `AGENTS.md` and `common/AGENTS.md`, one `X, not Y` contrast per heading section, and 10 lines per Python comment block.
 - Shipped files and root `AGENTS.md` carry no bare issue references: a destination repo cannot resolve them, and in agent-loaded text they are history. Link an upstream issue by URL; put Raven's own history in the commit message. Shipped `SKILL.md` files stay under 1,200 words.
 - Over budget means cut or split. A raised budget constant is reported by `check-staged-relaxation.py` unless its line carries a marker and a reason.
-- `raven-hygiene: allow` exempts a line that has to keep its shape, such as an example teaching the pattern; a marker quoted in backticks does not count. Document and section budgets take no marker, and real markers outside `tests/` are capped by `MARKER_BUDGET`.
+- `raven-hygiene: allow` exempts a line that has to keep its shape, such as an example teaching the pattern; a marker quoted in backticks does not count. Document and section budgets take no marker. Real markers outside `tests/` are capped by `MARKER_BUDGET`, except one approving a limit change, whose job ends with that commit.
 
 ## Local Instruction Boundary
 

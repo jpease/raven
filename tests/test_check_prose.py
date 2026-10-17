@@ -226,6 +226,17 @@ class MarkerBudgetTests(ProseRepoTestCase):
         self.stage("docs/guide.md", "Use the `raven-hygiene: allow` marker.\n\n" * 50)
         self.assertEqual(self.findings(), [])
 
+    def test_a_marker_approving_a_limit_raise_does_not_count(self) -> None:
+        over = self.module.MARKER_BUDGET + 1
+        lines = "".join(
+            f'    "k{i}": 9,  # raven-hygiene: allow -- measured\n' for i in range(over)
+        )
+        self.stage("evals/scenarios.py", "FIXED_COST_OVERHEAD_CEILINGS = {\n" + lines + "}\n")
+        self.stage(
+            "evals/other.py", "".join(f"x{i} = 1  # raven-hygiene: allow\n" for i in range(over))
+        )
+        self.assertEqual(self.findings(), [("(tree)", 0, self.module.MSG_MARKERS.format(n=over))])
+
 
 class PlanArtifactTests(ProseRepoTestCase):
     def test_staged_plan_is_reported_before_commit(self) -> None:
