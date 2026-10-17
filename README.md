@@ -56,7 +56,7 @@ the Codex one — run `raven init <language>` first to write
 
 ## Why Raven
 
-- **Token discipline**: a retrieval order that reaches for `rg`, LSP, and a code index before whole-file reads; noisy commands routed through RTK; and, on Claude Code, a hook that trims oversized command output to its head, its tail, and a file path. Before any work starts, the guidance adds about 6,900 tokens to a Claude Code session and 3,500 to a Codex one (`fixed-cost` in `docs/evaluation/results-*.md`; preliminary, one trial per arm), and `fixed-cost` fails once that grows past a set ceiling. Whether it saves more than it costs over a task is what `scripts/eval.py` exists to measure, and the answer so far is "not yet shown".
+- **Token discipline**: a retrieval order that reaches for `rg`, LSP, and a code index before whole-file reads; noisy commands routed through RTK; and, on Claude Code, a hook that trims oversized command output to its head, its tail, and a file path. Before any work starts, the guidance adds about 8,800 tokens to a Claude Code session (mean of 5 trials) and 3,500 to a Codex one (one trial, preliminary), per `fixed-cost` in `docs/evaluation/results-*.md`, and `fixed-cost` fails once that grows past a set ceiling. Whether it saves more than it costs over a task is what `scripts/eval.py` exists to measure, and the answer so far is "not yet shown".
 - **Reusable agent setup**: Share guidance, skills, hooks, rules, and docs across repos.
 - **Agent adapters**: Keep `AGENTS.md` and `.agents/skills` canonical while installing thin Claude Code and Codex compatibility layers, plus an opt-in Gemini CLI layer.
 - **Language-aware templates**: Start with common behavior, then layer language-specific rules.

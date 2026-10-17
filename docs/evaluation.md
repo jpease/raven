@@ -191,7 +191,7 @@ plus about 15%.
 
 | Agent | Ceiling | Measured difference (raven - control) |
 |---|---|---|
-| claude | 8,000 | 6,905 = 23,526 - 16,621 (2026-09-02) |
+| claude | 10,100 | 8,815 = 24,613 - 15,798 (mean of 5 trials, 2026-10-16) |
 | codex | 4,000 | 3,503 = 18,476 - 14,973 (2026-09-02) |
 
 Gemini has no measured figure, so it has no ceiling. Control arms are never

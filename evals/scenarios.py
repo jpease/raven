@@ -643,12 +643,15 @@ def _verdict_fixed_cost(root: Path, transcript: str) -> Result:
 
 
 #: Most tokens a raven-arm `fixed-cost` session may use beyond its trial's control
-#: arm, per agent: the 2026-09-02 differences (claude 23,526 - 16,621 = 6,905,
-#: codex 18,476 - 14,973 = 3,503) plus about 15%. Comparing against control in the
-#: same trial keeps an agent CLI's own prompt growth out of the check. Raise one
-#: only on purpose, from a new measured figure (`docs/evaluation.md`, "Fixed-cost
-#: ceilings").
-FIXED_COST_OVERHEAD_CEILINGS = {"claude": 8_000, "codex": 4_000}
+#: arm, per agent: the measured mean difference plus about 15%. Claude: 8,815 over
+#: 5 trials on 2026-10-16 (24,613 - 15,798). Codex: 3,503 from one trial on
+#: 2026-09-02. Comparing against control keeps an agent CLI's own prompt growth out
+#: of the check. Raise one only from a new measured figure (`docs/evaluation.md`,
+#: "Fixed-cost ceilings").
+FIXED_COST_OVERHEAD_CEILINGS = {
+    "claude": 10_100,  # raven-hygiene: allow -- 5-trial mean 8,815 replaces the stale 1-trial 6,905
+    "codex": 4_000,
+}
 
 
 _FEATURE_MODULE = '''"""Small text helpers."""
