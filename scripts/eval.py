@@ -344,6 +344,41 @@ USAGE_EXTRACTORS = {
 }
 
 
+def _agent_error(agent: str, transcript: str) -> str | None:
+    """The CLI's own error when the run failed before the agent could act, else None.
+
+    A usage limit, an auth failure, or an API outage ends the run with no work
+    done, and grading what it left behind would score the service as the agent.
+    Codex reports this as a `turn.failed` (or top-level `error`) event; Claude
+    as a `result` event with `is_error` set. Gemini's form is unverified, so it
+    returns None and its runs are graded as before.
+    """
+    if agent not in ("claude", "codex"):
+        return None
+    for line in transcript.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("type")
+        if agent == "codex" and kind == "turn.failed":
+            error = event.get("error")
+            return str(error.get("message") if isinstance(error, dict) else error)
+        if agent == "codex" and kind == "error":
+            return str(event.get("message"))
+        if agent == "claude" and kind == "result" and event.get("is_error"):
+            return str(event.get("result") or event.get("subtype") or "error result")
+    return None
+
+
+AGENT_ERROR = "agent error"
+
+
 # ---------------------------------------------------------------------------
 # Fixture construction
 # ---------------------------------------------------------------------------
@@ -482,6 +517,10 @@ def run_one(
         if transcripts is not None:
             save_transcript(transcripts, scenario.name, arm, trial, transcript)
 
+        agent_error = _agent_error(agent, transcript)
+        if agent_error is not None:
+            return TrialOutcome(scenario.name, arm, trial, False, AGENT_ERROR, agent_error)
+
         try:
             result: Result = scenario.verdict(root, transcript)
         except Exception as exc:  # noqa: BLE001 -- a broken verdict must not end the run
@@ -523,7 +562,11 @@ def _apply_overhead_ceiling(
 def run(
     scenarios: list[Scenario], agent: str, trials: int, transcripts: Path | None = None
 ) -> list[TrialOutcome]:
-    """Every scenario, both arms, ``trials`` times, reporting progress as it goes."""
+    """Every scenario, both arms, ``trials`` times, reporting progress as it goes.
+
+    Stops at the first agent error: a usage limit or outage fails every later
+    trial the same way, and each one still costs a session to find out.
+    """
     outcomes: list[TrialOutcome] = []
     for scenario in scenarios:
         for trial in range(1, trials + 1):
@@ -531,10 +574,14 @@ def run(
                 scenario, agent, with_raven=False, trial=trial, transcripts=transcripts
             )
             _report(scenario, trial, control)
+            if control.evidence == AGENT_ERROR:
+                return [*outcomes, control]
             raven = run_one(scenario, agent, with_raven=True, trial=trial, transcripts=transcripts)
             raven = _apply_overhead_ceiling(scenario, agent, control, raven)
             _report(scenario, trial, raven)
             outcomes += [control, raven]
+            if raven.evidence == AGENT_ERROR:
+                return outcomes
     return outcomes
 
 
@@ -545,7 +592,7 @@ def _report(scenario: Scenario, trial: int, outcome: TrialOutcome) -> None:
     calls = f"  {outcome.tool_calls}calls" if outcome.tool_calls is not None else ""
     print(
         f"  {scenario.name:22} {outcome.arm:8} trial {trial}  {mark}{tokens}{calls}"
-        f"  {outcome.evidence}",
+        f"  {outcome.evidence}{f': {outcome.error}' if outcome.error else ''}",
         flush=True,
     )
 
@@ -746,6 +793,14 @@ def main() -> int:
     print(f"raven eval: {args.agent}, {len(scenarios)} scenario(s), {args.trials} trial(s) per arm")
     transcripts = Path(args.transcripts) if args.transcripts else None
     outcomes = run(scenarios, args.agent, args.trials, transcripts)
+    failed = next((o for o in outcomes if o.evidence == AGENT_ERROR), None)
+    if failed is not None:
+        print(
+            f"error: the {args.agent} CLI failed before acting ({failed.error}); the run "
+            "stopped there and nothing was published. Fix the CLI and rerun.",
+            file=sys.stderr,
+        )
+        args.out = None
 
     report = render_markdown(outcomes, args.agent, args.trials, args.stamp)
     # A run costs real money and ~15 minutes of wall clock, so it always leaves
@@ -778,7 +833,7 @@ def main() -> int:
 
     if args.json:
         print(json.dumps([o.__dict__ for o in outcomes], indent=2))
-    return 0
+    return 2 if failed is not None else 0
 
 
 if __name__ == "__main__":

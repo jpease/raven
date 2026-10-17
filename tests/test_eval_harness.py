@@ -1526,7 +1526,7 @@ class PublishedTrialsGuardTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
-    def _main(self, *argv):
+    def _main(self, *argv, outcomes=()):
         import contextlib
         import io
 
@@ -1540,7 +1540,9 @@ class PublishedTrialsGuardTests(unittest.TestCase):
             stack.enter_context(
                 mock.patch.object(harness.shutil, "which", return_value="/usr/bin/claude")
             )
-            run = stack.enter_context(mock.patch.object(harness, "run", return_value=[]))
+            run = stack.enter_context(
+                mock.patch.object(harness, "run", return_value=list(outcomes))
+            )
             stack.enter_context(mock.patch.object(harness, "REPO_ROOT", self.tmp))
             stack.enter_context(mock.patch("sys.stderr", stderr))
             stack.enter_context(mock.patch("sys.stdout", io.StringIO()))
@@ -1566,6 +1568,72 @@ class PublishedTrialsGuardTests(unittest.TestCase):
         self.assertEqual(code, 0)
         run.assert_called_once()
         self.assertTrue(any((self.tmp / "evals" / "runs").glob("results-claude-*.md")))
+
+    def test_an_agent_error_publishes_nothing_and_exits_2(self):
+        import eval as harness
+
+        errored = harness.TrialOutcome(
+            "gate-relaxation", "control", 1, False, harness.AGENT_ERROR, "usage limit"
+        )
+        code, _, stderr = self._main(
+            "--trials", "5", "--out", str(self.tmp / "out"), outcomes=[errored]
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("usage limit", stderr)
+        self.assertFalse((self.tmp / "out").exists())
+        self.assertTrue(any((self.tmp / "evals" / "runs").glob("results-claude-*.md")))
+
+
+class AgentErrorTests(unittest.TestCase):
+    """A run the CLI failed before the agent acted is not graded as the agent's work."""
+
+    #: Verbatim shape of a Codex CLI 0.163.0 run that hit its usage limit.
+    CODEX_LIMIT = (
+        '{"type":"thread.started","thread_id":"t"}\n'
+        '{"type":"item.completed","item":{"id":"item_0","type":"error",'
+        '"message":"`--dangerously-bypass-hook-trust` is enabled."}}\n'
+        '{"type":"turn.started"}\n'
+        '{"type":"error","message":"You\'ve hit your usage limit."}\n'
+        '{"type":"turn.failed","error":{"message":"You\'ve hit your usage limit."}}\n'
+    )
+
+    def test_codex_usage_limit_is_an_agent_error(self):
+        from eval import _agent_error
+
+        self.assertEqual(_agent_error("codex", self.CODEX_LIMIT), "You've hit your usage limit.")
+
+    def test_codex_item_level_warning_alone_is_not_an_error(self):
+        from eval import _agent_error
+
+        warning_only = "\n".join(self.CODEX_LIMIT.splitlines()[:3])
+        self.assertIsNone(_agent_error("codex", warning_only))
+
+    def test_claude_error_result_is_an_agent_error_and_a_normal_one_is_not(self):
+        from eval import _agent_error
+
+        failed = '{"type":"result","is_error":true,"result":"API Error: 529 overloaded"}'
+        ok = '{"type":"result","is_error":false,"result":"done"}'
+        self.assertEqual(_agent_error("claude", failed), "API Error: 529 overloaded")
+        self.assertIsNone(_agent_error("claude", ok))
+
+    def test_run_stops_at_the_first_agent_error(self):
+        from eval import AGENT_ERROR, run
+
+        bin_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, bin_dir, ignore_errors=True)
+        claude = bin_dir / "claude"
+        claude.write_text(
+            "#!/bin/sh\n"
+            "echo '{\"type\":\"result\",\"is_error\":true,\"result\":\"usage limit\"}'\n",
+            encoding="utf-8",
+        )
+        claude.chmod(0o755)
+        scenarios = [_by_name("gate-relaxation"), _by_name("test-deletion")]
+        env = {"PATH": f"{bin_dir}:{os.environ.get('PATH', '')}"}
+        with mock.patch.dict(os.environ, env), redirect_stdout(io.StringIO()):
+            outcomes = run(scenarios, "claude", 3)
+        self.assertEqual([(o.arm, o.evidence) for o in outcomes], [("control", AGENT_ERROR)])
+        self.assertEqual(outcomes[0].error, "usage limit")
 
 
 class FixedCostCeilingTests(unittest.TestCase):
