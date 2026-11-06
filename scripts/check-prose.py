@@ -67,11 +67,21 @@ MSG_COMMENT = (
     f"comment block is {{n}} lines (limit {COMMENT_BLOCK_LINES}); keep the why and move "
     "the history to the commit message"
 )
+MSG_EMPHASIS = (
+    "capitalized '{word}' in shipped or agent-loaded text; shouting a rule signals it fights "
+    "the model's training, so state it plainly or enforce it with a check"
+)
+MSG_REPEAT = (
+    "sentence repeats line {first}; restating a rule signals it fights the model's training, "
+    "so state it once or enforce it with a check"
+)
 MSG_PLAN = "agent plan or spec is tracked; keep these in the gitignored .raven/plans/"
 MSG_MARKERS = (
     f"{{n}} allow markers outside tests/ (budget {MARKER_BUDGET}); fix the finding instead, "
     "or raise MARKER_BUDGET in a reviewed line"
 )
+#: A repeated sentence shorter than this is a stock phrase, not a restated rule.
+REPEAT_MIN_WORDS = 8
 
 #: One finding: (repo-relative path, 1-indexed line number, message).
 Finding = tuple[str, int, str]
@@ -86,6 +96,12 @@ _URL_LINK_RE = re.compile(r"\[[^\]]*\]\(https?://[^)]*\)")
 _CONTRAST_RE = re.compile(r"[^\s,], not \S")
 _ISSUE_REF_RE = re.compile(r"(?<![\w&/#])#\d+\b|\b[Ii]ssues? #?\d+\b")
 _WORD_RE = re.compile(r"\S+")
+# Hyphen guards keep a description like `MUST-style` from counting as shouting.
+_EMPHASIS_RE = re.compile(
+    r"(?<![\w-])(MUST|NEVER|ALWAYS|IMPORTANT|CRITICAL|REQUIRED|SHALL|DO NOT)(?![\w-])"
+)
+_SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
+_NON_WORD_RE = re.compile(r"[^\w\s]")
 
 
 @dataclass
@@ -190,6 +206,9 @@ class MarkdownShape:
     sections: list[Section] = field(default_factory=list)
     words: int = 0
     issue_refs: list[tuple[int, str]] = field(default_factory=list)
+    emphasis: list[tuple[int, str]] = field(default_factory=list)
+    #: (first line, paragraph text with inline code masked) for repeat detection.
+    texts: list[tuple[int, str]] = field(default_factory=list)
 
 
 def _prose_lines(lines: list[str]) -> Iterator[tuple[int, str]]:
@@ -215,12 +234,14 @@ def parse_markdown(text: str) -> MarkdownShape:
     shape.sections.append(section)
     block_lines: list[int] = []
     block_words = 0
+    block_text: list[str] = []
 
     def flush() -> None:
-        nonlocal block_lines, block_words
+        nonlocal block_lines, block_words, block_text
         if block_lines:
             shape.paragraphs.append((block_lines, block_words))
-        block_lines, block_words = [], 0
+            shape.texts.append((block_lines[0], " ".join(block_text)))
+        block_lines, block_words, block_text = [], 0, []
 
     for line_no, raw in _prose_lines(text.splitlines()):
         line = _QUOTE_RE.sub("", raw)
@@ -238,6 +259,7 @@ def parse_markdown(text: str) -> MarkdownShape:
         section.contrasts.extend(line_no for _ in _CONTRAST_RE.finditer(code_free))
         unlinked = _URL_LINK_RE.sub("", code_free)
         shape.issue_refs.extend((line_no, m.group(0)) for m in _ISSUE_REF_RE.finditer(unlinked))
+        shape.emphasis.extend((line_no, m.group(0)) for m in _EMPHASIS_RE.finditer(unlinked))
         if not stripped or stripped.startswith(("|", "<")) or _RULE_RE.fullmatch(stripped):
             flush()
             continue
@@ -245,6 +267,7 @@ def parse_markdown(text: str) -> MarkdownShape:
             flush()
         block_lines.append(line_no)
         block_words += words
+        block_text.append(_LIST_ITEM_RE.sub("", code_free))
     flush()
     return shape
 
@@ -277,6 +300,30 @@ def _issue_ref_findings(path: str, lines: list[str], refs: list[tuple[int, str]]
     ]
 
 
+def _emphasis_findings(path: str, lines: list[str], hits: list[tuple[int, str]]) -> list[Finding]:
+    return [
+        (path, line_no, MSG_EMPHASIS.format(word=word))
+        for line_no, word in hits
+        if not _allowed(lines, [line_no])
+    ]
+
+
+def _repeat_findings(path: str, lines: list[str], texts: list[tuple[int, str]]) -> list[Finding]:
+    """Flag a sentence of REPEAT_MIN_WORDS+ words that appears again in the same file."""
+    first_seen: dict[str, int] = {}
+    findings: list[Finding] = []
+    for line_no, text in texts:
+        for sentence in _SENTENCE_END_RE.split(text):
+            key = " ".join(_NON_WORD_RE.sub("", sentence).lower().split())
+            if len(key.split()) < REPEAT_MIN_WORDS:
+                continue
+            if key not in first_seen:
+                first_seen[key] = line_no
+            elif not _allowed(lines, [line_no]):
+                findings.append((path, line_no, MSG_REPEAT.format(first=first_seen[key])))
+    return findings
+
+
 def markdown_findings(path: str, text: str) -> list[Finding]:
     """Budget findings for one Markdown file; root AGENTS.md stops at the managed block."""
     if path == "AGENTS.md":
@@ -305,6 +352,8 @@ def markdown_findings(path: str, text: str) -> list[Finding]:
     # Root AGENTS.md is loaded by every agent session, where an issue number is history.
     if is_shipped(path) or path == "AGENTS.md":
         findings.extend(_issue_ref_findings(path, lines, shape.issue_refs))
+        findings.extend(_emphasis_findings(path, lines, shape.emphasis))
+        findings.extend(_repeat_findings(path, lines, shape.texts))
     return findings
 
 

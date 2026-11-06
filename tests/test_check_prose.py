@@ -16,8 +16,9 @@ from helpers import REPO_ROOT, load_script_module
 CHECKER_PATH = REPO_ROOT / "scripts" / "check-prose.py"
 
 
-def _words(n: int) -> str:
-    return " ".join(f"w{i}" for i in range(n))
+def _words(n: int, prefix: str = "w") -> str:
+    """Filler prose; vary `prefix` so repeated paragraphs do not trip the repeat check."""
+    return " ".join(f"{prefix}{i}" for i in range(n))
 
 
 class ProseRepoTestCase(unittest.TestCase):
@@ -75,7 +76,7 @@ class ParagraphBudgetTests(ProseRepoTestCase):
 
 class DocumentAndSectionBudgetTests(ProseRepoTestCase):
     def test_document_over_limit_is_reported_once(self) -> None:
-        body = "\n\n".join(_words(100) for _ in range(26))
+        body = "\n\n".join(_words(100, f"p{k}w") for k in range(26))
         self.stage("common/.claude/docs/raven-x.md", body + "\n")
         self.assertEqual(len(self.findings()), 1)
         self.assertIn("2600 words (limit 2500)", self.messages()[0])
@@ -83,8 +84,8 @@ class DocumentAndSectionBudgetTests(ProseRepoTestCase):
     def test_agents_section_counts_its_subsections(self) -> None:
         self.stage(
             "AGENTS.md",
-            f"## Rules\n\n{_words(100)}\n\n### Detail\n\n{_words(100)}\n\n"
-            f"### More\n\n{_words(101)}\n\n## Next\n\n{_words(10)}\n",
+            f"## Rules\n\n{_words(100)}\n\n### Detail\n\n{_words(100, 'd')}\n\n"
+            f"### More\n\n{_words(101, 'm')}\n\n## Next\n\n{_words(10, 'n')}\n",
         )
         self.assertEqual(
             self.findings(),
@@ -104,7 +105,7 @@ class DocumentAndSectionBudgetTests(ProseRepoTestCase):
         self.assertEqual(self.findings(), [])
 
     def test_shipped_skill_over_cap_is_reported(self) -> None:
-        body = "\n\n".join(_words(100) for _ in range(13))
+        body = "\n\n".join(_words(100, f"p{k}w") for k in range(13))
         self.stage("common/.agents/skills/raven-x/SKILL.md", body + "\n")
         self.stage("project-skills/x/SKILL.md", body + "\n")
         self.assertEqual(
@@ -176,6 +177,49 @@ class IssueReferenceTests(ProseRepoTestCase):
             "See [issue #2506](https://github.com/o/r/issues/2506).\n\n"
             "Write `Refs: #123`.\n\nTracked as owner/repo#9.\n",
         )
+        self.assertEqual(self.findings(), [])
+
+
+class EmphasisTests(ProseRepoTestCase):
+    def test_shouted_directive_in_shipped_guidance_is_reported(self) -> None:
+        self.stage("common/.claude/docs/raven-x.md", "You MUST run tests.\n\nNEVER skip.\n")
+        self.assertEqual([line for _, line, _ in self.findings()], [1, 3])
+
+    def test_described_style_code_and_repo_docs_pass(self) -> None:
+        self.stage(
+            "common/.claude/docs/raven-x.md",
+            "It injects a MUST-style block.\n\nRun `grep NEVER`.\n",
+        )
+        self.stage("docs/guide.md", "You MUST run tests.\n")
+        self.assertEqual(self.findings(), [])
+
+    def test_root_agents_md_is_checked_above_the_managed_block_only(self) -> None:
+        self.stage("AGENTS.md", "ALWAYS ask.\n\n<!-- RAVEN:BEGIN x -->\nNEVER mind.\n")
+        self.assertEqual([(p, line) for p, line, _ in self.findings()], [("AGENTS.md", 1)])
+
+
+class RepeatedSentenceTests(ProseRepoTestCase):
+    RULE = "Run the narrowest relevant test before the full suite."
+
+    def test_rule_restated_in_the_same_file_is_reported(self) -> None:
+        self.stage(
+            "common/.agents/skills/raven-x/SKILL.md",
+            f"- {self.RULE}\n\nOther text.\n\nAs said: run the narrowest\n"
+            "relevant `test` before the full suite!\n",
+        )
+        self.assertEqual(self.findings(), [])
+        self.stage(
+            "common/.agents/skills/raven-x/SKILL.md",
+            f"- {self.RULE}\n\nOther text.\n\nRun the narrowest\nrelevant test before the full suite.\n",
+        )
+        self.assertEqual(
+            self.findings(),
+            [("common/.agents/skills/raven-x/SKILL.md", 5, self.module.MSG_REPEAT.format(first=1))],
+        )
+
+    def test_short_stock_phrases_and_other_files_pass(self) -> None:
+        self.stage("common/a.md", "See below.\n\nSee below.\n\n" + self.RULE + "\n")
+        self.stage("common/b.md", self.RULE + "\n")
         self.assertEqual(self.findings(), [])
 
 
