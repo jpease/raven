@@ -18,7 +18,7 @@ No tell below measures whether the document is true, and the severest failures o
 | code comment | does this still describe what the code does? |
 | docstring | does the function raise, return, and guarantee what this says? |
 | README, tutorial, how-to | did you run the commands, in order, from a clean checkout? |
-| reference | is every name, type, default, and version the one in the code? |
+| reference | is every name, type, default, and version the one in the code, and is each thing called by one name throughout? |
 | spec, essay | is every number and citation traceable to something you checked? |
 
 A failure here outranks every finding below it. Trouble writing plainly is often a signal for an unchecked claim: verify, then write the plain version.
@@ -43,21 +43,21 @@ Each row names the artifact, the test, and the fix. The delete tests apply to wh
 | Signposting | Delete the sentence. Does meaning survive? | Delete it. |
 | Throat-clearing | Does sentence one carry new information? | Start where information starts. |
 | Tricolon default | Count list lengths. Are most three? | Cut to two or extend to four where honest. |
-| `not X, but Y` | Delete the negated half. Does the sentence still say something? | State Y alone. In a title, cut the tag. |
+| `not X, but Y` | Delete the negated half, including a `rather than X` or `instead of X` tail. Does the sentence still say something? | State Y alone. In a title, cut the tag. |
 | Symmetric hedge | A sentence weighing both sides, concluding neither | Commit, or cut it. |
 | Drumroll or dependent heading | Does the heading name its own content? `### Inputs` alone names nothing. | Name it in full. |
 | Restating close | Does the last paragraph hold a new fact? | Cut it. |
 | Bulletification | Do the bullets flow into each other like sentences, or has every paragraph become a `**Label**: value` bullet? | Give flowing bullets their paragraph back, or a bulleted argument its prose. |
 | No specifics | Count numbers, names, paths, versions. Zero? Engineering docs are built from specifics and always pass. | Add them, or say you don't know. |
-| Unearned confidence | Does the piece admit any dead end? | Say what you did not verify. |
+| Unearned confidence | Does the piece admit any dead end? | Say what you did not verify, naming the claim. A stock caveat such as "does not by itself establish" names nothing; cut it. |
 | Long-word default | Any word of nine or more letters with a shorter everyday equivalent | Use the shorter word. |
-| Closing flourish | Does the last sentence of each paragraph hold a fact the paragraph did not already have? | Delete it, or state the fact plainly. |
+| Closing flourish | Does the last sentence of each paragraph hold a fact the paragraph did not already have? A trailing `, ensuring X` or `, improving Y` clause is the same move inside one sentence. | Delete it, or state the fact plainly. |
 | Essence-framing | "what this really means", "at its core", "boils down to", "the real question is" | Delete the frame; state the claim directly. |
 | Stakes-inflation | "changes everything", "cannot be overstated", "game-changer", "turning point" | Cut it, or replace with the number that earns the claim. |
 
-`X, not Y` gets one use per section. Keep the one whose negated half rules out a misreading the reader would otherwise make: "Green tests prove behavior, not design health" survives the delete test; "It's not about speed. It's about correctness" does not. Restate the others directly. A run of them is a tell even when each one passes alone.
+`X, not Y` gets one use per section, and `Y rather than X` counts toward it. Keep the one whose negated half rules out a misreading the reader would otherwise make: "Green tests prove behavior, not design health" survives the delete test; "It's not about speed. It's about correctness" does not. Restate the others directly. A run of them is a tell even when each one passes alone.
 
-The tag on a heading, a commit subject, or an issue title gets through the delete test, so a title takes a second one: **does the negated half rule out something the reader would otherwise have expected?** `not cwd` does; "measured rather than assumed" rates the method, and the replacement is the number that earned the claim.
+The tag on a heading, a commit subject, or an issue title gets through the delete test, so a title takes a second one: **does the negated half rule out something the reader would otherwise have expected?** `not cwd` does; "measured rather than assumed" rates the method, and the replacement is the number that earned the claim. A body sentence takes the same test: "verified against the code rather than assumed" rates the method too.
 
 `Unearned confidence` and `No specifics` fire when something is missing, so a low count is not a clean document until you know which tells the zeroes came from.
 

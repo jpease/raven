@@ -60,14 +60,23 @@ rg -oN '\b[a-z]{9,}\b' FILE | sort -u
 
 It also flags one fact restated across clauses: "implemented an enhanced retry mechanism to improve resilience against transient call failures" says "retry failed calls up to three times" twice. Does the word add a fact `retry` did not already carry?
 
-The `X, not Y` tag on titles and commit subjects:
+The `X, not Y` tag on titles and commit subjects, and its `rather than` form in bodies:
 
 ```bash
 git log --format='%s' -n 400 | rg -N ',\s+(not|never|rather than|instead of)\b'
 rg -N '^#{1,6}.*,\s+(not|never|rather than|instead of)\b' FILE
+rg -N '\b(rather than|instead of)\b' FILE
 ```
 
-A hit that names a thing — `not cwd`, `not Package.swift` — rules out the wrong behavior the fix replaced and stays. A hit that rates the method — "measured rather than assumed" — goes. Position decides this, which is why no linter can: `measured|verified` against `assumed|inferred` reads both ways.
+A hit that names a thing — `not cwd`, `not Package.swift`, "filed separately rather than folded in" — rules out the wrong behavior the fix replaced and stays. A hit that rates the method — "measured rather than assumed" — goes. Position decides this, which is why no linter can: `measured|verified` against `assumed|inferred` reads both ways.
+
+Trailing participle clauses, the sentence-level closing flourish:
+
+```bash
+rg -N ',\s+(ensuring|improving|enabling|allowing|reflecting|highlighting|making)\b' FILE
+```
+
+Keep a hit that states a checkable consequence ("allowing a second run to resume from the lock file"); cut one that only rates the change ("improving maintainability").
 
 Essence-framing and stakes-inflation:
 

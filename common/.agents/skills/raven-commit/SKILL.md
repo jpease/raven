@@ -22,6 +22,7 @@ Below are this project's conventions on top of the spec.
 - Wrap at 72 columns. `git log` indents 4 spaces, keeping the total ≤76 and within RFC 2822's 78-char limit.
 - State the problem in present tense — what the code does _without_ this change — then why this solution is better, and which alternatives were considered and discarded.
 - For `perf`, include benchmark numbers and describe the trade-offs (CPU vs memory vs readability).
+- Report what changed. "Preserved existing behavior" or "improved clarity and consistency" gives a reviewer nothing to check against the diff. Mention an unchanged behavior only when a reviewer would expect the change to break it, and name the test that pins it.
 - If you find yourself explaining a tricky implementation detail, consider whether a code comment would serve future readers better.
 - **Self-contained**: include all relevant context directly. External links (PRs, issues, benchmarks) may disappear; the message must stand alone.
 
