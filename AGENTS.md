@@ -55,7 +55,7 @@ This repository is Raven itself: the reusable template library and installer for
 - This repository records `[mcp] optional = []` in `.raven/config.toml` and wires no code-index MCP server. Dogfooding the shipped guidance means `rg` and LSP first.
 - A maintainer who wants GitNexus or CodeGraph adds the server in `.claude/settings.local.json` or user-level MCP config. Keep `.gitnexusrc` at `{"skipContextFiles": true}` so `gitnexus analyze` does not write a MUST-style block into this file.
 
-<!-- RAVEN:BEGIN sha256=cbfd2137c5e8af3c26f5344bb48d4ff92025319106a0fdfe80fc6735e8d70049 -->
+<!-- RAVEN:BEGIN sha256=e95da894e2a8639c5324960148b0760d45535946153437ab184f18b6362254c5 -->
 # AGENTS.md
 
 ## Primary Objective
@@ -153,7 +153,7 @@ Otherwise keep going; do not stop to report status or offer to continue.
 
 - A task ends in success, progression (one blocker removed, the next isolated with evidence), or stop. Progression is an acceptable end state; report it plainly.
 - Stop and report when the same test has failed after three consecutive fixes aimed at it, when a fix needs code the task did not scope, or when the diff grows while the failing signal does not change.
-- Do not keep patching once the work stops converging. Partial work leaves the codebase more legible than it was.
+- Do not keep patching once the work stops converging; hand off through `raven-plan` to a fresh session. Partial work leaves the codebase more legible.
 - `raven-task-complete` states the test for each of the three states; `raven-debug-failure`'s `When To Stop` covers the narrower case where ownership was never found.
 
 ## Safety Rules

@@ -95,7 +95,7 @@ Otherwise keep going; do not stop to report status or offer to continue.
 
 - A task ends in success, progression (one blocker removed, the next isolated with evidence), or stop. Progression is an acceptable end state; report it plainly.
 - Stop and report when the same test has failed after three consecutive fixes aimed at it, when a fix needs code the task did not scope, or when the diff grows while the failing signal does not change.
-- Do not keep patching once the work stops converging. Partial work leaves the codebase more legible than it was.
+- Do not keep patching once the work stops converging; hand off through `raven-plan` to a fresh session. Partial work leaves the codebase more legible.
 - `raven-task-complete` states the test for each of the three states; `raven-debug-failure`'s `When To Stop` covers the narrower case where ownership was never found.
 
 ## Safety Rules

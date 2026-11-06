@@ -17,7 +17,7 @@ This complements interactive planning modes. The important output is a project-l
 4. Include scope, assumptions, ordered work items, verification, rollback or follow-up notes, and open questions.
 5. Run the Fresh-Context Check before requesting approval.
 6. Get approval before executing when the plan changes public API, schema, migration, release, auth, destructive, dependency, or broad architecture behavior.
-7. Update the plan at meaningful checkpoints instead of relying on chat history.
+7. Update the plan at meaningful checkpoints instead of relying on chat history. When a long session stops converging, it is likely fixated on one hypothesis: write the verified state into the plan and each approach tried into Alternatives, then recommend a fresh session that starts from the plan alone.
 8. When complete, record what shipped, what was verified, and any follow-up issues. Then move the plan to `.raven/plans/archive/` or delete it; a finished plan left beside live ones reads as current. Agents do not read the archive unless asked.
 
 ## Interrogate First
