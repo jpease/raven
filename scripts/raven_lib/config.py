@@ -505,7 +505,7 @@ def gemini_component_excluded(relative: str, config: RavenConfig) -> bool:
     return _disabled_by_component(relative, config.gemini_components, GEMINI_COMPONENT_PATHS)
 
 
-_PLATFORM_GATED_SKILLS: dict[str, str] = {
+PLATFORM_GATED_SKILLS: dict[str, str] = {
     "raven-github-issues": "github",
     "raven-gitlab-issues": "gitlab",
 }
@@ -533,7 +533,7 @@ def platform_excluded(relative: str, config: RavenConfig) -> bool:
     value (see ``deactivated._platform_gated``).
     """
     effective_platform = config.platform or "none"
-    for skill_name, required_platform in _PLATFORM_GATED_SKILLS.items():
+    for skill_name, required_platform in PLATFORM_GATED_SKILLS.items():
         is_this_skill = path_within(relative, f".agents/skills/{skill_name}") or path_within(
             relative, f".claude/skills/{skill_name}"
         )

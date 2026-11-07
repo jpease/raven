@@ -38,7 +38,6 @@ Do not weaken these settings to satisfy a type error. Fix the code instead.
 
 ### No `any`
 
-- `any` is forbidden in application and domain code.
 - Use `unknown` for values whose type is genuinely not known. Narrow with schema validation or type guards before use.
 - Avoid `as SomeType` casts in application code. If a cast is unavoidable, isolate it at a validated boundary and add a comment explaining the invariant.
 - Use `satisfies` instead of type assertions for configuration objects where you want inference to be preserved.

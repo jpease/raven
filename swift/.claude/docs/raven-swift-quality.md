@@ -48,7 +48,6 @@ For changes that touch security-sensitive boundaries, run the `raven-security-re
 - For SwiftData tests, use isolated stores per the project convention. Prefer unique temp SQLite stores over shared in-memory state when concurrent persistence tests are flaky.
 - Cover backup/import, CloudKit, and sync round-trips when changing persisted fields that participate in those flows.
 - Add a regression test for every bug fix when the failure can be reproduced deterministically.
-- Do not delete or weaken tests to make a change pass unless explicitly requested.
 
 ## Dependency And License Hygiene
 
@@ -97,8 +96,6 @@ For changes that touch security-sensitive boundaries, run the `raven-security-re
 ## Localization
 
 - Keep user-facing strings localizable from the start when the project supports localization.
-- Use locale-aware formatting for dates, times, numbers, measurements, and lists.
-- Avoid layout assumptions that break with longer localized strings or right-to-left languages.
 
 ## Privacy
 

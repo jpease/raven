@@ -28,6 +28,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from gate_limits import limit_lines  # noqa: E402 -- needs the sys.path insert above
+from raven_lib.config import PLATFORM_GATED_SKILLS  # noqa: E402 -- needs the sys.path insert above
 from raven_lib.constants import NON_TEMPLATE_DIRS  # noqa: E402 -- needs the sys.path insert above
 from staged_diff import has_marker  # noqa: E402 -- needs the sys.path insert above
 
@@ -47,6 +48,8 @@ SECTION_BUDGET_DOCS = {"AGENTS.md", "common/AGENTS.md"}
 #: Shipped into destination repos from outside the template trees.
 SHIPPED_EXTRA = {"scripts/raven_lib/data/config.toml.tmpl"}
 PLAN_DIRS = ("docs/superpowers/", ".raven/plans/")
+#: Subagent definitions, mirrored per harness and loaded into a context of their own.
+SUBAGENT_DIRS = ("/.claude/agents/", "/.gemini/agents/")
 
 MSG_DOC = f"document is {{n}} words (limit {DOC_WORDS}); split or cut it"
 MSG_SKILL = f"skill is {{n}} words (limit {SKILL_WORDS}); split or cut it"
@@ -71,9 +74,13 @@ MSG_EMPHASIS = (
     "capitalized '{word}' in shipped or agent-loaded text; shouting a rule signals it fights "
     "the model's training, so state it plainly or enforce it with a check"
 )
-MSG_REPEAT = (
-    "sentence repeats line {first}; restating a rule signals it fights the model's training, "
+_REPEAT_ADVICE = (
+    "restating a rule signals it fights the model's training, "
     "so state it once or enforce it with a check"
+)
+MSG_REPEAT = f"sentence repeats line {{first}}; {_REPEAT_ADVICE}"
+MSG_REPEAT_ELSEWHERE = (
+    f"sentence repeats {{first}}, and agents load both files together; {_REPEAT_ADVICE}"
 )
 MSG_PLAN = "agent plan or spec is tracked; keep these in the gitignored .raven/plans/"
 MSG_MARKERS = (
@@ -308,26 +315,100 @@ def _emphasis_findings(path: str, lines: list[str], hits: list[tuple[int, str]])
     ]
 
 
+def _sentence_keys(texts: list[tuple[int, str]]) -> Iterator[tuple[int, str]]:
+    """(first line of paragraph, normalized sentence) for each sentence of REPEAT_MIN_WORDS+ words."""
+    for line_no, text in texts:
+        for sentence in _SENTENCE_END_RE.split(text):
+            key = " ".join(_NON_WORD_RE.sub("", sentence).lower().split())
+            if len(key.split()) >= REPEAT_MIN_WORDS:
+                yield line_no, key
+
+
 def _repeat_findings(path: str, lines: list[str], texts: list[tuple[int, str]]) -> list[Finding]:
     """Flag a sentence of REPEAT_MIN_WORDS+ words that appears again in the same file."""
     first_seen: dict[str, int] = {}
     findings: list[Finding] = []
-    for line_no, text in texts:
-        for sentence in _SENTENCE_END_RE.split(text):
-            key = " ".join(_NON_WORD_RE.sub("", sentence).lower().split())
-            if len(key.split()) < REPEAT_MIN_WORDS:
-                continue
-            if key not in first_seen:
-                first_seen[key] = line_no
-            elif not _allowed(lines, [line_no]):
-                findings.append((path, line_no, MSG_REPEAT.format(first=first_seen[key])))
+    for line_no, key in _sentence_keys(texts):
+        if key not in first_seen:
+            first_seen[key] = line_no
+        elif not _allowed(lines, [line_no]):
+            findings.append((path, line_no, MSG_REPEAT.format(first=first_seen[key])))
     return findings
+
+
+def is_agent_loaded(path: str) -> bool:
+    """Markdown an agent session reads: shipped guidance and the root AGENTS.md."""
+    return path.endswith(".md") and (is_shipped(path) or path == "AGENTS.md")
+
+
+def _agent_text(path: str, text: str) -> str:
+    """Root AGENTS.md is measured only above its managed block, which mirrors common/AGENTS.md."""
+    return text.split(MANAGED_BLOCK_START, 1)[0] if path == "AGENTS.md" else text
+
+
+def _load_sets(paths: list[str]) -> list[list[str]]:
+    """The agent-loaded paths one destination can hold at once, one list per possible install.
+
+    A destination installs `common/` overlaid by one template tree, and only
+    the issue-tracker skill for its platform; this repository adds its root
+    AGENTS.md to `common/`. Subagent definitions are left out: each loads into
+    its own context, and every harness has its own copy.
+    """
+    paths = [p for p in paths if not any(d in p for d in SUBAGENT_DIRS)]
+    common = {p.split("/", 1)[1]: p for p in paths if p.startswith("common/")}
+    trees = sorted({p.split("/", 1)[0] for p in paths if "/" in p} - {"common"})
+    installs = [[p for p in paths if p == "AGENTS.md"] + list(common.values())]
+    for tree in trees:
+        overlay = dict(common)
+        overlay.update((p.split("/", 1)[1], p) for p in paths if p.startswith(f"{tree}/"))
+        installs.append(list(overlay.values()))
+    sets: list[list[str]] = []
+    for install in installs:
+        for platform in sorted(set(PLATFORM_GATED_SKILLS.values())):
+            gated_out = [
+                f"/.agents/skills/{skill}/"
+                for skill, needs in PLATFORM_GATED_SKILLS.items()
+                if needs != platform
+            ]
+            chosen = [p for p in install if not any(g in p for g in gated_out)]
+            if chosen not in sets:
+                sets.append(chosen)
+    return sets
+
+
+def cross_file_repeat_findings(docs: list[tuple[str, str]]) -> list[Finding]:
+    """Flag a sentence of REPEAT_MIN_WORDS+ words that already appears in a file loaded alongside.
+
+    Within each load set, AGENTS.md files come first, so the finding lands on
+    the skill or doc that restates an always-loaded rule; the rest follow in
+    path order. A repeat within one file is `_repeat_findings`' job, so only
+    each file's first occurrence of a sentence is compared here. A line found
+    in several load sets is reported once, citing the first.
+    """
+    keyed: dict[str, tuple[list[str], dict[str, int]]] = {}
+    for path, text in docs:
+        text = _agent_text(path, text)
+        local: dict[str, int] = {}
+        for line_no, key in _sentence_keys(parse_markdown(text).texts):
+            local.setdefault(key, line_no)
+        keyed[path] = (text.splitlines(), local)
+    found: dict[tuple[str, int], Finding] = {}
+    for load_set in _load_sets(list(keyed)):
+        first_seen: dict[str, str] = {}
+        for path in sorted(load_set, key=lambda p: (Path(p).name != "AGENTS.md", p)):
+            lines, local = keyed[path]
+            for key, line_no in local.items():
+                if key not in first_seen:
+                    first_seen[key] = f"{path}:{line_no}"
+                elif (path, line_no) not in found and not _allowed(lines, [line_no]):
+                    message = MSG_REPEAT_ELSEWHERE.format(first=first_seen[key])
+                    found[path, line_no] = (path, line_no, message)
+    return sorted(found.values())
 
 
 def markdown_findings(path: str, text: str) -> list[Finding]:
     """Budget findings for one Markdown file; root AGENTS.md stops at the managed block."""
-    if path == "AGENTS.md":
-        text = text.split(MANAGED_BLOCK_START, 1)[0]
+    text = _agent_text(path, text)
     lines = text.splitlines()
     shape = parse_markdown(text)
     findings: list[Finding] = []
@@ -350,7 +431,7 @@ def markdown_findings(path: str, text: str) -> list[Finding]:
             if not _allowed(lines, [line_no])
         )
     # Root AGENTS.md is loaded by every agent session, where an issue number is history.
-    if is_shipped(path) or path == "AGENTS.md":
+    if is_agent_loaded(path):
         findings.extend(_issue_ref_findings(path, lines, shape.issue_refs))
         findings.extend(_emphasis_findings(path, lines, shape.emphasis))
         findings.extend(_repeat_findings(path, lines, shape.texts))
@@ -408,6 +489,7 @@ def find_findings(repo_root: Path = REPO_ROOT) -> list[Finding]:
     ]
     texts = staged_texts(repo_root, list(dict.fromkeys(e.sha for e in wanted)))
     markers = 0
+    agent_docs: list[tuple[str, str]] = []
     for entry in wanted:
         text = texts[entry.sha]
         if text is None:
@@ -421,6 +503,9 @@ def find_findings(repo_root: Path = REPO_ROOT) -> list[Finding]:
             )
         for check in _checks_for(entry.path):
             findings.extend(check(entry.path, text))
+        if is_agent_loaded(entry.path):
+            agent_docs.append((entry.path, text))
+    findings.extend(cross_file_repeat_findings(agent_docs))
     if markers > MARKER_BUDGET:
         findings.append(("(tree)", 0, MSG_MARKERS.format(n=markers)))
     return findings

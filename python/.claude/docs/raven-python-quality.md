@@ -31,7 +31,6 @@ For changes that touch security-sensitive boundaries, run the `raven-security-re
 - Do not silently swallow exceptions. Log or re-raise.
 - Preserve exception context: `raise AppError("...") from original`.
 - For domain and application code that crosses service or thread boundaries, consider returning typed result values (`Result`, `tuple`, named alternatives) when explicit error handling by the caller is more important than raising.
-- Use context managers for cleanup; do not rely on `finally` blocks where `with` is cleaner.
 
 ## Architecture
 
@@ -59,8 +58,7 @@ Domain code must not import infrastructure modules. Violations make the domain u
 
 ## Async And Concurrency
 
-- Do not block an async event loop with synchronous filesystem, network, subprocess, or CPU-heavy work.
-- Use `asyncio.to_thread` or a thread-pool executor for blocking work that must happen in an async context.
+- Move blocking work off the event loop with `asyncio.to_thread` or a thread-pool executor.
 - Keep shared mutable state narrow. Prefer `asyncio.Queue` or structured concurrency patterns over shared variables protected by locks when practical.
 - Do not mix `asyncio` and `threading` without understanding the safety implications; prefer one concurrency model per boundary.
 

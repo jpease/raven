@@ -217,10 +217,49 @@ class RepeatedSentenceTests(ProseRepoTestCase):
             [("common/.agents/skills/raven-x/SKILL.md", 5, self.module.MSG_REPEAT.format(first=1))],
         )
 
-    def test_short_stock_phrases_and_other_files_pass(self) -> None:
+    def test_short_stock_phrases_pass_in_and_across_files(self) -> None:
         self.stage("common/a.md", "See below.\n\nSee below.\n\n" + self.RULE + "\n")
-        self.stage("common/b.md", self.RULE + "\n")
+        self.stage("common/b.md", "See below.\n")
         self.assertEqual(self.findings(), [])
+
+    def test_rule_restated_in_another_loaded_file_cites_the_first(self) -> None:
+        self.stage("common/AGENTS.md", f"# Rules\n\n- {self.RULE}\n")
+        self.stage("common/.agents/skills/raven-x/SKILL.md", f"Intro.\n\n{self.RULE}\n")
+        findings = self.findings()
+        self.assertEqual(
+            [(path, line) for path, line, _ in findings],
+            [("common/.agents/skills/raven-x/SKILL.md", 3)],
+        )
+        self.assertIn("common/AGENTS.md:3", findings[0][2])
+
+    def test_allow_marker_suppresses_a_cross_file_repeat(self) -> None:
+        self.stage("common/a.md", self.RULE + "\n")
+        self.stage("common/b.md", self.RULE + " <!-- raven-hygiene: allow -->\n")
+        self.assertEqual(self.findings(), [])
+
+    def test_files_never_loaded_together_are_not_compared(self) -> None:
+        pairs = {
+            "language trees": ("python/.claude/rules/raven-py.md", "go/.claude/rules/raven-go.md"),
+            "subagents": ("common/.claude/agents/raven-a.md", "common/.gemini/agents/raven-a.md"),
+            "platforms": (
+                "common/.agents/skills/raven-github-issues/SKILL.md",
+                "common/.agents/skills/raven-gitlab-issues/SKILL.md",
+            ),
+        }
+        for topic, paths in pairs.items():
+            for path in paths:
+                self.stage(path, f"Keep the {topic} rule stated once in exactly one place.\n")
+        self.assertEqual(self.findings(), [])
+
+    def test_template_tree_file_overrides_its_common_twin(self) -> None:
+        self.stage("common/.claude/rules/raven-x.md", self.RULE + "\n")
+        self.stage("python/.claude/rules/raven-x.md", self.RULE + "\n")
+        self.assertEqual(self.findings(), [])
+        self.stage("python/.claude/rules/raven-y.md", self.RULE + "\n")
+        self.assertEqual(
+            [(p, line) for p, line, _ in self.findings()],
+            [("python/.claude/rules/raven-y.md", 1)],
+        )
 
 
 class CommentBlockTests(ProseRepoTestCase):
