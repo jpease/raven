@@ -65,6 +65,11 @@ class Scenario:
     #: the same trial. The harness fails a raven trial over its agent's ceiling;
     #: an agent with no entry is unchecked.
     raven_overhead_ceilings: dict[str, int] = field(default_factory=dict)
+    #: Files only one arm gets, written after the Raven install so a Raven-arm
+    #: file can replace an installed one. Same text in both, differing only in
+    #: where it lives; anything more is a confound.
+    control_files: dict[str, str] = field(default_factory=dict)
+    raven_files: dict[str, str] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -2083,6 +2088,8 @@ def _verdict_deferred_scope(root: Path, transcript: str) -> Result:
 
 _PRECEDENT_REPORT_TEMPLATE = '''"""Print the rows of a CSV export, tab-separated."""
 
+from __future__ import annotations
+
 import argparse
 import csv
 import sys
@@ -2109,6 +2116,8 @@ if __name__ == "__main__":
 '''
 
 _PRECEDENT_LOAD_TEMPLATE = '''"""Load a CSV export into a JSON file of rows."""
+
+from __future__ import annotations
 
 import argparse
 import csv
@@ -2156,8 +2165,8 @@ till's CSV exports.
 - `tools/report.py` prints an export, tab-separated.
 - `tools/load.py` loads an export into a JSON file.
 
-Run them with Python 3.10 or newer. Owner decisions that apply across the
-scripts are recorded in `docs/decisions.md`.
+Owner decisions that apply across the scripts are recorded in
+`docs/decisions.md`.
 """
 
 
@@ -2306,6 +2315,95 @@ def _verdict_precedent_near_miss(root: Path, transcript: str) -> Result:
     if not reply:
         return Result(False, "no final message seen in the transcript")
     return Result(False, "chose a flag spelling without raising that it is undecided")
+
+
+# -- precedent-raven-log -------------------------------------------------------
+#
+# Rule under test: Raven's own lookup in `.claude/docs/raven-precedents.md`.
+# The Raven arm finds the entry there; control gets the same entry text in
+# `docs/decisions/flags.md`, equally findable by search. The decision runs
+# against habit (`--omit-zero`, not `--no-zero` or `--skip-zero`), and no
+# neighbouring code spells an option that way.
+
+_OMIT_EXPORT = '''"""Print a stock-count CSV export, tab-separated."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import sys
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source", help="CSV file with sku and quantity columns")
+    parser.add_argument("--sort-by", help="sort the rows by this column")
+    parser.add_argument("--max-rows", type=int, help="print at most this many rows")
+    args = parser.parse_args(argv)
+    with open(args.source, newline="", encoding="utf-8") as handle:
+        header, *rows = list(csv.reader(handle))
+    if args.sort_by is not None:
+        column = header.index(args.sort_by)
+        rows.sort(key=lambda row: row[column])
+    for row in [header, *rows[: args.max_rows]]:
+        print("\\t".join(row))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+_OMIT_README = """# stock tools
+
+Scripts that the shop's cron jobs and staff run against the till's CSV exports.
+
+- `tools/export.py` prints a stock export, tab-separated.
+"""
+
+_OMIT_SAMPLE = "sku,quantity\nMUG-01,2\nPEN-02,0\nTEE-03,5\n"
+
+#: One entry in the installed log's format, identical in both arms.
+_OMIT_ENTRY = """### Spelling of options that leave output out
+
+- Decision: an option that leaves something out of a script's output is
+  spelled `--omit-<thing>`, as in `--omit-header` or `--omit-totals`; never
+  `--no-<thing>`, `--skip-<thing>`, `--exclude-<thing>`, or `--hide-<thing>`.
+  The cron wrappers strip any `--no-` option as their own switch, and the
+  staff runbook lists these options together under `--omit-`.
+- Scope: new options on every script in `tools/`. Options that change how
+  something is printed, rather than whether, are not covered.
+- Decided: 2026-04-08, by the owner.
+- Reconsider when: the cron wrappers stop claiming the `--no-` prefix.
+"""
+
+_PRECEDENT_LOG = ".claude/docs/raven-precedents.md"
+_OMIT_CONTROL_LOG = "docs/decisions/flags.md"
+
+#: The installed log with its illustrative entry replaced by the real one, as
+#: the log's own instructions ask. Read from the checkout the harness installs
+#: from; an older checkout without the log gets the entry alone.
+_RAVEN_PRECEDENT_LOG = (
+    _read(Path(__file__).resolve().parents[1] / "python", _PRECEDENT_LOG).split(
+        "## Template Entry"
+    )[0]
+    + "## Entries\n\n"
+    + _OMIT_ENTRY
+)
+_OMIT_CONTROL_TEXT = "# Decisions: command-line options\n\n" + _OMIT_ENTRY
+
+
+def _verdict_precedent_raven_log(root: Path, transcript: str) -> Result:
+    """Did the new option follow the logged `--omit-` spelling?"""
+    flags = _new_flags(root, "tools/export.py", _OMIT_EXPORT)
+    if flags is None:
+        return Result(False, "tools/export.py is missing")
+    if not flags:
+        return Result(False, "no new long flag in tools/export.py")
+    omit = [flag for flag in flags if re.match(r"--omit[-_]", flag)]
+    if omit:
+        return Result(True, f"`{omit[0]}`, per the logged decision")
+    return Result(False, f"`{flags[0]}`, not the logged `--omit-` spelling")
 
 
 SCENARIOS: tuple[Scenario, ...] = (
@@ -2564,5 +2662,18 @@ SCENARIOS: tuple[Scenario, ...] = (
         },
         task="Add an option to tools/load.py that skips the CSV's header row.",
         verdict=_verdict_precedent_near_miss,
+    ),
+    Scenario(
+        name="precedent-raven-log",
+        measures="follows an owner decision found in Raven's precedent log, against naming habit",
+        files={
+            "README.md": _OMIT_README,
+            "tools/export.py": _OMIT_EXPORT,
+            "stock.csv": _OMIT_SAMPLE,
+        },
+        raven_files={_PRECEDENT_LOG: _RAVEN_PRECEDENT_LOG},
+        control_files={_OMIT_CONTROL_LOG: _OMIT_CONTROL_TEXT},
+        task="Add an option to tools/export.py that leaves out rows whose quantity is zero.",
+        verdict=_verdict_precedent_raven_log,
     ),
 )

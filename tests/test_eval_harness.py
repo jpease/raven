@@ -195,6 +195,41 @@ class FixtureTests(unittest.TestCase):
         self.assertIn("README.md", status, "the setup edit should leave the tree dirty")
         self.assertNotIn("AGENTS.md", status, "the Raven install should already be committed")
 
+    def test_fixture_python_runs_on_python_3_9(self):
+        # macOS's stock `python3` is 3.9. Fixture code that needs 3.10 sends
+        # an agent chasing an interpreter error the task never mentioned.
+        import ast
+
+        def runtime_union(tree):
+            nodes = []
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    arguments = node.args
+                    every = [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]
+                    every += [arg for arg in (arguments.vararg, arguments.kwarg) if arg]
+                    nodes += [arg.annotation for arg in every if arg.annotation]
+                    nodes += [node.returns] if node.returns else []
+                elif isinstance(node, ast.AnnAssign):
+                    nodes.append(node.annotation)
+            return any(
+                isinstance(inner, ast.BinOp) and isinstance(inner.op, ast.BitOr)
+                for annotation in nodes
+                for inner in ast.walk(annotation)
+            )
+
+        for scenario in SCENARIOS:
+            root = self._build(scenario, with_raven=False)
+            for path in root.rglob("*.py"):
+                relative = path.relative_to(root)
+                if any(part.startswith(".") for part in relative.parts):
+                    continue
+                with self.subTest(scenario=scenario.name, file=str(relative)):
+                    source = path.read_text(encoding="utf-8")
+                    tree = ast.parse(source, feature_version=(3, 9))
+                    if "from __future__ import annotations" not in source:
+                        self.assertFalse(runtime_union(tree), "`X | Y` annotation needs 3.10")
+            shutil.rmtree(root)
+
 
 class VerdictTests(unittest.TestCase):
     """Each verdict, graded against a synthetic post-state, in both directions."""
@@ -1793,6 +1828,76 @@ class PrecedentNearMissVerdictTests(_ScenarioTreeTests):
         result = sc._verdict_precedent_near_miss(self.root, _claude_result(reply))
         self.assertFalse(result.passed)
         self.assertIn("without raising", result.evidence)
+
+
+class PrecedentRavenLogVerdictTests(_ScenarioTreeTests):
+    scenario_name = "precedent-raven-log"
+
+    def _flag(self, flag):
+        self._write(
+            "tools/export.py",
+            sc._OMIT_EXPORT.replace(
+                "    args = parser.parse_args(argv)\n",
+                f'    parser.add_argument("{flag}", action="store_true")\n'
+                "    args = parser.parse_args(argv)\n",
+            ),
+        )
+        return sc._verdict_precedent_raven_log(self.root, "")
+
+    def test_the_logged_spelling_passes(self):
+        for flag in ("--omit-zero", "--omit-zero-quantity", "--omit_zero"):
+            with self.subTest(flag=flag):
+                self.assertTrue(self._flag(flag).passed)
+
+    def test_habitual_spellings_fail(self):
+        for flag in ("--skip-zero", "--no-zero", "--exclude-zero", "--nonzero"):
+            with self.subTest(flag=flag):
+                result = self._flag(flag)
+                self.assertFalse(result.passed)
+                self.assertIn("not the logged", result.evidence)
+
+    def test_no_new_flag_fails(self):
+        result = sc._verdict_precedent_raven_log(self.root, "")
+        self.assertIn("no new long flag", result.evidence)
+
+    def test_no_existing_option_hints_at_the_spelling(self):
+        source = sc._OMIT_EXPORT
+        for prefix in ("--omit", "--no-", "--skip", "--exclude", "--hide"):
+            with self.subTest(prefix=prefix):
+                self.assertNotIn(prefix, source)
+
+
+class PrecedentRavenLogFixtureTests(unittest.TestCase):
+    """The entry sits in Raven's log in one arm and a project file in the other."""
+
+    def setUp(self):
+        from eval import build_fixture
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        scenario = _by_name("precedent-raven-log")
+        self.control = Path(tmp.name) / "control"
+        self.raven = Path(tmp.name) / "raven"
+        build_fixture(scenario, self.control, with_raven=False)
+        build_fixture(scenario, self.raven, with_raven=True)
+
+    def test_raven_arm_has_the_entry_in_the_installed_log_only(self):
+        log = (self.raven / ".claude/docs/raven-precedents.md").read_text(encoding="utf-8")
+        self.assertIn(sc._OMIT_ENTRY, log)
+        self.assertIn("## Using The Log", log, "the installed guidance must survive")
+        self.assertNotIn("## Template Entry", log)
+        self.assertFalse((self.raven / "docs/decisions/flags.md").exists())
+
+    def test_control_arm_has_the_same_entry_in_a_project_file_only(self):
+        text = (self.control / "docs/decisions/flags.md").read_text(encoding="utf-8")
+        self.assertIn(sc._OMIT_ENTRY, text)
+        self.assertFalse((self.control / ".claude").exists())
+
+    def test_the_entry_uses_the_installed_entry_format(self):
+        fields = [
+            line.split(":")[0] for line in sc._OMIT_ENTRY.splitlines() if line.startswith("- ")
+        ]
+        self.assertEqual(fields, ["- Decision", "- Scope", "- Decided", "- Reconsider when"])
 
 
 class FinalMessageTests(unittest.TestCase):

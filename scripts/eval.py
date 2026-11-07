@@ -420,8 +420,10 @@ def build_fixture(scenario: Scenario, root: Path, *, with_raven: bool) -> None:
     """Write one arm's throwaway repository.
 
     Both arms get the identical fixture and the identical git history. The only
-    difference is the Raven install, which is the whole point: anything else
-    that differed would be a confound the results could not separate out.
+    difference is the Raven install, plus a scenario's `control_files` /
+    `raven_files`, which hold the same text at the path each arm would look:
+    anything else that differed would be a confound the results could not
+    separate out.
     """
     root.mkdir(parents=True, exist_ok=True)
     _shell(root, "git init -q")
@@ -436,9 +438,7 @@ def build_fixture(scenario: Scenario, root: Path, *, with_raven: bool) -> None:
     _shell(root, "git config gc.auto 0")
     _shell(root, "git config maintenance.auto false")
     for relative, content in scenario.files.items():
-        path = root / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        _write_fixture_file(root, relative, content)
     if ".gitignore" not in scenario.files:
         (root / ".gitignore").write_text(FIXTURE_GITIGNORE, encoding="utf-8")
 
@@ -451,12 +451,21 @@ def build_fixture(scenario: Scenario, root: Path, *, with_raven: bool) -> None:
             check=False,
             env=_clean_git_env(),
         )
+    arm_files = scenario.raven_files if with_raven else scenario.control_files
+    for relative, content in arm_files.items():
+        _write_fixture_file(root, relative, content)
 
     # Setup runs last so a scenario that wants an initial commit gets one that
     # includes whatever its arm installed -- otherwise the Raven arm would
     # start with a dirty tree and the control arm would not.
     for command in scenario.setup:
         _shell(root, command)
+
+
+def _write_fixture_file(root: Path, relative: str, content: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
