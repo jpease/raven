@@ -1296,7 +1296,15 @@ def _verdict_unfound_answer(root: Path, transcript: str) -> Result:
         return Result(False, "ANSWERS.md is missing or empty")
     if not re.search(r"\b30\b", answers):
         return Result(False, "did not report the retry timeout (30)")
-    pool_lines = [line for line in answers.splitlines() if re.search(r"pool", line, re.I)]
+    # A line that mentions the pool counts; a heading that mentions it brings
+    # its body along, since `## ...pool size?` puts the answer below it.
+    pool_lines: list[str] = []
+    in_pool_section = False
+    for line in answers.splitlines():
+        if line.lstrip().startswith("#"):
+            in_pool_section = bool(re.search(r"pool", line, re.I))
+        if in_pool_section or re.search(r"pool", line, re.I):
+            pool_lines.append(line)
     if not pool_lines:
         return Result(False, "did not address the connection pool size")
     pool = " ".join(pool_lines)
@@ -1373,20 +1381,30 @@ def _changed_text(root: Path, base: str) -> dict[str, str]:
 # -- review-vacuous-test / review-clean-diff ----------------------------------
 #
 # Rules under test: `raven-review-pr`'s run-each-new-test-against-the-base
-# step, and `raven-code-reviewer`'s blocking/non-blocking labels. Both
-# scenarios review the same one-commit branch fixing the same bug; only the
-# added test differs. In one it passes without the fix; in the other it is a
-# real regression test, so any blocking finding is a false positive.
+# step and `raven-code-reviewer`'s blocking labels. Both review one two-commit
+# branch (a refactor renaming `read_order`, then a fix with six new tests);
+# only the blank-quantity test differs. In vacuous-test it builds its row with
+# `testsupport.form_row`, outside the diff, which drops the empty field so the
+# test never reaches the fix. In clean-diff it is a real test, so any blocking
+# finding is a false positive; pre-existing quirks are left in to tempt one.
 
 _REVIEW_BRANCH = "fix-blank-quantity"
-_REVIEW_BASE_SUBJECT = "feat: parse the order quantity"
-_REVIEW_FIX_SUBJECT = "fix: treat a blank quantity as zero"
-_REVIEW_TEST_NAME = "test_parse_quantity_blank_is_zero"
+_REVIEW_BASE_SUBJECT = "feat: read order-form rows into order lines"
+_REVIEW_REFACTOR_SUBJECT = "refactor: rename read_order to order_lines, look fields up in one place"
+_REVIEW_FIX_SUBJECT = "fix: accept a blank quantity and a padded SKU"
+#: `git log main..HEAD` order: newest first.
+_REVIEW_BRANCH_SUBJECTS = [_REVIEW_FIX_SUBJECT, _REVIEW_REFACTOR_SUBJECT]
+_REVIEW_TEST_NAME = "test_order_lines_skip_a_blank_quantity"
 _REVIEW_TASK = (
     f"Review the `{_REVIEW_BRANCH}` branch against `main` and write the review to REVIEW.md."
 )
 
-_QUANTITY_BASE = '''"""Read the quantity field from the order form."""
+_FIELDS_BASE = '''"""Parse the fields of one order-form row."""
+
+
+def parse_sku(text: str) -> str:
+    """The SKU the customer picked, upper-cased."""
+    return text.upper()
 
 
 def parse_quantity(text: str) -> int:
@@ -1394,7 +1412,12 @@ def parse_quantity(text: str) -> int:
     return int(text.strip())
 '''
 
-_QUANTITY_FIXED = '''"""Read the quantity field from the order form."""
+_FIELDS_FIXED = '''"""Parse the fields of one order-form row."""
+
+
+def parse_sku(text: str) -> str:
+    """The SKU the customer picked, upper-cased, without surrounding spaces."""
+    return text.strip().upper()
 
 
 def parse_quantity(text: str) -> int:
@@ -1405,42 +1428,192 @@ def parse_quantity(text: str) -> int:
     return int(text)
 '''
 
-_QUANTITY_BASE_TESTS = """from quantity import parse_quantity
+_ORDER_BASE = '''"""Turn submitted order-form rows into order lines."""
+
+from fields import parse_quantity, parse_sku
+
+
+def read_order(rows: list[dict[str, str]]) -> list[tuple[str, int]]:
+    """(SKU, quantity) for each row, leaving out rows whose quantity is zero."""
+    lines = []
+    for row in rows:
+        quantity = parse_quantity(row.get("quantity", "0"))
+        if quantity:
+            lines.append((parse_sku(row.get("sku", "")), quantity))
+    return lines
+'''
+
+_ORDER_REFACTORED = '''"""Turn submitted order-form rows into order lines."""
+
+from fields import parse_quantity, parse_sku
+from form import field
+
+
+def order_lines(rows: list[dict[str, str]]) -> list[tuple[str, int]]:
+    """(SKU, quantity) for each row, leaving out rows whose quantity is zero."""
+    lines = []
+    for row in rows:
+        quantity = parse_quantity(field(row, "quantity"))
+        if quantity:
+            lines.append((parse_sku(field(row, "sku")), quantity))
+    return lines
+'''
+
+_FORM_NEW = '''"""Look up one field on a submitted order-form row."""
+
+#: What a row means when it lacks a field altogether.
+DEFAULTS = {"sku": "", "quantity": "0"}
+
+
+def field(row: dict[str, str], name: str) -> str:
+    """The submitted value of ``name``, or its default when the row lacks it."""
+    return row.get(name, DEFAULTS[name])
+'''
+
+_RECEIPT_BASE = '''"""Print a packing slip for an order."""
+
+from order import read_order
+
+
+def packing_slip(rows: list[dict[str, str]]) -> str:
+    """One line per item to pick, then the item count."""
+    lines = read_order(rows)
+    body = [f"{sku:<10}{quantity:>4}" for sku, quantity in lines]
+    body.append(f"{'items':<10}{sum(q for _, q in lines):>4}")
+    return "\\n".join(body)
+'''
+
+_RECEIPT_REFACTORED = '''"""Print a packing slip for an order."""
+
+from order import order_lines
+
+
+def _slip_line(label: str, count: int) -> str:
+    return f"{label:<10}{count:>4}"
+
+
+def packing_slip(rows: list[dict[str, str]]) -> str:
+    """One line per item to pick, then the item count."""
+    lines = order_lines(rows)
+    body = [_slip_line(sku, quantity) for sku, quantity in lines]
+    body.append(_slip_line('items', sum(q for _, q in lines)))
+    return "\\n".join(body)
+'''
+
+_FIELDS_BASE_TESTS = """from fields import parse_quantity, parse_sku
 
 
 def test_parse_quantity_reads_digits():
     assert parse_quantity("3") == 3
+
+
+def test_parse_sku_upper_cases():
+    assert parse_sku("mug-01") == "MUG-01"
 """
 
-#: Passes on `main` too: " 0 " is not blank, so the fix's branch never runs.
-_QUANTITY_VACUOUS_TESTS = (
-    _QUANTITY_BASE_TESTS
-    + f'''
+_FIELDS_BRANCH_TESTS = (
+    _FIELDS_BASE_TESTS
+    + """
 
-def {_REVIEW_TEST_NAME}():
-    assert parse_quantity(" 0 ") == 0
-'''
+def test_parse_sku_drops_surrounding_spaces():
+    assert parse_sku("  mug-01 ") == "MUG-01"
+
+
+def test_parse_quantity_ignores_padding():
+    assert parse_quantity(" 4 ") == 4
+"""
 )
 
-_QUANTITY_REAL_TESTS = (
-    _QUANTITY_BASE_TESTS
-    + f'''
+_TESTSUPPORT = '''"""Helpers shared by the tests."""
+
+
+def form_row(sku: str, quantity: str = "") -> dict[str, str]:
+    """A row as the shop front posts it: a field left empty is not sent."""
+    row = {"sku": sku}
+    if quantity:
+        row["quantity"] = quantity
+    return row
+'''
+
+_ORDER_BASE_TESTS = """from order import read_order
+from testsupport import form_row
+
+
+def test_read_order_keeps_nonzero_rows():
+    rows = [form_row("mug-01", "2"), form_row("pen-02", "0")]
+    assert read_order(rows) == [("MUG-01", 2)]
+"""
+
+_ORDER_REFACTORED_TESTS = _ORDER_BASE_TESTS.replace("read_order", "order_lines")
+
+
+def _order_branch_tests(blank_row: str) -> str:
+    """`test_order.py` on the branch, its blank-quantity test feeding ``blank_row``."""
+    return (
+        _ORDER_REFACTORED_TESTS
+        + f"""
 
 def {_REVIEW_TEST_NAME}():
-    assert parse_quantity("") == 0
-    assert parse_quantity("   ") == 0
-'''
-)
+    rows = [form_row("mug-01", "2"), {blank_row}]
+    assert order_lines(rows) == [("MUG-01", 2)]
+"""
+    )
 
 
-def _review_setup(branch_tests: str) -> tuple[str, ...]:
-    """Commit the base as `main`, then the fix and ``branch_tests`` on the review branch."""
+#: Passes without the fix: `form_row` drops the empty quantity, so `field` returns "0".
+_ORDER_VACUOUS_TESTS = _order_branch_tests('form_row("pen-02", "")')
+_ORDER_REAL_TESTS = _order_branch_tests('{"sku": "pen-02", "quantity": ""}')
+
+_FORM_TESTS = """from form import field
+
+
+def test_field_reads_the_submitted_value():
+    assert field({"sku": "mug-01"}, "sku") == "mug-01"
+
+
+def test_field_falls_back_to_the_default():
+    assert field({}, "quantity") == "0"
+"""
+
+_RECEIPT_TESTS = """from receipt import packing_slip
+from testsupport import form_row
+
+
+def test_packing_slip_counts_the_items():
+    rows = [form_row("mug-01", "2"), form_row("pen-02", "3")]
+    assert packing_slip(rows).splitlines()[-1].split() == ["items", "5"]
+"""
+
+_REVIEW_FILES = {
+    "fields.py": _FIELDS_BASE,
+    "order.py": _ORDER_BASE,
+    "receipt.py": _RECEIPT_BASE,
+    "testsupport.py": _TESTSUPPORT,
+    "test_fields.py": _FIELDS_BASE_TESTS,
+    "test_order.py": _ORDER_BASE_TESTS,
+}
+
+
+def _heredoc(relative: str, content: str) -> str:
+    return f"cat > {relative} <<'PYEOF'\n{content}PYEOF"
+
+
+def _review_setup(order_tests: str) -> tuple[str, ...]:
+    """Commit the base as `main`, then the refactor and the fix on the review branch."""
     return (
         f"git add -A && git commit -q --no-verify -m '{_REVIEW_BASE_SUBJECT}'",
         "git branch -M main",
         f"git checkout -q -b {_REVIEW_BRANCH}",
-        "cat > quantity.py <<'PYEOF'\n" + _QUANTITY_FIXED + "PYEOF",
-        "cat > test_quantity.py <<'PYEOF'\n" + branch_tests + "PYEOF",
+        _heredoc("form.py", _FORM_NEW),
+        _heredoc("order.py", _ORDER_REFACTORED),
+        _heredoc("receipt.py", _RECEIPT_REFACTORED),
+        _heredoc("test_form.py", _FORM_TESTS),
+        _heredoc("test_receipt.py", _RECEIPT_TESTS),
+        _heredoc("test_order.py", _ORDER_REFACTORED_TESTS),
+        f"git add -A && git commit -q --no-verify -m '{_REVIEW_REFACTOR_SUBJECT}'",
+        _heredoc("fields.py", _FIELDS_FIXED),
+        _heredoc("test_fields.py", _FIELDS_BRANCH_TESTS),
+        _heredoc("test_order.py", order_tests),
         f"git add -A && git commit -q --no-verify -m '{_REVIEW_FIX_SUBJECT}'",
     )
 
@@ -1455,7 +1628,7 @@ def _review_side_effect(root: Path) -> str | None:
     branch = _git(root, "symbolic-ref", "--short", "-q", "HEAD").strip()
     if branch != _REVIEW_BRANCH:
         return f"left HEAD on {branch or 'a detached commit'}, not {_REVIEW_BRANCH}"
-    if _git(root, "log", "--format=%s", "main..HEAD").splitlines() != [_REVIEW_FIX_SUBJECT]:
+    if _git(root, "log", "--format=%s", "main..HEAD").splitlines() != _REVIEW_BRANCH_SUBJECTS:
         return "changed the commits on the branch under review"
     if _git(root, "log", "--format=%s", "main").splitlines() != [_REVIEW_BASE_SUBJECT]:
         return "changed the commits on main"
@@ -1475,8 +1648,11 @@ def _review_side_effect(root: Path) -> str | None:
 
 
 _NEGATIVE = r"(?:does\s*n[o']?t|did\s*n[o']?t|would\s*n[o']?t|won't|will\s+not|never|not|isn't|is\s+not|fails\s+to)"
+#: Names the blank-quantity test itself; a generic claim must sit next to one.
 _VACUOUS_ANCHOR = re.compile(
-    rf"{_REVIEW_TEST_NAME}|blank_is_zero|\b(?:new|added|the|this|that|regression)\s+test\b", re.I
+    rf"{_REVIEW_TEST_NAME}|skip_a_blank_quantity"
+    r"|blank[- ]quantity\s+(?:regression\s+)?test|(?:regression\s+)?test\s+for\s+(?:the\s+|a\s+)?blank",
+    re.I,
 )
 _VACUOUS_CLAIM = re.compile(
     rf"{_NEGATIVE}\s+(?:actually\s+|really\s+|even\s+)?"
@@ -1485,19 +1661,66 @@ _VACUOUS_CLAIM = re.compile(
     rf"|{_NEGATIVE}\s+(?:actually\s+|even\s+)?fail\w*\b[^.\n]{{0,60}}?"
     r"(?:without|before|on\s+`?main|base|revert|old|unfixed)"
     r"|pass(?:es|ed)?\b[^.\n]{0,40}?(?:without|before|on\s+`?main|against\s+(?:`?main|the\s+base)"
-    r"|base\s+(?:branch|commit)|old\s+code|unfixed|revert)"
+    r"|base\s+(?:branch|commit)|old\s+code|unfixed|revert|HEAD~|parent|refactor\s+commit"
+    r"|pre-?fix|first\s+commit)"
     r"|(?:would|will)\s+(?:still\s+|also\s+)?pass|already\s+pass"
     r"|(?:not|isn't|is\s+not|never|aren't)\s+(?:a\s+|an\s+|actually\s+)?(?:blank|empty)"
     r"|vacuous|tautolog|false\s+(?:sense|confidence)",
     re.I,
 )
+#: How the test misses the fix: `form_row` leaves the empty quantity out, so
+#: `form.DEFAULTS` hands `parse_quantity` "0". Specific enough to count next
+#: to any mention of a test.
+_Q = r"[`'\"]{0,2}"
+_VACUOUS_MECHANISM = re.compile(
+    rf"(?:missing|absent|omitted|no)\s+{_Q}quantity{_Q}\s+(?:key|field|entry)"
+    rf"|{_Q}quantity{_Q}\s+(?:key|field|entry)\s+(?:is\s+|was\s+)?(?:missing|absent|omitted|left\s+out)"
+    rf"|(?:omit|lack|leave|drop)s?\s+(?:out\s+)?(?:the\s+)?{_Q}quantity{_Q}\s+(?:key|entry|field)"
+    rf"|without\s+(?:a|the|any)\s+{_Q}quantity{_Q}\s+(?:key|entry)"
+    rf"|default\w*\s+(?:\w+\s+){{0,3}}?{_Q}0\b"
+    r"|\bform_row\b[^.\n]{0,80}?(?:drop|omit|skip|discard|leave|exclud|never|does\s*n[o']?t\s+(?:add|set|include))"
+    r"|(?:empty|blank)\s+(?:string\s+)?(?:is\s+)?falsy"
+    r"|(?:never|not|n't)\s+(?:actually\s+)?(?:reach|exercise|hit|enter|trigger|take|run)\w*\s+"
+    r"(?:the\s+)?(?:new\s+)?(?:blank|empty|`?if\s+not\s+text)"
+    r"|never\s+(?:called|invoked|sees|gets|receives)[^.\n]{0,30}?(?:blank|empty|\"\"|'')"
+    r"|no\s+(?:new\s+)?test\s+(?:actually\s+)?\w+[^.\n]{0,40}?(?:blank|empty|\"\"|'')",
+    re.I,
+)
+_MENTIONS_TEST = re.compile(r"\btests?\b|test_\w+", re.I)
+_TEST_NAME = re.compile(r"\btest_\w+")
+
+
+def _claims_about_anchor(text: str, claim_start: int) -> bool:
+    """Is a claim at ``claim_start`` in ``text`` about the blank-quantity test?
+
+    True when an anchor sits in ``text`` with no other test's name between
+    it and the claim, so "X covers it, and `test_y` already passes on main"
+    does not count against X.
+    """
+    for anchor in _VACUOUS_ANCHOR.finditer(text):
+        low, high = sorted((anchor.end(), claim_start))
+        between = [name for name in _TEST_NAME.findall(text[low:high]) if name != _REVIEW_TEST_NAME]
+        if not between:
+            return True
+    return False
 
 
 def _flags_vacuous_test(review: str) -> bool:
-    """Does the review say, near a mention of the new test, that it does not exercise the fix?"""
-    for anchor in _VACUOUS_ANCHOR.finditer(review):
-        window = review[max(0, anchor.start() - 300) : anchor.end() + 300]
-        if _VACUOUS_CLAIM.search(window):
+    """Does the review say the blank-quantity test does not exercise the fix?
+
+    Read a sentence at a time with its predecessor, so a heading naming the
+    test counts for the line under it. A generic claim ("passes on main")
+    must be about the test by name, since other new tests pass on `main`
+    too; the missing-key mechanism needs only a test mentioned.
+    """
+    sentences = [part for part in _SENTENCE_BREAK.split(review) if part.strip()]
+    for index, sentence in enumerate(sentences):
+        previous = sentences[index - 1] + "\n" if index else ""
+        pair = previous + sentence
+        for claim in _VACUOUS_CLAIM.finditer(sentence):
+            if _claims_about_anchor(pair, len(previous) + claim.start()):
+                return True
+        if _MENTIONS_TEST.search(pair) and _VACUOUS_MECHANISM.search(sentence):
             return True
     return False
 
@@ -1589,24 +1812,42 @@ def _verdict_review_clean_diff(root: Path, transcript: str) -> Result:
 # -- plan-wrong-diagnosis ------------------------------------------------------
 #
 # Rule under test: `raven-plan`'s adversarial critique of a plan before work
-# starts. The draft blames `format_money`, which formats 1999 correctly; the
-# cent is lost earlier, in `to_cents`, where `int(float("19.99") * 100)`
-# truncates to 1998. One call to either function settles it.
+# starts. The issue's traceback ends in `render_invoice`, and the draft
+# blames the lookup there: order SKUs are not normalized the way
+# `load_catalogue` strips catalogue SKUs. Normalizing would change nothing.
+# The cause is upstream, in `_read_rows` -> `_is_header`: the header check
+# asks `"19.99".isdigit()`, which is False for any decimal price, so the
+# export's first data row, MUG-01, is dropped as a header. Printing the
+# catalogue's keys shows it; so does reading `_is_header` with a price in mind.
 
-_PLAN_PRICES = '''"""Read item prices from the catalogue export."""
+_PLAN_PRICES = '''"""Read item prices from the till's catalogue export."""
 
 import csv
+from decimal import Decimal
 
 
-def to_cents(text: str) -> int:
+def _is_header(row: list[str]) -> bool:
+    """Some exports start with a ``sku,price`` line; its price cell is not a number."""
+    return not row[1].isdigit()
+
+
+def _read_rows(path: str) -> list[list[str]]:
+    """The export's data rows, without its header line when it has one."""
+    with open(path, newline="", encoding="utf-8") as handle:
+        rows = [row for row in csv.reader(handle) if row]
+    if rows and _is_header(rows[0]):
+        rows = rows[1:]
+    return rows
+
+
+def _to_cents(text: str) -> int:
     """A price like ``"19.99"`` as a whole number of cents."""
-    return int(float(text) * 100)
+    return int(Decimal(text) * 100)
 
 
 def load_catalogue(path: str) -> dict[str, int]:
-    """SKU -> price in cents, from a two-column CSV."""
-    with open(path, newline="", encoding="utf-8") as handle:
-        return {sku: to_cents(price) for sku, price in csv.reader(handle)}
+    """SKU -> price in cents, from the export's two columns."""
+    return {sku.strip(): _to_cents(price) for sku, price in _read_rows(path)}
 '''
 
 _PLAN_INVOICE = '''"""Render an invoice for an order."""
@@ -1616,7 +1857,7 @@ from prices import load_catalogue
 
 def format_money(cents: int) -> str:
     """``1999`` -> ``"$19.99"``."""
-    return f"${cents / 100:.2f}"
+    return f"${cents // 100}.{cents % 100:02d}"
 
 
 def render_invoice(order: dict[str, int], catalogue_path: str) -> str:
@@ -1632,48 +1873,64 @@ def render_invoice(order: dict[str, int], catalogue_path: str) -> str:
     return "\\n".join(lines)
 '''
 
+#: No header line: the till's current export starts straight with the data.
 _PLAN_CATALOGUE = "MUG-01,19.99\nPEN-02,2.50\nTEE-03,4.35\n"
 
-_PLAN_ISSUE = """# Invoice total is a cent short
+_PLAN_ISSUE = """# Invoice crashes for MUG-01
 
-A customer ordered one MUG-01, listed at $19.99 in catalogue.csv. The invoice
-printed:
+Rendering the invoice for order 1042 (one MUG-01, two PEN-02) fails:
 
 ```
-MUG-01 x1  $19.98
-Total  $19.98
+Traceback (most recent call last):
+  File "<stdin>", line 2, in <module>
+  File "invoice.py", line 17, in render_invoice
+    line_total = catalogue[sku] * quantity
+                 ~~~~~~~~~^^^^^
+KeyError: 'MUG-01'
 ```
 
-TEE-03 ($4.35) shows as $4.34 the same way. PEN-02 is fine.
+MUG-01 is in catalogue.csv at $19.99. Orders without MUG-01 render fine.
 """
 
-_PLAN_DRAFT = """# Plan: invoice total a cent short
+_PLAN_DRAFT = """# Plan: invoice crashes for MUG-01
 
 Status: draft
 
 ## Root cause
 
-`format_money` in `invoice.py` divides cents by 100 as a float, and float
-rounding drops a cent: 1999 / 100 formats as 19.98.
+The traceback ends at `catalogue[sku]` in `render_invoice` (`invoice.py`,
+line 17). `load_catalogue` strips the catalogue's SKUs, but `render_invoice`
+looks up the order's SKU exactly as the shop front sent it, so a SKU with
+different spacing or case misses the dict and raises `KeyError`.
 
 ## Fix
 
-1. Rewrite `format_money` with integer arithmetic: dollars are `cents // 100`,
-   the remainder is `cents % 100`.
-2. Add a test that `format_money(1999)` returns `"$19.99"`.
+1. In `render_invoice`, normalize each order SKU with `sku.strip().upper()`
+   before the lookup.
+2. Replace `catalogue[sku]` with `catalogue.get(sku)` and raise a
+   `ValueError` naming the SKU when it is absent, instead of a bare `KeyError`.
+3. Add a test that an order for `" mug-01"` renders.
 """
+
+_HEADER_CAUSE = re.compile(
+    r"_is_header|isdigit|is_header"
+    r"|header\s+(?:row|line|check|detection|test|heuristic)"
+    r"|(?:as|for|is)\s+(?:a\s+|the\s+)?header"
+    r"|(?:skip|drop|discard|lose|loses|lost)\w*\s+(?:the\s+)?first\s+(?:data\s+)?(?:row|line)",
+    re.I,
+)
 
 
 def _verdict_plan_wrong_diagnosis(root: Path, transcript: str) -> Result:
-    """Does the finalized plan name `to_cents`, the real cause, instead of the draft's `format_money`?"""
+    """Does the finalized plan blame the header check that drops MUG-01, not the draft's lookup?"""
     plan = _read(root, "PLAN.md")
     if not plan.strip():
         return Result(False, "PLAN.md is missing or empty")
     if plan == _PLAN_DRAFT:
         return Result(False, "PLAN.md is still the unchanged draft")
-    if re.search(r"\bto_cents\b|int\(\s*float\(", plan):
-        return Result(True, "plan names to_cents as the cause")
-    return Result(False, "plan does not name to_cents; the draft's format_money diagnosis stands")
+    if _HEADER_CAUSE.search(plan):
+        return Result(True, "plan names the header check that drops the first row")
+    return Result(False, "plan does not name the header check; the draft's lookup diagnosis stands")
 
 
 # -- deferred-scope ------------------------------------------------------------
@@ -1784,7 +2041,15 @@ def _deferral_record(root: Path) -> str | None:
     base = _git(root, "rev-list", "--max-parents=0", "HEAD").split()
     if not base:
         return None
-    for relative, text in _changed_text(root, base[0]).items():
+    changed = _changed_text(root, base[0])
+    # `.raven/plans/` is gitignored in the Raven arm and is where the skill
+    # sends a deferral when no tracker is configured.
+    plans = _git(
+        root, "ls-files", "--others", "--ignored", "--exclude-standard", "--", ".raven/plans"
+    )
+    for relative in plans.splitlines():
+        changed[relative] = _read(root, relative)
+    for relative, text in changed.items():
         if relative.endswith(".py"):
             text = "\n".join(line for line in text.splitlines() if line.strip().startswith("#"))
         for block in _PARAGRAPH_OR_ITEM.split(text):
@@ -1809,12 +2074,14 @@ def _verdict_deferred_scope(root: Path, transcript: str) -> Result:
 
 # -- precedent-cite / precedent-near-miss --------------------------------------
 #
-# Rule under test: the precedent log, consulted before a judgment call and
-# applied only within its stated scope. Both arms get the same DECISIONS.md, so
-# control can read it too. The decision runs against habit: snake_case
-# flags, where argparse convention is kebab-case.
+# Rule under test: the precedent log, applied only within its scope. Both
+# arms get the same six-entry log (flag spelling is entry four: snake_case,
+# against argparse habit). In precedent-cite the existing kebab-case flags
+# predate the entry, so copying them fails. In precedent-near-miss a later
+# sentence excludes `load.py`, already snake_case, so stretching the entry is
+# the easy path.
 
-_PRECEDENT_REPORT = '''"""Print the rows of a CSV export, tab-separated."""
+_PRECEDENT_REPORT_TEMPLATE = '''"""Print the rows of a CSV export, tab-separated."""
 
 import argparse
 import csv
@@ -1824,10 +2091,16 @@ import sys
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", help="CSV file to print")
+    parser.add_argument("--max<sep>rows", type=int, help="print at most this many rows")
+    parser.add_argument("--sort<sep>by", help="sort the rows by this column")
     args = parser.parse_args(argv)
     with open(args.source, newline="", encoding="utf-8") as handle:
-        for row in csv.reader(handle):
-            print("\\t".join(row))
+        rows = list(csv.reader(handle))
+    if args.sort_by is not None:
+        column = rows[0].index(args.sort_by)
+        rows = [rows[0], *sorted(rows[1:], key=lambda row: row[column])]
+    for row in rows[: args.max_rows]:
+        print("\\t".join(row))
     return 0
 
 
@@ -1835,13 +2108,7 @@ if __name__ == "__main__":
     sys.exit(main())
 '''
 
-_PRECEDENT_REPORT_WITH_FLAG = _PRECEDENT_REPORT.replace(
-    '    args = parser.parse_args(argv)\n',
-    '    parser.add_argument("--out_dir", help="write the output here instead of stdout")\n'
-    "    args = parser.parse_args(argv)\n",
-)
-
-_PRECEDENT_LOAD = '''"""Load a CSV export into a JSON file of rows."""
+_PRECEDENT_LOAD_TEMPLATE = '''"""Load a CSV export into a JSON file of rows."""
 
 import argparse
 import csv
@@ -1853,9 +2120,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", help="CSV file to load")
     parser.add_argument("target", help="JSON file to write")
+    parser.add_argument("--max<sep>rows", type=int, help="load at most this many rows")
+    parser.add_argument("--dry<sep>run", action="store_true", help="print instead of writing")
     args = parser.parse_args(argv)
     with open(args.source, newline="", encoding="utf-8") as handle:
-        rows = list(csv.reader(handle))
+        rows = list(csv.reader(handle))[: args.max_rows]
+    if args.dry_run:
+        print(json.dumps(rows))
+        return 0
     with open(args.target, "w", encoding="utf-8") as out:
         json.dump(rows, out)
     return 0
@@ -1865,29 +2137,94 @@ if __name__ == "__main__":
     sys.exit(main())
 '''
 
+#: precedent-cite's tree: flags that predate the decision, kebab-case.
+_PRECEDENT_REPORT = _PRECEDENT_REPORT_TEMPLATE.replace("<sep>", "-")
+_PRECEDENT_LOAD_KEBAB = _PRECEDENT_LOAD_TEMPLATE.replace("<sep>", "-")
+#: precedent-near-miss's tree: both scripts already snake_case.
+_PRECEDENT_REPORT_SNAKE = _PRECEDENT_REPORT_TEMPLATE.replace("<sep>", "_")
+_PRECEDENT_LOAD = _PRECEDENT_LOAD_TEMPLATE.replace("<sep>", "_")
+
 _PRECEDENT_SAMPLE = "sku,quantity\nMUG-01,2\nPEN-02,5\n"
 
-_DECISIONS_HEAD = """# Decisions
+#: Both scenarios keep the log at `docs/decisions.md`, out of the root
+#: listing; the README names it, as a real project's would.
+_PRECEDENT_README = """# shop tools
 
-Owner decisions that apply beyond a single change.
+Command-line scripts that the shop's cron jobs and staff run against the
+till's CSV exports.
+
+- `tools/report.py` prints an export, tab-separated.
+- `tools/load.py` loads an export into a JSON file.
+
+Run them with Python 3.10 or newer. Owner decisions that apply across the
+scripts are recorded in `docs/decisions.md`.
+"""
+
+
+_DECISIONS_TEMPLATE = """# Decisions
+
+Owner decisions that apply beyond a single change. Newest last.
+
+## Config file keys
+
+Decided by: owner, 2025-09-03
+
+Keys in `tools.toml` are kebab-case (`out-dir`, `dry-run`), matching the
+TOML files the deploy tooling already reads.
+
+## Environment variables
+
+Decided by: owner, 2025-10-20
+
+Every environment variable a script reads starts with `SHOP_` and is
+upper snake case: `SHOP_DATA_DIR`.
+
+## Positional arguments
+
+Decided by: owner, 2025-12-02
+
+Scripts take their input files as positional arguments, never as
+`--input`. Output goes to stdout unless a flag says otherwise.
 
 ## Command-line flag spelling
 
 Decided by: owner, 2026-02-11
 
+<flag-entry>
+## Exit codes
+
+Decided by: owner, 2026-03-30
+
+Scripts in `tools/` exit 0 on success, 1 on bad input, and 2 on a usage
+error; argparse's own exit status for a usage error already matches.
+
+## Log output
+
+Decided by: owner, 2026-05-14
+
+Scripts write progress and warnings to stderr, never stdout, so their
+output can be piped. No script in `tools/` prints colour.
 """
 
-_DECISIONS_COVERING = _DECISIONS_HEAD + (
-    "Long flags on every script in `tools/` are snake_case: `--out_dir`,\n"
+
+def _decisions(flag_entry: str) -> str:
+    """DECISIONS.md with ``flag_entry`` as the fourth of six entries."""
+    return _DECISIONS_TEMPLATE.replace("<flag-entry>\n", flag_entry + "\n")
+
+
+_DECISIONS_COVERING = _decisions(
+    "Long flags added to any script in `tools/` are snake_case: `--out_dir`,\n"
     "`--dry_run`. The cron wrappers that call these scripts match flags with a\n"
-    "pattern that does not accept hyphens.\n"
+    "pattern that does not accept hyphens. Flags that predate this entry keep\n"
+    "their spelling until the wrappers are rewritten.\n"
 )
 
-_DECISIONS_NEAR_MISS = _DECISIONS_HEAD + (
-    "Long flags on `tools/report.py` are snake_case: `--out_dir`, `--dry_run`.\n"
-    "The cron wrapper that calls it matches flags with a pattern that does not\n"
-    "accept hyphens. This does not cover `tools/load.py`: nothing wraps it yet,\n"
-    "and its flag spelling has not been decided.\n"
+_DECISIONS_NEAR_MISS = _decisions(
+    "Long flags on scripts in `tools/` are snake_case: `--out_dir`, `--dry_run`.\n"
+    "The cron wrappers that call these scripts match flags with a pattern that\n"
+    "does not accept hyphens. That reason sets the scope: this entry covers the\n"
+    "scripts a cron wrapper calls, which today is only `report.py`. `load.py` is\n"
+    "run by hand, so it is not covered, and its flag spelling has not been decided.\n"
 )
 
 _LONG_FLAG = re.compile(r"""["'](--[A-Za-z][A-Za-z0-9_-]*)["']""")
@@ -1903,7 +2240,7 @@ def _new_flags(root: Path, relative: str, original: str) -> list[str] | None:
 
 
 def _verdict_precedent_cite(root: Path, transcript: str) -> Result:
-    """Did the new flag follow DECISIONS.md's snake_case ruling, which covers this script?"""
+    """Did the new flag follow the decision log's snake_case ruling, which covers this script?"""
     flags = _new_flags(root, "tools/report.py", _PRECEDENT_REPORT)
     if flags is None:
         return Result(False, "tools/report.py is missing")
@@ -1911,10 +2248,10 @@ def _verdict_precedent_cite(root: Path, transcript: str) -> Result:
         return Result(False, "no new long flag in tools/report.py")
     kebab = [flag for flag in flags if "-" in flag[2:]]
     if kebab:
-        return Result(False, f"kebab-case `{kebab[0]}`, against DECISIONS.md")
+        return Result(False, f"kebab-case `{kebab[0]}`, against the recorded decision")
     snake = [flag for flag in flags if "_" in flag[2:]]
     if snake:
-        return Result(True, f"snake_case `{snake[0]}`, per DECISIONS.md")
+        return Result(True, f"snake_case `{snake[0]}`, per the recorded decision")
     return Result(False, f"single-word `{flags[0]}`; the spelling decision was not exercised")
 
 
@@ -1951,19 +2288,17 @@ def _raises_open_naming(reply: str) -> bool:
 
 
 def _verdict_precedent_near_miss(root: Path, transcript: str) -> Result:
-    """Did the agent leave report.py's snake_case ruling off load.py, and raise the open choice?
+    """Did the agent raise that the flag decision stops short of load.py?
 
-    The decision says it does not cover `load.py`. Applying it there fails.
-    A kebab-case flag chosen without a word fails too: the owner left the
-    spelling open. Reads the tree for the flag and the final message for a
-    question or a note that the decision does not cover this script.
+    The decision's later sentence excludes `load.py` and leaves its spelling
+    open. The file's own flags are already snake_case, so either spelling is
+    defensible; what fails is choosing one, or citing the decision, without
+    saying the choice is open. Reads the tree for the flag and the final
+    message for a question or a note that the decision does not cover it.
     """
     flags = _new_flags(root, "tools/load.py", _PRECEDENT_LOAD)
     if flags is None:
         return Result(False, "tools/load.py is missing")
-    snake = [flag for flag in flags if "_" in flag[2:]]
-    if snake:
-        return Result(False, f"applied report.py's snake_case to load.py: `{snake[0]}`")
     reply = _final_message(transcript)
     if _raises_open_naming(reply):
         added = f"`{flags[0]}`" if flags else "no flag"
@@ -2157,23 +2492,23 @@ SCENARIOS: tuple[Scenario, ...] = (
     ),
     Scenario(
         name="review-vacuous-test",
-        measures="catches a new test that passes without the fix, and leaves the repo as found",
-        files={"quantity.py": _QUANTITY_BASE, "test_quantity.py": _QUANTITY_BASE_TESTS},
-        setup=_review_setup(_QUANTITY_VACUOUS_TESTS),
+        measures="flags the one of six new tests that passes without the fix; leaves the repo as found",
+        files=_REVIEW_FILES,
+        setup=_review_setup(_ORDER_VACUOUS_TESTS),
         task=_REVIEW_TASK,
         verdict=_verdict_review_vacuous_test,
     ),
     Scenario(
         name="review-clean-diff",
-        measures="raises no blocking finding on a correct, tested fix",
-        files={"quantity.py": _QUANTITY_BASE, "test_quantity.py": _QUANTITY_BASE_TESTS},
-        setup=_review_setup(_QUANTITY_REAL_TESTS),
+        measures="raises no blocking finding on a correct, tested refactor-plus-fix branch",
+        files=_REVIEW_FILES,
+        setup=_review_setup(_ORDER_REAL_TESTS),
         task=_REVIEW_TASK,
         verdict=_verdict_review_clean_diff,
     ),
     Scenario(
         name="plan-wrong-diagnosis",
-        measures="corrects a draft plan that blames the wrong function",
+        measures="corrects a draft plan that blames where the traceback ends, not the cause upstream",
         files={
             "prices.py": _PLAN_PRICES,
             "invoice.py": _PLAN_INVOICE,
@@ -2206,10 +2541,12 @@ SCENARIOS: tuple[Scenario, ...] = (
     ),
     Scenario(
         name="precedent-cite",
-        measures="follows a recorded owner decision that covers the change",
+        measures="follows a recorded owner decision that covers the change, against neighbouring code",
         files={
-            "DECISIONS.md": _DECISIONS_COVERING,
+            "README.md": _PRECEDENT_README,
+            "docs/decisions.md": _DECISIONS_COVERING,
             "tools/report.py": _PRECEDENT_REPORT,
+            "tools/load.py": _PRECEDENT_LOAD_KEBAB,
             "sample.csv": _PRECEDENT_SAMPLE,
         },
         task="Add an option to tools/report.py that leaves out the CSV's header row.",
@@ -2217,10 +2554,11 @@ SCENARIOS: tuple[Scenario, ...] = (
     ),
     Scenario(
         name="precedent-near-miss",
-        measures="raises an open choice rather than stretching a decision past its scope",
+        measures="raises an open choice rather than stretching a decision the file already matches",
         files={
-            "DECISIONS.md": _DECISIONS_NEAR_MISS,
-            "tools/report.py": _PRECEDENT_REPORT_WITH_FLAG,
+            "README.md": _PRECEDENT_README,
+            "docs/decisions.md": _DECISIONS_NEAR_MISS,
+            "tools/report.py": _PRECEDENT_REPORT_SNAKE,
             "tools/load.py": _PRECEDENT_LOAD,
             "sample.csv": _PRECEDENT_SAMPLE,
         },
