@@ -16,7 +16,7 @@ REQUIRED_DISALLOWED_TOOLS = {
     "mcp__gitnexus__rename",
 }
 
-READ_ONLY_AGENTS = ("raven-codebase-cartographer", "raven-refactor-reviewer")
+READ_ONLY_AGENTS = ("raven-code-reviewer", "raven-codebase-cartographer", "raven-refactor-reviewer")
 
 
 def frontmatter_fields(path):
@@ -37,8 +37,8 @@ def frontmatter_fields(path):
 
 
 class ReadOnlyAgentDisallowedToolsTests(unittest.TestCase):
-    """raven-codebase-cartographer and raven-refactor-reviewer must use a
-    disallowedTools denylist, not a tools: allowlist. Both agent prompts
+    """raven-code-reviewer, raven-codebase-cartographer, and raven-refactor-reviewer
+    must use a disallowedTools denylist, not a tools: allowlist. These agent prompts
     instruct the agent to use LSP and GitNexus; a tools: allowlist
     silently drops whichever of those the list omits, so the agent is told
     to call tools it cannot reach with no error surfaced (#143).

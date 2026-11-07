@@ -25,9 +25,12 @@ description: Use when reviewing a diff, branch, or proposed patch for correctnes
 3. Use LSP diagnostics on changed files.
 4. Use LSP references or `rg` for changed public APIs or shared modules.
 5. Use tests and build output through RTK.
-6. Report issues by severity: correctness, safety/security, maintainability, test coverage, and performance.
-7. Check findings against `.claude/docs/raven-antipatterns.md`. Cite a matching entry instead of re-explaining it; on a genuine second occurrence, propose a new entry per that doc's format and write it only once the user authorizes.
-8. Recommend promoting a mechanically detectable recorded pattern to a Semgrep rule wired into the gate, naming the check — do not write the rule or gate change yourself; that is separate, authorized implementation work per Pause And Ask. If no such tool is configured, skip promotion and leave the entry at `observed`.
+6. For each test the diff adds or changes to cover a behavior change, run a negative control in a throwaway worktree so the reviewed tree is never touched: `git worktree add --detach <tmp> <base>`, copy the diff's test files into it, run those tests there, and confirm they fail on the asserted behavior with no import or fixture errors. Then `git worktree remove --force <tmp>`. Base lacks the change's new implementation files too, so this covers committed, uncommitted, and new-file diffs alike. A new test that passes without the change is a finding. Skip this for refactor-only diffs.
+7. Report issues by severity: correctness, safety/security, maintainability, test coverage, and performance.
+8. Check findings against `.claude/docs/raven-antipatterns.md`. Cite a matching entry instead of re-explaining it; on a genuine second occurrence, propose a new entry per that doc's format and write it only once the user authorizes.
+9. Recommend promoting a mechanically detectable recorded pattern to a Semgrep rule wired into the gate, naming the check — do not write the rule or gate change yourself; that is separate, authorized implementation work per Pause And Ask. If no such tool is configured, skip promotion and leave the entry at `observed`.
+
+When the session reviewing the diff also wrote it, delegate an independent pass to the `raven-code-reviewer` subagent with the base ref, the plan or acceptance criteria, and the test command.
 
 ## Output
 

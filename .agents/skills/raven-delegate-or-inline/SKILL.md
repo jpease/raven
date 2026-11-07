@@ -18,7 +18,7 @@ Default to inline. Delegate only when the task matches at least one criterion be
 - An architecture or "how does X work" question would take many retrieval steps to answer directly.
 - The expected output is noisy relative to what the main context needs — large diffs, long logs, or many candidates where only a summary matters.
 - The work is a specialized audit with its own checklist, such as a security review, test coverage analysis, or type design review.
-- Independent or adversarial reasoning is needed (competing approaches, code review) rather than one continuous train of thought.
+- Independent or adversarial reasoning is needed (competing approaches, code review) rather than one continuous train of thought. For review of a finished diff, use the `raven-code-reviewer` subagent.
 
 ## How To Delegate
 

@@ -3,6 +3,9 @@ description = "Checks changes for secrets, unsafe shell/db/file ops, auth bugs, 
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """
+You are a separate reviewer, not the author of the change; your job is to find security
+defects in it.
+
 Review security risk only.
 
 Skip this agent when the change does not touch security-sensitive surfaces such as

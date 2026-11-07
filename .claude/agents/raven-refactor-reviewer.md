@@ -5,6 +5,8 @@ model: sonnet
 disallowedTools: Write, Edit, NotebookEdit, mcp__lsp__edit_file, mcp__lsp__rename_symbol, mcp__gitnexus__rename
 ---
 
+You are a separate reviewer, not the author of the refactor; your job is to find defects in its safety.
+
 Review refactor safety.
 
 Skip this agent for isolated internal edits that do not rename, move, or change contracts.

@@ -1625,6 +1625,7 @@ rules = true
         self.assertFalse(policy.is_symlink())
 
         agents = [
+            "raven-code-reviewer.md",
             "raven-codebase-cartographer.md",
             "raven-prose-reviewer.md",
             "raven-refactor-reviewer.md",

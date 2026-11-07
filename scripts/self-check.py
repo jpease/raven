@@ -90,6 +90,7 @@ def validate_shared_docs_sync() -> None:
 # dicts below, which take the same "add it here" maintenance.
 _TREE_SYMLINKS_TO_COMMON = [
     ".agents/skills",
+    ".claude/agents/raven-code-reviewer.md",
     ".claude/agents/raven-codebase-cartographer.md",
     ".claude/agents/raven-prose-reviewer.md",
     ".claude/agents/raven-refactor-reviewer.md",

@@ -15,7 +15,7 @@ This complements interactive planning modes. The important output is a project-l
 2. Inspect enough project context to identify the owning modules and verification path.
 3. Write a concise durable plan in a project-appropriate location, such as `.raven/plans/<short-name>.md`, unless the repo already has a planning convention.
 4. Include scope, assumptions, ordered work items, verification, rollback or follow-up notes, and open questions.
-5. Run the Fresh-Context Check before requesting approval.
+5. Run the Fresh-Context Check and its adversarial critique before requesting approval.
 6. Get approval before executing when the plan changes public API, schema, migration, release, auth, destructive, dependency, or broad architecture behavior.
 7. Update the plan at meaningful checkpoints instead of relying on chat history. When a long session stops converging, it is likely fixated on one hypothesis: write the verified state into the plan and each approach tried into Alternatives, then recommend a fresh session that starts from the plan alone.
 8. When complete, record what shipped, what was verified, and any follow-up issues. Then move the plan to `.raven/plans/archive/` or delete it; a finished plan left beside live ones reads as current. Agents do not read the archive unless asked.
@@ -74,7 +74,7 @@ Hand the plan alone — no conversation history — to a zero-context reader: a 
 
 It passes when the reader answers all three and asks no blocking question. Every question it does ask marks a hole; write the answer into the plan and repeat. Answering in chat leaves the hole in place and hides it, because the next reader starts where the fresh one did.
 
-When no fresh session or sub-agent is available, say the plan is unverified for resumption rather than calling it durable.
+When no fresh session or sub-agent is available, say the plan is unverified for resumption rather than calling it durable. The check above tests comprehension; for a non-trivial plan, also run an adversarial critique before approval: hand the plan to the `raven-code-reviewer` subagent or a fresh sub-agent and ask it to find a wrong diagnosis, missing files or tests, unaddressed risks, and scope gaps. Record accepted findings in the plan and rejected ones under Alternatives with the reason.
 
 ## Avoid
 
