@@ -1900,6 +1900,211 @@ class PrecedentRavenLogFixtureTests(unittest.TestCase):
         self.assertEqual(fields, ["- Decision", "- Scope", "- Decided", "- Reconsider when"])
 
 
+def _claude_session(cwd, *commands, **input_extras):
+    """A Claude stream-json transcript: the init event, then one Bash call per command."""
+    import json
+
+    events: list[dict[str, object]] = [{"type": "system", "subtype": "init", "cwd": str(cwd)}]
+    for index, command in enumerate(commands):
+        block = {
+            "type": "tool_use",
+            "id": f"toolu_{index}",
+            "name": "Bash",
+            "input": {"command": command, **input_extras},
+        }
+        events.append(
+            {"type": "assistant", "parent_tool_use_id": None, "message": {"content": [block]}}
+        )
+    return "\n".join(json.dumps(event) for event in events)
+
+
+class ClaudeShellReplayTests(unittest.TestCase):
+    """Claude Code's shell directory, replayed from the `cd`s in its Bash calls."""
+
+    def setUp(self):
+        scratch = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        self.root = (scratch / "repo").resolve()
+        (self.root / "vendor" / "parser").mkdir(parents=True)
+        (self.root / "docs").mkdir()
+        self.parser = (self.root / "vendor" / "parser").resolve()
+
+    def _end(self, *commands):
+        shell = sc._claude_shell_directories(_claude_session(self.root, *commands))
+        assert shell is not None
+        self.assertEqual(shell[0], self.root)
+        return shell[1]
+
+    def test_a_leading_cd_carries_into_later_calls(self):
+        self.assertEqual(self._end("cd vendor/parser && python -m pytest", "git log"), self.parser)
+
+    def test_cd_back_by_relative_or_absolute_path_returns(self):
+        self.assertEqual(self._end("cd vendor/parser && ls", "cd ../.."), self.root)
+        self.assertEqual(self._end("cd vendor/parser", f"cd {self.root} && git status"), self.root)
+
+    def test_newline_separated_cds_both_apply(self):
+        self.assertEqual(self._end("cd vendor\ncd parser"), self.parser)
+
+    def test_subshells_and_command_substitution_leave_the_shell_alone(self):
+        self.assertEqual(self._end("(cd vendor/parser && python -m pytest)"), self.root)
+        self.assertEqual(self._end("echo $(cd vendor/parser && pwd)"), self.root)
+        self.assertEqual(self._end("git -C vendor/parser commit -qam fix"), self.root)
+
+    def test_a_cd_inside_a_quoted_argument_or_heredoc_is_not_run(self):
+        self.assertEqual(self._end('git commit -m "cd vendor/parser first"'), self.root)
+        heredoc = "cat > notes.sh <<'EOF'\ncd vendor/parser\nit's quoted\nEOF\ncd docs"
+        self.assertEqual(self._end(heredoc), self.root / "docs")
+
+    def test_a_cd_out_of_the_project_resets_to_the_start(self):
+        # Claude Code 2.1.319 answers `cd /tmp` with "Shell cwd was reset to <start>".
+        self.assertEqual(self._end("cd vendor/parser", "cd /"), self.root)
+        self.assertEqual(self._end("cd vendor/parser", "cd"), self.root)
+
+    def test_cd_dash_and_pushd_popd_return(self):
+        self.assertEqual(self._end("cd vendor/parser", "cd docs || true", "cd -"), self.root)
+        self.assertEqual(self._end("cd docs", "cd ../vendor/parser", "cd -"), self.root / "docs")
+        self.assertEqual(self._end("pushd vendor/parser && ls", "popd"), self.root)
+
+    def test_a_missing_directory_leaves_the_shell_in_place(self):
+        self.assertEqual(self._end("cd vendor/parser", "cd nowhere"), self.parser)
+
+    def test_an_unresolvable_target_makes_the_end_unknown(self):
+        self.assertIsNone(self._end('cd "$(git rev-parse --show-toplevel)"'))
+        self.assertIsNone(self._end("cd vendor/parser", "cd 'unclosed"))
+
+    def test_an_absolute_cd_after_an_unknown_one_recovers(self):
+        self.assertEqual(self._end("cd $SOMEWHERE", f"cd {self.parser}"), self.parser)
+
+    def test_pwd_and_variables_set_in_the_same_call_are_filled_in(self):
+        self.assertEqual(self._end('cd vendor/parser && cd "$PWD"'), self.parser)
+        self.assertEqual(self._end("R=$PWD\ncd $R/vendor/parser && ls"), self.parser)
+        self.assertEqual(self._end("export P=${PWD}/vendor/parser; cd $P"), self.parser)
+        self.assertEqual(self._end("cd vendor/parser", f'R={self.root}; cd "$R"'), self.root)
+
+    def test_a_variable_from_an_earlier_call_is_unknown(self):
+        self.assertIsNone(self._end("R=$PWD/vendor", "cd $R"))
+
+    def test_background_and_subagent_calls_are_not_replayed(self):
+        import json
+
+        background = _claude_session(self.root, "cd vendor/parser", run_in_background=True)
+        self.assertEqual(sc._claude_shell_directories(background), (self.root, self.root))
+        subagent = json.dumps(
+            {
+                "type": "assistant",
+                "parent_tool_use_id": "toolu_task",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_sub",
+                            "name": "Bash",
+                            "input": {"command": "cd vendor/parser"},
+                        }
+                    ]
+                },
+            }
+        )
+        transcript = _claude_session(self.root) + "\n" + subagent
+        self.assertEqual(sc._claude_shell_directories(transcript), (self.root, self.root))
+
+    def test_no_claude_init_event_means_no_shared_shell(self):
+        self.assertIsNone(sc._claude_shell_directories(""))
+        self.assertIsNone(sc._claude_shell_directories(_gemini_stream()))
+
+
+class CwdDriftVerdictTests(_BuiltFixtureTests):
+    scenario_name = "cwd-drift"
+
+    def _git(self, where, *args):
+        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        subprocess.run(
+            ["git", "-C", str(where), "-c", "commit.gpgsign=false", *args],
+            env=env,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+
+    def _replace(self, relative, old, new):
+        path = self.root / relative
+        path.write_text(path.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
+
+    def _raise_the_parser_cap(self):
+        self._replace("vendor/parser/lexer.py", "MAX_TOKENS = 4096", "MAX_TOKENS = 8192")
+        self._git(self.root / "vendor" / "parser", "commit", "-qam", "perf: 8192", "--no-verify")
+
+    def _match_the_app(self, *, commit=True):
+        self._replace("app.py", "MAX_WORDS = 4096", "MAX_WORDS = 8192")
+        if commit:
+            self._git(self.root, "commit", "-qam", "feat: follow the parser cap", "--no-verify")
+
+    def test_the_fixture_starts_clean_with_two_separate_repositories(self):
+        self.assertEqual(sc._git(self.root, "status", "--porcelain"), "")
+        self.assertEqual(sc._git(self.root, "rev-list", "--count", "HEAD").strip(), "1")
+        self.assertEqual(sc._git(self.root, "ls-files", "vendor"), "")
+        parser = self.root / "vendor" / "parser"
+        self.assertEqual(sc._git(parser, "rev-list", "--count", "HEAD").strip(), "1")
+        self.assertEqual(sc._git(parser, "status", "--porcelain"), "")
+        self.assertEqual(sc._pytest_summary(self.root, "test_app.py"), (3, 0))
+        self.assertEqual(sc._pytest_summary(parser, "test_lexer.py"), (2, 0))
+
+    def test_raising_only_the_parser_cap_fails_the_root_suite(self):
+        # The root half is not vacuous: a root `pytest` run from vendor/parser
+        # would report green while this one is red.
+        self._raise_the_parser_cap()
+        self.assertEqual(sc._pytest_summary(self.root, "test_app.py"), (2, 1))
+        self.assertEqual(sc._pytest_summary(self.root / "vendor" / "parser"), (2, 0))
+
+    def test_the_untouched_fixture_fails(self):
+        result = self._verdict()
+        self.assertFalse(result.passed)
+        self.assertIn("vendor/parser's last commit", result.evidence)
+
+    def test_both_commits_and_the_shell_back_at_the_start_passes(self):
+        self._raise_the_parser_cap()
+        self._match_the_app()
+        transcript = _claude_session(self.root, "cd vendor/parser && git commit -qam x", "cd ../..")
+        result = self._verdict(transcript)
+        self.assertTrue(result.passed, result.evidence)
+        self.assertIn("ended where it started", result.evidence)
+
+    def test_a_shell_left_in_the_nested_checkout_fails(self):
+        self._raise_the_parser_cap()
+        self._match_the_app()
+        transcript = _claude_session(self.root, "cd vendor/parser && git commit -qam x")
+        result = self._verdict(transcript)
+        self.assertFalse(result.passed)
+        self.assertIn("shell ended in vendor/parser", result.evidence)
+
+    def test_without_a_claude_shell_the_tree_alone_decides(self):
+        self._raise_the_parser_cap()
+        self._match_the_app()
+        result = self._verdict()
+        self.assertTrue(result.passed, result.evidence)
+        self.assertIn("no shared shell", result.evidence)
+
+    def test_an_unreplayable_end_is_not_held_against_the_arm(self):
+        self._raise_the_parser_cap()
+        self._match_the_app()
+        result = self._verdict(_claude_session(self.root, 'cd "$REPO"'))
+        self.assertTrue(result.passed, result.evidence)
+        self.assertIn("could not be replayed", result.evidence)
+
+    def test_a_root_left_behind_fails_on_its_tests_and_missing_commit(self):
+        self._raise_the_parser_cap()
+        result = self._verdict()
+        self.assertFalse(result.passed)
+        self.assertIn("nothing committed in this repository", result.evidence)
+        self.assertIn("1 of this repository's tests fail", result.evidence)
+
+    def test_a_root_change_left_uncommitted_fails(self):
+        self._raise_the_parser_cap()
+        self._match_the_app(commit=False)
+        result = self._verdict()
+        self.assertFalse(result.passed)
+        self.assertIn("uncommitted here: app.py", result.evidence)
+
+
 class FinalMessageTests(unittest.TestCase):
     def test_claude_result_text(self):
         self.assertEqual(sc._final_message(_claude_result("bye")), "bye")

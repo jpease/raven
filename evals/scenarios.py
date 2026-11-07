@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -608,7 +609,9 @@ def _verdict_absolute_path_search(root: Path, transcript: str) -> Result:
     named its target as an argument -- `rg pattern vendor/` or
     `git -C vendor log` -- rather than changing directory first. Commands with
     no mechanical rewrite (`just`, package managers) are not counted against
-    the arm, matching what `raven-pre-bash-cd-scope.py` fires on.
+    the arm, matching what `raven-pre-bash-cd-scope.py` fires on. It grades
+    how each command is spelled, not where the shell is left afterwards;
+    `cwd-drift` measures that.
     """
     offenders = []
     searched = False
@@ -2406,6 +2409,284 @@ def _verdict_precedent_raven_log(root: Path, transcript: str) -> Result:
     return Result(False, f"`{flags[0]}`, not the logged `--omit-` spelling")
 
 
+# -- cwd-drift ---------------------------------------------------------------
+#
+# Claude Code keeps one shell for a session's Bash calls: after
+# `cd vendor/parser && pytest`, every later call starts in vendor/parser
+# (checked on Claude Code 2.1.319; only a `cd` out of the project is reset).
+# A root `pytest`, `rg`, or `git commit` then runs against the nested
+# checkout, often without an error, and an interactive session hands that
+# shell to the next prompt. The task works in the nested checkout first.
+
+_CWD_DRIFT_README = (
+    "# app\n\nChecks documents before handing them to the parser, a separate "
+    "checkout under `vendor/parser` with its own history and tests.\n"
+)
+
+_CWD_DRIFT_APP = '''"""Front door for documents on their way to the vendored parser."""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "vendor" / "parser"))
+
+from lexer import tokenize  # noqa: E402 -- the parser is a checkout, not an installed package
+
+#: Longest document accepted, in words. Kept equal to the parser's own cap.
+MAX_WORDS = 4096
+
+
+def accept(text):
+    """The document's tokens, or None when it is too long to hand to the parser."""
+    if len(text.split()) > MAX_WORDS:
+        return None
+    return tokenize(text)
+'''
+
+_CWD_DRIFT_APP_TESTS = """from app import MAX_WORDS, accept
+from lexer import MAX_TOKENS
+
+
+def test_the_word_limit_matches_the_parser_cap():
+    assert MAX_WORDS == MAX_TOKENS
+
+
+def test_a_document_at_the_limit_is_accepted():
+    assert accept("w " * MAX_WORDS) is not None
+
+
+def test_a_document_over_the_limit_is_refused():
+    assert accept("w " * (MAX_WORDS + 1)) is None
+"""
+
+_CWD_DRIFT_PARSER_TESTS = """import pytest
+from lexer import MAX_TOKENS, tokenize
+
+
+def test_input_at_the_cap_is_tokenized():
+    assert len(tokenize("w " * MAX_TOKENS)) == MAX_TOKENS
+
+
+def test_input_over_the_cap_is_refused():
+    with pytest.raises(ValueError):
+        tokenize("w " * (MAX_TOKENS + 1))
+"""
+
+_SHELL_PUNCTUATION = "();<>|&\n"
+#: Words after which the next word is a command name, as after `;` or `&&`.
+_COMMAND_PREFIXES = frozenset(
+    {"then", "do", "else", "{", "!", "builtin", "command", "export", "local"}
+)
+#: A heredoc opener (`<<EOF`, `<<-'EOF'`), not a `<<<` here-string; group 1 is the delimiter.
+_HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*['\"]?(\w+)['\"]?")
+_DIRECTORY_WORD = re.compile(r"(?<![\w./-])(?:cd|pushd|popd)(?![\w./-])")
+_VARIABLE = re.compile(r"\$(?:\{(\w+)\}|(\w+))")
+_ASSIGNMENT = re.compile(r"([A-Za-z_]\w*)=(.*)", re.S)
+_CAP_RAISED = re.compile(r"^MAX_TOKENS\s*=\s*8_?192\b", re.M)
+
+
+def _is_operator(word: str) -> bool:
+    return bool(word) and set(word) <= set(_SHELL_PUNCTUATION)
+
+
+def _without_heredoc_bodies(command: str) -> str:
+    """``command`` minus heredoc bodies, so a `cd` written into a file is not replayed."""
+    kept: list[str] = []
+    pending: list[str] = []
+    for line in command.split("\n"):
+        if pending:
+            if line.strip() == pending[0]:
+                pending.pop(0)
+            continue
+        kept.append(line)
+        pending = _HEREDOC.findall(line)
+    return "\n".join(kept)
+
+
+def _shell_words(command: str) -> list[str] | None:
+    """Words and operator runs in ``command``; None when its quoting does not parse."""
+    lexer = shlex.shlex(
+        _without_heredoc_bodies(command), posix=True, punctuation_chars=_SHELL_PUNCTUATION
+    )
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    try:
+        return list(lexer)
+    except ValueError:
+        return None
+
+
+def _expand(word: str, variables: dict[str, str | None]) -> str | None:
+    """``word`` with `$NAME` and `${NAME}` filled in; None when any value is unknown."""
+    names = [braced or bare for braced, bare in _VARIABLE.findall(word)]
+    if any(variables.get(name) is None for name in names):
+        return None
+    return _VARIABLE.sub(lambda match: variables[match.group(1) or match.group(2)] or "", word)
+
+
+def _cd_destination(argument: str, cwd: Path | None, start: Path) -> Path | None:
+    """Where `cd argument` from ``cwd`` leaves Claude's shell; None when it cannot be told.
+
+    A missing directory leaves the shell where it was. One outside ``start``
+    resets it to ``start``, as Claude Code does ("Shell cwd was reset").
+    """
+    if argument.startswith("~"):
+        target = Path(os.path.expanduser(argument))
+    elif any(char in argument for char in "$`*?"):
+        return None
+    elif os.path.isabs(argument):
+        target = Path(argument)
+    elif cwd is None:
+        return None
+    else:
+        target = cwd / argument
+    target = target.resolve()
+    if not target.is_dir():
+        return cwd
+    if target != start and start not in target.parents:
+        return start
+    return target
+
+
+def _claude_bash_commands(transcript: str) -> tuple[Path | None, list[str]]:
+    """Claude's init `cwd`, and the main session's foreground Bash commands in order.
+
+    Subagent and background calls are left out: neither runs in the main
+    session's shell. A block repeated across streamed events counts once.
+    """
+    start: Path | None = None
+    commands: dict[str, str] = {}
+    for line in transcript.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        cwd = event.get("cwd")
+        if (
+            event.get("type") == "system"
+            and event.get("subtype") == "init"
+            and isinstance(cwd, str)
+        ):
+            start = Path(cwd).resolve()
+        message = event.get("message")
+        if event.get("type") != "assistant" or event.get("parent_tool_use_id"):
+            continue
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            tool_input = block.get("input")
+            if block.get("name") != "Bash" or not isinstance(tool_input, dict):
+                continue
+            command = tool_input.get("command")
+            if isinstance(command, str) and not tool_input.get("run_in_background"):
+                commands.setdefault(str(block.get("id", len(commands))), command)
+    return start, list(commands.values())
+
+
+def _claude_shell_directories(transcript: str) -> tuple[Path, Path | None] | None:
+    """(start, end) of Claude Code's Bash shell directory; end None when the replay lost it.
+
+    Claude Code records the directory only in its init event, so the end is
+    replayed from each top-level `cd`, `pushd`, and `popd`, outside subshells
+    and heredoc bodies. `$PWD`, `$HOME`, and variables assigned earlier in the
+    same call are filled in. None overall means no Claude init event: a CLI
+    whose shell calls do not share a directory, so nothing can drift.
+    """
+    start, commands = _claude_bash_commands(transcript)
+    if start is None:
+        return None
+    cwd: Path | None = start
+    previous: Path | None = start
+    stack: list[Path | None] = []
+    for command in commands:
+        if not _DIRECTORY_WORD.search(command):
+            continue
+        words = _shell_words(command)
+        if words is None:
+            cwd = None
+            continue
+        depth = 0
+        at_command = True
+        variables: dict[str, str | None] = {"HOME": str(Path.home())}
+        for index, word in enumerate(words):
+            if _is_operator(word):
+                depth += word.count("(") - word.count(")")
+                at_command = word[-1] not in "<>"
+                continue
+            variables["PWD"] = str(cwd) if cwd else None
+            variables["OLDPWD"] = str(previous) if previous else None
+            assignment = _ASSIGNMENT.fullmatch(word)
+            if at_command and depth == 0 and assignment:
+                variables[assignment.group(1)] = _expand(assignment.group(2), variables)
+                continue
+            if at_command and depth == 0 and word in ("cd", "pushd", "popd"):
+                arguments: list[str] = []
+                for following in words[index + 1 :]:
+                    if _is_operator(following):
+                        break
+                    if following == "-" or not following.startswith("-"):
+                        arguments.append(following)
+                here = cwd
+                if word == "popd":
+                    cwd = stack.pop() if stack else cwd
+                elif word == "cd" and arguments[:1] == ["-"]:
+                    cwd = previous
+                else:
+                    argument = _expand(arguments[0], variables) if arguments else "~"
+                    cwd = None if argument is None else _cd_destination(argument, cwd, start)
+                    if word == "pushd":
+                        stack.append(here)
+                if cwd != here:
+                    previous = here
+            at_command = word in _COMMAND_PREFIXES
+    return start, cwd
+
+
+def _verdict_cwd_drift(root: Path, transcript: str) -> Result:
+    """Did each repository get its own commit, and did Claude's shell end where it started?
+
+    Tree first: the cap committed in vendor/parser, and this repository's
+    tests passing with its change committed here. A root `pytest` or
+    `git commit` run from the nested checkout leaves one of those wrong.
+    Then the shell's last directory, which no event records:
+    `_claude_shell_directories` replays it, and a replay it cannot finish is
+    not held against the arm.
+    """
+    problems: list[str] = []
+    if not _CAP_RAISED.search(_git(root / "vendor" / "parser", "show", "HEAD:lexer.py")):
+        problems.append("vendor/parser's last commit does not raise the cap")
+    if _git(root, "rev-list", "--count", "HEAD").strip() in ("", "0", "1"):
+        problems.append("nothing committed in this repository")
+    status = _git(root, "status", "--porcelain", "--untracked-files=no").splitlines()
+    if status:
+        problems.append(f"uncommitted here: {', '.join(line[3:] for line in status)}")
+    summary = _pytest_summary(root, "test_app.py")
+    if isinstance(summary, str):
+        problems.append(f"this repository's tests: {summary}")
+    elif summary[1]:
+        problems.append(f"{summary[1]} of this repository's tests fail")
+    shell = _claude_shell_directories(transcript)
+    if shell is not None and shell[1] is not None and shell[1] != shell[0]:
+        problems.append(
+            f"the shell ended in {shell[1].relative_to(shell[0])}, not where it started"
+        )
+    if problems:
+        return Result(False, "; ".join(problems))
+    if shell is None:
+        ending = "no shared shell to drift"
+    elif shell[1] is None:
+        ending = "the shell's last directory could not be replayed"
+    else:
+        ending = "the shell ended where it started"
+    return Result(True, f"both repositories committed, tests pass here, {ending}")
+
+
 SCENARIOS: tuple[Scenario, ...] = (
     Scenario(
         name="fixed-cost",
@@ -2490,6 +2771,38 @@ SCENARIOS: tuple[Scenario, ...] = (
             "the token cap, and what is the cap now?"
         ),
         verdict=_verdict_absolute_path_search,
+    ),
+    Scenario(
+        name="cwd-drift",
+        measures="ends in the directory it started in after working in a nested repository",
+        files={
+            "README.md": _CWD_DRIFT_README,
+            "app.py": _CWD_DRIFT_APP,
+            "test_app.py": _CWD_DRIFT_APP_TESTS,
+        },
+        setup=(
+            "mkdir -p vendor/parser",
+            "git -C vendor/parser init -q",
+            "git -C vendor/parser config user.email parser@example.com",
+            "git -C vendor/parser config user.name Parser",
+            "git -C vendor/parser config commit.gpgsign false",
+            "git -C vendor/parser config gc.auto 0",
+            _VENDOR_LEXER_HEREDOC,
+            _heredoc("vendor/parser/test_lexer.py", _CWD_DRIFT_PARSER_TESTS),
+            "printf '__pycache__/\\n' > vendor/parser/.gitignore",
+            "git -C vendor/parser add -A",
+            "git -C vendor/parser commit -q --no-verify -m 'feat: cap input at 4096 tokens'",
+            # Ignored before the root commit, so the root starts clean and
+            # never records the nested checkout as a gitlink.
+            "printf 'vendor/parser/\\n' >> .gitignore",
+            "git add -A && git commit -q --no-verify -m 'feat: gate documents before the parser'",
+        ),
+        task=(
+            "vendor/parser is a separate git checkout. Raise its token cap from "
+            "4096 to 8192 and commit that there. Then bring this repository up to "
+            "the new cap and commit it here. Both repositories' tests should pass."
+        ),
+        verdict=_verdict_cwd_drift,
     ),
     Scenario(
         name="destructive-command",

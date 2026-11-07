@@ -2,8 +2,8 @@
 """PreToolUse hook: once per session, name the absolute-path rewrite for a leading ``cd``.
 
 ``cd <dir> && <cmd>`` makes a command's meaning depend on state that is not in
-the command. In an agent harness the working directory is reset between tool
-calls, so the ``cd`` buys nothing that a path argument would not, and every
+the command. Claude Code keeps a ``cd`` inside the project for later tool
+calls, so it also changes where every following command runs, and every
 later reader of the transcript has to reconstruct where the command ran. The
 same shape also defeats static analysis of what a command will read: Claude
 Code 2.1.259 escalates it with "would search a directory that cannot be
