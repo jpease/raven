@@ -14,7 +14,7 @@ Work found mid-task that falls outside the current issue's acceptance criteria n
 
 ## Required Constraints
 
-- Every finding outside current scope gets exactly one disposition: FOLD IN, FILE, or DROP.
+- Every finding outside current scope gets exactly one disposition: FOLD IN, DEFER, FILE, or DROP.
 - A comment on the current issue or its epic is not a disposition. It is legitimate only as a pointer to a filed issue, never as the terminal record of new work.
 - When the choice between FILE and DROP is unclear, file. A closable issue costs less than an invisible one.
 - State every disposition to the user. An unstated DROP is indistinguishable from having forgotten.
@@ -26,11 +26,13 @@ Work found mid-task that falls outside the current issue's acceptance criteria n
 | FOLD IN | The finding is inside the current issue's stated scope | Fix it in this diff; name it in the completion summary |
 | FILE | The finding is real work outside current scope | Create a new issue linked to the parent or epic |
 | DROP | The finding was considered and rejected | State the reason to the user in the completion summary |
+| DEFER | A later sibling unit or existing child issue is planned to cover it | Write the item and rationale into that unit's record: its child issue body or a comment there, else the unit's entry in the plan under `.raven/plans/` |
 
 ## Filing
 
 - File as a sub-issue so the parent's task list shows it: `gh issue create --parent <n>`, or `glab issue create --parent-id <n>`. An issue nobody sees is the failure this skill exists to prevent.
 - Where sub-issue linkage is unavailable (gh older than 2.49, or a tracker without it), add a task-list checkbox to the parent body instead.
+- A deferral lives in the sibling's record, not only in this unit's summary, so it survives if that unit never picks it up. `raven-project-lifecycle` wrap-up checks every recorded deferral was resolved.
 - With no tracker configured, record the item in the repository's durable planning location, such as `.raven/plans/`, and state it in the completion summary. Never chat-only.
 - Title the issue with the problem. Body carries the evidence: file, symbol, and what you observed.
 - After filing, a comment on the parent pointing at the new issue is useful. The reverse — a comment instead of an issue — is the failure mode.
@@ -50,7 +52,7 @@ Work found mid-task that falls outside the current issue's acceptance criteria n
 
 State the disposition of every finding before declaring the unit of work done:
 
-> Discovered work: [N] item(s). FOLD IN: [what, now in this diff]. FILED: [#num — title]. DROPPED: [what — why].
+> Discovered work: [N] item(s). FOLD IN: [what, now in this diff]. DEFERRED -> [unit or #num]: [what — why]. FILED: [#num — title]. DROPPED: [what — why].
 
 When there is none:
 

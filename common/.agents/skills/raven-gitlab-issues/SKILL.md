@@ -38,7 +38,7 @@ A title-keyword scan catches the obvious duplicate. The one that slips through i
 5. If the issue is unclear or incomplete, update it before proceeding
 6. For non-trivial work, track current step in the issue or a linked planning document
 7. Execute work strictly within issue scope
-8. Disposition anything discovered outside this issue's acceptance criteria per `raven-triage-discovery` — FOLD IN, FILE, or DROP. Do not expand scope silently, and do not leave new work as a comment on this issue or its epic: a comment is legitimate only as a pointer to a filed issue, never the record of it
+8. Disposition anything discovered outside this issue's acceptance criteria per `raven-triage-discovery` — FOLD IN, DEFER, FILE, or DROP. Do not expand scope silently, and do not leave new work as a comment on this issue or its epic: a comment is legitimate only as a pointer to a filed issue, never the record of it
 9. If work is partially complete or blocked: update the issue with current status and blockers
 10. Reference the issue so it closes automatically when the work lands on the default branch: include a `Closes #<number>` (or `Fixes #<number>`) trailer in the commit message, per `raven-commit`, and repeat it in the MR description if the MR will be squashed on merge. Do not close the issue manually ahead of the merge — that can close it before the change actually lands, or point at a pre-squash sha that no longer exists in history. If the issue is being resolved without a merge (won't-fix, superseded, duplicate), close it explicitly with a note explaining why.
 

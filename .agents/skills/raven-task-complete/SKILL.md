@@ -43,7 +43,7 @@ Stop producing patches once the work stops converging. Partial work leaves the c
 | "Nothing I touched affects the tests" | That's an assumption, not evidence. Run the narrowest relevant test to confirm. |
 | "I verified this earlier in the session" | State what changed since, or re-run against the current diff. |
 | "The code explains itself" | Then say that explicitly. Silence is indistinguishable from having no reason. |
-| "I noted the other problems in a comment" | A comment is not a disposition. Each finding gets FOLD IN, FILE, or DROP per `raven-triage-discovery`. |
+| "I noted the other problems in a comment" | A comment is not a disposition. Each finding gets FOLD IN, DEFER, FILE, or DROP per `raven-triage-discovery`. |
 | "One more patch will fix it" | Count them. Three consecutive fixes aimed at the same failing signal is a Stop trip condition; report the state instead of trying a fourth. |
 | "The gates are green, so nothing needs a human" | A gate checks what someone thought to encode. Name what it cannot: a judgment call, a chosen default, a step that is hard to undo. |
 

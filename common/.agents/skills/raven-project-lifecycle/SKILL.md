@@ -37,7 +37,7 @@ For projects with an external issue tracker, check `[issue_tracker].platform` in
 
 ## Phase 2 — Scoping
 
-1. Decompose the work into ordered, named units — each completable in a single session
+1. Decompose the work into ordered, named units — each completable in a single session and small enough to review. Review attention is the limit: a unit expected to exceed roughly 1,000 changed lines, tests included, gets split again, recursively, so each diff can pass `raven-task-complete`'s Needs review step
 2. Name units with kebab-case (e.g., `add-auth-middleware`, `write-auth-tests`)
 3. Run: `raven-session.py --init <greenfield|brownfield> <unit-1> <unit-2> ...`
    - If the parent task is a tracked issue and `[issue_tracker].platform` is set, add `--parent <issue-number>`
@@ -61,5 +61,6 @@ For projects with an external issue tracker, check `[issue_tracker].platform` in
 ## Phase 4 — Wrap-up
 
 1. Run `raven-session.py --status` to confirm all units complete
-2. Summarize changes across all units and files touched
-3. Suggest next steps: PR, review, deploy
+2. Re-read the parent task's original acceptance criteria (issue or plan) and check each item against what shipped. Confirm every deferral recorded per `raven-triage-discovery` was resolved. An unmet item becomes a new unit or a filed issue, never a silent close
+3. Summarize changes across all units and files touched
+4. Suggest next steps: PR, review, deploy
