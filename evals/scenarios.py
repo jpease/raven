@@ -2443,7 +2443,7 @@ def accept(text):
     return tokenize(text)
 '''
 
-_CWD_DRIFT_APP_TESTS = """from app import MAX_WORDS, accept
+_CWD_DRIFT_APP_TESTS = """from app import MAX_WORDS, accept  # noqa: I001 -- app puts the parser on sys.path
 from lexer import MAX_TOKENS
 
 
