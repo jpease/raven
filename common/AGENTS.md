@@ -51,7 +51,7 @@ A skill costs a file read on Codex and a step — an `activate_skill`/`Skill` to
 
 ## Delegation
 
-Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context. Use the `raven-delegate-or-inline` skill for the decision criteria, delegation mechanics, and anti-habit checks. Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-code-reviewer`, `raven-test-debugger`, `raven-codebase-cartographer`, and `raven-prose-reviewer` as subagents across Claude Code, Codex, and Gemini CLI for common audits. Sub-agent returns must include an `## Out Of Scope Findings` section; disposition those findings per `raven-triage-discovery` rather than leaving them in chat or in an issue comment.
+Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context. Use the `raven-delegate-or-inline` skill for the decision criteria, delegation mechanics, and anti-habit checks. Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-code-reviewer`, `raven-test-debugger`, `raven-codebase-cartographer`, and `raven-prose-reviewer` as subagents across Claude Code, Codex, and Gemini CLI for common audits. Sub-agent returns end with `## Out Of Scope Findings`, recorded per Editing Rules.
 
 ## Shell Command Policy
 
@@ -80,6 +80,7 @@ Otherwise keep going; do not stop to report status or offer to continue.
 ## Editing Rules
 
 - Make minimal patches.
+- Record out-of-scope findings in a file per `raven-triage-discovery`; a reply-only mention is lost.
 - Before changing public APIs, check references with LSP, then confirm with `rg`.
 - Before large mechanical edits, use ast-grep or Semgrep.
 - Run the narrowest relevant test first.
