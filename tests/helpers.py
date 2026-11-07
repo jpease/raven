@@ -173,6 +173,7 @@ def lsp_doc_command(language: str) -> str:
 # omission.
 UNIFIED_ADAPTER_SCRIPTS = (
     "raven-capability-roster.py",
+    "raven-review-prose.py",
     "raven-session.py",
     "raven-skeleton.py",
     "raven-tool-check.py",

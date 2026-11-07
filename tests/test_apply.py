@@ -1656,6 +1656,7 @@ rules = true
 
         scripts = [
             "raven-capability-roster.py",
+            "raven-review-prose.py",
             "raven-session.py",
             "raven-skeleton.py",
             "raven-tool-check.py",

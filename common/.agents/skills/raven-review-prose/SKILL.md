@@ -7,38 +7,31 @@ description: Use when reviewing prose for inflated wording and leftover scaffold
 
 Three passes, cheapest first. Stop at any pass that resolves the piece.
 
+The mechanical steps run through one helper that ships per adapter: `.claude/scripts/raven-review-prose.py` (Claude Code), `.codex/scripts/raven-review-prose.py` (Codex), or `.gemini/scripts/raven-review-prose.py` (Gemini CLI). Commands below write it as `raven-review-prose.py`; run it with `python3 <that path>`. It exits 0 clean, 1 with findings, 2 when it could not run.
+
 ## Pass 0: what is under review
 
 Reviewing a whole file? Skip to pass 1. Reviewing a branch or a diff, settle which prose the change actually introduced before flagging any of it.
 
-A comment whose lines fall inside a diff hunk is not a comment the change wrote. Editing one line of a docstring pulls the entire docstring into the hunk, and a file rewritten in full pulls in every comment it already had. Blame each line you mean to flag:
+A comment whose lines fall inside a diff hunk is not a comment the change wrote. Editing one line of a docstring pulls the entire docstring into the hunk, and a file rewritten in full pulls in every comment it already had. Blame each line or range you mean to flag, against the branch point:
 
 ```bash
-sha=$(git blame -L "$LINE,$LINE" --porcelain HEAD -- "$FILE" | head -1 | cut -d' ' -f1)
-git merge-base --is-ancestor "$sha" "$BASE" && echo "pre-existing" || echo "in scope"
+raven-review-prose.py scope --base main FILE:42 FILE:60-71
 ```
+
+Each line comes back `pre-existing` or `in scope`. Line numbers are the working tree's, so they match the file you are reading, and a line not yet committed is in scope. A line the change only moved or copied traces back to the commit that first wrote it. A base that names no commit exits 2 and labels nothing.
 
 A finding on a pre-existing line can still be a real defect. Report it apart from the change under review rather than folding it in, and let whoever owns the branch decide.
 
 ## Pass 1: Vale, if installed
 
 ```bash
-if command -v vale >/dev/null 2>&1; then
-  vale --config=<path-to>/raven-write-prose/reference/vale/.vale.ini --output=line FILE
-else
-  echo "vale not installed; skipping the word pass"
-fi
+raven-review-prose.py vale FILE
 ```
 
-When Vale is not installed, print that one line and continue to pass 2. A missing optional tool never fails a review.
+When Vale is not installed, this prints one line saying so and exits 0; continue to pass 2. A missing optional tool never fails a review. It finds Vale's config inside the installed `raven-write-prose` skill; pass `--config` to use another.
 
-A low finding count is good news only once you know the rules are live. `Packages` in that config *declares* proselint, write-good and Readability; nothing downloads until someone runs `vale sync` in that directory, and `write-good.Passive = YES` sits there inert until they do. So check what is actually on StylesPath first:
-
-```bash
-ls <path-to>/raven-write-prose/reference/vale/styles/
-```
-
-A package on the `Packages` line but missing from that listing adds no rules. Unsynced, the sentence "The results were surfaced by the system and were utilized" yields one finding and flags neither passive.
+A low finding count is good news only once you know the rules are live. `Packages` in that config *declares* proselint, write-good and Readability; nothing downloads until someone runs `vale sync` in that directory, and `write-good.Passive = YES` sits there inert until they do. The helper names each declared package missing from StylesPath before Vale's own output. Unsynced, the sentence "The results were surfaced by the system and were utilized" yields one finding and flags neither passive.
 
 Vale covers the word half only. It cannot see a tricolon, a restating conclusion, or a dependent heading.
 
@@ -50,42 +43,24 @@ Walk all fourteen tells from `raven-write-prose`. Run each test rather than judg
 
 ## Mechanical checks
 
-Run these when the user asks for a review or before a document is published. Never per edit: a transcript of a one-section README change that ran them cost ten tool calls against a control's three, for the same result.
-
-The long-word sweep is Orwell's rules 2 and 5 made mechanical, the tell most often skipped, and the one that finds the most. Most hits are technical terms with no shorter form and get kept; the sweep exists to make you ask the question of each one.
+Run these when the user asks for a review or before a document is published. Never per edit: a transcript of a one-section README change that ran them cost ten tool calls against a control's three, for the same result. Two calls cover them:
 
 ```bash
-rg -oN '\b[a-z]{9,}\b' FILE | sort -u
+raven-review-prose.py sweep FILE
+raven-review-prose.py subjects -n 400
 ```
+
+`sweep` skips fenced code and inline code spans, matches without regard to case, and joins hard-wrapped lines, so "At its core" opening a sentence and a participle wrapped onto the next line both match. Each finding reads `FILE:LINE: check: text`; `--only CHECK` narrows the run. `subjects` checks recent commit subjects for the `X, not Y` tag.
+
+`long-word` is Orwell's rules 2 and 5 made mechanical, the tell most often skipped, and the one that finds the most. Most hits are technical terms with no shorter form and get kept; the sweep exists to make you ask the question of each one.
 
 It also flags one fact restated across clauses: "implemented an enhanced retry mechanism to improve resilience against transient call failures" says "retry failed calls up to three times" twice. Does the word add a fact `retry` did not already carry?
 
-The `X, not Y` tag on titles and commit subjects, and its `rather than` form in bodies:
+`contrast-heading` and `contrast` catch the `X, not Y` tag on titles and its `rather than` form in bodies. A hit that names a thing — `not cwd`, `not Package.swift`, "filed separately rather than folded in" — rules out the wrong behavior the fix replaced and stays. A hit that rates the method — "measured rather than assumed" — goes. Position decides this, which is why no linter can: `measured|verified` against `assumed|inferred` reads both ways.
 
-```bash
-git log --format='%s' -n 400 | rg -N ',\s+(not|never|rather than|instead of)\b'
-rg -N '^#{1,6}.*,\s+(not|never|rather than|instead of)\b' FILE
-rg -N '\b(rather than|instead of)\b' FILE
-```
+`participle` catches the trailing participle clause, the sentence-level closing flourish. Keep a hit that states a checkable consequence ("allowing a second run to resume from the lock file"); cut one that only rates the change ("improving maintainability").
 
-A hit that names a thing — `not cwd`, `not Package.swift`, "filed separately rather than folded in" — rules out the wrong behavior the fix replaced and stays. A hit that rates the method — "measured rather than assumed" — goes. Position decides this, which is why no linter can: `measured|verified` against `assumed|inferred` reads both ways.
-
-Trailing participle clauses, the sentence-level closing flourish:
-
-```bash
-rg -N ',\s+(ensuring|improving|enabling|allowing|reflecting|highlighting|making)\b' FILE
-```
-
-Keep a hit that states a checkable consequence ("allowing a second run to resume from the lock file"); cut one that only rates the change ("improving maintainability").
-
-Essence-framing and stakes-inflation:
-
-```bash
-rg -N "what (this|that|it)('s)? (really|actually) (means|is|matters)|at (its|their) core|(boils|comes) down to|the real (question|issue) is" FILE
-rg -N "changes everything|cannot be overstated|profound implications|watershed moment|game-?changer|pivotal moment|marks a turning point" FILE
-```
-
-A heading or a named specific ("what registry v2 means") is not a hit.
+`essence` and `stakes` catch essence-framing ("at its core") and stakes-inflation ("changes everything"). A heading or a named specific ("what registry v2 means") is not a hit.
 
 ## Pass 3: verdict
 
