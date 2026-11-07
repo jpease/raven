@@ -598,39 +598,6 @@ def _verdict_narrowest_test(root: Path, transcript: str) -> Result:
     return Result(False, "no test command seen in the transcript")
 
 
-def _verdict_absolute_path_search(root: Path, transcript: str) -> Result:
-    """Did the agent search a sibling directory by path, or by `cd`-ing into it?
-
-    Transcript-based: both spellings read the same files and leave the same
-    tree, so the only evidence of which was used is the command itself.
-
-    The task points at a directory that is not the working directory, which is
-    the shape that tempts a leading `cd`. Passing means every search command
-    named its target as an argument -- `rg pattern vendor/` or
-    `git -C vendor log` -- rather than changing directory first. Commands with
-    no mechanical rewrite (`just`, package managers) are not counted against
-    the arm, matching what `raven-pre-bash-cd-scope.py` fires on. It grades
-    how each command is spelled, not where the shell is left afterwards;
-    `cwd-drift` measures that.
-    """
-    offenders = []
-    searched = False
-    for command in _bash_commands(transcript):
-        stripped = command.strip()
-        if re.match(
-            r"cd\s+\S+\s*(?:&&|;)\s*(?:git|rg|grep|fd|find|cat|head|tail|wc|ls)\b", stripped
-        ):
-            offenders.append(stripped[:60])
-            searched = True
-        elif re.match(r"(?:git\s+-C|rg|grep|fd|find|cat|head|tail|wc|ls)\b", stripped):
-            searched = True
-    if not searched:
-        return Result(False, "no search or read command seen in the transcript")
-    if offenders:
-        return Result(False, f"{len(offenders)} command(s) used a leading cd: `{offenders[0]}`")
-    return Result(True, "every search named its target by path")
-
-
 def _verdict_fixed_cost(root: Path, transcript: str) -> Result:
     """Did the session do no work, so that its token count is pure overhead?
 
@@ -2730,47 +2697,6 @@ SCENARIOS: tuple[Scenario, ...] = (
         files={"app.py": _FAILING_TEST, "test_app.py": _TEST_FILE},
         task="One test in test_app.py is failing. Find out which one and fix it.",
         verdict=_verdict_narrowest_test,
-    ),
-    Scenario(
-        name="absolute-path-search",
-        measures="inspects a second repository by path rather than cd-ing into it",
-        files={
-            "README.md": "# app\n\nThe parser is a separate checkout under `vendor/parser`.\n",
-            "app.py": "from vendor.parser.lexer import tokenize  # noqa: F401\n",
-        },
-        # A *second git repository*, because that is the shape that tempts a
-        # `cd`: a plain subdirectory measured nothing (both arms passed, every
-        # command already named `vendor/` as an argument). Answering from
-        # another repo's history is different -- `cd there && git log` is the
-        # reach, and `git -C there log` is the rewrite.
-        #
-        # Both arms fail here, and the raven arm's cd-scope hook fires without
-        # changing that: a once-per-session advisory fires *on* the first
-        # offending command, which in a 3-to-4-call session is the only one.
-        # The scenario discriminates; the intervention is what fails.
-        setup=(
-            "git add -A && git commit -q -m 'chore: add app'",
-            "mkdir -p vendor/parser",
-            "git -C vendor/parser init -q",
-            "git -C vendor/parser config user.email parser@example.com",
-            "git -C vendor/parser config user.name Parser",
-            "git -C vendor/parser config commit.gpgsign false",
-            _VENDOR_LEXER_HEREDOC,
-            "git -C vendor/parser add -A",
-            "git -C vendor/parser commit -q -m 'feat: cap input at 4096 tokens'",
-            # `-i.bak` then remove: bare `sed -i` needs an argument on BSD sed
-            # and must not have one on GNU sed, so neither spelling is portable.
-            "sed -i.bak 's/MAX_TOKENS = 4096/MAX_TOKENS = 8192/' vendor/parser/lexer.py",
-            "rm vendor/parser/lexer.py.bak",
-            "git -C vendor/parser add -A",
-            "git -C vendor/parser commit -q -m 'perf: raise the token cap'",
-            "printf 'vendor/parser/\\n' >> .gitignore",
-        ),
-        task=(
-            "vendor/parser is its own git checkout. Which commit there raised "
-            "the token cap, and what is the cap now?"
-        ),
-        verdict=_verdict_absolute_path_search,
     ),
     Scenario(
         name="cwd-drift",

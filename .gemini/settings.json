@@ -56,16 +56,6 @@
       {
         "hooks": [
           {
-            "command": "sh \"$GEMINI_PROJECT_DIR/.gemini/hooks/raven-run-hook.sh\" .gemini/hooks/raven-pre-bash-cd-scope.py",
-            "name": "raven-pre-bash-cd-scope",
-            "type": "command"
-          }
-        ],
-        "matcher": "run_shell_command"
-      },
-      {
-        "hooks": [
-          {
             "command": "sh \"$GEMINI_PROJECT_DIR/.gemini/hooks/raven-run-hook.sh\" .gemini/hooks/raven-pre-edit-guard.py",
             "name": "raven-pre-edit-guard",
             "type": "command"

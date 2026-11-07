@@ -204,7 +204,6 @@ class GeminiScriptUnificationTests(RavenTestCase):
             "raven-run-hook.sh",
             "raven-pre-bash-guard.py",
             "raven-pre-bash-test-scope.py",
-            "raven-pre-bash-cd-scope.py",
             "raven-pre-edit-guard.py",
             "raven-session-checkpoint.py",
             "raven-post-bash-summarize.py",

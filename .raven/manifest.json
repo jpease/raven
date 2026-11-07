@@ -186,9 +186,9 @@
       "sourceSha256": "0a45826237817077b16e2c53a4bd208eae29e4f46ad3694a8a4e6c1958be5182"
     },
     ".claude/docs/raven-agent-compatibility.md": {
-      "installedSha256": "6843e90dcebec4afacb6fe17dc5b4da2f2d299ba0ee76f345072e0ab51c06307",
+      "installedSha256": "4360a1e0faf74b99545a5c5a2c721cf0f509d39092072088d9d08801de2e910b",
       "kind": "file",
-      "sourceSha256": "6843e90dcebec4afacb6fe17dc5b4da2f2d299ba0ee76f345072e0ab51c06307"
+      "sourceSha256": "4360a1e0faf74b99545a5c5a2c721cf0f509d39092072088d9d08801de2e910b"
     },
     ".claude/docs/raven-antipatterns.md": {
       "installedSha256": "adc7b66f5f5d8a8ae50055a740aecf8c7ca9d276089e6b92ac3f0fe8a0b907f1",
@@ -206,9 +206,9 @@
       "sourceSha256": "806f1224309120784649d7029e47e83f6c46e993f504bfe5afe5171d95f8be0e"
     },
     ".claude/docs/raven-guardrails.md": {
-      "installedSha256": "f6946c0c79ed4e49bf2689d290109ca49675d1f05ed9cf034b41356dbbe0058c",
+      "installedSha256": "e32518b13f124e7b1929dc0a629c63b86a13c18da8d4e88b96e71069b3ded942",
       "kind": "file",
-      "sourceSha256": "f6946c0c79ed4e49bf2689d290109ca49675d1f05ed9cf034b41356dbbe0058c"
+      "sourceSha256": "e32518b13f124e7b1929dc0a629c63b86a13c18da8d4e88b96e71069b3ded942"
     },
     ".claude/docs/raven-lsp-mcp.md": {
       "installedSha256": "d31c3fb28e331cfbbac3af36f1d14ce707ac52becb4e2e64e5d08389a0179eea",
@@ -254,11 +254,6 @@
       "installedSha256": "33093d626ed6dba3bca704c08df291e396716825a8260c3a384f0cf84c8df89c",
       "kind": "file",
       "sourceSha256": "33093d626ed6dba3bca704c08df291e396716825a8260c3a384f0cf84c8df89c"
-    },
-    ".claude/hooks/raven-pre-bash-cd-scope.py": {
-      "installedSha256": "b6cc2e3965d6e36ef8d77130f2fbff3b60a101b93057180400d6186ec5abed30",
-      "kind": "file",
-      "sourceSha256": "b6cc2e3965d6e36ef8d77130f2fbff3b60a101b93057180400d6186ec5abed30"
     },
     ".claude/hooks/raven-pre-bash-guard.py": {
       "installedSha256": "d02bd1786292e622d043e00cb871da21b700fdcca5c643421c7e5c8424024ea0",
@@ -550,11 +545,6 @@
       "kind": "file",
       "sourceSha256": "33093d626ed6dba3bca704c08df291e396716825a8260c3a384f0cf84c8df89c"
     },
-    ".codex/hooks/raven-pre-bash-cd-scope.py": {
-      "installedSha256": "b6cc2e3965d6e36ef8d77130f2fbff3b60a101b93057180400d6186ec5abed30",
-      "kind": "file",
-      "sourceSha256": "b6cc2e3965d6e36ef8d77130f2fbff3b60a101b93057180400d6186ec5abed30"
-    },
     ".codex/hooks/raven-pre-bash-guard.py": {
       "installedSha256": "d02bd1786292e622d043e00cb871da21b700fdcca5c643421c7e5c8424024ea0",
       "kind": "file",
@@ -650,11 +640,6 @@
       "kind": "file",
       "sourceSha256": "33093d626ed6dba3bca704c08df291e396716825a8260c3a384f0cf84c8df89c"
     },
-    ".gemini/hooks/raven-pre-bash-cd-scope.py": {
-      "installedSha256": "b6cc2e3965d6e36ef8d77130f2fbff3b60a101b93057180400d6186ec5abed30",
-      "kind": "file",
-      "sourceSha256": "b6cc2e3965d6e36ef8d77130f2fbff3b60a101b93057180400d6186ec5abed30"
-    },
     ".gemini/hooks/raven-pre-bash-guard.py": {
       "installedSha256": "d02bd1786292e622d043e00cb871da21b700fdcca5c643421c7e5c8424024ea0",
       "kind": "file",
@@ -721,9 +706,9 @@
       "sourceSha256": "9f00542deba41864863dd3adb90a76e741ba16b758d85a09b6b4e120a763b8c1"
     },
     ".gemini/settings.json": {
-      "installedSha256": "edb2e95324688c2179e58845bb128a8e947d0b7bb70727fc590b1db1436a23de",
+      "installedSha256": "77c9cc4958230c7eacbe73390df98105c84da1f8c61b9088f6a42e8f696bf82a",
       "kind": "file",
-      "sourceSha256": "edb2e95324688c2179e58845bb128a8e947d0b7bb70727fc590b1db1436a23de"
+      "sourceSha256": "77c9cc4958230c7eacbe73390df98105c84da1f8c61b9088f6a42e8f696bf82a"
     },
     ".mcp.json": {
       "installedSha256": "5e62b5a61f5709dfcd9c9a4a1d5a0cfc9c23f5a8d6535af1f0e18121cb42bc68",
@@ -801,8 +786,8 @@
     "pyright",
     "pytest"
   ],
-  "ravenVersion": "9f512986d9b2-dirty",
+  "ravenVersion": "e6686454b361-dirty",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-11-07T07:11:30.964967+00:00"
+  "updatedAt": "2026-11-07T08:50:11.518958+00:00"
 }
