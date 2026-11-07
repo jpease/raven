@@ -55,7 +55,7 @@ This repository is Raven itself: the reusable template library and installer for
 - This repository records `[mcp] optional = []` in `.raven/config.toml` and wires no code-index MCP server. Dogfooding the shipped guidance means `rg` and LSP first.
 - A maintainer who wants GitNexus or CodeGraph adds the server in `.claude/settings.local.json` or user-level MCP config. Keep `.gitnexusrc` at `{"skipContextFiles": true}` so `gitnexus analyze` does not write a MUST-style block into this file.
 
-<!-- RAVEN:BEGIN sha256=e95da894e2a8639c5324960148b0760d45535946153437ab184f18b6362254c5 -->
+<!-- RAVEN:BEGIN sha256=fd092e04cedca5455cb105e4a0cd7547dadf0dc12beaa1402ea5b7b23272809f -->
 # AGENTS.md
 
 ## Primary Objective
@@ -77,6 +77,7 @@ Be effective while preserving context. Prefer targeted retrieval, summaries, and
   - `lsp-mcp`, `semgrep`: tool setup.
   - `tool-assessment`: choosing retrieval tools.
   - `antipatterns`: working where a repeat failure is recorded.
+  - `precedents`: before asking something a past decision settles.
 - If another tool inserts a managed block in `AGENTS.md`, treat it as authoritative for that tool's commands, syntax, and resource names — not as an override of these workflow guardrails.
 
 ## Retrieval Discipline
@@ -108,7 +109,7 @@ A skill costs a file read on Codex and a step — an `activate_skill`/`Skill` to
 
 ## Delegation
 
-Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context. Use the `raven-delegate-or-inline` skill for the decision criteria, delegation mechanics, and anti-habit checks. Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-test-debugger`, `raven-codebase-cartographer`, and `raven-prose-reviewer` as subagents across Claude Code, Codex, and Gemini CLI for common audits. Sub-agent returns must include an `## Out Of Scope Findings` section; disposition those findings per `raven-triage-discovery` rather than leaving them in chat or in an issue comment.
+Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context. Use the `raven-delegate-or-inline` skill for the decision criteria, delegation mechanics, and anti-habit checks. Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-code-reviewer`, `raven-test-debugger`, `raven-codebase-cartographer`, and `raven-prose-reviewer` as subagents across Claude Code, Codex, and Gemini CLI for common audits. Sub-agent returns must include an `## Out Of Scope Findings` section; disposition those findings per `raven-triage-discovery` rather than leaving them in chat or in an issue comment.
 
 ## Shell Command Policy
 

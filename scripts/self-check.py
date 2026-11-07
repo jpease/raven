@@ -103,6 +103,7 @@ _TREE_SYMLINKS_TO_COMMON = [
     ".claude/docs/raven-guardrails.md",
     ".claude/docs/raven-lsp-mcp.md",
     ".claude/docs/raven-namespace.md",
+    ".claude/docs/raven-precedents.md",
     ".claude/docs/raven-semgrep.md",
     ".claude/docs/raven-tool-assessment.md",
     ".claude/hooks",

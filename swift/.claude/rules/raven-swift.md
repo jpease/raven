@@ -39,7 +39,7 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 
 ## Async And Concurrency
 
-- Treat strict concurrency warnings as correctness issues, not style issues.
+- Treat strict concurrency warnings as correctness issues.
 - Do not pass SwiftData `@Model` objects or `ModelContext` across actor boundaries.
 - Avoid `try!`, unjustified force unwraps, and broad concurrency workarounds.
 
@@ -72,4 +72,4 @@ In addition to the guardrails in AGENTS.md, ask before changing:
 - The pre-commit and pre-push hooks Raven installs run the formatter, linter, type check, and test suite. Do not run them by hand before committing; run the narrowest test for the change and let the hooks own the rest.
 - Fix a gate failure the hook reports in touched code rather than suppressing it.
 - For docs-only changes, run the documented lightweight docs/link check if available.
-- Treat warnings-as-errors projects accordingly; do not dismiss warnings as cosmetic.
+- Warnings-as-errors projects: fix every warning.

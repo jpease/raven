@@ -19,6 +19,7 @@ Be effective while preserving context. Prefer targeted retrieval, summaries, and
   - `lsp-mcp`, `semgrep`: tool setup.
   - `tool-assessment`: choosing retrieval tools.
   - `antipatterns`: working where a repeat failure is recorded.
+  - `precedents`: before asking something a past decision settles.
 - If another tool inserts a managed block in `AGENTS.md`, treat it as authoritative for that tool's commands, syntax, and resource names — not as an override of these workflow guardrails.
 
 ## Retrieval Discipline
@@ -50,7 +51,7 @@ A skill costs a file read on Codex and a step — an `activate_skill`/`Skill` to
 
 ## Delegation
 
-Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context. Use the `raven-delegate-or-inline` skill for the decision criteria, delegation mechanics, and anti-habit checks. Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-test-debugger`, `raven-codebase-cartographer`, and `raven-prose-reviewer` as subagents across Claude Code, Codex, and Gemini CLI for common audits. Sub-agent returns must include an `## Out Of Scope Findings` section; disposition those findings per `raven-triage-discovery` rather than leaving them in chat or in an issue comment.
+Delegate or ask when the scope of a task exceeds what targeted retrieval can resolve in the main context. Use the `raven-delegate-or-inline` skill for the decision criteria, delegation mechanics, and anti-habit checks. Raven ships `raven-security-reviewer`, `raven-refactor-reviewer`, `raven-code-reviewer`, `raven-test-debugger`, `raven-codebase-cartographer`, and `raven-prose-reviewer` as subagents across Claude Code, Codex, and Gemini CLI for common audits. Sub-agent returns must include an `## Out Of Scope Findings` section; disposition those findings per `raven-triage-discovery` rather than leaving them in chat or in an issue comment.
 
 ## Shell Command Policy
 

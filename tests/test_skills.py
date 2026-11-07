@@ -896,7 +896,8 @@ class AntipatternRegistrySkillTests(unittest.TestCase):
 
 class AntipatternRegistrySymlinkTests(unittest.TestCase):
     """Guards the per-file symlink from every language tree into the
-    canonical registry doc, added for issue #123.
+    canonical on-demand registry docs (anti-pattern registry, issue #123;
+    precedent log).
 
     This duplicates part of what `scripts/self-check.py`'s
     `validate_symlink_canonicality()` checks once the path is added to its
@@ -910,9 +911,6 @@ class AntipatternRegistrySymlinkTests(unittest.TestCase):
     """
 
     def test_all_language_trees_symlink_to_the_canonical_registry(self):
-        canonical = (REPO_ROOT / "common" / ".claude" / "docs" / "raven-antipatterns.md").resolve()
-        self.assertTrue(canonical.is_file(), "expected the canonical registry doc to exist")
-
         language_dirs = [
             "dotfiles",
             "elixir",
@@ -925,15 +923,50 @@ class AntipatternRegistrySymlinkTests(unittest.TestCase):
             "swift",
             "typescript",
         ]
-        for lang in language_dirs:
-            path = REPO_ROOT / lang / ".claude" / "docs" / "raven-antipatterns.md"
-            with self.subTest(lang=lang):
-                self.assertTrue(path.is_symlink(), f"{path} should be a symlink, not a real file")
-                self.assertEqual(
-                    path.resolve(),
-                    canonical,
-                    f"{path} should resolve to the canonical common/ file",
-                )
+        for doc in ("raven-antipatterns.md", "raven-precedents.md"):
+            canonical = (REPO_ROOT / "common" / ".claude" / "docs" / doc).resolve()
+            self.assertTrue(canonical.is_file(), f"expected the canonical {doc} to exist")
+            for lang in language_dirs:
+                path = REPO_ROOT / lang / ".claude" / "docs" / doc
+                with self.subTest(doc=doc, lang=lang):
+                    self.assertTrue(
+                        path.is_symlink(), f"{path} should be a symlink, not a real file"
+                    )
+                    self.assertEqual(
+                        path.resolve(),
+                        canonical,
+                        f"{path} should resolve to the canonical common/ file",
+                    )
+
+
+class PrecedentLogTests(unittest.TestCase):
+    """Guards the owner-only authority and ask-or-cite rule of the precedent log."""
+
+    def setUp(self):
+        path = REPO_ROOT / "common" / ".claude" / "docs" / "raven-precedents.md"
+        self.lower = path.read_text(encoding="utf-8").lower()
+
+    def test_only_the_owner_writes_entries(self):
+        region = section_region(self.lower, "## when to add an entry")
+        self.assertIn("only the human owner creates, edits, or retires", region)
+        self.assertIn("draft", region)
+        self.assertIn("owner approves", region)
+
+    def test_entry_format_names_every_field(self):
+        region = section_region(self.lower, "## entry format")
+        for field_name in ("decision", "scope", "decided", "reconsider when"):
+            with self.subTest(field=field_name):
+                self.assertIn(f"**{field_name}**", region)
+
+    def test_covered_case_is_cited_and_near_miss_is_asked(self):
+        region = section_region(self.lower, "## using the log")
+        self.assertIn("pause and ask", region)
+        self.assertIn("by name", region)
+        self.assertIn("near-miss", region)
+
+    def test_retired_entries_are_kept(self):
+        region = section_region(self.lower, "## retirement")
+        self.assertIn("never deleted silently", region)
 
 
 class TaskCompleteSkillTests(unittest.TestCase):
