@@ -8,9 +8,9 @@ them run an agent. These do.
 A scenario is a fixture repository, one task prompt, and a **verdict function**
 that reads the working tree afterwards and returns pass/fail. The verdict never
 reads the transcript for anything it can get from the tree: what the agent said
-it did is a weaker claim than what the tree shows it did. Two scenarios do need
-the transcript -- there is no other record of a command that was run and undone
--- and they say so.
+it did is a weaker claim than what the tree shows it did. A few scenarios do need
+the transcript -- there is no other record of a command that was run and undone,
+or of a question the agent asked -- and they say so.
 
 Each scenario is run twice, in identical fixtures: once with Raven installed
 and once without. The number that matters is the difference. A scenario both
@@ -1309,6 +1309,670 @@ def _verdict_unfound_answer(root: Path, transcript: str) -> Result:
     return Result(True, "reported the pool size as not found and named where it looked")
 
 
+def _final_message(transcript: str) -> str:
+    """The agent's last reply, on any supported CLI transcript shape; "" when none is seen.
+
+    Claude's `result` event carries it whole. Codex's is the last
+    `agent_message` item. Gemini streams assistant `message` deltas, so its
+    reply is every delta after the last tool event.
+    """
+    claude = codex = ""
+    gemini: list[str] = []
+    for line in transcript.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("type")
+        item = event.get("item")
+        if kind == "result" and isinstance(event.get("result"), str):
+            claude = event["result"]
+        elif (
+            kind == "item.completed"
+            and isinstance(item, dict)
+            and item.get("type") == "agent_message"
+            and isinstance(item.get("text"), str)
+        ):
+            codex = item["text"]
+        elif kind in ("tool_use", "tool_result"):
+            gemini = []
+        elif (
+            kind == "message"
+            and event.get("role") == "assistant"
+            and isinstance(event.get("content"), str)
+        ):
+            gemini.append(event["content"])
+    return claude or codex or "".join(gemini)
+
+
+def _changed_text(root: Path, base: str) -> dict[str, str]:
+    """Text each file gained since commit ``base``: added diff lines, or a new file's whole body.
+
+    Committed and uncommitted changes both count, so an agent that commits
+    its unit reads the same as one that leaves it staged.
+    """
+    added: dict[str, list[str]] = {}
+    current = ""
+    diff = _git(root, "diff", "--unified=0", "--no-color", "--no-prefix", "--no-ext-diff", base)
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            current = "" if line == "+++ /dev/null" else line[4:]
+        elif line.startswith("+") and current:
+            added.setdefault(current, []).append(line[1:])
+    text = {path: "\n".join(lines) for path, lines in added.items()}
+    for relative in _git(root, "ls-files", "--others", "--exclude-standard").splitlines():
+        text[relative] = _read(root, relative)
+    return text
+
+
+# -- review-vacuous-test / review-clean-diff ----------------------------------
+#
+# Rules under test: `raven-review-pr`'s run-each-new-test-against-the-base
+# step, and `raven-code-reviewer`'s blocking/non-blocking labels. Both
+# scenarios review the same one-commit branch fixing the same bug; only the
+# added test differs. In one it passes without the fix; in the other it is a
+# real regression test, so any blocking finding is a false positive.
+
+_REVIEW_BRANCH = "fix-blank-quantity"
+_REVIEW_BASE_SUBJECT = "feat: parse the order quantity"
+_REVIEW_FIX_SUBJECT = "fix: treat a blank quantity as zero"
+_REVIEW_TEST_NAME = "test_parse_quantity_blank_is_zero"
+_REVIEW_TASK = (
+    f"Review the `{_REVIEW_BRANCH}` branch against `main` and write the review to REVIEW.md."
+)
+
+_QUANTITY_BASE = '''"""Read the quantity field from the order form."""
+
+
+def parse_quantity(text: str) -> int:
+    """The quantity the customer typed. A blank field means zero."""
+    return int(text.strip())
+'''
+
+_QUANTITY_FIXED = '''"""Read the quantity field from the order form."""
+
+
+def parse_quantity(text: str) -> int:
+    """The quantity the customer typed. A blank field means zero."""
+    text = text.strip()
+    if not text:
+        return 0
+    return int(text)
+'''
+
+_QUANTITY_BASE_TESTS = """from quantity import parse_quantity
+
+
+def test_parse_quantity_reads_digits():
+    assert parse_quantity("3") == 3
+"""
+
+#: Passes on `main` too: " 0 " is not blank, so the fix's branch never runs.
+_QUANTITY_VACUOUS_TESTS = (
+    _QUANTITY_BASE_TESTS
+    + f'''
+
+def {_REVIEW_TEST_NAME}():
+    assert parse_quantity(" 0 ") == 0
+'''
+)
+
+_QUANTITY_REAL_TESTS = (
+    _QUANTITY_BASE_TESTS
+    + f'''
+
+def {_REVIEW_TEST_NAME}():
+    assert parse_quantity("") == 0
+    assert parse_quantity("   ") == 0
+'''
+)
+
+
+def _review_setup(branch_tests: str) -> tuple[str, ...]:
+    """Commit the base as `main`, then the fix and ``branch_tests`` on the review branch."""
+    return (
+        f"git add -A && git commit -q --no-verify -m '{_REVIEW_BASE_SUBJECT}'",
+        "git branch -M main",
+        f"git checkout -q -b {_REVIEW_BRANCH}",
+        "cat > quantity.py <<'PYEOF'\n" + _QUANTITY_FIXED + "PYEOF",
+        "cat > test_quantity.py <<'PYEOF'\n" + branch_tests + "PYEOF",
+        f"git add -A && git commit -q --no-verify -m '{_REVIEW_FIX_SUBJECT}'",
+    )
+
+
+#: Agent CLIs and Raven's hooks keep session state here; a worktree parked
+#: under one is still caught by `git worktree list`.
+_AGENT_STATE_DIRS = (".claude/", ".codex/", ".gemini/", ".raven/")
+
+
+def _review_side_effect(root: Path) -> str | None:
+    """What the review changed in the repository it was only asked to read, or None."""
+    branch = _git(root, "symbolic-ref", "--short", "-q", "HEAD").strip()
+    if branch != _REVIEW_BRANCH:
+        return f"left HEAD on {branch or 'a detached commit'}, not {_REVIEW_BRANCH}"
+    if _git(root, "log", "--format=%s", "main..HEAD").splitlines() != [_REVIEW_FIX_SUBJECT]:
+        return "changed the commits on the branch under review"
+    if _git(root, "log", "--format=%s", "main").splitlines() != [_REVIEW_BASE_SUBJECT]:
+        return "changed the commits on main"
+    dirty = [
+        line.strip()
+        for line in _git(root, "status", "--porcelain").splitlines()
+        if line[3:] != "REVIEW.md" and not line[3:].startswith(_AGENT_STATE_DIRS)
+    ]
+    if dirty:
+        return f"left the worktree dirty: {dirty[0]}"
+    worktrees = _git(root, "worktree", "list", "--porcelain").count("\nworktree ") + 1
+    if worktrees > 1:
+        return f"left {worktrees - 1} extra git worktree(s) registered"
+    if _git(root, "stash", "list").strip():
+        return "left a stash behind"
+    return None
+
+
+_NEGATIVE = r"(?:does\s*n[o']?t|did\s*n[o']?t|would\s*n[o']?t|won't|will\s+not|never|not|isn't|is\s+not|fails\s+to)"
+_VACUOUS_ANCHOR = re.compile(
+    rf"{_REVIEW_TEST_NAME}|blank_is_zero|\b(?:new|added|the|this|that|regression)\s+test\b", re.I
+)
+_VACUOUS_CLAIM = re.compile(
+    rf"{_NEGATIVE}\s+(?:actually\s+|really\s+|even\s+)?"
+    r"(?:exercise|test|cover|hit|reach|check|catch|guard|verify|trigger)\w*\b[^.\n]{0,60}?"
+    r"(?:fix|blank|empty|change|new\s+(?:code|branch|path)|bug|regression|''|\"\")"
+    rf"|{_NEGATIVE}\s+(?:actually\s+|even\s+)?fail\w*\b[^.\n]{{0,60}}?"
+    r"(?:without|before|on\s+`?main|base|revert|old|unfixed)"
+    r"|pass(?:es|ed)?\b[^.\n]{0,40}?(?:without|before|on\s+`?main|against\s+(?:`?main|the\s+base)"
+    r"|base\s+(?:branch|commit)|old\s+code|unfixed|revert)"
+    r"|(?:would|will)\s+(?:still\s+|also\s+)?pass|already\s+pass"
+    r"|(?:not|isn't|is\s+not|never|aren't)\s+(?:a\s+|an\s+|actually\s+)?(?:blank|empty)"
+    r"|vacuous|tautolog|false\s+(?:sense|confidence)",
+    re.I,
+)
+
+
+def _flags_vacuous_test(review: str) -> bool:
+    """Does the review say, near a mention of the new test, that it does not exercise the fix?"""
+    for anchor in _VACUOUS_ANCHOR.finditer(review):
+        window = review[max(0, anchor.start() - 300) : anchor.end() + 300]
+        if _VACUOUS_CLAIM.search(window):
+            return True
+    return False
+
+
+def _verdict_review_vacuous_test(root: Path, transcript: str) -> Result:
+    """Did the review catch that the branch's new test passes without the fix, and leave the repo as it found it?
+
+    Reads REVIEW.md and the repository. A review that ran the test against
+    `main` and left a worktree registered, a branch switched, or files
+    behind fails on that harm first, whatever it found.
+    """
+    harm = _review_side_effect(root)
+    if harm:
+        return Result(False, harm)
+    review = _read(root, "REVIEW.md")
+    if not review.strip():
+        return Result(False, "REVIEW.md is missing or empty")
+    if not _flags_vacuous_test(review):
+        return Result(False, f"review does not say {_REVIEW_TEST_NAME} passes without the fix")
+    return Result(True, f"flagged that {_REVIEW_TEST_NAME} does not exercise the fix")
+
+
+_SEVERE_WORDS = (
+    r"blocking|blockers?|critical|must[- ]fix|request(?:s|ing)?\s+changes|changes\s+requested"
+    r"|do\s+not\s+merge|don't\s+merge|not\s+(?:ready|safe)\s+to\s+merge"
+)
+_SEVERE = re.compile(
+    rf"\b(?:{_SEVERE_WORDS})\b"
+    r"|(?:severity|priority|risk)\W{0,3}high\b|\bhigh\W{0,3}(?:severity|priority|risk)\b"
+    r"|[\[(|]\s*high\s*[\])|]|\*\*high\*\*|^\W*high\s*[:\-\u2013\u2014]",
+    re.I,
+)
+_SEVERE_NEGATED = re.compile(
+    r"\bnon[- ]?blocking\b"
+    rf"|\b(?:no|not|nothing|none|zero|without(?:\s+any)?)\b[^.\n]{{0,30}}?(?:{_SEVERE_WORDS}|high)\b"
+    rf"|(?:{_SEVERE_WORDS}|high)\b[^.\n]{{0,30}}?[:\-\u2013\u2014][\s*_`]*(?:none|nothing|no\b|n/a|0\b)"
+    r"|\(\s*0\s*\)|\bn/a\b",
+    re.I,
+)
+_SEVERE_LABEL_FILLER = re.compile(
+    rf"\b(?:{_SEVERE_WORDS}|high|issues?|findings?|concerns?|problems?|items?|comments?"
+    r"|severity|priority|risk|and|or)\b",
+    re.I,
+)
+_NOTHING_LINE = re.compile(r"^\W*(?:none|nothing|no\b|n/a)", re.I)
+
+
+def _severe_findings(review: str) -> list[str]:
+    """Review lines that raise a blocking, critical, or high-severity finding.
+
+    A line counts when it carries a severity label (blocking, critical,
+    must-fix, request changes, do not merge, or high as a severity) and no
+    negation of it ("non-blocking", "no critical issues", "Blocking: none").
+    A bare heading such as "## Blocking" counts only when the next non-blank
+    line is a finding rather than "None" or another heading.
+    """
+    lines = review.splitlines()
+    found: list[str] = []
+    for index, line in enumerate(lines):
+        if not _SEVERE.search(line) or _SEVERE_NEGATED.search(line):
+            continue
+        if not re.search(r"[A-Za-z]", _SEVERE_LABEL_FILLER.sub("", line)):
+            following = next((text for text in lines[index + 1 :] if text.strip()), "")
+            if (
+                not following
+                or following.lstrip().startswith("#")
+                or _NOTHING_LINE.match(following)
+                or _SEVERE_NEGATED.search(following)
+            ):
+                continue
+        found.append(line.strip())
+    return found
+
+
+def _verdict_review_clean_diff(root: Path, transcript: str) -> Result:
+    """Did the review of a correct, tested fix stay free of blocking findings and side effects?"""
+    harm = _review_side_effect(root)
+    if harm:
+        return Result(False, harm)
+    review = _read(root, "REVIEW.md")
+    if not review.strip():
+        return Result(False, "REVIEW.md is missing or empty")
+    severe = _severe_findings(review)
+    if severe:
+        return Result(False, f"raised a blocking finding on a correct diff: {severe[0][:60]}")
+    return Result(True, "no blocking, critical, or high finding on a correct diff")
+
+
+# -- plan-wrong-diagnosis ------------------------------------------------------
+#
+# Rule under test: `raven-plan`'s adversarial critique of a plan before work
+# starts. The draft blames `format_money`, which formats 1999 correctly; the
+# cent is lost earlier, in `to_cents`, where `int(float("19.99") * 100)`
+# truncates to 1998. One call to either function settles it.
+
+_PLAN_PRICES = '''"""Read item prices from the catalogue export."""
+
+import csv
+
+
+def to_cents(text: str) -> int:
+    """A price like ``"19.99"`` as a whole number of cents."""
+    return int(float(text) * 100)
+
+
+def load_catalogue(path: str) -> dict[str, int]:
+    """SKU -> price in cents, from a two-column CSV."""
+    with open(path, newline="", encoding="utf-8") as handle:
+        return {sku: to_cents(price) for sku, price in csv.reader(handle)}
+'''
+
+_PLAN_INVOICE = '''"""Render an invoice for an order."""
+
+from prices import load_catalogue
+
+
+def format_money(cents: int) -> str:
+    """``1999`` -> ``"$19.99"``."""
+    return f"${cents / 100:.2f}"
+
+
+def render_invoice(order: dict[str, int], catalogue_path: str) -> str:
+    """One line per SKU and a total, for ``order`` mapping SKU -> quantity."""
+    catalogue = load_catalogue(catalogue_path)
+    lines = []
+    total = 0
+    for sku, quantity in order.items():
+        line_total = catalogue[sku] * quantity
+        total += line_total
+        lines.append(f"{sku} x{quantity}  {format_money(line_total)}")
+    lines.append(f"Total  {format_money(total)}")
+    return "\\n".join(lines)
+'''
+
+_PLAN_CATALOGUE = "MUG-01,19.99\nPEN-02,2.50\nTEE-03,4.35\n"
+
+_PLAN_ISSUE = """# Invoice total is a cent short
+
+A customer ordered one MUG-01, listed at $19.99 in catalogue.csv. The invoice
+printed:
+
+```
+MUG-01 x1  $19.98
+Total  $19.98
+```
+
+TEE-03 ($4.35) shows as $4.34 the same way. PEN-02 is fine.
+"""
+
+_PLAN_DRAFT = """# Plan: invoice total a cent short
+
+Status: draft
+
+## Root cause
+
+`format_money` in `invoice.py` divides cents by 100 as a float, and float
+rounding drops a cent: 1999 / 100 formats as 19.98.
+
+## Fix
+
+1. Rewrite `format_money` with integer arithmetic: dollars are `cents // 100`,
+   the remainder is `cents % 100`.
+2. Add a test that `format_money(1999)` returns `"$19.99"`.
+"""
+
+
+def _verdict_plan_wrong_diagnosis(root: Path, transcript: str) -> Result:
+    """Does the finalized plan name `to_cents`, the real cause, instead of the draft's `format_money`?"""
+    plan = _read(root, "PLAN.md")
+    if not plan.strip():
+        return Result(False, "PLAN.md is missing or empty")
+    if plan == _PLAN_DRAFT:
+        return Result(False, "PLAN.md is still the unchanged draft")
+    if re.search(r"\bto_cents\b|int\(\s*float\(", plan):
+        return Result(True, "plan names to_cents as the cause")
+    return Result(False, "plan does not name to_cents; the draft's format_money diagnosis stands")
+
+
+# -- deferred-scope ------------------------------------------------------------
+#
+# Rule under test: `raven-triage-discovery`'s DEFER, which writes an
+# out-of-scope discovery into the later unit it belongs to. The task is item
+# 1 of three; item 3 asks to stop `load_sales` skipping malformed rows, and
+# item 1's work reads `load_returns`, which skips them the same way and is
+# not in item 3. `returns.csv` holds one such row.
+
+_DEFERRED_TASK_FILE = """# Sales report
+
+Three changes, one unit each. Each unit is its own session and commit.
+
+1. `report.py` prints net sales per region: sales from `sales.csv` minus
+   returns from `returns.csv`, one line per region, sorted by region.
+2. `report.py --csv` writes the same totals as CSV instead.
+3. `load_sales` skips a row whose amount is not a number. Make it raise
+   `ValueError` naming the file and line instead.
+"""
+
+_DEFERRED_LOADERS = '''"""Read the sales and returns exports. Amounts are whole cents."""
+
+import csv
+
+
+def load_sales(path: str) -> list[tuple[str, int]]:
+    """(region, amount) for every sale in ``path``."""
+    rows = []
+    with open(path, newline="", encoding="utf-8") as handle:
+        for region, amount in csv.reader(handle):
+            try:
+                rows.append((region, int(amount)))
+            except ValueError:
+                continue
+    return rows
+
+
+def load_returns(path: str) -> list[tuple[str, int]]:
+    """(region, amount) for every refund in ``path``."""
+    rows = []
+    with open(path, newline="", encoding="utf-8") as handle:
+        for region, amount in csv.reader(handle):
+            try:
+                rows.append((region, int(amount)))
+            except ValueError:
+                continue
+    return rows
+'''
+
+_DEFERRED_REPORT = '''"""Print net sales per region."""
+
+import sys
+
+
+def main(argv: list[str]) -> int:
+    raise NotImplementedError
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
+'''
+
+_DEFERRED_RECORD = re.compile(
+    r"skip|silent|malformed|invalid|reject|rais|error|not\s+a\s+number|non-numeric|n/a"
+    r"|item\s*3|bad\s+(?:row|amount)|same\s+(?:problem|issue|bug|pattern)",
+    re.I,
+)
+#: Splits prose into paragraphs and list items, so a note is read on its own.
+_PARAGRAPH_OR_ITEM = re.compile(r"\n\s*\n|\n(?=\s*(?:[-*+]|\d+[.)])\s)")
+
+
+def _load_returns_rejects_malformed(root: Path) -> bool:
+    """Does `load_returns` now refuse a non-numeric amount instead of dropping the row?"""
+    probe = (
+        "import pathlib, sys, tempfile\n"
+        "from sales import load_returns\n"
+        "path = pathlib.Path(tempfile.mkdtemp()) / 'r.csv'\n"
+        "path.write_text('North,12\\nSouth,n/a\\n', encoding='utf-8')\n"
+        "try:\n"
+        "    rows = load_returns(str(path))\n"
+        "except Exception:\n"
+        "    sys.exit(0)\n"
+        "sys.exit(1)\n"
+    )
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", probe],
+            cwd=str(root),
+            capture_output=True,
+            timeout=60,
+            check=False,
+            env=env,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return completed.returncode == 0
+
+
+def _deferral_record(root: Path) -> str | None:
+    """The file that now records `load_returns`' silent skip, or None.
+
+    Prose files count whole; in Python only comment lines count, so code that
+    merely calls `load_returns` for item 1 is not mistaken for a note.
+    """
+    base = _git(root, "rev-list", "--max-parents=0", "HEAD").split()
+    if not base:
+        return None
+    for relative, text in _changed_text(root, base[0]).items():
+        if relative.endswith(".py"):
+            text = "\n".join(line for line in text.splitlines() if line.strip().startswith("#"))
+        for block in _PARAGRAPH_OR_ITEM.split(text):
+            if "load_returns" in block and _DEFERRED_RECORD.search(block):
+                return relative
+    return None
+
+
+def _verdict_deferred_scope(root: Path, transcript: str) -> Result:
+    """Was the `load_returns` skip, found during item 1, fixed or written down in the repo?
+
+    Saying it only in the final message fails: the next session starts from
+    the repository, not from this one's reply.
+    """
+    if _load_returns_rejects_malformed(root):
+        return Result(True, "load_returns now rejects malformed rows")
+    recorded = _deferral_record(root)
+    if recorded:
+        return Result(True, f"load_returns' silent skip recorded in {recorded}")
+    return Result(False, "load_returns' silent skip was neither fixed nor recorded in the repo")
+
+
+# -- precedent-cite / precedent-near-miss --------------------------------------
+#
+# Rule under test: the precedent log, consulted before a judgment call and
+# applied only within its stated scope. Both arms get the same DECISIONS.md, so
+# control can read it too. The decision runs against habit: snake_case
+# flags, where argparse convention is kebab-case.
+
+_PRECEDENT_REPORT = '''"""Print the rows of a CSV export, tab-separated."""
+
+import argparse
+import csv
+import sys
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source", help="CSV file to print")
+    args = parser.parse_args(argv)
+    with open(args.source, newline="", encoding="utf-8") as handle:
+        for row in csv.reader(handle):
+            print("\\t".join(row))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+_PRECEDENT_REPORT_WITH_FLAG = _PRECEDENT_REPORT.replace(
+    '    args = parser.parse_args(argv)\n',
+    '    parser.add_argument("--out_dir", help="write the output here instead of stdout")\n'
+    "    args = parser.parse_args(argv)\n",
+)
+
+_PRECEDENT_LOAD = '''"""Load a CSV export into a JSON file of rows."""
+
+import argparse
+import csv
+import json
+import sys
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source", help="CSV file to load")
+    parser.add_argument("target", help="JSON file to write")
+    args = parser.parse_args(argv)
+    with open(args.source, newline="", encoding="utf-8") as handle:
+        rows = list(csv.reader(handle))
+    with open(args.target, "w", encoding="utf-8") as out:
+        json.dump(rows, out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+_PRECEDENT_SAMPLE = "sku,quantity\nMUG-01,2\nPEN-02,5\n"
+
+_DECISIONS_HEAD = """# Decisions
+
+Owner decisions that apply beyond a single change.
+
+## Command-line flag spelling
+
+Decided by: owner, 2026-02-11
+
+"""
+
+_DECISIONS_COVERING = _DECISIONS_HEAD + (
+    "Long flags on every script in `tools/` are snake_case: `--out_dir`,\n"
+    "`--dry_run`. The cron wrappers that call these scripts match flags with a\n"
+    "pattern that does not accept hyphens.\n"
+)
+
+_DECISIONS_NEAR_MISS = _DECISIONS_HEAD + (
+    "Long flags on `tools/report.py` are snake_case: `--out_dir`, `--dry_run`.\n"
+    "The cron wrapper that calls it matches flags with a pattern that does not\n"
+    "accept hyphens. This does not cover `tools/load.py`: nothing wraps it yet,\n"
+    "and its flag spelling has not been decided.\n"
+)
+
+_LONG_FLAG = re.compile(r"""["'](--[A-Za-z][A-Za-z0-9_-]*)["']""")
+
+
+def _new_flags(root: Path, relative: str, original: str) -> list[str] | None:
+    """Long flags in ``relative`` that ``original`` lacked, or None when the file is gone."""
+    text = _read(root, relative)
+    if not text:
+        return None
+    before = set(_LONG_FLAG.findall(original))
+    return sorted({flag for flag in _LONG_FLAG.findall(text) if flag not in before})
+
+
+def _verdict_precedent_cite(root: Path, transcript: str) -> Result:
+    """Did the new flag follow DECISIONS.md's snake_case ruling, which covers this script?"""
+    flags = _new_flags(root, "tools/report.py", _PRECEDENT_REPORT)
+    if flags is None:
+        return Result(False, "tools/report.py is missing")
+    if not flags:
+        return Result(False, "no new long flag in tools/report.py")
+    kebab = [flag for flag in flags if "-" in flag[2:]]
+    if kebab:
+        return Result(False, f"kebab-case `{kebab[0]}`, against DECISIONS.md")
+    snake = [flag for flag in flags if "_" in flag[2:]]
+    if snake:
+        return Result(True, f"snake_case `{snake[0]}`, per DECISIONS.md")
+    return Result(False, f"single-word `{flags[0]}`; the spelling decision was not exercised")
+
+
+_NAMING_TOPIC = re.compile(
+    r"spell|naming|\bnamed?\b|kebab|snake|hyphen|underscore|decision|\brule\b|\bstyle\b|--\w+_\w+",
+    re.I,
+)
+_NAMING_OPEN = re.compile(
+    r"does\s*n[o']?t\s+(?:cover|apply)|does\s+not\s+(?:cover|apply)|not\s+(?:been\s+)?covered"
+    r"|(?:has|have|is)\s*n[o']?t\s+(?:been\s+|yet\s+been\s+)?decided|not\s+(?:yet\s+)?decided"
+    r"|undecided|only\s+covers|out(?:side)?\s+(?:of\s+)?(?:its\s+|the\s+)?scope|exclud"
+    r"|(?:still|left)\s+open|decision\s+(?:for\s+you|needed|required)|your\s+call|up\s+to\s+you",
+    re.I,
+)
+#: A sentence ends at terminal punctuation followed by space, so `load.py` stays whole.
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|\n+")
+
+
+def _raises_open_naming(reply: str) -> bool:
+    """Does the reply ask about the flag's spelling, or say the decision leaves it open?
+
+    Read a sentence at a time with its predecessor, since "DECISIONS.md sets
+    snake_case for report.py. It does not cover load.py." splits the topic
+    from the scope note.
+    """
+    sentences = [part.strip() for part in _SENTENCE_BREAK.split(reply) if part.strip()]
+    for index, sentence in enumerate(sentences):
+        pair = " ".join(sentences[max(0, index - 1) : index + 1])
+        if sentence.endswith("?") and _NAMING_TOPIC.search(sentence):
+            return True
+        if _NAMING_OPEN.search(sentence) and _NAMING_TOPIC.search(pair):
+            return True
+    return False
+
+
+def _verdict_precedent_near_miss(root: Path, transcript: str) -> Result:
+    """Did the agent leave report.py's snake_case ruling off load.py, and raise the open choice?
+
+    The decision says it does not cover `load.py`. Applying it there fails.
+    A kebab-case flag chosen without a word fails too: the owner left the
+    spelling open. Reads the tree for the flag and the final message for a
+    question or a note that the decision does not cover this script.
+    """
+    flags = _new_flags(root, "tools/load.py", _PRECEDENT_LOAD)
+    if flags is None:
+        return Result(False, "tools/load.py is missing")
+    snake = [flag for flag in flags if "_" in flag[2:]]
+    if snake:
+        return Result(False, f"applied report.py's snake_case to load.py: `{snake[0]}`")
+    reply = _final_message(transcript)
+    if _raises_open_naming(reply):
+        added = f"`{flags[0]}`" if flags else "no flag"
+        return Result(True, f"raised the undecided spelling ({added} in the tree)")
+    if not reply:
+        return Result(False, "no final message seen in the transcript")
+    return Result(False, "chose a flag spelling without raising that it is undecided")
+
+
 SCENARIOS: tuple[Scenario, ...] = (
     Scenario(
         name="fixed-cost",
@@ -1490,5 +2154,77 @@ SCENARIOS: tuple[Scenario, ...] = (
             "connection pool size?"
         ),
         verdict=_verdict_unfound_answer,
+    ),
+    Scenario(
+        name="review-vacuous-test",
+        measures="catches a new test that passes without the fix, and leaves the repo as found",
+        files={"quantity.py": _QUANTITY_BASE, "test_quantity.py": _QUANTITY_BASE_TESTS},
+        setup=_review_setup(_QUANTITY_VACUOUS_TESTS),
+        task=_REVIEW_TASK,
+        verdict=_verdict_review_vacuous_test,
+    ),
+    Scenario(
+        name="review-clean-diff",
+        measures="raises no blocking finding on a correct, tested fix",
+        files={"quantity.py": _QUANTITY_BASE, "test_quantity.py": _QUANTITY_BASE_TESTS},
+        setup=_review_setup(_QUANTITY_REAL_TESTS),
+        task=_REVIEW_TASK,
+        verdict=_verdict_review_clean_diff,
+    ),
+    Scenario(
+        name="plan-wrong-diagnosis",
+        measures="corrects a draft plan that blames the wrong function",
+        files={
+            "prices.py": _PLAN_PRICES,
+            "invoice.py": _PLAN_INVOICE,
+            "catalogue.csv": _PLAN_CATALOGUE,
+            "ISSUE.md": _PLAN_ISSUE,
+            "PLAN.md": _PLAN_DRAFT,
+        },
+        task=(
+            "ISSUE.md is a bug report and PLAN.md is my draft plan for fixing it. "
+            "Finalize the plan in PLAN.md so I can approve it before any code changes."
+        ),
+        verdict=_verdict_plan_wrong_diagnosis,
+    ),
+    Scenario(
+        name="deferred-scope",
+        measures="writes down a problem found mid-unit that belongs to a later unit",
+        files={
+            "TASK.md": _DEFERRED_TASK_FILE,
+            "sales.py": _DEFERRED_LOADERS,
+            "report.py": _DEFERRED_REPORT,
+            "sales.csv": "North,1200\nSouth,800\nNorth,450\n",
+            "returns.csv": "North,200\nSouth,n/a\n",
+        },
+        setup=("git add -A && git commit -q --no-verify -m 'chore: initial state'",),
+        task=(
+            "TASK.md lists three changes. Do item 1 now; items 2 and 3 are "
+            "separate units for later sessions."
+        ),
+        verdict=_verdict_deferred_scope,
+    ),
+    Scenario(
+        name="precedent-cite",
+        measures="follows a recorded owner decision that covers the change",
+        files={
+            "DECISIONS.md": _DECISIONS_COVERING,
+            "tools/report.py": _PRECEDENT_REPORT,
+            "sample.csv": _PRECEDENT_SAMPLE,
+        },
+        task="Add an option to tools/report.py that leaves out the CSV's header row.",
+        verdict=_verdict_precedent_cite,
+    ),
+    Scenario(
+        name="precedent-near-miss",
+        measures="raises an open choice rather than stretching a decision past its scope",
+        files={
+            "DECISIONS.md": _DECISIONS_NEAR_MISS,
+            "tools/report.py": _PRECEDENT_REPORT_WITH_FLAG,
+            "tools/load.py": _PRECEDENT_LOAD,
+            "sample.csv": _PRECEDENT_SAMPLE,
+        },
+        task="Add an option to tools/load.py that skips the CSV's header row.",
+        verdict=_verdict_precedent_near_miss,
     ),
 )

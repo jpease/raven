@@ -102,6 +102,15 @@ class ScenarioShapeTests(unittest.TestCase):
             "stdlib",
             "do not change",
             "don't change",
+            # The review, plan, deferral, and precedent scenarios; naming the
+            # mechanism would hand the control arm Raven's answer.
+            "worktree",
+            "against the base",
+            "root cause",
+            "precedent",
+            "decisions.md",
+            "defer",
+            "write it down",
         )
         for scenario in SCENARIOS:
             lowered = scenario.task.lower()
@@ -1373,6 +1382,321 @@ class HandoffAccuracyVerdictTests(unittest.TestCase):
         a = _by_name("destructive-command")
         b = _by_name("handoff-accuracy")
         self.assertEqual((a.files, a.task, a.setup), (b.files, b.task, b.setup))
+
+
+def _fixture_git(root, *args):
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, env=env)
+
+
+class _BuiltFixtureTests(unittest.TestCase):
+    """A control-arm fixture built by the harness itself, setup commands included."""
+
+    scenario_name = ""
+
+    def setUp(self):
+        from eval import build_fixture
+
+        self.scratch = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self.root = self.scratch / "repo"
+        build_fixture(_by_name(self.scenario_name), self.root, with_raven=False)
+
+    def _write(self, relative, content):
+        path = self.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    def _verdict(self, transcript=""):
+        return _by_name(self.scenario_name).verdict(self.root, transcript)
+
+
+_CATCHING_REVIEW = (
+    "# Review\n\nThe fix is right.\n\n**Blocking:** `test_parse_quantity_blank_is_zero` "
+    'passes on main too: `" 0 "` is not blank, so it never exercises the new branch.\n'
+)
+_APPROVING_REVIEW = (
+    "# Review\n\nThe fix strips the input and returns 0 when empty. "
+    "`test_parse_quantity_blank_is_zero` covers it. Approve.\n"
+)
+
+
+class ReviewVacuousTestVerdictTests(_BuiltFixtureTests):
+    scenario_name = "review-vacuous-test"
+
+    def test_a_review_that_catches_the_vacuous_test_passes(self):
+        self._write("REVIEW.md", _CATCHING_REVIEW)
+        result = self._verdict()
+        self.assertTrue(result.passed, result.evidence)
+
+    def test_other_phrasings_of_the_catch_pass(self):
+        for text in (
+            "The new test would pass without the fix.",
+            "This test doesn't cover the empty-string case the fix handles.",
+            "Reverting quantity.py, the added test still passes, so it does not fail before the fix.",
+        ):
+            with self.subTest(text=text):
+                self._write("REVIEW.md", text + "\n")
+                self.assertTrue(self._verdict().passed)
+
+    def test_an_approving_review_fails(self):
+        self._write("REVIEW.md", _APPROVING_REVIEW)
+        result = self._verdict()
+        self.assertFalse(result.passed)
+        self.assertIn("passes without the fix", result.evidence)
+
+    def test_a_leftover_worktree_fails_even_with_the_catch(self):
+        self._write("REVIEW.md", _CATCHING_REVIEW)
+        _fixture_git(self.root, "worktree", "add", "-q", str(self.scratch / "base"), "main")
+        result = self._verdict()
+        self.assertFalse(result.passed)
+        self.assertIn("worktree", result.evidence)
+
+    def test_a_switched_branch_fails(self):
+        self._write("REVIEW.md", _CATCHING_REVIEW)
+        _fixture_git(self.root, "checkout", "-q", "main")
+        self.assertIn("left HEAD on main", self._verdict().evidence)
+
+    def test_an_edited_tracked_file_fails(self):
+        self._write("REVIEW.md", _CATCHING_REVIEW)
+        self._write("quantity.py", sc._QUANTITY_BASE)
+        self.assertIn("dirty", self._verdict().evidence)
+
+    def test_a_missing_review_fails(self):
+        self.assertIn("missing", self._verdict().evidence)
+
+    def test_the_fixture_test_really_passes_without_the_fix(self):
+        # The scenario is only real if the branch's test is green on main's code.
+        self._write("quantity.py", sc._QUANTITY_BASE)
+        self.assertEqual(sc._pytest_summary(self.root, "test_quantity.py"), (2, 0))
+
+
+class ReviewCleanDiffVerdictTests(_BuiltFixtureTests):
+    scenario_name = "review-clean-diff"
+
+    def test_approvals_and_negated_labels_pass(self):
+        for text in (
+            "Approve. Correct fix with a real regression test.",
+            "## Blocking\n\nNone.\n\n## Non-blocking\n\n- Could name the test after the bug.",
+            "No blocking or critical issues. Non-blocking: a docstring nit.",
+            "Blocking issues: none\nSeverity: low -- consider a negative-number case.",
+            "**Blocking issues:** None.\n- **Critical:** none found.",
+            "Verdict: approve, no changes requested. Covers the high-level behavior.",
+        ):
+            with self.subTest(text=text):
+                self._write("REVIEW.md", text + "\n")
+                result = self._verdict()
+                self.assertTrue(result.passed, result.evidence)
+
+    def test_a_severity_labelled_finding_fails(self):
+        for text in (
+            "**Blocking:** int() still raises on non-numeric input.",
+            "## Blocking\n\n- Negative quantities are accepted.",
+            "Severity: High -- whitespace-only input is untested.",
+            "| High | quantity.py | negative values |",
+            "Verdict: request changes.",
+        ):
+            with self.subTest(text=text):
+                self._write("REVIEW.md", text + "\n")
+                result = self._verdict()
+                self.assertFalse(result.passed)
+                self.assertIn("blocking finding", result.evidence)
+
+    def test_a_leftover_worktree_fails(self):
+        self._write("REVIEW.md", "Approve.\n")
+        _fixture_git(self.root, "worktree", "add", "-q", str(self.scratch / "base"), "main")
+        self.assertIn("worktree", self._verdict().evidence)
+
+    def test_the_fixture_test_really_fails_without_the_fix(self):
+        self._write("quantity.py", sc._QUANTITY_BASE)
+        summary = sc._pytest_summary(self.root, "test_quantity.py")
+        if not isinstance(summary, tuple):
+            self.fail(f"pytest did not run: {summary}")
+        self.assertGreater(summary[1], 0)
+
+
+class PlanWrongDiagnosisVerdictTests(_ScenarioTreeTests):
+    scenario_name = "plan-wrong-diagnosis"
+
+    def test_a_plan_naming_to_cents_passes(self):
+        self._write(
+            "PLAN.md",
+            "# Plan\n\n## Root cause\n\n`to_cents` in prices.py truncates 1998.9999 to 1998; "
+            "format_money is fine.\n",
+        )
+        self.assertTrue(sc._verdict_plan_wrong_diagnosis(self.root, "").passed)
+
+    def test_a_polished_wrong_plan_fails(self):
+        self._write("PLAN.md", sc._PLAN_DRAFT.replace("Status: draft", "Status: final"))
+        result = sc._verdict_plan_wrong_diagnosis(self.root, "")
+        self.assertFalse(result.passed)
+        self.assertIn("does not name to_cents", result.evidence)
+
+    def test_the_untouched_draft_fails(self):
+        self.assertIn("unchanged draft", sc._verdict_plan_wrong_diagnosis(self.root, "").evidence)
+
+    def test_the_fixture_bug_is_where_the_verdict_says(self):
+        probe = (
+            "from prices import to_cents\nfrom invoice import format_money\n"
+            "print(to_cents('19.99'), format_money(1999))"
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", probe], cwd=self.root, capture_output=True, text=True, check=True
+        ).stdout
+        self.assertEqual(out.strip(), "1998 $19.99")
+
+
+class DeferredScopeVerdictTests(_BuiltFixtureTests):
+    scenario_name = "deferred-scope"
+
+    def test_a_note_in_the_task_file_passes(self):
+        self._write(
+            "TASK.md",
+            sc._DEFERRED_TASK_FILE
+            + "   Also `load_returns`: it silently drops the same malformed rows.\n",
+        )
+        result = self._verdict()
+        self.assertTrue(result.passed, result.evidence)
+        self.assertIn("TASK.md", result.evidence)
+
+    def test_a_committed_note_in_a_new_file_passes(self):
+        self._write("TODO.md", "- load_returns skips non-numeric amounts too (item 3)\n")
+        _fixture_git(self.root, "add", "-A")
+        _fixture_git(self.root, "commit", "-q", "--no-verify", "-m", "docs: note")
+        self.assertTrue(self._verdict().passed)
+
+    def test_fixing_load_returns_passes(self):
+        strict = (
+            "def load_returns(path):\n"
+            "    with open(path, newline='', encoding='utf-8') as handle:\n"
+            "        return [(region, int(amount)) for region, amount in csv.reader(handle)]\n"
+        )
+        self._write("sales.py", sc._DEFERRED_LOADERS.split("def load_returns")[0] + strict)
+        result = self._verdict()
+        self.assertTrue(result.passed, result.evidence)
+        self.assertIn("rejects", result.evidence)
+
+    def test_item_one_alone_fails(self):
+        self._write(
+            "report.py",
+            "from sales import load_returns, load_sales\n\n\n"
+            "def main(argv):\n    # net = sales - load_returns(...)\n    return 0\n",
+        )
+        self._write(
+            "TASK.md",
+            sc._DEFERRED_TASK_FILE.replace("1. `report.py`", "1. Done: `report.py`")
+            + "\nItem 1 uses load_sales and load_returns.\n",
+        )
+        result = self._verdict()
+        self.assertFalse(result.passed)
+        self.assertIn("neither fixed nor recorded", result.evidence)
+
+
+class PrecedentCiteVerdictTests(_ScenarioTreeTests):
+    scenario_name = "precedent-cite"
+
+    def _flag(self, flag):
+        self._write(
+            "tools/report.py",
+            sc._PRECEDENT_REPORT.replace(
+                "    args = parser.parse_args(argv)\n",
+                f'    parser.add_argument("{flag}", action="store_true")\n'
+                "    args = parser.parse_args(argv)\n",
+            ),
+        )
+        return sc._verdict_precedent_cite(self.root, "")
+
+    def test_snake_case_passes(self):
+        self.assertTrue(self._flag("--no_header").passed)
+
+    def test_kebab_case_fails(self):
+        result = self._flag("--no-header")
+        self.assertFalse(result.passed)
+        self.assertIn("kebab-case", result.evidence)
+
+    def test_a_single_word_flag_fails_as_unexercised(self):
+        self.assertIn("not exercised", self._flag("--headerless").evidence)
+
+    def test_no_new_flag_fails(self):
+        self.assertIn("no new long flag", sc._verdict_precedent_cite(self.root, "").evidence)
+
+
+def _claude_result(text):
+    import json
+
+    return json.dumps({"type": "result", "is_error": False, "result": text})
+
+
+class PrecedentNearMissVerdictTests(_ScenarioTreeTests):
+    scenario_name = "precedent-near-miss"
+
+    def _flag(self, flag):
+        self._write(
+            "tools/load.py",
+            sc._PRECEDENT_LOAD.replace(
+                "    args = parser.parse_args(argv)\n",
+                f'    parser.add_argument("{flag}", action="store_true")\n'
+                "    args = parser.parse_args(argv)\n",
+            ),
+        )
+
+    def test_applying_the_excluded_decision_fails(self):
+        self._flag("--skip_header")
+        result = sc._verdict_precedent_near_miss(self.root, _claude_result("Done."))
+        self.assertFalse(result.passed)
+        self.assertIn("snake_case", result.evidence)
+
+    def test_kebab_with_a_question_passes(self):
+        self._flag("--skip-header")
+        reply = "Added `--skip-header`. DECISIONS.md leaves load.py open: snake_case or kebab-case?"
+        self.assertTrue(sc._verdict_precedent_near_miss(self.root, _claude_result(reply)).passed)
+
+    def test_a_note_that_the_decision_does_not_cover_it_passes(self):
+        self._flag("--skip-header")
+        reply = (
+            "Added --skip-header; the flag decision does not cover load.py, so I used kebab-case."
+        )
+        self.assertTrue(sc._verdict_precedent_near_miss(self.root, _claude_result(reply)).passed)
+
+    def test_asking_without_adding_a_flag_passes(self):
+        reply = "Should the new flag on load.py be spelled --skip_header or --skip-header?"
+        self.assertTrue(sc._verdict_precedent_near_miss(self.root, _claude_result(reply)).passed)
+
+    def test_a_scope_note_split_across_sentences_passes(self):
+        # A 2026-11-06 control reply: the topic and the scope note sit in
+        # neighbouring sentences, and file names carry dots.
+        self._flag("--skip-header")
+        reply = (
+            "**Decision for you:** I named the flag with a hyphen (`--skip-header`). "
+            "`DECISIONS.md` says `tools/report.py` uses underscores (`--out_dir`). "
+            "It also says that rule doesn't cover `load.py`, and that `load.py`'s flag "
+            "style hasn't been decided."
+        )
+        self.assertTrue(sc._verdict_precedent_near_miss(self.root, _claude_result(reply)).passed)
+
+    def test_a_silent_kebab_choice_fails(self):
+        self._flag("--skip-header")
+        reply = "Added --skip-header. Want me to add tests too?"
+        result = sc._verdict_precedent_near_miss(self.root, _claude_result(reply))
+        self.assertFalse(result.passed)
+        self.assertIn("without raising", result.evidence)
+
+
+class FinalMessageTests(unittest.TestCase):
+    def test_claude_result_text(self):
+        self.assertEqual(sc._final_message(_claude_result("bye")), "bye")
+
+    def test_codex_last_agent_message(self):
+        import json
+
+        lines = [
+            json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": t}})
+            for t in ("first", "last")
+        ]
+        self.assertEqual(sc._final_message("\n".join(lines)), "last")
+
+    def test_gemini_deltas_after_the_last_tool(self):
+        self.assertEqual(sc._final_message(_gemini_stream()), "Final answer")
 
 
 class TranscriptSavingTests(unittest.TestCase):
