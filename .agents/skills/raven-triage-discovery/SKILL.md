@@ -34,7 +34,7 @@ Work found mid-task that falls outside the current issue's acceptance criteria n
 - Where sub-issue linkage is unavailable (gh older than 2.49, or a tracker without it), add a task-list checkbox to the parent body instead.
 - A deferral lives in the sibling's record, not only in this unit's summary, so it survives if that unit never picks it up. `raven-project-lifecycle` wrap-up checks every recorded deferral was resolved.
 - With no tracker configured, record the item in the repository's durable planning location, such as `.raven/plans/`, and state it in the completion summary. Never chat-only.
-- Title the issue with the problem. Body carries the evidence: file, symbol, and what you observed.
+- Title the issue with the problem. Body carries the evidence: file, symbol, and what you observed. State in the body that the agent found it and no human has confirmed it is wanted.
 - After filing, a comment on the parent pointing at the new issue is useful. The reverse — a comment instead of an issue — is the failure mode.
 
 ## Rationalization Check

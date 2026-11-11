@@ -19,7 +19,7 @@ Lightweight verification ritual before declaring a unit of work finished. Closes
 - Do not generalize a narrow check into a broad claim. If you ran one test file, say that — not "all tests pass." Name the exact scope you verified.
 - If a verification step fails, address it before proceeding.
 - The installed pre-commit and pre-push hooks run the formatter, linter, type check, and suite. Do not run them by hand here.
-- State design intent that is not derivable from the diff: the constraint that forced this design, the alternative rejected, or a non-obvious behavior. If nothing forced a decision, say so explicitly rather than padding.
+- State design intent that is not derivable from the diff: the constraint that forced this design, the alternative rejected, or a non-obvious behavior. If nothing forced a decision, say so explicitly rather than padding. Tag each reason with its source: `user-stated`, `repo-derived` (cite the file or doc), or `inferred`. An inferred reason is a guess until the user confirms it.
 
 ## Terminal States
 
@@ -76,7 +76,7 @@ When gaps exist:
 
 Always:
 
-> Intent: [what forced this design — the constraint, the rejected alternative, or the non-obvious behavior a future reader would trip on]. If none: `Intent: none — mechanical rename, no design decision.`
+> Intent: [what forced this design — the constraint, the rejected alternative, or the non-obvious behavior a future reader would trip on]. Source: [user-stated | repo-derived | inferred]. If none: `Intent: none — mechanical rename, no design decision.`
 
 Always:
 

@@ -20,6 +20,7 @@ AGENTS.md Retrieval Discipline and Verification State already govern batching, v
 - Take a third-party API's shape from the installed version, not from memory. Confirm the symbol with LSP against the installed package before calling it — a name renamed a major ago still writes fluently from training and fails at runtime.
 - Run at least one relevant verification command when the project has an applicable test or check.
 - Work that exceeds the stated scope ceiling requires stopping and asking per AGENTS.md Pause And Ask. Don't expand silently.
+- When no comparable pattern exists (a new project, or a module with no sibling), pause before the first file. State the 3–5 conventions you will follow: layout, error handling, naming, and the key data types. Get the user's confirmation, then record them in the project's own `AGENTS.md` above the managed block.
 
 ## Process
 
@@ -32,14 +33,15 @@ AGENTS.md Retrieval Discipline and Verification State already govern batching, v
    - the acceptance criteria you will verify against
    - the scope ceiling: what you will not touch, build, or generalize
    - when the change hand-rolls something in a category with a standard solution (crypto, auth, date/time arithmetic, parsing, retry and backoff), one sentence on why not the library. This is a stated reason, not an approval gate — adding a dependency stays gated by AGENTS.md Pause And Ask, and the point is that hand-rolling stops being the silent default.
+   - what the change adds to maintain: new files, config keys, dependencies, generated or duplicated code, and what keeps each current
 6. Add or update tests for the behavior change before implementing, per `raven-write-tests`.
 7. Run them and confirm they fail for the behavior they assert, per `raven-write-tests`.
 8. Implement using existing conventions.
 9. Run narrow tests first, then broaden to relevant tests.
-10. Summarize user-visible behavior, touched files, and whether the scope ceiling held or where it moved.
+10. Summarize user-visible behavior, touched files, what the change added to maintain, and whether the scope ceiling held or where it moved.
 
 ## When To Stop
 
 Apply the AGENTS.md stop rule against the owning module, comparable pattern, or smallest integration point. Also stop if candidates are contradictory, unrelated, or too broad to inspect without reading many full files.
 
-Do not invent a new integration point just because discovery is inconclusive.
+Do not invent a new integration point just because discovery is inconclusive in an established area. An area with no precedent takes the convention step in Required Constraints.
