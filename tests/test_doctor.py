@@ -1411,6 +1411,7 @@ class DoctorFlattenedSymlinkTests(RavenTestCase):
         finding = ids["doctor.checkout.symlinks"]
         self.assertEqual(finding.severity, Severity.ERROR)
         self.assertIn(".claude/skills", finding.detail)
+        assert finding.fix is not None
         self.assertIn("core.symlinks", finding.fix)
 
     def test_flattened_installed_symlink_is_an_error(self):
