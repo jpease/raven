@@ -256,9 +256,9 @@
       "sourceSha256": "33093d626ed6dba3bca704c08df291e396716825a8260c3a384f0cf84c8df89c"
     },
     ".claude/hooks/raven-pre-bash-guard.py": {
-      "installedSha256": "d02bd1786292e622d043e00cb871da21b700fdcca5c643421c7e5c8424024ea0",
+      "installedSha256": "5b46c3f410094f9f5319efbe16cc65a155b095e5fb4d52543e0593e021d0a846",
       "kind": "file",
-      "sourceSha256": "d02bd1786292e622d043e00cb871da21b700fdcca5c643421c7e5c8424024ea0"
+      "sourceSha256": "5b46c3f410094f9f5319efbe16cc65a155b095e5fb4d52543e0593e021d0a846"
     },
     ".claude/hooks/raven-pre-bash-test-scope.py": {
       "installedSha256": "892095e914f9bc9207e699042ba3b8cadaee4d7de5538ef21b91339d75037efc",
@@ -546,9 +546,9 @@
       "sourceSha256": "33093d626ed6dba3bca704c08df291e396716825a8260c3a384f0cf84c8df89c"
     },
     ".codex/hooks/raven-pre-bash-guard.py": {
-      "installedSha256": "d02bd1786292e622d043e00cb871da21b700fdcca5c643421c7e5c8424024ea0",
+      "installedSha256": "5b46c3f410094f9f5319efbe16cc65a155b095e5fb4d52543e0593e021d0a846",
       "kind": "file",
-      "sourceSha256": "d02bd1786292e622d043e00cb871da21b700fdcca5c643421c7e5c8424024ea0"
+      "sourceSha256": "5b46c3f410094f9f5319efbe16cc65a155b095e5fb4d52543e0593e021d0a846"
     },
     ".codex/hooks/raven-pre-bash-test-scope.py": {
       "installedSha256": "892095e914f9bc9207e699042ba3b8cadaee4d7de5538ef21b91339d75037efc",
@@ -641,9 +641,9 @@
       "sourceSha256": "33093d626ed6dba3bca704c08df291e396716825a8260c3a384f0cf84c8df89c"
     },
     ".gemini/hooks/raven-pre-bash-guard.py": {
-      "installedSha256": "d02bd1786292e622d043e00cb871da21b700fdcca5c643421c7e5c8424024ea0",
+      "installedSha256": "5b46c3f410094f9f5319efbe16cc65a155b095e5fb4d52543e0593e021d0a846",
       "kind": "file",
-      "sourceSha256": "d02bd1786292e622d043e00cb871da21b700fdcca5c643421c7e5c8424024ea0"
+      "sourceSha256": "5b46c3f410094f9f5319efbe16cc65a155b095e5fb4d52543e0593e021d0a846"
     },
     ".gemini/hooks/raven-pre-bash-test-scope.py": {
       "installedSha256": "892095e914f9bc9207e699042ba3b8cadaee4d7de5538ef21b91339d75037efc",
@@ -786,8 +786,8 @@
     "pyright",
     "pytest"
   ],
-  "ravenVersion": "2a81cf26f0c9-dirty",
+  "ravenVersion": "c31f06da18a8-dirty",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-11-11T03:28:15.880318+00:00"
+  "updatedAt": "2026-11-15T05:08:59.393639+00:00"
 }

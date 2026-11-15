@@ -550,6 +550,7 @@ def _herestring_payloads(command: str) -> list[str]:
 _DESTRUCTIVE = "destructive"
 _RIPGREP_REPLACE = "ripgrep-replace"
 _PIPE_TO_SHELL = "pipe-to-shell"
+_UNRESOLVABLE_DELETE = "unresolvable-delete"
 
 
 def _is_bare_interpreter(program: str, args: list[str]) -> bool:
@@ -633,6 +634,8 @@ def _matched_rule(program: str, args: list[str], segment: list[str]) -> str | No
         return _DESTRUCTIVE
     if _is_destructive_rm(program, flags, positionals):
         return _DESTRUCTIVE
+    if _is_unresolvable_delete(program, args, flags, positionals):
+        return _UNRESOLVABLE_DELETE
     if _is_ripgrep_replace_cluster(program, args):
         return _RIPGREP_REPLACE
     return None
@@ -749,6 +752,103 @@ def _is_destructive_rm(program: str, flags: set[str], positionals: list[str]) ->
     return any(_is_catastrophic_target(arg) for arg in positionals)
 
 
+# A target the shell rewrites before the program sees it. The hook sees the raw
+# token, so a command substitution (`$(`, which shlex splits into a bare `$`
+# token when unquoted), a backtick or a brace list names a path it cannot
+# verify. `~user` resolves to somebody else's home.
+_UNRESOLVABLE_TARGET = re.compile(r"\$\(|\$\Z|`|\{[^{}\s]*(?:,|\.\.)[^{}\s]*\}|\A~[^/]")
+_GLOB_CHARS = re.compile(r"[*?\[]")
+
+
+def _is_unverifiable_target(arg: str) -> bool:
+    """Whether a delete operand cannot be checked, or is a glob too broad to trust.
+
+    A glob in the last component of a project-relative path (`build/*`) is
+    ordinary and stays allowed. A glob is refused when it expands directly under
+    the filesystem root (`/Volumes/Lil*`, `/*`) or under `..`, because the match
+    set there is the user's other work rather than this project's.
+    """
+    if _UNRESOLVABLE_TARGET.search(arg):
+        return True
+    if not _GLOB_CHARS.search(arg):
+        return False
+    # A variable followed by a glob (`"$DIR"/*`) is the unset-variable-becomes-`/*`
+    # case. A plain `$VAR/path` stays allowed: a scoped delete under a variable
+    # prefix is routine, and `test_scoped_deletes_are_still_allowed` pins that.
+    if "$" in arg:
+        return True
+    components = arg.split("/")
+    first_glob = next(i for i, part in enumerate(components) if _GLOB_CHARS.search(part))
+    prefix = [part for part in components[:first_glob] if part]
+    if arg.startswith("/"):
+        return len(prefix) <= 1
+    return bool(prefix) and all(part == ".." for part in prefix)
+
+
+def _is_filesystem_root_or_home(arg: str) -> bool:
+    normalized = _normalize_target(arg)
+    return normalized in {"/", "~"} or (_REAL_HOME is not None and normalized == _REAL_HOME)
+
+
+_FIND_GLOBAL_OPTIONS = frozenset({"-H", "-L", "-P", "-E", "-X", "-d", "-s", "-x"})
+_FIND_EXEC_ACTIONS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
+_INLINE_CODE_FLAGS = frozenset({"-c", "-e", "-p", "--eval", "--print"})
+_INLINE_INTERPRETER = re.compile(r"\A(?:python[\d.]*|node|bun|deno|ruby|perl)\Z")
+# A recursive-capable delete call whose first argument is not a string literal.
+# `shutil.rmtree('build')` names its target and is ordinary; `rmtree(d)` does not.
+_INLINE_DYNAMIC_DELETE = re.compile(
+    r"\b(?:rmtree|rmSync|removedirs)\(\s*[^'\"\s)]|\bfs\.(?:promises\.)?rm\(\s*[^'\"\s)]"
+)
+
+
+def _is_unresolvable_delete(
+    program: str, args: list[str], flags: set[str], positionals: list[str]
+) -> bool:
+    """Whether a delete names a target the hook cannot verify.
+
+    Complements `_is_destructive_rm`, which only knows the literal catastrophic
+    spellings. The failure this exists for is a glob or variable the shell
+    widens before `rm` runs: `rm -rf "/Volumes/Lil"*` took a whole external
+    volume, and no literal-path rule can see that.
+
+    Scoped to deletes that recurse, plus the other tools that delete a tree
+    (`find -delete`, `rsync --delete`) and inline interpreter code. A literal
+    `rm -r dist`, `find . -name '*.pyc' -delete` and `shutil.rmtree('build')`
+    all stay allowed. An inline script fed through a heredoc is stdin data
+    that `_strip_heredoc_bodies` drops, so it is not examined.
+    """
+    if program == "rm":
+        return ("r" in flags or "R" in flags) and any(
+            _is_unverifiable_target(arg) for arg in positionals
+        )
+    if program == "find":
+        index = 0
+        while index < len(args) and args[index] in _FIND_GLOBAL_OPTIONS:
+            index += 1
+        starts = []
+        while index < len(args) and not args[index].startswith(("-", "(", "!")):
+            starts.append(args[index])
+            index += 1
+        expression = args[index:]
+        deletes = "-delete" in expression or any(
+            token in _FIND_EXEC_ACTIONS
+            and expression[position + 1 : position + 2]
+            and expression[position + 1].rsplit("/", 1)[-1] in {"rm", "unlink"}
+            for position, token in enumerate(expression)
+        )
+        return deletes and any(
+            _is_unverifiable_target(s) or _is_filesystem_root_or_home(s) for s in starts
+        )
+    if program == "rsync":
+        operands = [arg for arg in args if not arg.startswith("-")]
+        if not any(arg.startswith("--delete") for arg in args) or not operands:
+            return False
+        return _is_unverifiable_target(operands[-1]) or _is_filesystem_root_or_home(operands[-1])
+    if _INLINE_INTERPRETER.match(program) and any(arg in _INLINE_CODE_FLAGS for arg in args):
+        return any(_INLINE_DYNAMIC_DELETE.search(arg) for arg in args)
+    return False
+
+
 def _is_destructive_git_clean(flags: set[str], positionals: list[str]) -> bool:
     """`git clean` deleting ignored and untracked files, in any flag spelling."""
     if not positionals or positionals[0] != "clean":
@@ -800,6 +900,19 @@ def _pipe_to_shell_deny_message(command: str) -> str:
     )
 
 
+def _unresolvable_delete_deny_message(command: str) -> str:
+    return (
+        "Blocked: this deletes a target the hook cannot resolve before the shell runs"
+        " (a variable, command substitution, brace expansion, or a glob that reaches"
+        " a filesystem root or a parent directory). An unset or wrong value, or a glob"
+        " that matches more than intended, deletes something else."
+        "\n  rm -r build/ dist/     # name the literal paths"
+        "\n  ls -d PATTERN          # or list what a glob matches first, then delete those"
+        "\nIf the target really is dynamic, ask the user to run it."
+        f"\nCommand: {command}"
+    )
+
+
 def main() -> int:
     """Read the hook payload from stdin and deny the command if it matches a destructive pattern."""
     payload = _load_payload()
@@ -823,6 +936,8 @@ def main() -> int:
         return _deny(_ripgrep_deny_message(command), payload)
     if rule == _PIPE_TO_SHELL:
         return _deny(_pipe_to_shell_deny_message(command), payload)
+    if rule == _UNRESOLVABLE_DELETE:
+        return _deny(_unresolvable_delete_deny_message(command), payload)
     return _deny(_deny_message(command), payload)
 
 

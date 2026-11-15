@@ -697,6 +697,49 @@ class BashGuardTokenizedIntentTests(RavenTestCase):
         self.assertEqual(self._claude('psql -c "DROP DATABASE prod"').returncode, 2)
         self.assertEqual(self._claude('grep -c "DROP DATABASE" schema.sql').returncode, 0)
 
+    #: Deletes whose target the shell rewrites before the program runs.
+    UNRESOLVABLE_DELETES: ClassVar[list[str]] = [
+        'rm -rf "/Volumes/Lil"*',
+        "rm -rf /Users/*",
+        'rm -r "$BUILD_DIR"/*',
+        "rm -rf $(mktemp -d)",
+        "rm -rf ../*",
+        "rm -r {a,b}",
+        'find "$(git rev-parse --show-toplevel)" -delete',
+        "find / -name '*.tmp' -delete",
+        "find ~ -exec rm {} +",
+        "rsync -a --delete src/ ~/",
+        'python3 -c "import shutil; shutil.rmtree(target)"',
+        "node -e 'fs.rmSync(dir, {recursive: true})'",
+        "bash -c 'rm -rf \"$DIR\"/*'",
+    ]
+
+    #: Literal, project-relative deletes are ordinary work.
+    LITERAL_DELETES: ClassVar[list[str]] = [
+        "rm -rf build/ dist/",
+        "rm -rf build/*",
+        "rm -rf packages/*/dist",
+        "rm -rf $BUILD_DIR/out",
+        "rm $FILE",
+        "find . -name '*.pyc' -delete",
+        "rsync -a --delete src/ dest/",
+        "python3 -c \"import shutil; shutil.rmtree('build')\"",
+        "node -e \"fs.rmSync('build', {recursive: true})\"",
+        'echo "rm -rf $DIR"',
+    ]
+
+    def test_an_unresolvable_delete_target_is_denied(self):
+        for command in self.UNRESOLVABLE_DELETES:
+            with self.subTest(command=command):
+                result = self._claude(command)
+                self.assertEqual(result.returncode, 2, command)
+                self.assertIn("cannot resolve", result.stderr)
+
+    def test_a_literal_delete_stays_allowed(self):
+        for command in self.LITERAL_DELETES:
+            with self.subTest(command=command):
+                self.assertEqual(self._claude(command).returncode, 0, command)
+
 
 class BashGuardRipgrepReplaceFlagTests(RavenTestCase):
     def test_claude_copy_denies_bundled_replace_cluster(self):
