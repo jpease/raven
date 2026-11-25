@@ -874,6 +874,7 @@ class AgentHooksTests(RavenTestCase):
             "raven-post-edit-format.py",
             "raven-session-checkpoint.py",
             "raven-skeleton-read-guard.py",
+            "raven-pre-read-secret-guard.py",
         ]
 
         for hook in hooks:
@@ -1465,6 +1466,7 @@ PAYLOAD_READING_HOOKS = (
     "raven-post-bash-truncate.py",
     "raven-pre-edit-guard.py",
     "raven-skeleton-read-guard.py",
+    "raven-pre-read-secret-guard.py",
     "raven-post-bash-summarize.py",
     "raven-post-edit-format.py",
     "raven-session-checkpoint.py",

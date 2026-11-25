@@ -71,11 +71,78 @@ class EndToEndTests(RavenTestCase):
             input=json.dumps(payload),
             capture_output=True,
             text=True,
-            env=dict(os.environ),
+            env={k: v for k, v in os.environ.items() if k != "GEMINI_PROJECT_DIR"},
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout
+
+    def _run_gemini(self, file_path: str, key: str = "file_path") -> str:
+        payload = {
+            "hook_event_name": "BeforeTool",
+            "tool_name": "read_file",
+            "tool_input": {key: file_path},
+            "cwd": str(self.destination),
+        }
+        result = subprocess.run(
+            [sys.executable, str(HOOK)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def _write_config(self, text: str) -> None:
+        (self.destination / ".raven").mkdir(exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_text(text, encoding="utf-8")
+
+    def test_gemini_file_path_and_path_are_denied_in_gemini_shape(self):
+        for path, key in (
+            (".env", "file_path"),
+            ("secrets/api.key", "file_path"),
+            (".env", "path"),
+        ):
+            with self.subTest(path=path, key=key):
+                output = json.loads(self._run_gemini(path, key))
+                self.assertEqual(output["decision"], "deny")
+                self.assertNotIn("hookSpecificOutput", output)
+                self.assertIn("`", output["reason"])
+                self.assertIn(path.split("/")[0] if "/" in path else path, output["reason"])
+
+    def test_gemini_ordinary_read_is_silent(self):
+        self.assertEqual(self._run_gemini("src/app.py"), "")
+
+    def test_deny_reasons_do_not_teach_a_bypass(self):
+        claude = json.loads(self._run(".env"))["hookSpecificOutput"]["permissionDecisionReason"]
+        gemini = json.loads(self._run_gemini(".env"))["reason"]
+        for reason in (claude, gemini):
+            self.assertNotIn("does not tool-Read", reason)
+            self.assertIn("tell the user", reason)
+            self.assertIn("do not read it through another tool or command", reason)
+
+    def test_block_secret_reads_outside_hooks_table_is_ignored(self):
+        self._write_config("[other]\nblock_secret_reads = false\n")
+        self.assertNotEqual(self._run(".env"), "")
+
+    def test_trailing_comment_still_disables(self):
+        self._write_config("[hooks]\nblock_secret_reads = false  # note\n")
+        self.assertEqual(self._run(".env"), "")
+
+    def test_quoted_false_does_not_disable(self):
+        self._write_config('[hooks]\nblock_secret_reads = "false"\n')
+        self.assertNotEqual(self._run(".env"), "")
+
+    def test_unreadable_config_fails_closed(self):
+        (self.destination / ".raven").mkdir(exist_ok=True)
+        (self.destination / ".raven" / "config.toml").write_bytes(
+            b"[hooks]\nblock_secret_reads = false\n\xff\xfe"
+        )
+        self.assertNotEqual(self._run(".env"), "")
+
+    def test_dotdot_path_is_denied(self):
+        self.assertNotEqual(self._run("src/../.env"), "")
 
     def test_a_secret_read_is_denied_with_the_rule_named(self):
         output = json.loads(self._run(".env"))["hookSpecificOutput"]

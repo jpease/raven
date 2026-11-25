@@ -17,7 +17,7 @@ Guardrails are checks and procedures that make agent work more reliable. Prefer 
 - `.claude/scripts/raven-tool-check.py` checks recommended local tools. Agent workflows may record tool availability or reminder preferences outside the repository.
 - `.claude/hooks/raven-pre-bash-guard.py` blocks clearly destructive shell commands.
 - `.claude/hooks/raven-pre-edit-guard.py` blocks edits to protected secret-like files and warns on high-churn paths. For paths a project lists under `[edit_guard] protected_paths` in `.raven/config.toml`, it escalates to a permission prompt on Claude Code, or adds a context warning on Codex and Gemini CLI. This backstops the Pause-And-Ask categories a project can spell as paths; judgment-call categories stay prose. On Codex it checks every file an `apply_patch` adds, updates, deletes, or moves to, and denies the whole patch if one is blocked. Known gap: a patch Codex applies from a shell command (`apply_patch <<'EOF'`) reaches hooks as `Bash` and bypasses this guard, the same as any shell write such as `echo x > .env`.
-- `.claude/hooks/raven-pre-read-secret-guard.py` denies a `Read` of a secret-bearing path. See "`Read(...)` pattern depth, and the `.env` family" below.
+- `.claude/hooks/raven-pre-read-secret-guard.py` denies a Claude `Read` or Gemini `read_file` of a secret-bearing path. See "`Read(...)` pattern depth, and the `.env` family" below.
 - `.claude/hooks/raven-pre-bash-test-scope.py` adds one advisory sentence when the session's first test command covers the whole suite, and says nothing afterwards.
 - `.claude/hooks/raven-post-bash-summarize.py` nudges noisy commands toward RTK when exact raw output is not required.
 - `.claude/hooks/raven-post-bash-truncate.py` (Claude Code and Gemini CLI) replaces a Bash result longer than `[bash_output] max_lines` with its head, its tail, and the path of a file holding all of it. A tool result is re-read every later turn, so this enforces the token pillar. Codex cannot replace a result from PostToolUse and relies on its own `tool_output_token_limit`.
@@ -78,13 +78,13 @@ These gaps come from glob/prefix matching. `tests/test_permissions_deny.py::Prog
 
 ### `Read(...)` pattern depth, and the `.env` family
 
-`.claude/hooks/raven-pre-read-secret-guard.py` enforces 21 secret-path patterns against the concrete path a `Read` names; `[hooks] block_secret_reads = false` in `.raven/config.toml` turns it off. As `Read(...)` deny rules they prompted on every recursive search of the repository root, because Claude Code checks a Bash command's read scope against them by *directory*. Settings cannot fix that: rules evaluate deny → ask → allow, so no allow entry can carry an exception, and anchoring the globs would drop `packages/api/.env`.
+`.claude/hooks/raven-pre-read-secret-guard.py` enforces 21 secret-path patterns against the concrete path a Claude `Read` or Gemini `read_file` names; `[hooks] block_secret_reads = false` in `.raven/config.toml` turns it off. As `Read(...)` deny rules they prompted on every recursive search of the repository root, because Claude Code checks a Bash command's read scope against them by *directory*. Settings cannot fix that: rules evaluate deny → ask → allow, so no allow entry can carry an exception, and anchoring the globs would drop `packages/api/.env`.
 
 The hook matches basenames and directory segments, as the deny rules did. Read and Edit rules use gitignore syntax, where a **bare filename with no slash matches at any depth**: `Read(.env)` and `Read(**/.env)` are equivalent, so `packages/api/.env` was covered without a `**/` entry ([Claude Code permissions](https://code.claude.com/docs/en/permissions.md); `tests/test_permissions_deny.py::_read_rule_matches` models the same rule). A single directory segment like `secrets/**` also matches at any depth *in a deny rule*, though not in an allow rule.
 
 Two decisions behind the `.env` entries:
 
-- **`.env.*` deliberately catches `.env.example` too.** Exempting the template would mean listing secret-bearing variants and missing an unlisted one (`.env.prod`). The cost is small: the guard covers `Read` only, so `cat .env.example` through Bash still works.
+- **`.env.*` deliberately catches `.env.example` too.** Exempting the template would mean listing secret-bearing variants and missing an unlisted one (`.env.prod`). The cost is small: the guard covers file-read tools only, so `cat .env.example` through Bash still works.
 - **`.envrc` is in scope.** direnv's file is a shell script that commonly exports the same secrets.
 
 `raven-pre-edit-guard.py`'s `BLOCKED` list carries the same two patterns for edits on every host.
