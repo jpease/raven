@@ -63,9 +63,8 @@ home.
 `--raven-config PATH` seeds the Raven arm's `.raven/config.toml` for the
 `evals/ablations/` runs; `--out` refuses it.
 
-This is not part of `just check` and never will be. It costs real model calls,
-it is not deterministic, and a gate that fails for reasons a commit cannot fix
-is not a gate.
+This is not part of `just check` and never will be: it costs real model calls,
+is not deterministic, and could fail for reasons a commit cannot fix.
 
 ## The scenarios
 
@@ -225,13 +224,13 @@ A raven-arm `fixed-cost` trial fails when it uses more tokens than the control
 arm of the same trial by over the ceiling for its agent, so guidance that grows
 past the budget shows up as a FAIL. Comparing the two arms keeps the agent
 CLI's own prompt out of the check, so a CLI update cannot trip it. The ceilings
-are `FIXED_COST_OVERHEAD_CEILINGS` in `evals/scenarios.py`; each is the latest
-measured raven-minus-control difference in `docs/evaluation/results-<agent>.md`
-plus about 15%.
+are `FIXED_COST_OVERHEAD_CEILINGS` in `evals/scenarios.py`: the latest measured
+difference plus about 15%, from `docs/evaluation/fixed-cost-attribution.md`
+(Claude) and `docs/evaluation/results-codex.md` (Codex).
 
 | Agent | Ceiling | Measured difference (raven - control) |
 |---|---|---|
-| claude | 10,100 | 8,815 = 24,613 - 15,798 (mean of 5 trials, 2026-10-16) |
+| claude | 6,300 | 5,508 = 23,556 - 18,049 (mean of 5 `baseline` ablation trials, 2026-11-24) |
 | codex | 3,900 | 3,406 = 17,731 - 14,325 (mean of 5 trials, 2026-10-16) |
 
 Gemini has no measured figure, so it has no ceiling. Control arms are never
