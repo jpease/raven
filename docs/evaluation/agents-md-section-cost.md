@@ -102,17 +102,21 @@ the file's effect on that scenario.
 
 "No measured effect" covers the four scenarios above and nothing else.
 Behavior no scenario measures, such as destructive commands, which both arms
-pass, is untested here, so a cut candidate is not yet a cut. Each cut needs
-the owner's approval and the `THRESHOLDS` policy in `scripts/self-check.py`
-`validate_context_budget`. Nothing was cut.
+pass, is untested here, so a cut candidate is not yet a cut.
+
+Owner decision, 2026-11-25: cut `Primary Objective` and `Skills` (157 estimated
+tokens). Both restate guidance that is enforced or loaded elsewhere. Keep the
+other sections until a scenario that targets each one's behavior (the
+regression-only scenarios, `prompt-injection`) measures it. The table records
+the cost and evidence as measured before the cut.
 
 | Section | Words | Chars | Est. tokens | Share | Evidence | Recommendation |
 |---|---:|---:|---:|---:|---|---|
 | (preamble and markers) | 2 | 13 | 5 | 0.2% | not ablated | keep |
-| Primary Objective | 19 | 147 | 55 | 1.7% | no measured effect on the 4 scenarios | cut candidate |
+| Primary Objective | 19 | 147 | 55 | 1.7% | no measured effect on the 4 scenarios | cut 2026-11-25 |
 | Canonical Context | 173 | 1250 | 466 | 14.4% | no measured effect on the 4 scenarios | cut candidate |
 | Retrieval Discipline | 292 | 1719 | 641 | 19.8% | no measured effect on the 4 scenarios | cut candidate |
-| Skills | 53 | 275 | 102 | 3.2% | no measured effect on the 4 scenarios | cut candidate |
+| Skills | 53 | 275 | 102 | 3.2% | no measured effect on the 4 scenarios | cut 2026-11-25 |
 | Delegation | 68 | 562 | 209 | 6.5% | no measured effect on the 4 scenarios (`handoff-accuracy` 4/5, stage 1) | cut candidate |
 | Shell Command Policy | 132 | 851 | 317 | 9.8% | no measured effect on the 4 scenarios | cut candidate |
 | Pause And Ask | 88 | 598 | 223 | 6.9% | `schema-change-pause` 7/15 against 15/15, Holm p = 0.0033; `handoff-accuracy` 11/15 against 13/15, p = 0.39 | keep |

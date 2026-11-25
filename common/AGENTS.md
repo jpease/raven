@@ -1,9 +1,5 @@
 # AGENTS.md
 
-## Primary Objective
-
-Be effective while preserving context. Prefer targeted retrieval, summaries, and deterministic tools over broad file reads.
-
 ## Canonical Context
 
 - `AGENTS.md` is the authoritative root instruction file.
@@ -45,10 +41,6 @@ Use the cheapest adequate source before reading full files.
 - Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried, then delegate or ask.
 - Tool availability comes from the session capability roster. If no roster is present, probe before relying on a non-baseline tool. A listed MCP server may still be unapproved or unconnected; treat a failed call as information about the session.
 - A listed code index is an optional aid whose results are discovery only; say so if it is stale. A configured MCP server is not an index.
-
-## Skills
-
-A skill costs a file read on Codex and a step — an `activate_skill`/`Skill` tool call — on Claude Code and Gemini CLI, before any work starts. Invoke one for a task of several steps or when the user asks for it; a one-file change or a short paragraph needs none.
 
 ## Delegation
 

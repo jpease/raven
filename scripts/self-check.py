@@ -292,7 +292,9 @@ def validate_context_budget() -> None:
         # Convergence section (no approved exit when patches stop converging),
         # and corrected `rg`/ast-grep empty-result guidance. Each is needed at
         # the moment of the decision, so it lives in always-loaded context.
-        "common/AGENTS.md": 1345,  # raven-hygiene: allow -- security bullets moved from raven-security.md so Codex and Gemini load them
+        # Tightened after the section ablation in docs/evaluation/agents-md-section-cost.md:
+        # Primary Objective and Skills showed no measured effect and were cut.
+        "common/AGENTS.md": 1275,
         # language-specific rules files
         "python/.claude/rules/raven-python.md": 760,
         "elixir/.claude/rules/raven-elixir.md": 890,

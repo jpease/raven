@@ -55,12 +55,8 @@ This repository is Raven itself: the reusable template library and installer for
 - This repository records `[mcp] optional = []` in `.raven/config.toml` and wires no code-index MCP server. Dogfooding the shipped guidance means `rg` and LSP first.
 - A maintainer who wants GitNexus or CodeGraph adds the server in `.claude/settings.local.json` or user-level MCP config. Keep `.gitnexusrc` at `{"skipContextFiles": true}` so `gitnexus analyze` does not write a MUST-style block into this file.
 
-<!-- RAVEN:BEGIN sha256=e88ac92de360dfd7f72132353441155846642a0116005474237f475b14a464aa -->
+<!-- RAVEN:BEGIN sha256=7367ee6baa862c86f5bfa11f9d88bf35064fdc4db6f0ddb54881d7c5b5dcd3eb -->
 # AGENTS.md
-
-## Primary Objective
-
-Be effective while preserving context. Prefer targeted retrieval, summaries, and deterministic tools over broad file reads.
 
 ## Canonical Context
 
@@ -103,10 +99,6 @@ Use the cheapest adequate source before reading full files.
 - Stop when two or more appropriate tools have failed to locate a credible file, symbol, or integration point. Summarize what was tried, then delegate or ask.
 - Tool availability comes from the session capability roster. If no roster is present, probe before relying on a non-baseline tool. A listed MCP server may still be unapproved or unconnected; treat a failed call as information about the session.
 - A listed code index is an optional aid whose results are discovery only; say so if it is stale. A configured MCP server is not an index.
-
-## Skills
-
-A skill costs a file read on Codex and a step — an `activate_skill`/`Skill` tool call — on Claude Code and Gemini CLI, before any work starts. Invoke one for a task of several steps or when the user asks for it; a one-file change or a short paragraph needs none.
 
 ## Delegation
 

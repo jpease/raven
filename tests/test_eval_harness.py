@@ -3138,7 +3138,7 @@ class AgentsSectionDropTests(unittest.TestCase):
         end = full.index("\n## ", start + 1) + 1
         self.assertEqual(dropped, full[:start] + full[end:])
         self.assertNotIn("## Delegation", dropped)
-        self.assertIn("## Skills\n", dropped)
+        self.assertIn("## Retrieval Discipline\n", dropped)
         self.assertIn("## Shell Command Policy\n", dropped)
 
     def test_dropping_the_last_section_runs_to_the_end_of_the_file(self):
@@ -3149,9 +3149,9 @@ class AgentsSectionDropTests(unittest.TestCase):
         self.assertEqual(dropped, full[: full.index("## Safety Rules\n")])
 
     def test_dropping_two_sections_removes_both(self):
-        root = self._raven_fixture("drop", drop=["Skills", "Convergence"])
+        root = self._raven_fixture("drop", drop=["Editing Rules", "Convergence"])
         text = (root / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertNotIn("## Skills", text)
+        self.assertNotIn("## Editing Rules", text)
         self.assertNotIn("## Convergence", text)
         self.assertIn("## Delegation", text)
 
@@ -3248,12 +3248,18 @@ class AgentsSectionDropTests(unittest.TestCase):
         env = {"PATH": f"{bin_dir}:{os.environ.get('PATH', '')}"}
         with mock.patch.dict(os.environ, env), redirect_stdout(io.StringIO()):
             outcomes = run(
-                [_by_name("fixed-cost")], "claude", 1, None, None, 1, drop_sections=["Skills"]
+                [_by_name("fixed-cost")],
+                "claude",
+                1,
+                None,
+                None,
+                1,
+                drop_sections=["Editing Rules"],
             )
         self.assertEqual([o.arm for o in outcomes], ["control", "raven"])
         control, raven = self._seen()
         self.assertIsNone(control["agents"])
-        self.assertNotIn("## Skills", raven["agents"])
+        self.assertNotIn("## Editing Rules", raven["agents"])
 
     def test_raven_only_says_the_overhead_ceiling_went_unchecked(self):
         from eval import run
@@ -3293,7 +3299,7 @@ class AgentsSectionDropTests(unittest.TestCase):
 
     def test_out_refuses_both_ablation_flags_before_running(self):
         out = str(self.tmp / "out")
-        for flags in (["--drop-agents-section", "Skills"], ["--raven-only"]):
+        for flags in (["--drop-agents-section", "Editing Rules"], ["--raven-only"]):
             with self.subTest(flags=flags):
                 code, run, stderr = self._main("--trials", "15", "--out", out, *flags)
                 self.assertEqual(code, 1)
@@ -3312,7 +3318,7 @@ class AgentsSectionDropTests(unittest.TestCase):
     def test_all_beside_another_heading_is_refused(self):
         code, run, stderr = self._main(
             "--scenario", "fixed-cost", "--drop-agents-section", "ALL",
-            "--drop-agents-section", "Skills",
+            "--drop-agents-section", "Editing Rules",
         )  # fmt: skip
         self.assertEqual(code, 1)
         run.assert_not_called()
@@ -3328,19 +3334,20 @@ class AgentsSectionDropTests(unittest.TestCase):
         with mock.patch.object(harness, "check_agents_drop"):
             code, run, _ = self._main(
                 "--scenario", "fixed-cost", "--raven-only",
-                "--drop-agents-section", "Skills", "--drop-agents-section", "Delegation",
+                "--drop-agents-section", "Editing Rules", "--drop-agents-section", "Delegation",
                 scratch_root=True,
             )  # fmt: skip
         self.assertEqual(code, 0)
-        self.assertEqual(run.call_args.kwargs["drop_sections"], ["Skills", "Delegation"])
+        self.assertEqual(run.call_args.kwargs["drop_sections"], ["Editing Rules", "Delegation"])
         self.assertTrue(run.call_args.kwargs["raven_only"])
         (report,) = (self.tmp / "evals" / "runs").glob("results-claude-*.md")
         text = report.read_text(encoding="utf-8")
-        self.assertIn("`## Skills`, `## Delegation`", text)
+        self.assertIn("`## Editing Rules`, `## Delegation`", text)
         self.assertIn("Raven arm only", text)
         rows = list(csv.DictReader(report.with_suffix(".csv").open(encoding="utf-8")))
         self.assertEqual(
-            {r["raven_config"] for r in rows}, {"default; drop-agents-section=Skills|Delegation"}
+            {r["raven_config"] for r in rows},
+            {"default; drop-agents-section=Editing Rules|Delegation"},
         )
 
 
