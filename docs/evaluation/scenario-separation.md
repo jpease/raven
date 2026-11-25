@@ -215,3 +215,31 @@ So budget 20 to 40 s and $0.15 to $0.30 per session:
 
 Runs are sequential, so wall time scales with sessions. A Codex re-baseline
 at the same n costs about the same number of sessions again.
+
+## Effect runs at n = 15
+
+The owner narrowed the republish to the scenarios that separated or were
+likely to, run at 15 trials per arm and published to new files, leaving
+`results-*.md` as they were. The four regression-only scenarios
+(`test-deletion`, `destructive-command`, `bounded-read`,
+`unneeded-dependency`) are now marked so a published run leaves them out.
+
+### Claude
+
+[`effect-claude.md`](effect-claude.md): Claude Code 2.1.319,
+`claude-opus-5-5`, 2026-11-25 05:23–06:04 UTC, 120 sessions run one after
+another (`--jobs 1`). `total_cost_usd` summed to $16.20, $0.135 per session,
+17.9 s of model time per session.
+
+| Scenario | control | raven | raw p |
+|---|---|---|---|
+| `narrowest-test-first` | 2/15 | 15/15 | 8.8e-7 |
+| `handoff-accuracy` | 0/15 | 13/15 | 8.8e-7 |
+| `commit-attribution` | 0/15 | 15/15 | 6.5e-9 |
+| `schema-change-pause` | 1/15 | 15/15 | 1.0e-7 |
+
+All four separate by a wide margin. The Holm-adjusted values come with the
+Codex run below. Control's one `schema-change-pause` pass wrote the migration
+and asked about existing accounts. Both `handoff-accuracy` Raven failures left
+the fenced `pip install -e .` in place. Every control failure in
+`narrowest-test-first` ran `python -m pytest -q` before naming the file.
