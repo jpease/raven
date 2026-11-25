@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -1377,6 +1378,35 @@ class CodexHookLauncherRealFileTests(unittest.TestCase):
         installed = (REPO_ROOT / ".codex" / "hooks.json").read_text(encoding="utf-8")
         self.assertEqual(installed, canonical)
 
+    def test_codex_launcher_missing_script_does_not_block(self):
+        """Exit 2 blocks a tool call; the inline launcher must not produce it
+        when the hook script is absent (it raises and exits 1 instead).
+        """
+        config = json.loads(
+            (REPO_ROOT / "common" / ".codex" / "hooks.json").read_text(encoding="utf-8")
+        )
+        command = config["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        self.assertTrue(command.startswith(CANONICAL_CODEX_LAUNCHER), command)
+        command = (
+            command[: -len(command.rsplit(" ", 1)[-1])] + ".codex/hooks/raven-does-not-exist.py"
+        )
+        # Run with the interpreter under test; the host may have no `python`.
+        command = shlex.quote(sys.executable) + command[len("python") :]
+        with tempfile.TemporaryDirectory() as cwd:
+            payload = json.dumps(
+                {
+                    "cwd": cwd,
+                    "hook_event_name": "PreToolUse",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "ls"},
+                }
+            )
+            result = subprocess.run(
+                ["sh", "-c", command], input=payload, capture_output=True, text=True
+            )
+
+        self.assertNotEqual(result.returncode, 2, result.stderr)
+
 
 # --- Claude hook interpreter resolution ----------------------------------
 #
@@ -1461,12 +1491,14 @@ class ClaudeHookLauncherTests(unittest.TestCase):
         opens the Microsoft Store and runs nothing, while `command -v` reports it
         present. Selecting on presence alone therefore picks a launcher that
         silently does nothing -- and these hooks are fail-open, so nothing says
-        so. `py -3` is the reliable launcher there.
+        so. `py -3` is the reliable launcher there. The probe is Windows-only:
+        POSIX hosts would pay a second Python start on every hook event.
         """
         for launcher in self.LAUNCHERS:
             source = launcher.read_text(encoding="utf-8")
             with self.subTest(launcher=launcher.name):
                 self.assertIn('-c ""', source)
+                self.assertIn('[ -z "$_windows" ] || $_candidate -c ""', source)
                 self.assertIn("MINGW*|MSYS*|CYGWIN*", source)
                 self.assertIn('py|python|python3"', source)
 
@@ -1486,6 +1518,104 @@ class ClaudeHookLauncherTests(unittest.TestCase):
             with self.subTest(launcher=launcher.name):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertTrue(result.stdout.strip(), "resolved no launcher")
+
+    # --- fail-open and probe scoping -------------------------------------
+    BENIGN_PAYLOAD = json.dumps(
+        {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+    )
+
+    def _run_shim(self, fakes, script=".claude/hooks/raven-pre-bash-guard.py", extra_env=None):
+        """Run the shim with fake executables; return (result, log lines)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = Path(tmp) / "bin"
+            bin_dir.mkdir()
+            log = Path(tmp) / "log"
+            log.touch()
+            for name, body in fakes.items():
+                fake = bin_dir / name
+                fake.write_text(
+                    "#!/bin/sh\n" + body.format(py=shlex.quote(sys.executable)), encoding="utf-8"
+                )
+                fake.chmod(0o755)
+            env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "LOG": str(log), **(extra_env or {})}
+            shell = shutil.which("sh")
+            self.assertIsNotNone(shell)
+            result = subprocess.run(
+                [str(shell), str(CLAUDE_RUN_HOOK), script],
+                input=self.BENIGN_PAYLOAD,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            lines = log.read_text(encoding="utf-8").splitlines()
+        return result, lines
+
+    LOGGING_EXEC = 'echo "$*" >> "$LOG"\nexec {py} "$@"\n'
+
+    def test_posix_launch_starts_python_once(self):
+        result, lines = self._run_shim({"python3": self.LOGGING_EXEC})
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].endswith("raven-pre-bash-guard.py"), lines)
+
+    def test_posix_broken_interpreter_fails_open_without_blocking(self):
+        result, _ = self._run_shim({"python3": "echo broken-python >&2\nexit 127\n"})
+
+        self.assertNotEqual(result.returncode, 2)
+        self.assertIn("broken-python", result.stderr)
+
+    WINDOWS_FAKES: ClassVar[dict[str, str]] = {
+        "py": 'echo "$*" >> "$LOG"\nexit 1\n',
+        "python": 'echo "$*" >> "$LOG"\nexec {py} "$@"\n',
+    }
+
+    def _assert_windows_probe(self, result, lines):
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(lines), 3, lines)
+        self.assertEqual(lines[0].strip(), "-3 -c")
+        self.assertEqual(lines[1].strip(), "-c")
+        self.assertTrue(lines[2].endswith("raven-pre-bash-guard.py"), lines)
+
+    def test_windows_uname_keeps_the_probe_and_skips_a_dead_alias(self):
+        fakes = {**self.WINDOWS_FAKES, "uname": "echo MINGW64_NT-10.0-26100\n"}
+        result, lines = self._run_shim(fakes)
+
+        self._assert_windows_probe(result, lines)
+
+    def test_windows_os_env_keeps_the_probe_without_uname(self):
+        fakes = {**self.WINDOWS_FAKES, "uname": "exit 1\n"}
+        result, lines = self._run_shim(fakes, extra_env={"OS": "Windows_NT"})
+
+        self._assert_windows_probe(result, lines)
+
+    def test_shim_fails_open_on_a_missing_script(self):
+        result, lines = self._run_shim(
+            {"python3": self.LOGGING_EXEC}, script=".claude/hooks/raven-does-not-exist.py"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("raven-run-hook:", result.stderr)
+        self.assertIn("raven-does-not-exist.py", result.stderr)
+        self.assertEqual(lines, [])
+
+    @unittest.skipIf(os.geteuid() == 0, "root can read mode-000 files")
+    def test_shim_fails_open_on_an_unreadable_script(self):
+        with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as handle:
+            unreadable = Path(handle.name)
+        try:
+            unreadable.chmod(0o000)
+            result, lines = self._run_shim({"python3": self.LOGGING_EXEC}, script=str(unreadable))
+        finally:
+            unreadable.chmod(0o600)
+            unreadable.unlink()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("raven-run-hook:", result.stderr)
+        self.assertIn(unreadable.name, result.stderr)
+        self.assertEqual(lines, [])
 
     def test_installed_claude_settings_matches_canonical(self):
         """Same manual-merge drift risk as the Codex copy above (issue #97)."""

@@ -421,13 +421,12 @@ def main() -> int:
     result = subprocess.run(
         [
             # sys.executable here is not a bare interpreter guess: when this
-            # hook runs via raven-run-hook.sh (Claude side), that shim already
-            # probed for a working `python3`/`python`, verified it actually
-            # executes `-c ""` (dodging the Windows WindowsApps alias trap),
-            # and re-exec'd this hook script under it. So sys.executable, at
-            # this point, IS that already-resolved, already-verified
-            # interpreter -- reusing it to invoke the validator is correct,
-            # not a shortcut.
+            # hook runs via raven-run-hook.sh (Claude Code and Gemini CLI),
+            # that shim already resolved a `python3`/`python` and re-exec'd
+            # this hook script under it, verifying the pick with `-c ""` on
+            # Windows (dodging the WindowsApps alias trap). So sys.executable,
+            # at this point, IS that already-resolved interpreter -- reusing
+            # it to invoke the validator is correct, not a shortcut.
             sys.executable,
             str(script_path),
             "--validate",

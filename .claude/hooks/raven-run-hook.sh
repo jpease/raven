@@ -10,11 +10,13 @@
 # exist, silently. The resolution order matches `.raven/git-hooks/`, so a
 # checkout has one answer to "which Python runs Raven's tooling".
 #
-# Claude-only, by construction. `.codex/hooks.json` cannot use this shim: a
-# Codex hook may run with a process cwd outside the project, so nothing
-# repo-relative can be located until the JSON payload on stdin has been parsed
-# (see CANONICAL_CODEX_LAUNCHER in tests/test_agent_hooks.py). Claude Code exports $CLAUDE_PROJECT_DIR, which is what makes a
-# fixed shim path resolvable here and not there.
+# Not usable from Codex, by construction. Claude Code and Gemini CLI export
+# $CLAUDE_PROJECT_DIR and $GEMINI_PROJECT_DIR, which is what makes a fixed shim
+# path resolvable for them (Gemini reaches this file through a symlink).
+# `.codex/hooks.json` cannot use this shim: a Codex hook may run with a process
+# cwd outside the project, so nothing repo-relative can be located until the
+# JSON payload on stdin has been parsed (see CANONICAL_CODEX_LAUNCHER in
+# tests/test_agent_hooks.py).
 #
 # Usage: raven-run-hook.sh <script> [args...]
 #   <script> is absolute, or relative to the project root.
@@ -40,18 +42,25 @@ case "$script" in
         ;;
 esac
 
-# Resolve a Python launcher, verifying it actually runs.
+# Resolve a Python launcher.
 #
-# Order matters on Windows: `python3` there is normally the WindowsApps App
-# Execution Alias, which opens the Microsoft Store instead of running anything.
-# `command -v python3` finds it, so a presence check alone selects a launcher
-# that does nothing -- and because these hooks are fail-open, nothing reports
-# it. `py -3` is the reliable launcher there, `python3` everywhere else, and
-# `-c ""` confirms whichever we picked can execute at all.
+# Windows needs an execution probe: `python3` there is normally the WindowsApps
+# App Execution Alias, which `command -v` finds but which opens the Microsoft
+# Store instead of running anything. `py -3` is the reliable launcher there,
+# and `-c ""` confirms the pick executes. Elsewhere the first interpreter found
+# is used as is: probing would start Python twice on every hook event, and an
+# interpreter that is found but broken still fails open with a non-2 exit and
+# its own error on stderr.
 case "$(uname -s 2>/dev/null)" in
-    MINGW*|MSYS*|CYGWIN*|Windows*) _candidates="py|python|python3" ;;
-    *) _candidates="python3|python|py" ;;
+    MINGW*|MSYS*|CYGWIN*|Windows*) _windows=1 ;;
+    *) _windows="" ;;
 esac
+[ "${OS:-}" = "Windows_NT" ] && _windows=1
+if [ -n "$_windows" ]; then
+    _candidates="py|python|python3"
+else
+    _candidates="python3|python|py"
+fi
 
 RAVEN_PY=""
 _rest="$_candidates"
@@ -60,13 +69,21 @@ while [ -n "$_rest" ]; do
     [ "$_rest" = "$_candidate" ] && _rest="" || _rest=${_rest#*|}
     [ "$_candidate" = "py" ] && _candidate="py -3"
     # shellcheck disable=SC2086
-    if command -v ${_candidate%% *} >/dev/null 2>&1 && $_candidate -c "" >/dev/null 2>&1; then
+    command -v ${_candidate%% *} >/dev/null 2>&1 || continue
+    # shellcheck disable=SC2086
+    if [ -z "$_windows" ] || $_candidate -c "" >/dev/null 2>&1; then
         RAVEN_PY="$_candidate"
         break
     fi
 done
 
 if [ -n "$RAVEN_PY" ]; then
+    # Python exits 2 when it cannot open the script, and exit 2 is a block on
+    # Claude Code and Gemini CLI. A hook that cannot run must not stop work.
+    if [ ! -f "$script" ] || [ ! -r "$script" ]; then
+        echo "raven-run-hook: hook script missing or unreadable; skipped $script" >&2
+        exit 0
+    fi
     # shellcheck disable=SC2086
     exec $RAVEN_PY "$script" "$@"
 fi
