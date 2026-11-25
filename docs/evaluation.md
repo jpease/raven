@@ -58,7 +58,8 @@ either, so they measure the prose alone: the Raven arm's hooks, rules, and
 config were parsed and skipped.
 
 `--raven-config PATH` seeds the Raven arm's `.raven/config.toml` for the
-`evals/ablations/` runs; `--out` refuses it.
+`evals/ablations/` runs. `--drop-agents-section` and `--raven-only` (see
+`--help`) are ablations too; `--out` refuses all three.
 
 This is not part of `just check` and never will be: it costs real model calls,
 is not deterministic, and could fail for reasons a commit cannot fix.

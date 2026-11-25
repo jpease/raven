@@ -3113,5 +3113,236 @@ class FixedCostCeilingTests(unittest.TestCase):
         self.assertTrue(control.passed, control.evidence)
 
 
+class AgentsSectionDropTests(unittest.TestCase):
+    """`--drop-agents-section` and `--raven-only`: the AGENTS.md section ablation."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _raven_fixture(self, name, *, drop=None, config=None):
+        from eval import build_fixture
+
+        root = self.tmp / name
+        build_fixture(
+            _by_name("fixed-cost"), root, with_raven=True, raven_config=config, drop_sections=drop
+        )
+        return root
+
+    def test_dropping_a_section_removes_it_through_the_next_heading_and_nothing_else(self):
+        full = (self._raven_fixture("full") / "AGENTS.md").read_text(encoding="utf-8")
+        dropped = (self._raven_fixture("drop", drop=["Delegation"]) / "AGENTS.md").read_text(
+            encoding="utf-8"
+        )
+        start = full.index("## Delegation\n")
+        end = full.index("\n## ", start + 1) + 1
+        self.assertEqual(dropped, full[:start] + full[end:])
+        self.assertNotIn("## Delegation", dropped)
+        self.assertIn("## Skills\n", dropped)
+        self.assertIn("## Shell Command Policy\n", dropped)
+
+    def test_dropping_the_last_section_runs_to_the_end_of_the_file(self):
+        full = (self._raven_fixture("full") / "AGENTS.md").read_text(encoding="utf-8")
+        dropped = (self._raven_fixture("drop", drop=["Safety Rules"]) / "AGENTS.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(dropped, full[: full.index("## Safety Rules\n")])
+
+    def test_dropping_two_sections_removes_both(self):
+        root = self._raven_fixture("drop", drop=["Skills", "Convergence"])
+        text = (root / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertNotIn("## Skills", text)
+        self.assertNotIn("## Convergence", text)
+        self.assertIn("## Delegation", text)
+
+    def test_an_unknown_heading_raises_and_names_the_real_ones(self):
+        with self.assertRaises(ValueError) as caught:
+            self._raven_fixture("drop", drop=["Safety Rule"])
+        self.assertIn("'Safety Rule'", str(caught.exception))
+        self.assertIn("'Safety Rules'", str(caught.exception))
+
+    def test_all_leaves_the_tree_a_no_root_instructions_install_leaves(self):
+        def files(root):
+            return sorted(
+                p.relative_to(root).as_posix()
+                for p in root.rglob("*")
+                if p.is_file() and ".git" not in p.relative_to(root).parts
+            )
+
+        dropped = self._raven_fixture("all", drop=["ALL"])
+        no_root = self._raven_fixture(
+            "no-root", config=REPO_ROOT / "evals" / "ablations" / "no-root-instructions.toml"
+        )
+        self.assertTrue((self._raven_fixture("full") / "CLAUDE.md").is_file())
+        self.assertFalse((dropped / "AGENTS.md").exists())
+        self.assertFalse((dropped / "CLAUDE.md").exists())
+        self.assertEqual(files(dropped), files(no_root))
+        # Only the seeded config and the install record may differ.
+        differing = [
+            name
+            for name in files(dropped)
+            if (dropped / name).read_bytes() != (no_root / name).read_bytes()
+        ]
+        self.assertLessEqual(set(differing), {".raven/config.toml", ".raven/manifest.json"})
+
+    def _fake_claude(self):
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        claude = bin_dir / "claude"
+        claude.write_text(
+            f'#!/bin/sh\nexec "{sys.executable}" "{bin_dir / "claude_impl.py"}" "$@"\n',
+            encoding="utf-8",
+        )
+        # Records what each session found: its AGENTS.md and whether the tree was clean.
+        (bin_dir / "claude_impl.py").write_text(
+            "import json, os, pathlib, subprocess\n"
+            f"log = pathlib.Path({str(self.tmp / 'seen.jsonl')!r})\n"
+            'agents = pathlib.Path("AGENTS.md")\n'
+            'status = subprocess.run(["git", "status", "--porcelain"], capture_output=True,'
+            " text=True).stdout\n"
+            'seen = {"agents": agents.read_text() if agents.exists() else None,'
+            ' "status": status}\n'
+            'with open(log, "a") as out:\n'
+            "    out.write(json.dumps(seen) + '\\n')\n"
+            'usage = {"input_tokens": 100, "output_tokens": 0}\n'
+            'print(json.dumps({"type": "result", "is_error": False, "result": "OK",'
+            ' "usage": usage}))\n',
+            encoding="utf-8",
+        )
+        claude.chmod(0o755)
+        return bin_dir
+
+    def _seen(self):
+        import json
+
+        lines = (self.tmp / "seen.jsonl").read_text(encoding="utf-8").splitlines()
+        return [json.loads(line) for line in lines]
+
+    def test_a_raven_only_run_starts_no_control_session_and_the_agent_sees_the_drop(self):
+        from eval import run
+
+        bin_dir = self._fake_claude()
+        env = {"PATH": f"{bin_dir}:{os.environ.get('PATH', '')}"}
+        scenario = _by_name("commit-attribution")
+        with mock.patch.dict(os.environ, env), redirect_stdout(io.StringIO()):
+            outcomes = run(
+                [scenario], "claude", 2, None, None, 2,
+                drop_sections=["Safety Rules"], raven_only=True,
+            )  # fmt: skip
+        self.assertEqual([(o.trial, o.arm) for o in outcomes], [(1, "raven"), (2, "raven")])
+        seen = self._seen()
+        self.assertEqual(len(seen), 2)
+        for session in seen:
+            self.assertIn("## Convergence", session["agents"])
+            self.assertNotIn("## Safety Rules", session["agents"])
+        self.assertTrue(scenario.setup)
+        for session in seen:
+            # The setup commit holds the ablated file, so the agent sees no
+            # AGENTS.md change it did not make (greet.py is the task's own file).
+            self.assertEqual(session["status"], "?? greet.py\n")
+
+    def test_without_raven_only_the_control_arm_keeps_no_agents_md(self):
+        from eval import run
+
+        bin_dir = self._fake_claude()
+        env = {"PATH": f"{bin_dir}:{os.environ.get('PATH', '')}"}
+        with mock.patch.dict(os.environ, env), redirect_stdout(io.StringIO()):
+            outcomes = run(
+                [_by_name("fixed-cost")], "claude", 1, None, None, 1, drop_sections=["Skills"]
+            )
+        self.assertEqual([o.arm for o in outcomes], ["control", "raven"])
+        control, raven = self._seen()
+        self.assertIsNone(control["agents"])
+        self.assertNotIn("## Skills", raven["agents"])
+
+    def test_raven_only_says_the_overhead_ceiling_went_unchecked(self):
+        from eval import run
+
+        bin_dir = self._fake_claude()
+        env = {"PATH": f"{bin_dir}:{os.environ.get('PATH', '')}"}
+        with mock.patch.dict(os.environ, env), redirect_stdout(io.StringIO()):
+            (outcome,) = run([_by_name("fixed-cost")], "claude", 1, None, None, 1, raven_only=True)
+        self.assertTrue(outcome.passed, outcome.evidence)
+        self.assertIn("overhead ceiling went unchecked", outcome.evidence)
+
+    def _main(self, *argv, scratch_root=False):
+        """Run main() with `run` mocked; `scratch_root` points REPO_ROOT at the scratch dir.
+
+        Only a run that gets as far as writing results needs it; the refusals
+        below must stop before then, and the preflight needs the real REPO_ROOT.
+        """
+        import eval as harness
+
+        stderr = io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                mock.patch.object(sys, "argv", ["eval.py", "--agent", "claude", *argv])
+            )
+            stack.enter_context(
+                mock.patch.object(harness.shutil, "which", return_value="/usr/bin/claude")
+            )
+            stack.enter_context(mock.patch.object(harness, "_cli_version", return_value=""))
+            outcomes = [harness.TrialOutcome("fixed-cost", "raven", 1, True, "ok")]
+            run = stack.enter_context(mock.patch.object(harness, "run", return_value=outcomes))
+            if scratch_root:
+                stack.enter_context(mock.patch.object(harness, "REPO_ROOT", self.tmp))
+            stack.enter_context(mock.patch("sys.stderr", stderr))
+            stack.enter_context(mock.patch("sys.stdout", io.StringIO()))
+            code = harness.main()
+        return code, run, stderr.getvalue()
+
+    def test_out_refuses_both_ablation_flags_before_running(self):
+        out = str(self.tmp / "out")
+        for flags in (["--drop-agents-section", "Skills"], ["--raven-only"]):
+            with self.subTest(flags=flags):
+                code, run, stderr = self._main("--trials", "15", "--out", out, *flags)
+                self.assertEqual(code, 1)
+                run.assert_not_called()
+                self.assertIn(flags[0], stderr)
+                self.assertFalse((self.tmp / "out").exists())
+
+    def test_an_unknown_heading_is_refused_before_any_session(self):
+        code, run, stderr = self._main(
+            "--scenario", "fixed-cost", "--drop-agents-section", "Safety Rule"
+        )
+        self.assertEqual(code, 1)
+        run.assert_not_called()
+        self.assertIn("'Safety Rule'", stderr)
+
+    def test_all_beside_another_heading_is_refused(self):
+        code, run, stderr = self._main(
+            "--scenario", "fixed-cost", "--drop-agents-section", "ALL",
+            "--drop-agents-section", "Skills",
+        )  # fmt: skip
+        self.assertEqual(code, 1)
+        run.assert_not_called()
+        self.assertIn("ALL", stderr)
+
+    def test_the_drop_reaches_the_runner_report_and_csv(self):
+        import csv
+
+        import eval as harness
+
+        # The preflight installs from REPO_ROOT, which this test points at its
+        # scratch directory; the tests above run it for real.
+        with mock.patch.object(harness, "check_agents_drop"):
+            code, run, _ = self._main(
+                "--scenario", "fixed-cost", "--raven-only",
+                "--drop-agents-section", "Skills", "--drop-agents-section", "Delegation",
+                scratch_root=True,
+            )  # fmt: skip
+        self.assertEqual(code, 0)
+        self.assertEqual(run.call_args.kwargs["drop_sections"], ["Skills", "Delegation"])
+        self.assertTrue(run.call_args.kwargs["raven_only"])
+        (report,) = (self.tmp / "evals" / "runs").glob("results-claude-*.md")
+        text = report.read_text(encoding="utf-8")
+        self.assertIn("`## Skills`, `## Delegation`", text)
+        self.assertIn("Raven arm only", text)
+        rows = list(csv.DictReader(report.with_suffix(".csv").open(encoding="utf-8")))
+        self.assertEqual(
+            {r["raven_config"] for r in rows}, {"default; drop-agents-section=Skills|Delegation"}
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

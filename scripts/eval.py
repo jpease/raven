@@ -457,8 +457,68 @@ def _shell(cwd: Path, command: str) -> None:
     )
 
 
+#: `--drop-agents-section` value that removes the whole of `AGENTS.md`.
+DROP_ALL = "ALL"
+
+
+def drop_agents_sections(root: Path, headings: list[str]) -> None:
+    """Remove each ``## <heading>`` section from the installed ``AGENTS.md`` (ablations only).
+
+    A section runs from its heading line to the line before the next ``## ``
+    heading, or to the end of the file. ``[DROP_ALL]`` deletes ``AGENTS.md``
+    and the ``CLAUDE.md`` that only imports it, which leaves the tree a
+    `root_instructions = false` install leaves (`evals/ablations/no-root-instructions.toml`).
+    An emptied ``AGENTS.md`` would not: Claude Code still loads ``CLAUDE.md`` and
+    the import. Raises ``ValueError`` for a heading the file does not have, so
+    a mistyped name never runs as an unablated Raven arm.
+    """
+    agents_md = root / "AGENTS.md"
+    if not agents_md.is_file():
+        raise ValueError("the Raven install wrote no AGENTS.md to drop sections from")
+    if headings == [DROP_ALL]:
+        agents_md.unlink()
+        (root / "CLAUDE.md").unlink(missing_ok=True)
+        return
+    lines = agents_md.read_text(encoding="utf-8").splitlines(keepends=True)
+    starts = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    spans = {
+        lines[start][3:].strip(): (start, end)
+        for start, end in zip(starts, [*starts[1:], len(lines)])
+    }
+    missing = [heading for heading in headings if heading not in spans]
+    if missing:
+        raise ValueError(
+            f"AGENTS.md has no section {', '.join(repr(h) for h in missing)};"
+            f" its sections are {', '.join(repr(h) for h in spans)}"
+        )
+    dropped = {i for heading in headings for i in range(*spans[heading])}
+    agents_md.write_text(
+        "".join(line for i, line in enumerate(lines) if i not in dropped), encoding="utf-8"
+    )
+
+
+def _install_raven(root: Path, template: str, raven_config: Path | None) -> None:
+    """Run `raven install` in ``root``, seeding ``raven_config`` first when given."""
+    if raven_config is not None:
+        (root / ".raven").mkdir(exist_ok=True)
+        shutil.copyfile(raven_config, root / ".raven" / "config.toml")
+    subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "raven.py"), "install", template],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        check=True,
+        env=_clean_git_env(),
+    )
+
+
 def build_fixture(
-    scenario: Scenario, root: Path, *, with_raven: bool, raven_config: Path | None = None
+    scenario: Scenario,
+    root: Path,
+    *,
+    with_raven: bool,
+    raven_config: Path | None = None,
+    drop_sections: list[str] | None = None,
 ) -> None:
     """Write one arm's throwaway repository.
 
@@ -469,9 +529,11 @@ def build_fixture(
     separate out.
 
     `raven_config` is seeded as the Raven arm's `.raven/config.toml` before the
-    install, which honors an existing config; the control arm ignores it. A
-    failed install raises `subprocess.CalledProcessError`, since a trial run
-    on it would silently be a second control arm.
+    install, which honors an existing config; the control arm ignores it.
+    `drop_sections` are removed from the Raven arm's `AGENTS.md` right after
+    the install (`drop_agents_sections`), so the setup commit holds the
+    ablated file. A failed install raises `subprocess.CalledProcessError`,
+    since a trial run on it would silently be a second control arm.
     """
     root.mkdir(parents=True, exist_ok=True)
     _shell(root, "git init -q")
@@ -491,17 +553,9 @@ def build_fixture(
         (root / ".gitignore").write_text(FIXTURE_GITIGNORE, encoding="utf-8")
 
     if with_raven:
-        if raven_config is not None:
-            (root / ".raven").mkdir(exist_ok=True)
-            shutil.copyfile(raven_config, root / ".raven" / "config.toml")
-        subprocess.run(
-            [sys.executable, str(REPO_ROOT / "scripts" / "raven.py"), "install", scenario.template],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            check=True,
-            env=_clean_git_env(),
-        )
+        _install_raven(root, scenario.template, raven_config)
+        if drop_sections:
+            drop_agents_sections(root, drop_sections)
     arm_files = scenario.raven_files if with_raven else scenario.control_files
     for relative, content in arm_files.items():
         _write_fixture_file(root, relative, content)
@@ -511,6 +565,22 @@ def build_fixture(
     # start with a dirty tree and the control arm would not.
     for command in scenario.setup:
         _shell(root, command)
+
+
+def check_agents_drop(
+    scenarios: list[Scenario], drop_sections: list[str], raven_config: Path | None
+) -> None:
+    """Raise ``ValueError`` unless every selected template's install can drop ``drop_sections``.
+
+    Run once before any session starts: a heading that is not there would
+    otherwise fail every Raven fixture, one trial at a time.
+    """
+    if DROP_ALL in drop_sections and len(drop_sections) > 1:
+        raise ValueError(f"{DROP_ALL} drops the whole file; name no other section beside it")
+    for template in dict.fromkeys(s.template for s in scenarios):
+        with tempfile.TemporaryDirectory(prefix="raven-eval-drop-check-") as tmp:
+            _install_raven(Path(tmp), template, raven_config)
+            drop_agents_sections(Path(tmp), drop_sections)
 
 
 def _write_fixture_file(root: Path, relative: str, content: str) -> None:
@@ -547,14 +617,21 @@ def run_one(
     trial: int,
     transcripts: Path | None = None,
     raven_config: Path | None = None,
+    drop_sections: list[str] | None = None,
 ) -> TrialOutcome:
     """Build a fixture, run the agent in it once, and grade what it left behind."""
     arm = "raven" if with_raven else "control"
     with tempfile.TemporaryDirectory(prefix=f"raven-eval-{scenario.name}-") as tmp:
         root = Path(tmp) / "repo"
         try:
-            build_fixture(scenario, root, with_raven=with_raven, raven_config=raven_config)
-        except OSError as exc:
+            build_fixture(
+                scenario,
+                root,
+                with_raven=with_raven,
+                raven_config=raven_config,
+                drop_sections=drop_sections,
+            )
+        except (OSError, ValueError) as exc:
             return TrialOutcome(scenario.name, arm, trial, False, "fixture failed", str(exc))
         except subprocess.CalledProcessError as exc:
             detail = (exc.stderr or exc.stdout or "").strip() or f"exit {exc.returncode}"
@@ -643,6 +720,9 @@ def run(
     transcripts: Path | None = None,
     raven_config: Path | None = None,
     jobs: int = 1,
+    *,
+    drop_sections: list[str] | None = None,
+    raven_only: bool = False,
 ) -> list[TrialOutcome]:
     """Every scenario, both arms, ``trials`` times, reporting progress as it goes.
 
@@ -652,15 +732,21 @@ def run(
     raven unit is reported once its control has finished, so the overhead
     ceiling can compare the two.
 
+    ``raven_only`` (ablations) skips the control arm: an ablation compares
+    Raven arms against each other, and re-running control would spend a
+    session per trial on a number already measured. The overhead ceiling then
+    goes unchecked, and the evidence says so.
+
     The first agent error stops scheduling: a usage limit or outage fails every
     later unit the same way, and each one still costs a session to find out.
     Units already in flight finish; the rest never start.
     """
+    arms = (True,) if raven_only else (False, True)
     units = [
         (scenario, trial, with_raven)
         for scenario in scenarios
         for trial in range(1, trials + 1)
-        for with_raven in (False, True)
+        for with_raven in arms
     ]
 
     def work(index: int) -> TrialOutcome:
@@ -672,6 +758,7 @@ def run(
             trial=trial,
             transcripts=transcripts,
             raven_config=raven_config if with_raven else None,
+            drop_sections=drop_sections if with_raven else None,
         )
 
     done: dict[int, TrialOutcome] = {}
@@ -679,7 +766,15 @@ def run(
 
     def finish(index: int, outcome: TrialOutcome) -> None:
         scenario, trial, with_raven = units[index]
-        if with_raven:
+        ceiling = scenario.raven_overhead_ceilings.get(agent)
+        if raven_only:
+            if ceiling is not None and outcome.passed:
+                outcome = replace(
+                    outcome,
+                    evidence=f"{outcome.evidence}; control not run, so the {ceiling:,}"
+                    " overhead ceiling went unchecked",
+                )
+        elif with_raven:
             control = done.get(index - 1)
             if control is None:
                 held[index] = outcome
@@ -754,6 +849,8 @@ def render_markdown(
     trials: int,
     stamp: str,
     raven_config: Path | None = None,
+    drop_sections: list[str] | None = None,
+    raven_only: bool = False,
 ) -> str:
     """The results table, written so a reader can tell a real difference from noise."""
     config = f"`{raven_config}`" if raven_config is not None else "default config"
@@ -764,6 +861,15 @@ def render_markdown(
         "",
         f"Raven arm config: {config}.",
         "",
+    ]
+    if drop_sections == [DROP_ALL]:
+        lines += ["Ablation: `AGENTS.md` (and the `CLAUDE.md` importing it) removed.", ""]
+    elif drop_sections:
+        dropped = ", ".join(f"`## {heading}`" for heading in drop_sections)
+        lines += [f"Ablation: `AGENTS.md` section(s) removed: {dropped}.", ""]
+    if raven_only:
+        lines += ["Raven arm only: the control arm was not run.", ""]
+    lines += [
         "Each scenario runs twice in identical throwaway repositories: `control`",
         "has no Raven installed, `raven` does. Only the difference between the two",
         "columns says anything about the guidance.",
@@ -903,14 +1009,21 @@ def scrub_paths(text: str) -> str:
     return _TEMP_PATH.sub("<tmp>", _HOME_PATH.sub("~", text))
 
 
-def _csv_config(raven_config: Path | None) -> str:
-    """The Raven arm's config as a repo-relative path, a bare file name, or `default`."""
+def _csv_config(raven_config: Path | None, drop_sections: list[str] | None = None) -> str:
+    """The Raven arm's config as a repo-relative path, a bare file name, or `default`.
+
+    Dropped `AGENTS.md` sections follow as `; drop-agents-section=<a>|<b>`.
+    """
     if raven_config is None:
-        return "default"
-    try:
-        return raven_config.resolve().relative_to(REPO_ROOT).as_posix()
-    except ValueError:
-        return raven_config.name
+        config = "default"
+    else:
+        try:
+            config = raven_config.resolve().relative_to(REPO_ROOT).as_posix()
+        except ValueError:
+            config = raven_config.name
+    if drop_sections:
+        config += f"; drop-agents-section={'|'.join(drop_sections)}"
+    return config
 
 
 def _cli_version(agent: str) -> str:
@@ -932,6 +1045,7 @@ def render_trials_csv(
     raven_config: Path | None,
     jobs: int,
     cli_version: str = "",
+    drop_sections: list[str] | None = None,
 ) -> str:
     """One CSV row per trial, in the order ``outcomes`` arrive (scenario, trial, arm).
 
@@ -940,7 +1054,7 @@ def render_trials_csv(
     out = io.StringIO()
     writer = csv.writer(out, lineterminator="\n")
     writer.writerow(CSV_COLUMNS)
-    config = _csv_config(raven_config)
+    config = _csv_config(raven_config, drop_sections)
     for o in outcomes:
         reason = o.evidence if not o.error else f"{o.evidence}: {o.error}"
         writer.writerow(
@@ -1023,6 +1137,20 @@ def main() -> int:
         "--raven-config",
         help="config.toml seeded into the Raven arm before install (ablations; not with --out)",
     )
+    parser.add_argument(
+        "--drop-agents-section",
+        action="append",
+        metavar="HEADING",
+        help=(
+            "remove the `## HEADING` section from the Raven arm's installed AGENTS.md"
+            f" (repeatable; {DROP_ALL} removes the file; ablations; not with --out)"
+        ),
+    )
+    parser.add_argument(
+        "--raven-only",
+        action="store_true",
+        help="run only the Raven arm (ablations; not with --out)",
+    )
     args = parser.parse_args()
 
     if args.out and args.trials < MIN_PUBLISHED_TRIALS:
@@ -1033,9 +1161,19 @@ def main() -> int:
         )
         return 1
 
-    if args.out and args.raven_config:
+    ablation_flags = [
+        flag
+        for flag, value in (
+            ("--raven-config", args.raven_config),
+            ("--drop-agents-section", args.drop_agents_section),
+            ("--raven-only", args.raven_only),
+        )
+        if value
+    ]
+    if args.out and ablation_flags:
         print(
-            "error: --raven-config runs are ablations and stay unpublished; drop --out.",
+            f"error: {', '.join(ablation_flags)} runs are ablations and stay unpublished;"
+            " drop --out.",
             file=sys.stderr,
         )
         return 1
@@ -1073,6 +1211,19 @@ def main() -> int:
         print("error: --trials must be at least 1.", file=sys.stderr)
         return 1
 
+    raven_config = Path(args.raven_config) if args.raven_config else None
+    drop_sections = args.drop_agents_section or []
+    if drop_sections:
+        try:
+            check_agents_drop(scenarios, drop_sections, raven_config)
+        except ValueError as exc:
+            print(f"error: --drop-agents-section: {exc}", file=sys.stderr)
+            return 1
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or "").strip() or f"exit {exc.returncode}"
+            print(f"error: raven install failed before the run: {detail}", file=sys.stderr)
+            return 2
+
     started = time.time()
     stamp_time = time.strftime("%Y%m%d-%H%M%S", time.localtime(started))
     transcripts = Path(args.transcripts) if args.transcripts else default_transcripts_dir(started)
@@ -1081,11 +1232,20 @@ def main() -> int:
         f" {args.jobs} at a time"
     )
     print(f"transcripts: {transcripts}")
-    raven_config = Path(args.raven_config) if args.raven_config else None
-    outcomes = run(scenarios, args.agent, args.trials, transcripts, raven_config, args.jobs)
+    outcomes = run(
+        scenarios,
+        args.agent,
+        args.trials,
+        transcripts,
+        raven_config,
+        args.jobs,
+        drop_sections=drop_sections,
+        raven_only=args.raven_only,
+    )
     failed = next((o for o in outcomes if o.evidence == AGENT_ERROR), None)
     if failed is not None:
-        pending = len(scenarios) * args.trials * 2 - len(outcomes)
+        arms = 1 if args.raven_only else 2
+        pending = len(scenarios) * args.trials * arms - len(outcomes)
         print(
             f"error: the {args.agent} CLI failed before acting ({failed.error}); the run "
             f"stopped there with {pending} trial run(s) pending and nothing was published."
@@ -1094,9 +1254,23 @@ def main() -> int:
         )
         args.out = None
 
-    report = render_markdown(outcomes, args.agent, args.trials, args.stamp, raven_config)
+    report = render_markdown(
+        outcomes,
+        args.agent,
+        args.trials,
+        args.stamp,
+        raven_config,
+        drop_sections,
+        args.raven_only,
+    )
     trials_csv = render_trials_csv(
-        outcomes, args.agent, args.stamp, raven_config, args.jobs, _cli_version(args.agent)
+        outcomes,
+        args.agent,
+        args.stamp,
+        raven_config,
+        args.jobs,
+        _cli_version(args.agent),
+        drop_sections,
     )
     # A run costs real money and ~15 minutes of wall clock, so it always leaves
     # an artifact now. Without `--out` the report went to stdout only, where a
