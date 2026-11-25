@@ -1119,7 +1119,9 @@ def main() -> int:
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
         path.write_text(report, encoding="utf-8")
-        csv_path.write_text(trials_csv, encoding="utf-8", newline="")
+        # Bytes, not write_text(newline=""): that keyword needs Python 3.10 and the
+        # floor is 3.9. Writing bytes keeps the csv module's line endings untranslated.
+        csv_path.write_bytes(trials_csv.encode("utf-8"))
     except OSError as exc:
         print(f"error: could not write results: {exc}", file=sys.stderr)
         # Falling back to stdout rather than returning: losing the report is the
