@@ -120,7 +120,8 @@ and [`docs/hooks/writing-hooks.md`](https://github.com/google-gemini/gemini-cli/
   deny), `systemMessage`, `continue` (false ends the agent loop), `suppressOutput`,
   `stopReason`; plus `hookSpecificOutput.*` per event — `tool_input` override on `BeforeTool`,
   `additionalContext` (additive) or `tailToolCallRequest: {name, args}` (runs a replacement
-  tool call) on `AfterTool`.
+  tool call) on `AfterTool`. `SessionStart` accepts `hookSpecificOutput.additionalContext`
+  (injected as the first history turn); its `systemMessage` is shown to the user only.
 - **Exit codes:** `0` success (stdout parsed as JSON), `2` "System Block" (stderr text becomes
   the rejection/replacement reason), anything else is a non-fatal warning and the CLI
   continues.

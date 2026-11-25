@@ -1,13 +1,20 @@
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from helpers import REPO_ROOT, RavenTestCase, codex_script_symlink_target, load_script_module
+from helpers import (
+    REPO_ROOT,
+    RavenTestCase,
+    codex_script_symlink_target,
+    install_raven_config_lib,
+    load_script_module,
+)
 from raven_lib.template import should_preserve_symlink
 
 ROSTER_SCRIPT = REPO_ROOT / "common" / ".claude" / "scripts" / "raven-capability-roster.py"
@@ -219,6 +226,74 @@ class FailSafeTests(RavenTestCase):
         )
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stderr, "")
+
+
+class HookOutputFormatTests(RavenTestCase):
+    HEADER = "=== RAVEN CAPABILITIES ==="
+
+    def _payload(self, **extra):
+        return {
+            "hook_event_name": "SessionStart",
+            "session_id": "s",
+            "transcript_path": "/tmp/t.jsonl",
+            "cwd": self.tmp.name,
+            "source": "startup",
+            **extra,
+        }
+
+    def _run(self, script, payload, gemini_env=False, args=()):
+        env = {k: v for k, v in os.environ.items() if k != "GEMINI_PROJECT_DIR"}
+        if gemini_env:
+            env["GEMINI_PROJECT_DIR"] = self.tmp.name
+        return subprocess.run(
+            [sys.executable, str(script), *args],
+            cwd=self.tmp.name,
+            input=json.dumps(payload),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+    def _assert_plain(self, result):
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(result.stdout.startswith(self.HEADER))
+        with self.assertRaises(json.JSONDecodeError):
+            json.loads(result.stdout)
+
+    def _assert_gemini_json(self, result):
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(set(data), {"hookSpecificOutput"})
+        out = data["hookSpecificOutput"]
+        self.assertEqual(out["hookEventName"], "SessionStart")
+        self.assertTrue(out["additionalContext"].startswith(self.HEADER))
+
+    def test_claude_payload_prints_plain_text(self):
+        self._assert_plain(self._run(ROSTER_SCRIPT, self._payload()))
+
+    def test_codex_payload_prints_plain_text(self):
+        payload = self._payload(transcript_path=None, model="m", permission_mode="default")
+        self._assert_plain(self._run(CODEX_ROSTER_SCRIPT, payload))
+
+    def test_gemini_env_prints_additional_context_json(self):
+        result = self._run(ROSTER_SCRIPT, self._payload(timestamp="t"), gemini_env=True)
+        self._assert_gemini_json(result)
+
+    def test_gemini_install_path_prints_additional_context_json(self):
+        scripts = Path(self.tmp.name) / ".gemini" / "scripts"
+        scripts.mkdir(parents=True)
+        for name in ("raven-capability-roster.py", "raven-tool-check.py", "raven-session.py"):
+            src = ROSTER_SCRIPT.parent / name
+            if src.exists():
+                shutil.copy2(src, scripts / name)
+        install_raven_config_lib(Path(self.tmp.name))
+        result = self._run(scripts / "raven-capability-roster.py", self._payload(timestamp="t"))
+        self._assert_gemini_json(result)
+
+    def test_json_flag_wins_under_gemini(self):
+        result = self._run(ROSTER_SCRIPT, self._payload(), gemini_env=True, args=("--json",))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(set(json.loads(result.stdout)), {"roster"})
 
 
 class SanitizationTests(RavenTestCase):

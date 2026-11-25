@@ -4,8 +4,13 @@
 
 Ships beside raven-tool-check.py in the adapter's scripts/ directory, and
 loads it as a sibling module rather than duplicating its probe primitives.
-Named adapter-neutrally on purpose: one file serves both the Claude and Codex
-adapters, so naming either one here would be wrong in the other.
+Named adapter-neutrally on purpose: one file serves the Claude, Codex, and
+Gemini adapters, so naming any one of them here would be wrong in the others.
+
+Output is plain text except under Gemini. Claude and Codex both add plain
+stdout to model context, while a ``systemMessage`` is user-only on all three
+hosts. Gemini parses stdout as JSON, so it gets
+``hookSpecificOutput.additionalContext``, its model-visible channel.
 
 Probes inline rather than caching. Probing all recommended tools costs about
 3 ms because the prober short-circuits to ``shutil.which`` unless
@@ -506,6 +511,20 @@ def build_roster(root: Path | None, prober: Any) -> str:
     )
 
 
+def _is_gemini_host() -> bool:
+    """True under Gemini: its env var, or the unresolved install path's adapter dir.
+
+    The payload cannot tell hosts apart (all three send the same SessionStart
+    fields), and Gemini also sets the Claude project-dir alias, so neither is used.
+    """
+    if "GEMINI_PROJECT_DIR" in os.environ:
+        return True
+    try:
+        return Path(os.path.abspath(__file__)).parents[1].name == ".gemini"
+    except IndexError:
+        return False
+
+
 def main() -> int:
     """CLI/hook entry point: build and print the roster, always exiting 0.
 
@@ -526,14 +545,17 @@ def main() -> int:
         text = build_roster(root, prober)
         if args.json:
             print(json.dumps({"roster": text}, indent=2))
-        elif payload is not None and (
-            "GEMINI_PROJECT_DIR" in os.environ
-            or (
-                payload.get("hook_event_name") in ("BeforeTool", "AfterTool", "SessionStart")
-                and ("transcript_path" in payload or "session_id" in payload)
+        elif payload is not None and _is_gemini_host():
+            print(
+                json.dumps(
+                    {
+                        "hookSpecificOutput": {
+                            "hookEventName": "SessionStart",
+                            "additionalContext": text,
+                        }
+                    }
+                )
             )
-        ):
-            print(json.dumps({"systemMessage": text}))
         else:
             sys.stdout.write(text)
     except Exception:  # noqa: BLE001 -- deliberate last-resort boundary, see spec's Error Handling

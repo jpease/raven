@@ -669,7 +669,13 @@ class ProjectRootResolutionTests(RavenTestCase):
             (REPO_ROOT / "common" / ".codex" / "hooks.json").read_text(encoding="utf-8")
         )
         command = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-        payload = {"cwd": str(project), "hook_event_name": "SessionStart", "source": "startup"}
+        payload = {
+            "cwd": str(project),
+            "hook_event_name": "SessionStart",
+            "source": "startup",
+            "session_id": "s",
+            "transcript_path": None,
+        }
 
         result = subprocess.run(
             command,
