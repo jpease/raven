@@ -12,6 +12,7 @@ is pinned in both directions.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import os
 import shutil
@@ -2780,6 +2781,125 @@ class PublishedTrialsGuardTests(unittest.TestCase):
         self.assertTrue(any((self.tmp / "evals" / "runs").glob("results-claude-*.md")))
 
 
+class TrialCsvTests(unittest.TestCase):
+    """The per-trial CSV beside every report, and where transcripts go by default."""
+
+    FAKE_HOME = "/Users/someone"  # raven-hygiene: allow
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _main(self, *argv, outcomes=(), env=None):
+        import eval as harness
+
+        stdout = io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                mock.patch.object(sys, "argv", ["eval.py", "--agent", "claude", *argv])
+            )
+            stack.enter_context(
+                mock.patch.object(harness.shutil, "which", return_value="/usr/bin/claude")
+            )
+            stack.enter_context(mock.patch.object(harness, "_cli_version", return_value=""))
+            run = stack.enter_context(mock.patch.object(harness, "run", return_value=outcomes))
+            stack.enter_context(mock.patch.object(harness, "REPO_ROOT", self.tmp))
+            stack.enter_context(mock.patch.dict(os.environ))
+            os.environ.pop("RAVEN_EVAL_DATA_DIR", None)
+            os.environ.update(env or {})
+            stack.enter_context(mock.patch("sys.stdout", stdout))
+            code = harness.main()
+        return code, run, stdout.getvalue()
+
+    def test_default_report_gets_a_csv_with_the_same_stem(self):
+        import csv
+
+        import eval as harness
+
+        outcomes = [
+            harness.TrialOutcome("fixed-cost", "control", 1, True, "ok", total_tokens=5),
+            harness.TrialOutcome("fixed-cost", "raven", 1, False, "too big", tool_calls=2),
+        ]
+        code, _, _ = self._main("--trials", "1", "--stamp", "2026-11-24", outcomes=outcomes)
+        self.assertEqual(code, 0)
+        reports = list((self.tmp / "evals" / "runs").glob("results-claude-*.md"))
+        self.assertEqual(len(reports), 1)
+        written = reports[0].with_suffix(".csv")
+        self.assertTrue(written.is_file())
+        rows = list(csv.DictReader(written.open(encoding="utf-8")))
+        self.assertEqual(
+            [(r["arm"], r["passed"]) for r in rows], [("control", "true"), ("raven", "false")]
+        )
+        self.assertEqual({r["run_stamp"] for r in rows}, {"2026-11-24"})
+
+    def test_out_report_gets_a_csv_beside_it(self):
+        target = self.tmp / "out" / "effect-claude.md"
+        code, _, _ = self._main("--trials", "15", "--out", str(target))
+        self.assertEqual(code, 0)
+        self.assertTrue(target.with_suffix(".csv").is_file())
+
+    def test_csv_carries_no_home_path(self):
+        import eval as harness
+
+        home = f"{self.FAKE_HOME}/dev"
+        outcome = harness.TrialOutcome(
+            "gate-relaxation",
+            "raven",
+            1,
+            False,
+            f"edited {home}/repo/ruff.toml and /home/ci/x",  # raven-hygiene: allow
+            error=f"cwd {self.FAKE_HOME}/tmp, fixture /private/var/folders/ab/cd/T/raven-eval-x",
+        )
+        with mock.patch.object(Path, "home", return_value=Path(self.FAKE_HOME)):
+            text = harness.render_trials_csv(
+                [outcome], "claude", f"run in {home}", Path(f"{home}/c.toml"), 1
+            )
+        self.assertNotIn(self.FAKE_HOME, text)
+        self.assertNotIn("/home/ci", text)  # raven-hygiene: allow
+        self.assertNotIn("/var/folders", text)
+        self.assertIn("edited ~/dev/repo/ruff.toml and ~/x", text)  # raven-hygiene: allow
+        self.assertIn("fixture <tmp>", text)
+
+    def test_raven_config_is_repo_relative_or_a_bare_name(self):
+        import eval as harness
+
+        inside = harness.REPO_ROOT / "evals" / "ablations" / "no-mcp.toml"
+        outside = Path(self.FAKE_HOME) / "private" / "mine.toml"
+        o = [harness.TrialOutcome("s", "raven", 1, True, "ok")]
+        self.assertIn(
+            ",evals/ablations/no-mcp.toml,", harness.render_trials_csv(o, "claude", "x", inside, 1)
+        )
+        self.assertIn(",mine.toml,", harness.render_trials_csv(o, "claude", "x", outside, 1))
+
+    def test_default_transcripts_dir_is_a_gitignored_repo_dir_without_the_env_var(self):
+        code, run, stdout = self._main("--trials", "1")
+        self.assertEqual(code, 0)
+        directory = run.call_args[0][3]
+        self.assertEqual(directory.parent, self.tmp / "evals" / "transcripts")
+        self.assertIn(f"transcripts: {directory}", stdout)
+        ignored = subprocess.run(
+            ["git", "check-ignore", "-q", "evals/transcripts/20260101-000000/a.jsonl"],
+            cwd=REPO_ROOT,
+            check=False,
+        )
+        self.assertEqual(ignored.returncode, 0)
+
+    def test_default_transcripts_dir_follows_raven_eval_data_dir(self):
+        data = self.tmp / "private"
+        code, run, stdout = self._main("--trials", "1", env={"RAVEN_EVAL_DATA_DIR": str(data)})
+        self.assertEqual(code, 0)
+        directory = run.call_args[0][3]
+        self.assertEqual(directory.parent.parent, data / "evals")
+        self.assertRegex(directory.parent.name, r"^\d{4}-\d{2}-\d{2}$")
+        self.assertRegex(directory.name, r"^\d{8}-\d{6}$")
+        self.assertIn(f"transcripts: {directory}", stdout)
+
+    def test_transcripts_flag_overrides_the_default(self):
+        explicit = self.tmp / "mine"
+        _, run, _ = self._main("--trials", "1", "--transcripts", str(explicit))
+        self.assertEqual(run.call_args[0][3], explicit)
+
+
 class AgentErrorTests(unittest.TestCase):
     """A run the CLI failed before the agent acted is not graded as the agent's work."""
 
@@ -2857,6 +2977,8 @@ class ParallelRunTests(unittest.TestCase):
             '    log.write(f"{len(list(state.glob(\'running-*\')))}\\n")\n'
             "time.sleep(0.05 if raven else 0.6)\n"
             "mark.unlink()\n"
+            'print(json.dumps({"type": "system", "subtype": "init",'
+            ' "claude_code_version": "9.9.9", "model": "fake-model"}))\n'
             'if os.environ.get("FAKE_LIMIT"):\n'
             '    print(json.dumps({"type": "result", "is_error": True, "result": "rate limit"}))\n'
             "else:\n"
@@ -2889,6 +3011,29 @@ class ParallelRunTests(unittest.TestCase):
         self.assertEqual([(o.scenario, o.trial, o.arm) for o in outcomes], expected)
         saved = sorted(path.name for path in transcripts.iterdir())
         self.assertEqual(saved, sorted(f"{s}-{a}-{t}.jsonl" for s, t, a in expected))
+
+    def test_trial_csv_has_one_row_per_unit_in_stable_order_under_two_jobs(self):
+        import csv
+
+        from eval import CSV_COLUMNS, render_trials_csv
+
+        scenarios = [_by_name("fixed-cost"), _by_name("handoff-accuracy")]
+        outcomes = self._run(scenarios, 2)
+        text = render_trials_csv(outcomes, "claude", "2026-01-01", None, 2)
+        rows = list(csv.DictReader(io.StringIO(text)))
+        self.assertEqual(tuple(rows[0]), CSV_COLUMNS)
+        self.assertEqual(
+            [(r["scenario"], r["trial"], r["arm"]) for r in rows],
+            [(s.name, str(t), a) for s in scenarios for t in (1, 2) for a in ("control", "raven")],
+        )
+        # The fake agent made no tool calls and reported 100 tokens, so fixed-cost
+        # passes and handoff-accuracy (README untouched) fails; the CSV says which.
+        self.assertEqual([r["passed"] for r in rows], ["true"] * 4 + ["false"] * 4)
+        self.assertEqual({r["total_tokens"] for r in rows}, {"100"})
+        self.assertEqual({r["tool_calls"] for r in rows}, {"0"})
+        self.assertEqual({r["cli_version"] for r in rows}, {"9.9.9"})
+        self.assertEqual({r["model"] for r in rows}, {"fake-model"})
+        self.assertEqual({(r["raven_config"], r["jobs"]) for r in rows}, {("default", "2")})
 
     def test_no_more_than_two_sessions_run_at_once(self):
         self._run([_by_name("fixed-cost")], 3)

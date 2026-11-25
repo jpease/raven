@@ -44,3 +44,6 @@ private.just
 .claude/skills/gitnexus-guide/
 .claude/skills/gitnexus-impact-analysis/
 .claude/skills/gitnexus-refactoring/
+
+# Per-trial transcripts kept by scripts/eval.py when RAVEN_EVAL_DATA_DIR is unset
+evals/transcripts/

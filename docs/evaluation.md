@@ -29,33 +29,33 @@ python scripts/eval.py --agent claude --trials 15 --out docs/evaluation/
 python scripts/eval.py --agent claude --scenario commit-attribution --transcripts /tmp/raven-transcripts
 ```
 
-`--transcripts` keeps each trial's raw JSON so the steps behind a call count
-can be read after the fixture is gone; the files are large and stay out of
-the repository.
+Every run keeps each trial's raw JSON transcript, so the steps behind a call
+count outlive the fixture. They go to `$RAVEN_EVAL_DATA_DIR/evals/<date>/<stamp>/`
+when that variable is set, else to the gitignored `evals/transcripts/<stamp>/`;
+`--transcripts` overrides both, and the run prints the directory it chose.
+Beside every report (`--out` or the default `evals/runs/` one) it writes a
+`.csv` with the same stem: one row per trial with the run stamp, CLI version,
+model, scenario, arm, pass or fail and the verdict's reason, tokens, tool
+calls, Raven config, and jobs. Home and temp paths are scrubbed.
 
 It drives the local `claude` or `codex` CLI and whatever subscription is
-already logged in. No API key is read, stored, or passed. Runs happen in
-temporary directories that are deleted afterwards; nothing touches the
-repository you invoke it from.
+already logged in. No API key is read, stored, or passed. Fixtures live in
+temporary directories that are deleted afterwards.
 
-Both commands run with the operator's own user-level config excluded.
-Without that, personal plugins and global MCP servers configured on whoever
-runs the eval leak into every trial, in both arms alike, and don't reproduce
-on a different machine or in CI. Claude gets `--setting-sources project`
-and `ENABLE_CLAUDEAI_MCP_SERVERS=false`, since account connectors attach only
-to the arm configuring MCP. Codex gets a private `$CODEX_HOME` per trial,
-holding one `config.toml` that trusts the fixture and a symlink to the real
-`auth.json` (a link, never a copy).
+Both commands run with the operator's own user-level config excluded, so
+personal plugins and global MCP servers cannot leak into every trial. Claude
+gets `--setting-sources project` and `ENABLE_CLAUDEAI_MCP_SERVERS=false`
+(account connectors attach only to the arm configuring MCP). Codex gets a
+private `$CODEX_HOME` per trial: one `config.toml` that trusts the fixture and
+a symlink to the real `auth.json`.
 
-The private home exists because Codex loads a project's `.codex/`
-layer — hooks, rules, config, custom agents — only for a trusted project, and
-the only thing that grants trust is that table in the config file; a `-c`
-override on the command line does not. `--dangerously-bypass-hook-trust`
-then stands in for the per-hook review a person would do in `/hooks`.
-
-Every Codex result recorded before 2026-09-02 ran without either, so it
-measures the prose alone: the Raven arm's hooks, rules, and config were parsed
-and skipped. A SessionStart hook that touches a file confirmed it live.
+The private home exists because Codex loads a project's `.codex/` layer
+(hooks, rules, config, custom agents) only for a trusted project, and only
+that config table grants trust; a `-c` override does not.
+`--dangerously-bypass-hook-trust` stands in for the per-hook review a person
+would do in `/hooks`. Codex results recorded before 2026-09-02 ran without
+either, so they measure the prose alone: the Raven arm's hooks, rules, and
+config were parsed and skipped.
 
 `--raven-config PATH` seeds the Raven arm's `.raven/config.toml` for the
 `evals/ablations/` runs; `--out` refuses it.

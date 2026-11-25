@@ -25,8 +25,11 @@ trials), 2 (a tooling problem stopped the run).
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -99,6 +102,9 @@ class TrialOutcome:
     #: it says whether a costlier arm took more steps or carried more context
     #: per step. None means the transcript held no events to count.
     tool_calls: int | None = None
+    #: From the transcript where the CLI reports them (Claude's `system/init`).
+    cli_version: str | None = None
+    model: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +401,25 @@ def _agent_error(agent: str, transcript: str) -> str | None:
 AGENT_ERROR = "agent error"
 
 
+def transcript_meta(transcript: str) -> tuple[str | None, str | None]:
+    """(CLI version, model) from Claude's `system/init` event; None where a CLI names neither."""
+    for line in transcript.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if (
+            isinstance(event, dict)
+            and event.get("type") == "system"
+            and event.get("subtype") == "init"
+        ):
+            return event.get("claude_code_version"), event.get("model")
+    return None, None
+
+
 # ---------------------------------------------------------------------------
 # Fixture construction
 # ---------------------------------------------------------------------------
@@ -558,7 +583,17 @@ def run_one(
 
         agent_error = _agent_error(agent, transcript)
         if agent_error is not None:
-            return TrialOutcome(scenario.name, arm, trial, False, AGENT_ERROR, agent_error)
+            cli_version, model = transcript_meta(transcript)
+            return TrialOutcome(
+                scenario.name,
+                arm,
+                trial,
+                False,
+                AGENT_ERROR,
+                agent_error,
+                cli_version=cli_version,
+                model=model,
+            )
 
         try:
             result: Result = scenario.verdict(root, transcript)
@@ -567,6 +602,7 @@ def run_one(
 
         usage = USAGE_EXTRACTORS.get(agent, lambda _t: None)(transcript)
         total_tokens, output_tokens, cost_usd = usage if usage else (None, None, None)
+        cli_version, model = transcript_meta(transcript)
         return TrialOutcome(
             scenario.name,
             arm,
@@ -577,6 +613,8 @@ def run_one(
             output_tokens=output_tokens,
             cost_usd=cost_usd,
             tool_calls=tool_calls(transcript),
+            cli_version=cli_version,
+            model=model,
         )
 
 
@@ -830,6 +868,116 @@ def render_markdown(
     return "\n".join(lines)
 
 
+#: Per-trial columns of the CSV written beside every report. One row per
+#: trial, so the pass counts and token means in the report can be recomputed.
+CSV_COLUMNS = (
+    "run_stamp",
+    "agent",
+    "cli_version",
+    "model",
+    "scenario",
+    "arm",
+    "trial",
+    "passed",
+    "verdict_reason",
+    "total_tokens",
+    "tool_calls",
+    "raven_config",
+    "jobs",
+)
+
+_HOME_PATH = re.compile(r"(?:/Users|/home)/[^/\s'\"`]+")
+#: macOS's per-user temp root, where the fixtures live; its name encodes the account.
+_TEMP_PATH = re.compile(r"(?:/private)?/var/folders/[^\s'\"`]*")
+
+
+def scrub_paths(text: str) -> str:
+    """``text`` with the operator's home directory replaced by ``~`` and temp paths by ``<tmp>``.
+
+    Verdict evidence and agent errors quote paths; a committed CSV must not
+    carry whoever ran the eval.
+    """
+    home = str(Path.home())
+    if len(home) > 1:
+        text = text.replace(home, "~")
+    return _TEMP_PATH.sub("<tmp>", _HOME_PATH.sub("~", text))
+
+
+def _csv_config(raven_config: Path | None) -> str:
+    """The Raven arm's config as a repo-relative path, a bare file name, or `default`."""
+    if raven_config is None:
+        return "default"
+    try:
+        return raven_config.resolve().relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return raven_config.name
+
+
+def _cli_version(agent: str) -> str:
+    """`<agent> --version`'s first line, or empty when the CLI cannot say."""
+    try:
+        done = subprocess.run(
+            [agent, "--version"], capture_output=True, text=True, timeout=30, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    lines = done.stdout.strip().splitlines()
+    return scrub_paths(lines[0].strip()) if done.returncode == 0 and lines else ""
+
+
+def render_trials_csv(
+    outcomes: list[TrialOutcome],
+    agent: str,
+    stamp: str,
+    raven_config: Path | None,
+    jobs: int,
+    cli_version: str = "",
+) -> str:
+    """One CSV row per trial, in the order ``outcomes`` arrive (scenario, trial, arm).
+
+    ``cli_version`` fills rows whose transcript named none (Codex's does not).
+    """
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(CSV_COLUMNS)
+    config = _csv_config(raven_config)
+    for o in outcomes:
+        reason = o.evidence if not o.error else f"{o.evidence}: {o.error}"
+        writer.writerow(
+            [
+                scrub_paths(stamp),
+                agent,
+                o.cli_version or cli_version,
+                o.model or "",
+                o.scenario,
+                o.arm,
+                o.trial,
+                "true" if o.passed else "false",
+                scrub_paths(" ".join(reason.split())),
+                "" if o.total_tokens is None else o.total_tokens,
+                "" if o.tool_calls is None else o.tool_calls,
+                config,
+                jobs,
+            ]
+        )
+    return out.getvalue()
+
+
+def default_transcripts_dir(started: float) -> Path:
+    """Where a run keeps its transcripts when `--transcripts` is not given.
+
+    `$RAVEN_EVAL_DATA_DIR/evals/<YYYY-MM-DD>/<stamp>/` when the variable is set
+    (the maintainer's private data directory, outside the repository),
+    otherwise the gitignored `evals/transcripts/<stamp>/` in the checkout.
+    """
+    moment = time.localtime(started)
+    stamp = time.strftime("%Y%m%d-%H%M%S", moment)
+    data_dir = os.environ.get("RAVEN_EVAL_DATA_DIR")
+    if data_dir:
+        return Path(data_dir) / "evals" / time.strftime("%Y-%m-%d", moment) / stamp
+    return REPO_ROOT / "evals" / "transcripts" / stamp
+
+
 def main() -> int:
     """Parse argv, run the selected scenarios, and write the results."""
     parser = argparse.ArgumentParser(
@@ -860,7 +1008,11 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="also print raw outcomes as JSON")
     parser.add_argument(
         "--transcripts",
-        help="directory to keep each trial's raw JSON transcript in, for reading the steps",
+        help=(
+            "directory to keep each trial's raw JSON transcript in (default:"
+            " $RAVEN_EVAL_DATA_DIR/evals/<date>/<stamp>/ when set, else"
+            " evals/transcripts/<stamp>/)"
+        ),
     )
     parser.add_argument(
         "--stamp",
@@ -921,11 +1073,14 @@ def main() -> int:
         print("error: --trials must be at least 1.", file=sys.stderr)
         return 1
 
+    started = time.time()
+    stamp_time = time.strftime("%Y%m%d-%H%M%S", time.localtime(started))
+    transcripts = Path(args.transcripts) if args.transcripts else default_transcripts_dir(started)
     print(
         f"raven eval: {args.agent}, {len(scenarios)} scenario(s), {args.trials} trial(s) per arm,"
         f" {args.jobs} at a time"
     )
-    transcripts = Path(args.transcripts) if args.transcripts else None
+    print(f"transcripts: {transcripts}")
     raven_config = Path(args.raven_config) if args.raven_config else None
     outcomes = run(scenarios, args.agent, args.trials, transcripts, raven_config, args.jobs)
     failed = next((o for o in outcomes if o.evidence == AGENT_ERROR), None)
@@ -940,12 +1095,16 @@ def main() -> int:
         args.out = None
 
     report = render_markdown(outcomes, args.agent, args.trials, args.stamp, raven_config)
+    trials_csv = render_trials_csv(
+        outcomes, args.agent, args.stamp, raven_config, args.jobs, _cli_version(args.agent)
+    )
     # A run costs real money and ~15 minutes of wall clock, so it always leaves
     # an artifact now. Without `--out` the report went to stdout only, where a
     # pipe (`| tail -40`) or a closed scrollback destroyed it and the run had to
     # be repeated to recover the numbers. Defaulting to a timestamped file under
     # `evals/runs/` keeps the explicit `--out` behavior (stable filename, for
-    # the committed reports) and makes silent loss impossible.
+    # the committed reports) and makes silent loss impossible. The per-trial CSV
+    # lands beside the report under the same stem.
     if args.out and args.out.endswith(".md"):
         out_dir = Path(args.out).parent
         name = Path(args.out).name
@@ -954,22 +1113,25 @@ def main() -> int:
         name = f"results-{args.agent}.md"
     else:
         out_dir = REPO_ROOT / "evals" / "runs"
-        name = f"results-{args.agent}-{time.strftime('%Y%m%d-%H%M%S')}.md"
+        name = f"results-{args.agent}-{stamp_time}.md"
+    path = out_dir / name
+    csv_path = path.with_suffix(".csv")
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
-        path = out_dir / name
         path.write_text(report, encoding="utf-8")
+        csv_path.write_text(trials_csv, encoding="utf-8", newline="")
     except OSError as exc:
         print(f"error: could not write results: {exc}", file=sys.stderr)
         # Falling back to stdout rather than returning: losing the report is the
         # failure this block exists to prevent.
         print()
         print(report)
+        print(trials_csv)
         return 2
     if not args.out:
         print()
         print(report)
-    print(f"\nWrote {path}")
+    print(f"\nWrote {path} and {csv_path}")
 
     if args.json:
         print(json.dumps([o.__dict__ for o in outcomes], indent=2))
