@@ -206,9 +206,9 @@
       "sourceSha256": "806f1224309120784649d7029e47e83f6c46e993f504bfe5afe5171d95f8be0e"
     },
     ".claude/docs/raven-guardrails.md": {
-      "installedSha256": "02d9a2a0ca606bd62a641cb24a87fc9ddee12f4074941e4648cbaffa8f788dd8",
+      "installedSha256": "7b630def0a9fbd337a33c2e3001c9ffd915123e879ac3470819bb03fe01c61be",
       "kind": "file",
-      "sourceSha256": "02d9a2a0ca606bd62a641cb24a87fc9ddee12f4074941e4648cbaffa8f788dd8"
+      "sourceSha256": "7b630def0a9fbd337a33c2e3001c9ffd915123e879ac3470819bb03fe01c61be"
     },
     ".claude/docs/raven-lsp-mcp.md": {
       "installedSha256": "d31c3fb28e331cfbbac3af36f1d14ce707ac52becb4e2e64e5d08389a0179eea",

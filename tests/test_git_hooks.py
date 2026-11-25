@@ -18,7 +18,7 @@ from helpers import (
     raven,
     upgrade_ns,
 )
-from raven_lib.git_hooks import HookLinkAction, hook_link_action
+from raven_lib.git_hooks import HookLinkAction, hook_link_action, hook_shim_text
 
 # A developer's global commit.gpgsign=true would spawn gpg per commit, which
 # fails intermittently when parallel xdist workers share one gpg-agent.
@@ -141,15 +141,16 @@ class GitHookInstallerTests(unittest.TestCase):
         stamp = self.destination / ".git" / "verified-check"
         return env, head, stamp
 
-    def test_installs_hook_as_symlink_in_git_hooks(self):
+    def test_installs_hook_as_executable_shim_in_git_hooks(self):
         self._write_hook("commit-msg")
 
         installed = raven.install_git_hooks(self.destination)
 
         link = self.git_hooks_dir / "commit-msg"
         self.assertEqual(installed, ["commit-msg"])
-        self.assertTrue(link.is_symlink())
-        self.assertEqual(link.resolve(), (self.git_hooks_src / "commit-msg").resolve())
+        self.assertFalse(link.is_symlink())
+        self.assertEqual(link.read_text(encoding="utf-8"), hook_shim_text("commit-msg"))
+        self.assertTrue(link.stat().st_mode & 0o111)
 
     def test_makes_hook_file_executable(self):
         self._write_hook("commit-msg")
@@ -189,7 +190,7 @@ class GitHookInstallerTests(unittest.TestCase):
         self.assertEqual(existing.read_text(encoding="utf-8"), "# user hook\n")
         self.assertIn("already exists as a regular file", stderr.getvalue())
 
-    def test_idempotent_when_symlink_already_correct(self):
+    def test_idempotent_when_shim_already_installed(self):
         self._write_hook("commit-msg")
         raven.install_git_hooks(self.destination)
 
@@ -197,7 +198,7 @@ class GitHookInstallerTests(unittest.TestCase):
 
         self.assertEqual(installed, ["commit-msg"])
 
-    def test_updates_stale_symlink(self):
+    def test_replaces_stale_symlink_with_shim(self):
         self._write_hook("commit-msg")
         stale_target = self.git_hooks_src.parent / "old-commit-msg"
         stale_target.write_text("# stale\n", encoding="utf-8")
@@ -207,7 +208,8 @@ class GitHookInstallerTests(unittest.TestCase):
         installed = raven.install_git_hooks(self.destination)
 
         self.assertEqual(installed, ["commit-msg"])
-        self.assertEqual(link.resolve(), (self.git_hooks_src / "commit-msg").resolve())
+        self.assertFalse(link.is_symlink())
+        self.assertEqual(link.read_text(encoding="utf-8"), hook_shim_text("commit-msg"))
 
     def test_installs_into_custom_core_hooks_path(self):
         custom_hooks = self.destination / ".githooks"
@@ -222,7 +224,7 @@ class GitHookInstallerTests(unittest.TestCase):
 
         self.assertEqual(installed, ["commit-msg"])
         link = custom_hooks / "commit-msg"
-        self.assertTrue(link.is_symlink())
+        self.assertEqual(link.read_text(encoding="utf-8"), hook_shim_text("commit-msg"))
         self.assertFalse((self.git_hooks_dir / "commit-msg").exists())
 
     def test_linked_worktree_installs_into_shared_hooks_dir(self):
@@ -280,7 +282,7 @@ class GitHookInstallerTests(unittest.TestCase):
 
         shared_link = self.git_hooks_dir / "commit-msg"
         self.assertEqual(installed, ["commit-msg"])
-        self.assertTrue(shared_link.is_symlink())
+        self.assertEqual(shared_link.read_text(encoding="utf-8"), hook_shim_text("commit-msg"))
 
     def test_raven_git_hooks_path_included_in_hooks_component(self):
         self.assertIn(".raven/git-hooks", raven.COMPONENT_PATHS["hooks"])
@@ -552,7 +554,10 @@ class GitHookInstallerTests(unittest.TestCase):
         installed = raven.install_git_hooks(self.destination)
 
         self.assertEqual(installed, ["pre-commit"])
-        self.assertTrue((self.destination / ".git" / "hooks" / "pre-commit").is_symlink())
+        self.assertEqual(
+            (self.destination / ".git" / "hooks" / "pre-commit").read_text(encoding="utf-8"),
+            hook_shim_text("pre-commit"),
+        )
         # The decoy repo named by GIT_DIR must be left untouched.
         self.assertFalse((decoy / ".git" / "hooks" / "pre-commit").exists())
 
@@ -1311,7 +1316,7 @@ class GitHookInstallerTests(unittest.TestCase):
 
         self.assertEqual(installed, ["commit-msg"])
         link = self.destination / "nested" / "missing" / "hooks" / "commit-msg"
-        self.assertTrue(link.is_symlink())
+        self.assertEqual(link.read_text(encoding="utf-8"), hook_shim_text("commit-msg"))
 
     def test_install_skips_hooks_path_outside_repo(self):
         # A user-global core.hooksPath (e.g. set via --global) must not be
@@ -1784,6 +1789,162 @@ class MissingGateToolNoticeTests(unittest.TestCase):
         self.assertNotIn("gate tool(s) not installed", output)
 
 
+class WorktreeHookShimTests(unittest.TestCase):
+    """Hooks installed from a linked worktree must outlive it and stay per-worktree.
+
+    Linked worktrees share one hooks directory. A symlink from there into one
+    worktree's `.raven/git-hooks/` dangles when that worktree is removed (git then
+    skips the hook silently) and makes every other worktree run its scripts.
+    """
+
+    def setUp(self):
+        for var in [k for k in os.environ if k.startswith("GIT_")]:
+            self.addCleanup(os.environ.__setitem__, var, os.environ[var])
+            del os.environ[var]
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name).resolve()
+        self.main = root / "main"
+        self.log = root / "hook.log"
+        self.main.mkdir()
+        self._git(self.main, "init")
+        self._write_script(self.main, "main")
+        self._git(self.main, "add", "-A")
+        self._commit(self.main)
+
+    def _git(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", "-C", str(cwd), *args], capture_output=True, text=True, check=True
+        )
+
+    def _commit(self, cwd: Path) -> subprocess.CompletedProcess[str]:
+        return self._git(
+            cwd,
+            "-c",
+            "user.email=raven@example.com",
+            "-c",
+            "user.name=Raven Test",
+            *_NO_GPG_SIGN,
+            "commit",
+            "--allow-empty",
+            "-m",
+            "x",
+        )
+
+    def _write_script(self, checkout: Path, tag: str) -> None:
+        script = checkout / ".raven" / "git-hooks" / "pre-commit"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(f'#!/bin/sh\necho "{tag}" >> "{self.log}"\n', encoding="utf-8")
+        script.chmod(0o755)
+
+    def _add_worktree(self, name: str) -> Path:
+        wt = self.main.parent / name
+        self._git(self.main, "worktree", "add", "-q", str(wt), "-b", name)
+        return wt
+
+    def _ran(self) -> list[str]:
+        return self.log.read_text(encoding="utf-8").split() if self.log.exists() else []
+
+    def test_hook_survives_removal_of_the_worktree_that_installed_it(self):
+        wt = self._add_worktree("wt-a")
+        raven.install_git_hooks(wt)
+        self._git(self.main, "worktree", "remove", "--force", str(wt))
+        self.assertFalse(wt.exists())
+
+        self._commit(self.main)
+
+        self.assertEqual(self._ran(), ["main"])
+
+    def test_each_worktree_runs_its_own_hook_script(self):
+        wt = self._add_worktree("wt-b")
+        self._write_script(wt, "wt-b")
+        raven.install_git_hooks(self.main)
+
+        self._commit(self.main)
+        self._commit(wt)
+
+        self.assertEqual(self._ran(), ["main", "wt-b"])
+
+    def test_legacy_symlinks_are_migrated_and_foreign_hooks_kept(self):
+        hooks = self.main / ".git" / "hooks"
+        hooks.mkdir(exist_ok=True)
+        for name in ("pre-push", "commit-msg"):
+            (self.main / ".raven" / "git-hooks" / name).write_text("#!/bin/sh\n", encoding="utf-8")
+        live = hooks / "pre-commit"
+        live.symlink_to("../../.raven/git-hooks/pre-commit")
+        dangling = hooks / "pre-push"
+        dangling.symlink_to("../../../gone-worktree/.raven/git-hooks/pre-push")
+        foreign = hooks / "commit-msg"
+        foreign.write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+        self.assertTrue(dangling.is_symlink() and not dangling.exists())
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            installed = raven.install_git_hooks(self.main)
+
+        self.assertEqual(installed, ["pre-commit", "pre-push"])
+        for link, name in ((live, "pre-commit"), (dangling, "pre-push")):
+            self.assertFalse(link.is_symlink(), name)
+            self.assertEqual(link.read_text(encoding="utf-8"), hook_shim_text(name))
+        self.assertEqual(foreign.read_text(encoding="utf-8"), "#!/bin/sh\necho mine\n")
+        self.assertEqual(
+            (self.main / ".raven" / "git-hooks" / "pre-commit").read_text(encoding="utf-8"),
+            f'#!/bin/sh\necho "main" >> "{self.log}"\n',
+        )
+
+    def test_shim_forwards_arguments_and_stdin_to_the_worktree_script(self):
+        out = self.log.parent / "args.txt"
+        script = self.main / ".raven" / "git-hooks" / "pre-push"
+        script.write_text(f'#!/bin/sh\necho "$@" > "{out}"\ncat >> "{out}"\n', encoding="utf-8")
+        script.chmod(0o755)
+        raven.install_git_hooks(self.main)
+
+        subprocess.run(
+            [str(self.main / ".git" / "hooks" / "pre-push"), "origin", "url"],
+            cwd=self.main,
+            input="refs/heads/x abc refs/heads/x def\n",
+            text=True,
+            check=True,
+        )
+
+        self.assertEqual(
+            out.read_text(encoding="utf-8"), "origin url\nrefs/heads/x abc refs/heads/x def\n"
+        )
+
+    def test_shim_fails_open_with_a_notice_when_the_script_is_missing(self):
+        raven.install_git_hooks(self.main)
+        (self.main / ".raven" / "git-hooks" / "pre-commit").unlink()
+
+        result = subprocess.run(
+            [str(self.main / ".git" / "hooks" / "pre-commit")],
+            cwd=self.main,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(len(result.stderr.strip().splitlines()), 1)
+        self.assertTrue(result.stderr.startswith("raven:"), result.stderr)
+
+    def test_shim_is_posix_sh_compatible_for_windows_git_bash(self):
+        """Git for Windows runs hooks through its own sh: LF endings, no bashisms."""
+        raven.install_git_hooks(self.main)
+        shim = self.main / ".git" / "hooks" / "pre-commit"
+        raw = shim.read_bytes()
+
+        self.assertTrue(raw.startswith(b"#!/bin/sh\n"))
+        self.assertNotIn(b"\r", raw)
+        for bashism in ("[[", "local ", "function ", "<(", "=~", "source "):
+            self.assertNotIn(bashism, raw.decode("utf-8"))
+        for shell in ("sh", "dash"):
+            exe = shutil.which(shell)
+            if exe:
+                result = subprocess.run([exe, "-n", str(shim)], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, f"{shell}: {result.stderr}")
+
+
 class HookLinkActionTests(unittest.TestCase):
     """The decision `install_git_hooks` makes for each hook path.
 
@@ -1792,26 +1953,40 @@ class HookLinkActionTests(unittest.TestCase):
     end-to-end installs above.
     """
 
+    SHIM = "#!/bin/sh\n# raven-git-hook-shim: current\n"
+
     def test_nothing_present_is_created(self):
         self.assertIs(
             hook_link_action(
-                exists=False, is_symlink=False, link_target=None, expected_target="../../x"
+                exists=False, is_symlink=False, content=None, expected_content=self.SHIM
             ),
             HookLinkAction.CREATE,
         )
 
-    def test_correct_symlink_is_left_alone(self):
+    def test_current_shim_is_left_alone(self):
         self.assertIs(
             hook_link_action(
-                exists=True, is_symlink=True, link_target="../../x", expected_target="../../x"
+                exists=True, is_symlink=False, content=self.SHIM, expected_content=self.SHIM
             ),
-            HookLinkAction.ALREADY_LINKED,
+            HookLinkAction.ALREADY_INSTALLED,
         )
 
-    def test_symlink_to_the_wrong_target_is_replaced(self):
+    def test_out_of_date_shim_is_rewritten(self):
         self.assertIs(
             hook_link_action(
-                exists=True, is_symlink=True, link_target="../../other", expected_target="../../x"
+                exists=True,
+                is_symlink=False,
+                content="#!/bin/sh\n# raven-git-hook-shim: older\n",
+                expected_content=self.SHIM,
+            ),
+            HookLinkAction.REWRITE_SHIM,
+        )
+
+    def test_any_symlink_is_replaced(self):
+        # A legacy Raven link into a worktree, or a stale foreign link.
+        self.assertIs(
+            hook_link_action(
+                exists=True, is_symlink=True, content=None, expected_content=self.SHIM
             ),
             HookLinkAction.REPLACE_SYMLINK,
         )
@@ -1821,30 +1996,23 @@ class HookLinkActionTests(unittest.TestCase):
         # silently discard hook logic the user wrote.
         self.assertIs(
             hook_link_action(
-                exists=True, is_symlink=False, link_target=None, expected_target="../../x"
+                exists=True,
+                is_symlink=False,
+                content="#!/bin/sh\necho mine\n",
+                expected_content=self.SHIM,
             ),
             HookLinkAction.LEAVE_REGULAR_FILE,
         )
 
     def test_broken_symlink_is_replaced_not_treated_as_empty(self):
         # `exists` follows symlinks, so a dangling link reports exists=False.
-        # It must still be unlinked before the new one is created -- treating it
-        # as an empty slot would make symlink_to fail with FileExistsError.
+        # It must still be unlinked before the shim is written -- treating it
+        # as an empty slot would make the write follow the link or fail.
         self.assertIs(
             hook_link_action(
-                exists=False, is_symlink=True, link_target="../../gone", expected_target="../../x"
+                exists=False, is_symlink=True, content=None, expected_content=self.SHIM
             ),
             HookLinkAction.REPLACE_SYMLINK,
-        )
-
-    def test_broken_symlink_already_pointing_at_the_target_is_left_alone(self):
-        # The source file may not exist yet at decision time; the link is still
-        # spelled correctly, so there is nothing to do.
-        self.assertIs(
-            hook_link_action(
-                exists=False, is_symlink=True, link_target="../../x", expected_target="../../x"
-            ),
-            HookLinkAction.ALREADY_LINKED,
         )
 
 

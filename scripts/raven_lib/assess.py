@@ -16,7 +16,7 @@ from .findings import Finding, Severity
 from .gate_config import gutting_reasons, read_project_settings
 from .gate_run import gate_compliance_findings
 from .gates import GateSpec, gate_spec_for, load_gate_specs, recipe_present
-from .git_hooks import git_hooks_dir
+from .git_hooks import git_hooks_dir, is_raven_shim_text
 from .runner import Runner, gate_runner
 from .template import is_known_template
 
@@ -141,6 +141,19 @@ def _hook_is_trivial(text: str) -> bool:
     return True
 
 
+def _follow_shim(destination: Path, hook: Path, name: str) -> Path:
+    """The script a Raven hook shim runs, else ``hook`` itself.
+
+    The shim in the shared hooks dir only dispatches to this worktree's
+    ``.raven/git-hooks/<name>``; the gate it wires lives in that script.
+    """
+    try:
+        shim = hook.is_file() and is_raven_shim_text(hook.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return hook
+    return destination / ".raven" / "git-hooks" / name if shim else hook
+
+
 def _hook_finding(
     destination: Path, hook: Path, name: str, expected: str, accept: tuple[str, ...]
 ) -> Finding:
@@ -151,6 +164,7 @@ def _hook_finding(
     while pre-commit accepts ``check-fast`` or a stricter full ``check``. Matching
     is token-aware so ``just check-fast`` does not pass as the full push gate.
     """
+    hook = _follow_shim(destination, hook, name)
     try:
         hook_display = hook.resolve().relative_to(destination.resolve())
     except ValueError:

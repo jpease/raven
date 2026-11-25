@@ -40,8 +40,8 @@ After copying:
 - Review `.mcp.json` and remove unavailable MCP servers.
 - Review `.claude/settings.json`, `.claude/hooks/`, `.codex/config.toml`, and
   `.codex/hooks.json`; hooks are included for Claude Code and Codex.
-- Git hooks are installed for you: `raven install` symlinks `.raven/git-hooks/`
-  into the repo's hooks directory. There is no `just install-hooks` recipe here
+- Git hooks are installed for you: `raven install` puts a small shim for each
+  `.raven/git-hooks/` script into the repo's hooks directory. There is no `just install-hooks` recipe here
   and none is needed. With no `justfile` to run, the hooks skip the `just`
   gates and still run the AI-attribution scan, the managed-block integrity
   check, and the gitleaks secret scan.

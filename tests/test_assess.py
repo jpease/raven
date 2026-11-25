@@ -378,6 +378,24 @@ class AssessHookPathTests(RavenTestCase):
         self.assertEqual(pre_push.severity, Severity.OK)
         self.assertIn(".githooks/pre-push", pre_push.detail)
 
+    def test_installed_shims_are_graded_by_the_script_they_run(self):
+        # The shared hooks dir holds only a dispatching shim; the gate it wires
+        # lives in this worktree's .raven/git-hooks/<name>.
+        from raven_lib.git_hooks import hook_shim_text
+
+        scripts = self.destination / ".raven" / "git-hooks"
+        scripts.mkdir(parents=True)
+        (scripts / "pre-commit").write_text("#!/bin/sh\njust check-fast\n", encoding="utf-8")
+        (scripts / "pre-push").write_text("#!/bin/sh\njust check-fast\n", encoding="utf-8")
+        hooks = self.destination / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        for name in ("pre-commit", "pre-push"):
+            (hooks / name).write_text(hook_shim_text(name), encoding="utf-8")
+
+        self.assertEqual(self._hook_finding("pre-commit").severity, Severity.OK)
+        self.assertEqual(self._hook_finding("pre-push").severity, Severity.WARN)
+        self.assertIn("fast subset", self._hook_finding("pre-push").title)
+
     def test_missing_hooks_in_normal_repo_warn(self):
         pre_commit = self._hook_finding("pre-commit")
         pre_push = self._hook_finding("pre-push")

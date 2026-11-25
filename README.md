@@ -75,7 +75,7 @@ Reusable agent guidance, plus the state needed to upgrade it safely:
 - `.claude/settings.json`: managed like any other template file, upgraded in place. Ships with `includeCoAuthoredBy: false` and `attribution.sessionUrl: false`, so Claude Code never writes a `Co-Authored-By`/`Claude-Session` trailer in the first place — the `commit-msg` hook below strips one anyway if it shows up some other way. To allow attribution again, either edit those two keys directly in `.claude/settings.json` (Raven tracks the edit and flags it on the next upgrade instead of overwriting it) or override them in `.claude/settings.local.json`, your own local-overrides layer that Raven never manages.
 - `.gitattributes`: append-only. Raven adds the `eol=lf` lines its shipped hooks and scripts need and leaves everything else alone.
 - `.ignore`: append-only. Raven adds a `!` negation for each directory it installs guidance into, so `rg`, `fd` and `ast-grep` — which skip dot-directories by default — search the guidance without `--hidden`. Removing the lines only makes that guidance harder to find; it hides nothing else. Skipped when the destination is your home directory itself, where `.claude/` is Claude Code's runtime state rather than shipped guidance.
-- Git hooks: three symlinks into git's effective hooks directory (`.git/hooks/` normally) — `commit-msg`, `pre-commit`, and `pre-push`. From then on, every commit runs `just check-fast` (lint + format) and every push runs `just check` (adds typecheck and test) if a justfile is present, blocking on failure; `commit-msg` strips AI-agent attribution trailers rather than blocking. A hook manager or an external `core.hooksPath` already owning that directory (e.g. husky) makes Raven defer to it instead — see `raven doctor` for how to wire Raven's hooks through it. To remove Raven's own hooks, delete the three symlinks.
+- Git hooks: three small `sh` shims in git's effective hooks directory (`.git/hooks/` normally) — `commit-msg`, `pre-commit`, and `pre-push` that run the current worktree's own `.raven/git-hooks/` script, so they survive `git worktree remove`; `raven upgrade` replaces the symlinks older versions wrote. From then on, every commit runs `just check-fast` (lint + format) and every push runs `just check` (adds typecheck and test) if a justfile is present, blocking on failure; `commit-msg` strips AI-agent attribution trailers rather than blocking. A hook manager or an external `core.hooksPath` already owning that directory (e.g. husky) makes Raven defer to it instead — see `raven doctor` for how to wire Raven's hooks through it. To remove Raven's own hooks, delete the three shims.
 - `.gitignore`: append-only, the same way as `.gitattributes` and `.ignore` above — entries for `.raven/merge/` and `.claude/settings.local.json`.
 - Claude Code and Codex adapter files, on by default. Codex loads a project's `.codex/` layer — config, hooks, rules, and agents — only after you trust the project, and runs each hook only after you review it once in `/hooks`. Until both are done the Codex files are installed but inert, and nothing in Codex or Raven says so.
 - Gemini CLI adapter files, off by default — enable with `[components.gemini]` in `.raven/config.toml` (every entry defaults `false`; set the ones you want `true`, such as `hooks = true`). Gemini CLI likewise skips a project's `.gemini/` layer until you trust the folder; `raven doctor` reports that state the way it does for Codex. The shipped `.gemini/policies/raven.toml` is currently inert upstream (https://github.com/google-gemini/gemini-cli/issues/18186); the hooks enforce.
@@ -192,6 +192,13 @@ group into your own interpreter (`python -m pip install --group dev`, pip 25.1
 or newer) and
 override the launcher: `RAVEN_PYTHON=python just test` or
 `just PYTHON='python' test`.
+
+Running `raven install`, `raven upgrade`, or `scripts/self-check.py` from a
+linked worktree is safe: the git hooks it installs are worktree-agnostic shims
+that run each checkout's own `.raven/git-hooks/` scripts, so they do not point
+into that worktree or dangle after `git worktree remove`. `raven doctor` flags
+a hook symlink left by an older version, dangling or into another worktree;
+`raven install` fixes it.
 
 `scripts/eval.py` is the other half, and the one the unit tests cannot cover:
 it runs task scenarios through the local `claude`, `codex`, or `gemini` CLI, once with

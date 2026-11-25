@@ -8,6 +8,7 @@ install `raven` did not create.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -67,6 +68,9 @@ from .git_hooks import (
     detect_hook_manager,
     git_hooks_dir,
     hook_manager_guidance,
+    hook_shim_text,
+    is_raven_hook_symlink_target,
+    is_raven_shim_text,
 )
 from .manifest import ManifestStatus, git_ref, validate_manifest
 from .models import RavenConfig, SourceSpec
@@ -1215,6 +1219,13 @@ def _inert_vendored_hook_findings(
     return findings
 
 
+def _read_text_or_none(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 def _hook_link_finding(hook_src: Path, hook_link: Path) -> Finding:
     name = hook_src.name
     base_id = f"doctor.hooks.{name}"
@@ -1226,9 +1237,28 @@ def _hook_link_finding(hook_src: Path, hook_link: Path) -> Finding:
 
     if not hook_link.is_symlink():
         if hook_link.exists():
+            text = _read_text_or_none(hook_link)
+            if text is not None and is_raven_shim_text(text):
+                if text != hook_shim_text(name):
+                    return warn(
+                        f"{name} shim is out of date",
+                        f"{hook_link} was written by another Raven version",
+                    )
+                if not os.access(hook_src, os.X_OK):
+                    return warn(
+                        f"{name} is not executable",
+                        f"{hook_src} is missing the executable bit, so the shim skips it",
+                    )
+                return Finding(
+                    id=base_id,
+                    severity=Severity.OK,
+                    category=_HOOKS,
+                    title=f"{name} installed",
+                    detail=f"{hook_link} runs {hook_src.resolve()}",
+                )
             return warn(
                 f"{name} is not Raven's hook",
-                f"{hook_link} is a regular file, not a symlink into .raven/git-hooks/",
+                f"{hook_link} is a regular file, not a Raven hook shim",
                 fix=f"remove {hook_link} to let `raven install` manage it, or wire it manually",
             )
         return warn(
@@ -1242,7 +1272,16 @@ def _hook_link_finding(hook_src: Path, hook_link: Path) -> Finding:
         if not hook_link.exists():
             return warn(
                 f"{name} is a dangling symlink",
-                f"{hook_link} -> {target}, but the target is missing",
+                f"{hook_link} -> {target}, but the target is missing. A symlink into a "
+                "removed worktree silently disables this guardrail; `raven install` "
+                "replaces it with a worktree-safe shim",
+            )
+        if is_raven_hook_symlink_target(str(resolved), name):
+            return warn(
+                f"{name} points into another worktree",
+                f"{hook_link} -> {resolved}, not {hook_src_resolved}. Every worktree runs "
+                "that checkout's hook and the hook dangles once it is removed; "
+                "`raven install` replaces the link with a worktree-safe shim",
             )
         return warn(
             f"{name} resolves outside .raven/git-hooks/",

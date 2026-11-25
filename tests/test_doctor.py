@@ -1316,6 +1316,67 @@ class DoctorHookIntegrityTests(RavenTestCase):
         self.assertEqual(findings[0].severity, Severity.WARN)
         self.assertIn("dangling", findings[0].title)
 
+    def test_ok_when_hook_is_the_current_shim(self):
+        from raven_lib.git_hooks import hook_shim_text
+
+        self._git_init()
+        self._write_hook("pre-commit")
+        hooks_dir = self.destination / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        shim = hooks_dir / "pre-commit"
+        shim.write_text(hook_shim_text("pre-commit"), encoding="utf-8")
+        shim.chmod(0o755)
+
+        findings = hook_integrity_findings(self.destination)
+
+        self.assertEqual([f.severity for f in findings], [Severity.OK])
+
+    def test_warn_when_shim_is_out_of_date(self):
+        self._git_init()
+        self._write_hook("pre-commit")
+        hooks_dir = self.destination / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        (hooks_dir / "pre-commit").write_text("#!/bin/sh\n# raven-git-hook-shim: old\n")
+
+        findings = hook_integrity_findings(self.destination)
+
+        self.assertEqual(findings[0].severity, Severity.WARN)
+        self.assertIn("out of date", findings[0].title)
+        self.assertEqual(findings[0].fix, "raven install")
+
+    def test_dangling_link_into_a_removed_worktree_names_the_shim_fix(self):
+        self._git_init()
+        self._write_hook("pre-commit")
+        hooks_dir = self.destination / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        (hooks_dir / "pre-commit").symlink_to("../../../removed-wt/.raven/git-hooks/pre-commit")
+
+        findings = hook_integrity_findings(self.destination)
+
+        self.assertEqual(findings[0].severity, Severity.WARN)
+        self.assertIn("dangling", findings[0].title)
+        self.assertIn("shim", findings[0].detail)
+        self.assertEqual(findings[0].fix, "raven install")
+
+    def test_warn_when_hook_points_into_another_worktree(self):
+        self._git_init()
+        self._write_hook("pre-commit")
+        other = self.destination.parent / (self.destination.name + "-other")
+        (other / ".raven" / "git-hooks").mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, other, True)
+        other_hook = other / ".raven" / "git-hooks" / "pre-commit"
+        other_hook.write_text("#!/bin/sh\n", encoding="utf-8")
+        other_hook.chmod(0o755)
+        hooks_dir = self.destination / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        (hooks_dir / "pre-commit").symlink_to(other_hook)
+
+        findings = hook_integrity_findings(self.destination)
+
+        self.assertEqual(findings[0].severity, Severity.WARN)
+        self.assertIn("another worktree", findings[0].title)
+        self.assertEqual(findings[0].fix, "raven install")
+
     def test_warn_when_hook_resolves_elsewhere(self):
         self._git_init()
         self._write_hook("pre-commit")

@@ -11,6 +11,7 @@ Covers:
 import argparse
 import contextlib
 import io
+import os
 import subprocess
 import tempfile
 import unittest
@@ -705,6 +706,52 @@ class GitHooksInstallMessageTests(RavenTestCase):
         stdout = out.getvalue()
         self.assertIn(".githooks/pre-commit", stdout)
         self.assertNotIn(".git/hooks/", stdout)
+
+
+class GitHooksFromLinkedWorktreeTests(RavenTestCase):
+    """#299: `raven install` from a linked worktree must not tie the shared hooks to it."""
+
+    def test_install_from_linked_worktree_leaves_hooks_that_outlive_it(self):
+        main = self.destination / "main"
+        main.mkdir()
+        wt = self.destination / "wt"
+        env_clean = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+        def git(*args, cwd=main):
+            return subprocess.run(
+                ["git", "-C", str(cwd), "-c", "commit.gpgsign=false", *args],
+                capture_output=True,
+                text=True,
+                check=True,
+                env=env_clean,
+            )
+
+        git("init")
+        git(
+            "-c",
+            "user.email=r@example.com",
+            "-c",
+            "user.name=R",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "x",
+        )
+        git("worktree", "add", "-q", str(wt), "-b", "wt")
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            rc = raven.cmd_install(_install_ns(wt, language="python"))
+        self.assertEqual(rc, 0)
+        hooks = main / ".git" / "hooks"
+        for name in ("commit-msg", "pre-commit", "pre-push"):
+            self.assertTrue((hooks / name).is_file(), name)
+
+        git("worktree", "remove", "--force", str(wt))
+
+        for name in ("commit-msg", "pre-commit", "pre-push"):
+            hook = hooks / name
+            self.assertFalse(hook.is_symlink(), name)
+            self.assertTrue(hook.is_file(), name)
+            self.assertTrue(hook.stat().st_mode & 0o111, name)
 
 
 # ---------------------------------------------------------------------------

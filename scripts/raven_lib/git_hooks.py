@@ -1,4 +1,4 @@
-"""Resolve Git's effective hooks directory and symlink Raven's git-hooks into it.
+"""Resolve Git's effective hooks directory and install Raven's hook shims into it.
 
 Detects when another hook manager (husky) or an external ``core.hooksPath`` owns
 that directory and defers to it instead of installing -- Raven's hooks are then
@@ -213,12 +213,57 @@ def wire_hook_manager(destination: Path, manager: str | None) -> list[str]:
     return wired
 
 
+#: Stable marker on the line after the shebang of every shim Raven installs, so
+#: install, upgrade and doctor can tell a Raven shim from a user's own hook.
+HOOK_SHIM_MARKER = "# raven-git-hook-shim"
+
+
+def hook_shim_text(name: str) -> str:
+    """POSIX ``sh`` shim for hook ``name``, installed into the shared hooks dir.
+
+    A linked worktree shares the main checkout's hooks directory, so a symlink
+    from there into one checkout's ``.raven/git-hooks/`` dangles once that
+    worktree is removed, and makes every other worktree run that one's scripts.
+    The shim instead resolves the worktree git is running in and execs that
+    worktree's own script, ``"$@"`` and stdin (pre-push reads it) intact. A
+    missing script fails open with a notice, like ``raven-run-hook.sh``.
+    """
+    rel = f".raven/git-hooks/{name}"
+    return (
+        "#!/bin/sh\n"
+        f"{HOOK_SHIM_MARKER}: runs this worktree's {rel}; managed by raven, do not edit\n"
+        f'hook="$(git rev-parse --show-toplevel 2>/dev/null)/{rel}"\n'
+        'if [ -x "$hook" ]; then\n'
+        '    exec "$hook" "$@"\n'
+        "fi\n"
+        f'echo "raven: {rel} is missing or not executable in this worktree; '
+        f'skipping the {name} hook" >&2\n'
+        "exit 0\n"
+    )
+
+
+def is_raven_shim_text(text: str) -> bool:
+    """True when ``text`` is a Raven hook shim (any version)."""
+    return HOOK_SHIM_MARKER in text
+
+
+def is_raven_hook_symlink_target(target: str, name: str) -> bool:
+    """True when a symlink target ends in ``.raven/git-hooks/<name>``.
+
+    Raven's pre-shim installs wrote such symlinks. Separators are normalized so
+    a link written on Windows reads the same.
+    """
+    parts = target.replace("\\", "/").split("/")
+    return parts[-3:] == [".raven", "git-hooks", name]
+
+
 class HookLinkAction(str, Enum):
     """What to do about one hook path in the git hooks directory."""
 
-    ALREADY_LINKED = "already-linked"
+    ALREADY_INSTALLED = "already-installed"
     LEAVE_REGULAR_FILE = "leave-regular-file"
     REPLACE_SYMLINK = "replace-symlink"
+    REWRITE_SHIM = "rewrite-shim"
     CREATE = "create"
 
 
@@ -226,29 +271,52 @@ def hook_link_action(
     *,
     exists: bool,
     is_symlink: bool,
-    link_target: str | None,
-    expected_target: str,
+    content: str | None,
+    expected_content: str,
 ) -> HookLinkAction:
     """Decide what to do about one hook path, given what is already there.
 
-    Pure: the caller performs the filesystem queries and passes the answers in.
-    The four cases are easy to get subtly wrong -- in particular ``exists``
-    follows symlinks, so a *broken* symlink reports ``exists=False`` and must
-    still be replaced rather than treated as an empty slot -- and this is code
-    that unlinks files in the user's ``.git`` directory. Separating the decision
-    from the mutation lets every case be asserted without creating one.
+    Pure: the caller performs the filesystem queries and passes the answers in
+    (``content`` is the text of a regular file, else None). The cases are easy to
+    get subtly wrong -- in particular ``exists`` follows symlinks, so a *broken*
+    symlink reports ``exists=False`` and must still be replaced rather than
+    treated as an empty slot -- and this is code that unlinks files in the
+    user's ``.git`` directory. Separating the decision from the mutation lets
+    every case be asserted without creating one.
+
+    Any symlink is replaced (a legacy Raven link into a worktree, or a stale
+    foreign one, as before); a regular file is left alone unless it is a Raven
+    shim, which is rewritten when out of date.
     """
-    if is_symlink and link_target == expected_target:
-        return HookLinkAction.ALREADY_LINKED
-    if exists and not is_symlink:
-        return HookLinkAction.LEAVE_REGULAR_FILE
     if is_symlink:
         return HookLinkAction.REPLACE_SYMLINK
+    if exists:
+        if content == expected_content:
+            return HookLinkAction.ALREADY_INSTALLED
+        if content is not None and is_raven_shim_text(content):
+            return HookLinkAction.REWRITE_SHIM
+        return HookLinkAction.LEAVE_REGULAR_FILE
     return HookLinkAction.CREATE
 
 
+def _read_hook_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _write_shim(path: Path, text: str) -> None:
+    # Bytes, not write_text: a CRLF shebang line breaks `sh` on Windows.
+    path.write_bytes(text.encode("utf-8"))
+    path.chmod(0o755)
+
+
 def install_git_hooks(destination: Path) -> list[str]:
-    """Symlink .raven/git-hooks/* into the effective git hooks dir. Returns installed hook names."""
+    """Install a shim for each .raven/git-hooks/* into the effective hooks dir.
+
+    Returns the installed hook names.
+    """
     git_hooks_src = destination / ".raven" / "git-hooks"
     if not git_hooks_src.is_dir():
         return []
@@ -257,7 +325,7 @@ def install_git_hooks(destination: Path) -> list[str]:
         return []
     if outside_repo or _hooks_dir_manager(hooks_dir) is not None:
         # A hook manager (e.g. husky) owns this directory, or it lives outside
-        # the repo (a user-global hooksPath); do not symlink into it.
+        # the repo (a user-global hooksPath); do not install into it.
         return []
     try:
         hooks_dir.mkdir(parents=True, exist_ok=True)
@@ -274,15 +342,17 @@ def install_git_hooks(destination: Path) -> list[str]:
             continue
         hook_src.chmod(hook_src.stat().st_mode | 0o111)
         hook_link = hooks_dir / hook_src.name
-        rel = os.path.relpath(hook_src, hooks_dir)
+        shim = hook_shim_text(hook_src.name)
         is_symlink = hook_link.is_symlink()
+        exists = hook_link.exists()
         action = hook_link_action(
-            exists=hook_link.exists(),
+            exists=exists,
             is_symlink=is_symlink,
-            link_target=os.readlink(hook_link) if is_symlink else None,
-            expected_target=rel,
+            content=_read_hook_text(hook_link) if exists and not is_symlink else None,
+            expected_content=shim,
         )
-        if action is HookLinkAction.ALREADY_LINKED:
+        if action is HookLinkAction.ALREADY_INSTALLED:
+            hook_link.chmod(0o755)
             installed.append(hook_src.name)
             continue
         if action is HookLinkAction.LEAVE_REGULAR_FILE:
@@ -295,6 +365,6 @@ def install_git_hooks(destination: Path) -> list[str]:
             continue
         if action is HookLinkAction.REPLACE_SYMLINK:
             hook_link.unlink()
-        hook_link.symlink_to(rel)
+        _write_shim(hook_link, shim)
         installed.append(hook_src.name)
     return installed

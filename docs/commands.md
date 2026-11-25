@@ -63,7 +63,9 @@ either leaves it alone and writes a merge artifact, or asks to adopt it — see
 [Upgrading and Merges](upgrading.md).
 
 Also installs three git hooks — `commit-msg`, `pre-commit`, `pre-push` — as
-symlinks into git's effective hooks directory. From then on, every commit and
+small `sh` shims in git's effective hooks directory, each running the current
+worktree's own `.raven/git-hooks/` script, so they survive removing any linked
+worktree. From then on, every commit and
 push is gated: `pre-commit` runs `just check-fast`, `pre-push` runs `just
 check`, either blocks on failure, and `commit-msg` strips AI-agent attribution
 trailers. See [What Raven Installs](../README.md#what-raven-installs) for the
