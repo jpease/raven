@@ -33,14 +33,14 @@ Every run keeps each trial's raw JSON transcript, so the steps behind a call
 count outlive the fixture. They go to `$RAVEN_EVAL_DATA_DIR/evals/<date>/<stamp>/`
 when that variable is set, else to the gitignored `evals/transcripts/<stamp>/`;
 `--transcripts` overrides both, and the run prints the directory it chose.
-Beside every report (`--out` or the default `evals/runs/` one) it writes a
-`.csv` with the same stem: one row per trial with the run stamp, CLI version,
-model, scenario, arm, pass or fail and the verdict's reason, tokens, tool
-calls, Raven config, and jobs. Home and temp paths are scrubbed.
+Beside every report it writes a `.csv` with the same stem: one row per trial
+with run stamp, CLI version, model, scenario, arm, pass or fail with the
+verdict's reason, tokens, tool calls, Raven config, and jobs, local paths
+scrubbed. The 2026-11-24 runs' rows are in `docs/evaluation/data/`.
 
-It drives the local `claude` or `codex` CLI and whatever subscription is
-already logged in. No API key is read, stored, or passed. Fixtures live in
-temporary directories that are deleted afterwards.
+It drives the local `claude` or `codex` CLI and the subscription already
+logged in. No API key is read, stored, or passed. Fixtures live in temporary
+directories deleted afterwards.
 
 Both commands run with the operator's own user-level config excluded, so
 personal plugins and global MCP servers cannot leak into every trial. Claude

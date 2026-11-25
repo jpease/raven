@@ -1,0 +1,11 @@
+run_stamp,agent,cli_version,model,scenario,arm,trial,passed,verdict_reason,total_tokens,tool_calls,raven_config,jobs
+2026-11-24,claude,2.1.319,claude-opus-5-5,fixed-cost,control,1,true,regraded from transcript: no tool calls; the token count is one session's fixed overhead,18051,0,evals/ablations/no-mcp.toml,
+2026-11-24,claude,2.1.319,claude-opus-5-5,fixed-cost,raven,1,true,"regraded from transcript: no tool calls; 5,352 tokens over control, under the 6,300 ceiling",23403,0,evals/ablations/no-mcp.toml,
+2026-11-24,claude,2.1.319,claude-opus-5-5,fixed-cost,control,2,true,regraded from transcript: no tool calls; the token count is one session's fixed overhead,18049,0,evals/ablations/no-mcp.toml,
+2026-11-24,claude,2.1.319,claude-opus-5-5,fixed-cost,raven,2,true,"regraded from transcript: no tool calls; 5,360 tokens over control, under the 6,300 ceiling",23409,0,evals/ablations/no-mcp.toml,
+2026-11-24,claude,2.1.319,claude-opus-5-5,fixed-cost,control,3,true,regraded from transcript: no tool calls; the token count is one session's fixed overhead,18051,0,evals/ablations/no-mcp.toml,
+2026-11-24,claude,2.1.319,claude-opus-5-5,fixed-cost,raven,3,true,"regraded from transcript: no tool calls; 5,352 tokens over control, under the 6,300 ceiling",23403,0,evals/ablations/no-mcp.toml,
+2026-11-24,claude,2.1.319,claude-opus-5-5,fixed-cost,control,4,true,regraded from transcript: no tool calls; the token count is one session's fixed overhead,18049,0,evals/ablations/no-mcp.toml,
+2026-11-24,claude,2.1.319,claude-opus-5-5,fixed-cost,raven,4,true,"regraded from transcript: no tool calls; 5,354 tokens over control, under the 6,300 ceiling",23403,0,evals/ablations/no-mcp.toml,
+2026-11-24,claude,2.1.319,claude-opus-5-5,fixed-cost,control,5,true,regraded from transcript: no tool calls; the token count is one session's fixed overhead,18051,0,evals/ablations/no-mcp.toml,
+2026-11-24,claude,2.1.319,claude-opus-5-5,fixed-cost,raven,5,true,"regraded from transcript: no tool calls; 5,346 tokens over control, under the 6,300 ceiling",23397,0,evals/ablations/no-mcp.toml,
