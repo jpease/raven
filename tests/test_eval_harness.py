@@ -2891,13 +2891,29 @@ class TrialCsvTests(unittest.TestCase):
         directory = run.call_args[0][3]
         self.assertEqual(directory.parent.parent, data / "evals")
         self.assertRegex(directory.parent.name, r"^\d{4}-\d{2}-\d{2}$")
-        self.assertRegex(directory.name, r"^\d{8}-\d{6}$")
+        self.assertRegex(directory.name, r"^\d{8}-\d{6}-\d+$")
         self.assertIn(f"transcripts: {directory}", stdout)
 
     def test_transcripts_flag_overrides_the_default(self):
         explicit = self.tmp / "mine"
         _, run, _ = self._main("--trials", "1", "--transcripts", str(explicit))
         self.assertEqual(run.call_args[0][3], explicit)
+
+    def test_two_runs_started_in_the_same_second_keep_separate_reports(self):
+        import eval as harness
+
+        outcomes = [harness.TrialOutcome("fixed-cost", "raven", 1, True, "ok")]
+        directories = []
+        for pid in (1001, 1002):
+            with mock.patch.object(harness.time, "time", return_value=1_800_000_000.0), \
+                    mock.patch.object(harness.os, "getpid", return_value=pid):  # fmt: skip
+                code, run, _ = self._main("--trials", "1", outcomes=outcomes)
+            self.assertEqual(code, 0)
+            directories.append(run.call_args[0][3])
+        self.assertNotEqual(directories[0], directories[1])
+        runs = self.tmp / "evals" / "runs"
+        self.assertEqual(len(list(runs.glob("results-claude-*.md"))), 2)
+        self.assertEqual(len(list(runs.glob("results-claude-*.csv"))), 2)
 
 
 class AgentErrorTests(unittest.TestCase):

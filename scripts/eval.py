@@ -1077,19 +1077,28 @@ def render_trials_csv(
     return out.getvalue()
 
 
+def run_id(started: float) -> str:
+    """Name a run's default report and transcript directory.
+
+    The start time to the second, plus the process id: two runs started in the
+    same second (parallel ablations) would otherwise write the same paths, and
+    the later one silently replaced the earlier one's report and CSV.
+    """
+    return f"{time.strftime('%Y%m%d-%H%M%S', time.localtime(started))}-{os.getpid()}"
+
+
 def default_transcripts_dir(started: float) -> Path:
     """Where a run keeps its transcripts when `--transcripts` is not given.
 
-    `$RAVEN_EVAL_DATA_DIR/evals/<YYYY-MM-DD>/<stamp>/` when the variable is set
+    `$RAVEN_EVAL_DATA_DIR/evals/<YYYY-MM-DD>/<run id>/` when the variable is set
     (the maintainer's private data directory, outside the repository),
-    otherwise the gitignored `evals/transcripts/<stamp>/` in the checkout.
+    otherwise the gitignored `evals/transcripts/<run id>/` in the checkout.
     """
-    moment = time.localtime(started)
-    stamp = time.strftime("%Y%m%d-%H%M%S", moment)
     data_dir = os.environ.get("RAVEN_EVAL_DATA_DIR")
     if data_dir:
-        return Path(data_dir) / "evals" / time.strftime("%Y-%m-%d", moment) / stamp
-    return REPO_ROOT / "evals" / "transcripts" / stamp
+        day = time.strftime("%Y-%m-%d", time.localtime(started))
+        return Path(data_dir) / "evals" / day / run_id(started)
+    return REPO_ROOT / "evals" / "transcripts" / run_id(started)
 
 
 def main() -> int:
@@ -1225,7 +1234,7 @@ def main() -> int:
             return 2
 
     started = time.time()
-    stamp_time = time.strftime("%Y%m%d-%H%M%S", time.localtime(started))
+    stamp_time = run_id(started)
     transcripts = Path(args.transcripts) if args.transcripts else default_transcripts_dir(started)
     print(
         f"raven eval: {args.agent}, {len(scenarios)} scenario(s), {args.trials} trial(s) per arm,"
