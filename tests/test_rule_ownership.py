@@ -38,8 +38,14 @@ class RuleOwnershipTests(unittest.TestCase):
             f"of that guardrail is unambiguous",
         )
 
-    def test_common_security_rules_file_has_no_collision(self):
-        self._assert_no_collision(REPO_ROOT / "common" / ".claude" / "rules" / "raven-security.md")
+    def test_no_rules_file_restates_the_untrusted_input_rule(self):
+        # AGENTS.md Safety Rules owns it so Codex and Gemini load it too.
+        restating = [
+            str(path.relative_to(REPO_ROOT))
+            for path in sorted(REPO_ROOT.glob("*/.claude/rules/*.md"))
+            if "prompt-injection" in path.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(restating, [])
 
     def test_common_comment_rules_file_has_no_collision(self):
         self._assert_no_collision(REPO_ROOT / "common" / ".claude" / "rules" / "raven-comments.md")

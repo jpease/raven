@@ -7,7 +7,7 @@ description: Use before shipping changes that touch auth, file I/O, shell comman
 
 Systematic security review for in-scope changes. Prefer deterministic findings first, then use judgment for risks scanners cannot prove.
 
-Reference `.claude/rules/raven-security.md` for baseline security rules and `.claude/docs/raven-semgrep.md` for Semgrep CE setup.
+Reference `AGENTS.md` Safety Rules for baseline security rules and `.claude/docs/raven-semgrep.md` for Semgrep CE setup.
 
 ## Skip When
 

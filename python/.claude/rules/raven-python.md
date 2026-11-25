@@ -1,3 +1,13 @@
+---
+paths:
+  - "**/*.py"
+  - "**/*.pyi"
+  - "**/pyproject.toml"
+  - "**/setup.cfg"
+  - "**/requirements*.txt"
+  - "**/tox.ini"
+  - "**/pytest.ini"
+---
 # Python Rules
 
 ## Applicability

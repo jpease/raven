@@ -46,7 +46,7 @@ _LONG_OPTION_LETTERS = {
 _SHELL_PROGRAMS = frozenset({"sh", "bash", "dash", "ksh", "zsh", "csh", "tcsh", "fish"})
 
 # Programs that retrieve a URL. What they emit is remote content, which
-# `.claude/rules/raven-security.md` treats as untrusted; piping it into an
+# AGENTS.md Safety Rules treat as untrusted; piping it into an
 # interpreter is the step that turns that content into execution.
 _FETCH_PROGRAMS = frozenset({"curl", "wget", "http", "https", "httpie", "aria2c"})
 

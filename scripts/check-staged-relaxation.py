@@ -56,7 +56,8 @@ Five detectors run over the staged index:
 4. **A gate limit moved the loose way.** `LIMIT_CONSTANTS` names Raven's own
    budgets (`check-prose.py`, `self-check.py`, the eval ceilings and trial
    minimum) and which direction loosens each. Both versions are parsed and
-   every number compared; a removed entry counts as loosened.
+   every number compared; a removed entry counts as loosened, except a
+   `self-check.py` `THRESHOLDS` budget whose file the same change deletes.
 
 5. **A gate dropped from `check-fast`** in the root justfile, which is what
    the pre-commit hook runs.
@@ -329,6 +330,17 @@ _LIMIT_HINT = (
 )
 
 
+def _is_deleted_file_budget(path: str, name: str, key: str) -> bool:
+    """A `THRESHOLDS` budget whose file the staged change deletes cannot be loosened."""
+    return (
+        path == "scripts/self-check.py"
+        and name == "THRESHOLDS"
+        and bool(key)
+        and head_blob(key) is not None
+        and index_blob(key) is None
+    )
+
+
 def _limit_findings() -> list[Finding]:
     """Report a named gate limit that moved in its loosening direction, or vanished."""
     findings: list[Finding] = []
@@ -343,7 +355,10 @@ def _limit_findings() -> list[Finding]:
         for (name, key), (old, _line) in sorted(before.items()):
             label = f"{name}[{key!r}]" if key else name
             if (name, key) not in after:
-                findings.append((path, 0, label, "staged edit removes a gate limit", _LIMIT_HINT))
+                if not _is_deleted_file_budget(path, name, key):
+                    findings.append(
+                        (path, 0, label, "staged edit removes a gate limit", _LIMIT_HINT)
+                    )
                 continue
             new, line = after[(name, key)]
             loosened = new > old if names[name] == "up" else new < old

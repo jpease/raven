@@ -1,3 +1,11 @@
+---
+paths:
+  - "**/*.lua"
+  - "**/*.rockspec"
+  - "**/.luacheckrc"
+  - "**/stylua.toml"
+  - "**/.stylua.toml"
+---
 # Lua Rules
 
 ## Applicability

@@ -505,6 +505,21 @@ class GateLimitTests(RelaxationCheckerTestCase):
 
         self._assert_blocks("removes a gate limit")
 
+    def test_removing_the_budget_of_a_file_deleted_in_the_same_change_passes(self):
+        self._commit("rules/gone.md", "Some rule.\n")
+        self._commit("scripts/self-check.py", 'THRESHOLDS = {\n    "rules/gone.md": 45,\n}\n')
+        self._git("rm", "-q", "--", "rules/gone.md")
+        self._stage("scripts/self-check.py", "THRESHOLDS = {}\n")
+
+        self._assert_clean()
+
+    def test_removing_the_budget_of_a_file_that_still_exists_blocks(self):
+        self._commit("rules/kept.md", "Some rule.\n")
+        self._commit("scripts/self-check.py", 'THRESHOLDS = {\n    "rules/kept.md": 45,\n}\n')
+        self._stage("scripts/self-check.py", "THRESHOLDS = {}\n")
+
+        self._assert_blocks("removes a gate limit")
+
     def test_lowering_the_published_trial_minimum_blocks(self):
         self._commit("scripts/eval.py", "MIN_PUBLISHED_TRIALS = 5\n")
         self._stage("scripts/eval.py", "MIN_PUBLISHED_TRIALS = 3\n")

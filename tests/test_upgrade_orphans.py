@@ -110,6 +110,22 @@ class UpgradeOrphanTests(RavenTestCase):
         self.assertIn("Removed 1 orphaned file(s)", output)
         self.assertIn("docs/dropped.md", output)
 
+    def test_unmodified_security_rule_dropped_by_the_template_is_removed(self) -> None:
+        rule = Path(".claude") / "rules" / "raven-security.md"
+        _write(self.template_dir / rule, "# Security Rules\n\n- Escalate security uncertainty.\n")
+        self._install()
+        installed = self.destination / rule
+        self.assertTrue(installed.exists())
+
+        # The template folds the rule into AGENTS.md and stops shipping it.
+        (self.template_dir / rule).unlink()
+
+        rc, output = self._upgrade()
+        self.assertEqual(rc, 0)
+        self.assertFalse(installed.exists())
+        self.assertNotIn(rule.as_posix(), load_manifest(self.destination)["files"])
+        self.assertIn(rule.as_posix(), output)
+
     def test_modified_orphan_kept_and_reported(self) -> None:
         self._install()
         dropped = self.destination / "docs" / "dropped.md"

@@ -1,3 +1,8 @@
+---
+paths:
+  - "**/*.{ex,exs}"
+  - "**/*.{heex,eex,leex}"
+---
 # Elixir Rules
 
 ## Applicability

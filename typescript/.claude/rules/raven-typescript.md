@@ -1,3 +1,12 @@
+---
+paths:
+  - "**/*.{ts,tsx,mts,cts}"
+  - "**/*.{js,jsx,mjs,cjs}"
+  - "**/package.json"
+  - "**/tsconfig*.json"
+  - "**/eslint.config.*"
+  - "**/prettier.config.*"
+---
 # TypeScript Rules
 
 ## Applicability

@@ -10,9 +10,9 @@ from helpers import REPO_ROOT, load_script_module
 
 SELF_CHECK = REPO_ROOT / "scripts" / "self-check.py"
 
-# The four always-loaded files that make up the "python" language profile in
-# validate_aggregate_budget(). Other profiles share AGENTS.md + prose +
-# security but point at a different language rules file; leaving those
+# The four files that make up the "python" language profile in
+# validate_aggregate_budget(). Other profiles share AGENTS.md + comments +
+# prose but point at a different language rules file; leaving those
 # language files absent makes the validator skip those profiles, so a test
 # only needs to populate this one profile to drive the pass/fail paths.
 #
@@ -23,7 +23,6 @@ PYTHON_PROFILE_FILES = (
     "common/AGENTS.md",
     "common/.claude/rules/raven-comments.md",
     "common/.claude/rules/raven-prose.md",
-    "common/.claude/rules/raven-security.md",
     "python/.claude/rules/raven-python.md",
 )
 
@@ -113,6 +112,76 @@ class TemplateDiscoveryGuardTest(unittest.TestCase):
         with contextlib.redirect_stdout(buf):
             module.validate_aggregate_budget()
         self.assertIn("aggregate context budget ok", buf.getvalue())
+
+    def test_frontmatter_words_are_excluded_from_both_budgets(self) -> None:
+        # 700 body words fit the 760 python cap and leave the profile at 1100;
+        # 600 frontmatter glob lines (1200 words) would break both caps.
+        frontmatter = "---\npaths:\n" + '  - "**/*.py"\n' * 600 + "---\n"
+        rules = self.root / "python/.claude/rules/raven-python.md"
+        rules.parent.mkdir(parents=True)
+        rules.write_text(frontmatter + " ".join(["word"] * 700), encoding="utf-8")
+        _write_words(self.root / "common/AGENTS.md", 300)
+        _write_words(self.root / "common/.claude/rules/raven-comments.md", 50)
+        _write_words(self.root / "common/.claude/rules/raven-prose.md", 50)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.module.validate_context_budget()
+            self.module.validate_aggregate_budget()
+        self.assertIn("aggregate context budget ok", buf.getvalue())
+
+
+class RuleScopingTest(unittest.TestCase):
+    SCOPED = '---\npaths:\n  - "**/*.py"\n---\n# Python Rules\n'
+
+    def setUp(self) -> None:
+        self.module = load_script_module("self_check_under_test", SELF_CHECK)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.module.REPO_ROOT = self.root
+
+    def _write(self, rel: str, text: str) -> None:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def _validate(self) -> str:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.module.validate_rule_scoping()
+        return buf.getvalue()
+
+    def test_passes_on_real_tree(self) -> None:
+        module = load_script_module("self_check_real_repo", SELF_CHECK)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            module.validate_rule_scoping()
+        self.assertIn("rules scoping ok", buf.getvalue())
+
+    def test_passes_with_scoped_language_rule_and_unscoped_shared_rule(self) -> None:
+        self._write("python/.claude/rules/raven-python.md", self.SCOPED)
+        self._write("common/.claude/rules/raven-prose.md", "# Prose\nSee `@AGENTS.md`.\n")
+        self.assertIn("rules scoping ok", self._validate())
+
+    def test_raises_for_unscoped_language_rule(self) -> None:
+        self._write("python/.claude/rules/raven-python.md", "# Python Rules\n")
+        with self.assertRaises(SystemExit):
+            self._validate()
+
+    def test_raises_for_unquoted_glob(self) -> None:
+        self._write("python/.claude/rules/raven-python.md", "---\npaths: **/*.py\n---\nx\n")
+        with self.assertRaises(SystemExit):
+            self._validate()
+
+    def test_raises_for_frontmatter_on_shared_rule(self) -> None:
+        self._write("common/.claude/rules/raven-prose.md", self.SCOPED)
+        with self.assertRaises(SystemExit):
+            self._validate()
+
+    def test_raises_for_import_in_rules_file(self) -> None:
+        self._write("python/.claude/rules/raven-python.md", self.SCOPED + "@../docs/x.md\n")
+        with self.assertRaises(SystemExit):
+            self._validate()
 
 
 class StrictFreshnessTest(unittest.TestCase):

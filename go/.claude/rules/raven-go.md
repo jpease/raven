@@ -1,3 +1,10 @@
+---
+paths:
+  - "**/*.go"
+  - "**/go.mod"
+  - "**/go.work"
+  - "**/.golangci.yml"
+---
 # Go Rules
 
 ## Applicability

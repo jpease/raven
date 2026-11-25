@@ -1,3 +1,10 @@
+---
+paths:
+  - "**/*.swift"
+  - "**/project.yml"
+  - "**/.swiftlint.yml"
+  - "**/.swift-format"
+---
 # Swift Rules
 
 ## Applicability

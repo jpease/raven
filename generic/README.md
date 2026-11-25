@@ -11,7 +11,7 @@ and adds nothing of its own beyond `.mcp.json` and `.codex/config.toml`.
 By design it ships no `justfile`, no quality doc, no rules file, and no starter
 tool config. A repo with no build system has no gate for `just check` to run,
 and a `raven-generic.md` rules file would have no language whose idioms it could
-describe — `AGENTS.md`, `raven-prose.md`, and `raven-security.md` already carry
+describe — `AGENTS.md`, `raven-comments.md`, and `raven-prose.md` already carry
 everything that applies. `.mcp.json` and `.codex/config.toml` declare `semgrep`
 but no `lsp` server, since there is no language to point
 `mcp-language-server` at. A GitNexus server is not a default; opt in with

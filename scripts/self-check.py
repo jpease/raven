@@ -109,7 +109,6 @@ _TREE_SYMLINKS_TO_COMMON = [
     ".claude/hooks",
     ".claude/rules/raven-comments.md",
     ".claude/rules/raven-prose.md",
-    ".claude/rules/raven-security.md",
     ".claude/scripts",
     ".claude/settings.json",
     ".codex/agents",
@@ -208,7 +207,7 @@ def validate_claude_import() -> None:
 
 
 def _template_rules_files() -> dict[str, Path]:
-    """Map template dir name -> its always-loaded raven-<name>.md rules file, if any."""
+    """Map template dir name -> its raven-<name>.md rules file, if any."""
     non_template_dirs = load_raven_module().NON_TEMPLATE_DIRS
     found: dict[str, Path] = {}
     for d in sorted(REPO_ROOT.iterdir()):
@@ -220,15 +219,67 @@ def _template_rules_files() -> dict[str, Path]:
     return found
 
 
-def validate_context_budget() -> None:
-    """Fail if any always-loaded guidance file exceeds its per-file word budget.
+_FRONTMATTER_RE = re.compile(r"\A---\n(.*?)^---\n", re.DOTALL | re.MULTILINE)
+# The documented `paths:` subset: a YAML list of one double-quoted glob per line.
+_PATHS_FRONTMATTER_RE = re.compile(r'\Apaths:\n(?:  - "[^"\n]+"\n)+\Z')
+# An `@path` import token; Claude Code loads imports at launch even from a
+# path-scoped rule, so a rules file may not carry one.
+_IMPORT_RE = re.compile(r"(?<![\w`])@[\w./~-]*[\w/]")
+_CODE_FENCE_RE = re.compile(r"^```.*?^```", re.DOTALL | re.MULTILINE)
+_CODE_SPAN_RE = re.compile(r"`[^`\n]*`")
 
-    Every always-loaded rules file must have a threshold entry -- a new one
-    with no entry fails loudly rather than silently going unbudgeted.
+
+def _strip_frontmatter(text: str) -> str:
+    """Drop a leading `---` ... `---` block; Claude Code strips it before loading."""
+    return _FRONTMATTER_RE.sub("", text, count=1)
+
+
+def validate_rule_scoping() -> None:
+    """Fail unless language rules are path-scoped and the rest stay unscoped.
+
+    Claude Code loads a rule whose frontmatter fails to parse unconditionally
+    and silently, so only the documented `paths:` subset is accepted.
     """
-    # Always-loaded tier. Raise a threshold only for an observed failure (a
-    # correction someone had to make, a guardrail an agent worked around) and name
-    # it beside the raise; anticipated failures fill context with unmeasured
+    print("==> validate rules file path scoping")
+    problems: list[str] = []
+    rules = _template_rules_files()
+    unscoped = [REPO_ROOT / "dotfiles" / ".claude" / "rules" / "raven-dotfiles.md"]
+    unscoped += sorted((REPO_ROOT / "common" / ".claude" / "rules").glob("*.md"))
+    for name, path in rules.items():
+        if name == "dotfiles":
+            continue
+        match = _FRONTMATTER_RE.match(path.read_text(encoding="utf-8"))
+        if match is None or not _PATHS_FRONTMATTER_RE.match(match.group(1)):
+            problems.append(f"{path.relative_to(REPO_ROOT)}: needs a `paths:` list of quoted globs")
+    problems.extend(
+        f"{path.relative_to(REPO_ROOT)}: always-loaded rule carries frontmatter"
+        for path in unscoped
+        if path.exists() and _FRONTMATTER_RE.match(path.read_text(encoding="utf-8"))
+    )
+    for path in [*rules.values(), *unscoped]:
+        if not path.exists():
+            continue
+        prose = _CODE_SPAN_RE.sub("", _CODE_FENCE_RE.sub("", path.read_text(encoding="utf-8")))
+        if _IMPORT_RE.search(prose):
+            problems.append(f"{path.relative_to(REPO_ROOT)}: `@path` import in a rules file")
+    if problems:
+        for p in problems:
+            print(f"  {p}")
+        raise SystemExit("Rules file scoping broken.")
+    print("rules scoping ok")
+
+
+def validate_context_budget() -> None:
+    """Fail if any instruction file exceeds its per-file word budget.
+
+    Every rules file must have a threshold entry -- a new one with no entry
+    fails loudly rather than silently going unbudgeted. Frontmatter is not
+    counted: Claude Code strips it before loading.
+    """
+    # AGENTS.md and shared rules always load; a language rule loads on a read or
+    # edit matching its `paths`. Raise a threshold only for an observed failure
+    # (a correction someone had to make, a guardrail an agent worked around) and
+    # name it beside the raise; anticipated failures fill context with unmeasured
     # guidance. Same standard as `.claude/docs/raven-namespace.md`.
     #
     # Removals carry the same bar, which this gate cannot enforce: deleting
@@ -241,7 +292,7 @@ def validate_context_budget() -> None:
         # Convergence section (no approved exit when patches stop converging),
         # and corrected `rg`/ast-grep empty-result guidance. Each is needed at
         # the moment of the decision, so it lives in always-loaded context.
-        "common/AGENTS.md": 1301,
+        "common/AGENTS.md": 1345,  # raven-hygiene: allow -- security bullets moved from raven-security.md so Codex and Gemini load them
         # language-specific rules files
         "python/.claude/rules/raven-python.md": 760,
         "elixir/.claude/rules/raven-elixir.md": 890,
@@ -258,9 +309,8 @@ def validate_context_budget() -> None:
         # (adjudicate, vacuous, re-litigate) that only a loaded rule can catch.
         "common/.claude/rules/raven-comments.md": 75,
         "common/.claude/rules/raven-prose.md": 80,
-        "common/.claude/rules/raven-security.md": 45,
     }
-    print("==> validate context budget for always-loaded guidance")
+    print("==> validate context budget for instruction files")
 
     unbudgeted = [
         str(path.relative_to(REPO_ROOT))
@@ -269,7 +319,7 @@ def validate_context_budget() -> None:
     ]
     if unbudgeted:
         raise SystemExit(
-            "Always-loaded rules file(s) with no context budget threshold: "
+            "Rules file(s) with no context budget threshold: "
             f"{', '.join(sorted(unbudgeted))}. Add them to THRESHOLDS in "
             "validate_context_budget()."
         )
@@ -280,15 +330,14 @@ def validate_context_budget() -> None:
         if not path.exists():
             print(f"  WARNING: {rel} not found, skipping budget check")
             continue
-        text = path.read_text(encoding="utf-8")
-        count = len(text.split())
+        count = len(_strip_frontmatter(path.read_text(encoding="utf-8")).split())
         if count > limit:
             offenders.append(f"  {rel}: {count} words (limit {limit})")
     if offenders:
         for line in offenders:
             print(line)
         raise SystemExit(
-            "Context budget exceeded. Trim always-loaded guidance or raise thresholds with justification."
+            "Context budget exceeded. Trim instruction files or raise thresholds with justification."
         )
     print("context budget ok")
 
@@ -368,14 +417,16 @@ def validate_prose_style() -> None:
 
 
 def validate_aggregate_budget() -> None:
-    """Fail if a language's SUM of always-loaded files exceeds its aggregate word budget.
+    """Fail if a language's SUM of instruction files exceeds its aggregate word budget.
 
     Complements `validate_context_budget`'s per-file caps: a file could stay
     under its own limit while every file's headroom is spent at once, bloating
-    the total context a session loads. This closes that gap.
+    the total context a session loads. This closes that gap. Frontmatter is
+    not counted: Claude Code strips it before loading.
     """
-    # Per-language always-loaded tier = AGENTS.md + that language's rules file +
-    # the shared security rules (symlinked into each language dir).
+    # Per-language profile = the instruction load once the language rule has
+    # triggered: AGENTS.md and the shared always-loaded rules, plus that
+    # language's path-scoped rules file.
     # Per-file thresholds cap each file alone; this caps the SUM, which they do
     # not. Without it, every file could spend its individual headroom at once and
     # silently bloat the context window. Keep each budget below the sum of the
@@ -384,7 +435,6 @@ def validate_aggregate_budget() -> None:
         "common/AGENTS.md",
         "common/.claude/rules/raven-comments.md",
         "common/.claude/rules/raven-prose.md",
-        "common/.claude/rules/raven-security.md",
     ]
     PROFILES: dict[str, tuple[int, str]] = {
         # language: (aggregate word budget, language rules file)
@@ -409,7 +459,7 @@ def validate_aggregate_budget() -> None:
     unprofiled = [name for name in _template_rules_files() if name not in PROFILES]
     if unprofiled:
         raise SystemExit(
-            "Template(s) with always-loaded rules but no aggregate context budget "
+            "Template(s) with a rules file but no aggregate context budget "
             f"profile: {', '.join(sorted(unprofiled))}. Add them to PROFILES in "
             "validate_aggregate_budget()."
         )
@@ -424,7 +474,7 @@ def validate_aggregate_budget() -> None:
                 print(f"  WARNING: {rel} not found, skipping {lang} aggregate check")
                 missing = True
                 break
-            total += len(path.read_text(encoding="utf-8").split())
+            total += len(_strip_frontmatter(path.read_text(encoding="utf-8")).split())
         if missing:
             continue
         if total > limit:
@@ -433,7 +483,7 @@ def validate_aggregate_budget() -> None:
         for line in offenders:
             print(line)
         raise SystemExit(
-            "Aggregate context budget exceeded. Trim always-loaded guidance "
+            "Aggregate context budget exceeded. Trim instruction files "
             "or raise the profile budget with justification."
         )
     print("aggregate context budget ok")
@@ -839,6 +889,7 @@ def main() -> int:
     validate_claude_import()
     validate_context_budget()
     validate_aggregate_budget()
+    validate_rule_scoping()
     validate_skill_description_budget()
     validate_prose_style()
     warn_stale_docs()

@@ -31,7 +31,8 @@ agents = true
 # Turn this off if your team does not want RAVEN to install hook enforcement.
 hooks = true
 
-# Claude Code scoped rule files under .claude/rules/raven-*.
+# Claude Code rule files under .claude/rules/raven-*. Language rules load
+# when Claude reads or edits a matching file.
 rules = true
 
 # Agent-facing reference docs under .claude/docs/raven-*.

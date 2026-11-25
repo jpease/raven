@@ -1,3 +1,10 @@
+---
+paths:
+  - "**/*.{rb,rake,gemspec,ru}"
+  - "**/Gemfile"
+  - "**/Rakefile"
+  - "**/.rubocop.yml"
+---
 # Ruby Rules
 
 ## Applicability
