@@ -1755,17 +1755,18 @@ class NoisyCommandMatchingTests(unittest.TestCase):
 
     HOOK = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-post-bash-summarize.py"
 
-    def _run(self, command: str, path: str) -> str:
+    def _run(self, command: str, path: str, tool_response: object = None) -> str:
         env = dict(os.environ, PATH=path)
+        payload: dict = {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+        }
+        if tool_response is not None:
+            payload["tool_response"] = tool_response
         result = subprocess.run(
             [sys.executable, str(self.HOOK)],
-            input=json.dumps(
-                {
-                    "hook_event_name": "PostToolUse",
-                    "tool_name": "Bash",
-                    "tool_input": {"command": command},
-                }
-            ),
+            input=json.dumps(payload),
             capture_output=True,
             text=True,
             env=env,
@@ -1773,7 +1774,7 @@ class NoisyCommandMatchingTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         return result.stdout
 
-    def _hint(self, command: str) -> str:
+    def _hint(self, command: str, tool_response: object = None) -> str:
         """Run the hook with RTK present, which is what these matching tests are about.
 
         RTK is stubbed rather than assumed: the hook now stays silent when RTK
@@ -1785,7 +1786,7 @@ class NoisyCommandMatchingTests(unittest.TestCase):
         stub = Path(stub_dir) / "rtk"
         stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         stub.chmod(0o755)
-        return self._run(command, stub_dir)
+        return self._run(command, stub_dir, tool_response)
 
     def test_no_hint_when_rtk_is_not_installed(self):
         """A hint pointing at a tool the reader cannot run is pure context cost.
@@ -1796,11 +1797,11 @@ class NoisyCommandMatchingTests(unittest.TestCase):
         """
         empty = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, empty, True)
-        self.assertEqual(self._run("pytest -q", empty), "")
+        self.assertEqual(self._run("pytest", empty), "")
 
     def test_the_hint_returns_once_rtk_is_installed(self):
         """The negative control for the test above: same command, RTK present."""
-        self.assertIn("RTK", self._hint("pytest -q"))
+        self.assertIn("RTK", self._hint("pytest"))
 
     def test_a_word_inside_another_word_is_not_a_tool(self):
         """Word-boundary matching fixes substring collisions, and only those.
@@ -1820,9 +1821,41 @@ class NoisyCommandMatchingTests(unittest.TestCase):
                 self.assertEqual(self._hint(command), "")
 
     def test_real_invocations_are_still_nudged(self):
-        for command in ("pytest -q", "cargo test", "kubectl get pods", "aws s3 ls"):
+        for command in ("pytest", "cargo test", "kubectl get pods", "aws s3 ls"):
             with self.subTest(command=command):
                 self.assertIn("RTK", self._hint(command))
+
+    def test_newly_listed_runners_are_nudged(self):
+        for command in (
+            "mix test",
+            "rspec",
+            "busted",
+            "vitest",
+            "jest",
+            "just test",
+            "just check",
+        ):
+            with self.subTest(command=command):
+                self.assertIn("RTK", self._hint(command))
+
+    def test_quiet_flag_with_short_output_is_silent_and_long_output_nudges(self):
+        short = {"stdout": "".join(f"l{i}\n" for i in range(5)), "stderr": ""}
+        long = {"stdout": "".join(f"l{i}\n" for i in range(100)), "stderr": ""}
+        self.assertEqual(self._hint("pytest -q", short), "")
+        self.assertIn("RTK", self._hint("pytest -q", long))
+
+    def test_gemini_llm_content_is_sized(self):
+        short = {"llmContent": "Output: ok\nExit Code: 0"}
+        long = {"llmContent": "Output: " + "x\n" * 100 + "Exit Code: 0"}
+        self.assertEqual(self._hint("pytest", short), "")
+        self.assertIn("RTK", self._hint("pytest", long))
+
+    def test_runner_specific_quiet_flags_without_a_response(self):
+        self.assertEqual(self._hint("pytest -q"), "")
+        self.assertIn("RTK", self._hint("pytest -s"))
+        self.assertEqual(self._hint("npm test -s"), "")
+        self.assertEqual(self._hint("go test ./..."), "")
+        self.assertIn("RTK", self._hint("go test -v ./..."))
 
     def test_a_command_already_using_rtk_is_left_alone(self):
         self.assertEqual(self._hint("rtk pytest -q"), "")
@@ -1841,7 +1874,7 @@ class NoisyCommandMatchingTests(unittest.TestCase):
                 {
                     "hook_event_name": "AfterTool",
                     "tool_name": "run_shell_command",
-                    "tool_input": {"command": "pytest -q"},
+                    "tool_input": {"command": "pytest"},
                 }
             ),
             capture_output=True,

@@ -28,6 +28,13 @@ class ClassifyTests(RavenTestCase):
         self._assert(
             "whole",
             "pytest",
+            "cd a && pytest",
+            "(cd a && pytest -q) 2>&1 | tail",
+            "pytest -q 2>&1 | tail -3",
+            "pytest > out.txt",
+            "pytest -q 2>/dev/null",
+            "pytest &",
+            "cat app.py test_app.py && python -m pytest -q",
             "pytest -q",
             "python -m pytest -q --tb=short",
             "uv run --group dev python -m pytest",
@@ -48,6 +55,8 @@ class ClassifyTests(RavenTestCase):
         self._assert(
             "narrow",
             "pytest tests/test_app.py",
+            "cd x && pytest tests/a.py",
+            "pytest -q tests/a.py 2>&1",
             "pytest -k parse",
             "pytest -m slow",
             "pytest tests/test_app.py::test_a",
@@ -65,11 +74,15 @@ class ClassifyTests(RavenTestCase):
 
     def test_non_test_commands(self):
         self._assert(None, "ls -la", "git status", "python -m build", "just lint", "npm run build")
+        self._assert(
+            None,
+            'echo "pytest" && ls',
+            "echo 'a && pytest'",
+            "git log | grep pytest",
+        )
 
-    def test_only_the_first_simple_command_is_read(self):
-        # `cd x && pytest` starts with `cd`, so it is not a test command here;
-        # a stricter reading would have to reason about every segment.
-        self.assertIsNone(_module().classify("git status && pytest"))
+    def test_later_segments_are_read(self):
+        self.assertEqual(_module().classify("git status && pytest"), "whole")
 
 
 class EndToEndTests(RavenTestCase):

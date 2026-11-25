@@ -9,10 +9,18 @@ output to a file, and names that file in the replacement so nothing is lost:
 the agent can search it with ``rg`` or read a range with ``sed -n`` instead
 of carrying all of it in context.
 
-Claude Code only, by construction. Claude's PostToolUse hook can replace a
-result through ``hookSpecificOutput.updatedToolOutput``; Codex's PostToolUse
-can block or add feedback but has no field that swaps the result, so this
-file has no ``.codex/hooks/`` counterpart (recorded in
+Claude Code and Gemini CLI. Claude's PostToolUse hook can replace a result
+through ``hookSpecificOutput.updatedToolOutput``; the Bash ``tool_response`` is
+``{stdout, stderr, ...}`` and each stream gets its own ``max_lines`` budget and
+its own spill file (``-stderr.log`` suffix for stderr), so a failing build with
+empty stdout and a huge stderr is still cut. The replacement keeps the
+original dict shape, because Claude ignores a value that does not match the
+tool's output shape. Gemini's AfterTool ``tool_response`` is
+``{llmContent, returnDisplay, error}`` with the streams merged into one
+string; the hook replaces it with ``decision: "deny"`` plus the shrunk text
+as ``reason`` (https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/reference.md).
+Codex's PostToolUse can block or add feedback but has no field that swaps the
+result, so this file has no ``.codex/hooks/`` counterpart (recorded in
 ``.claude/docs/raven-agent-compatibility.md``). A command already routed
 through RTK is left alone -- it is compressed once, on purpose.
 
@@ -128,18 +136,35 @@ def truncate(
     return "\n".join(kept) + ("\n" if stdout.endswith("\n") else "")
 
 
-def _spill(stdout: str, session_id: str) -> str | None:
-    """Write the complete output under the temp directory; the path, or None."""
+def _spill(text: str, session_id: str, stream: str = "") -> str | None:
+    """Write the complete output under the temp directory; the path, or None.
+
+    stdout keeps ``<session>-<digest>.log``; another stream adds ``-<stream>``.
+    """
     directory = Path(tempfile.gettempdir()) / SPILL_DIRECTORY_NAME
-    digest = hashlib.sha1(stdout.encode("utf-8", "replace")).hexdigest()[:12]
+    digest = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()[:12]
     safe_session = "".join(ch for ch in session_id if ch.isalnum() or ch in "-_")[:32] or "session"
-    path = directory / f"{safe_session}-{digest}.log"
+    suffix = f"-{stream}" if stream else ""
+    path = directory / f"{safe_session}-{digest}{suffix}.log"
     try:
         directory.mkdir(parents=True, exist_ok=True)
-        path.write_text(stdout, encoding="utf-8", errors="replace")
+        path.write_text(text, encoding="utf-8", errors="replace")
     except OSError:
         return None
     return str(path)
+
+
+def _shrink(text: str, max_lines: int, session_id: str, stream: str) -> str | None:
+    """The replacement for one stream, or None when it fits or cannot be spilled.
+
+    Nowhere to keep the whole output means nothing may be dropped.
+    """
+    if max_lines <= 0 or len(text.splitlines()) <= max_lines:
+        return None
+    spill_path = _spill(text, session_id, stream)
+    if spill_path is None:
+        return None
+    return truncate(text, max_lines, spill_path)
 
 
 def main() -> int:
@@ -148,12 +173,7 @@ def main() -> int:
     if payload is None:
         return 0
     response = payload.get("tool_response")
-    stdout = None
-    if isinstance(response, str):
-        stdout = response
-    elif isinstance(response, dict):
-        stdout = response.get("stdout") or response.get("output")
-    if not isinstance(stdout, str):
+    if not isinstance(response, dict):
         return 0
     tool_input = payload.get("tool_input") or {}
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
@@ -161,37 +181,42 @@ def main() -> int:
         return 0
 
     max_lines = read_max_lines()
-    if max_lines <= 0 or len(stdout.splitlines()) <= max_lines:
+    if max_lines <= 0:
         return 0
-
-    session_id = payload.get("session_id")
-    spill_path = _spill(stdout, session_id if isinstance(session_id, str) else "")
-    if spill_path is None:
-        # Nowhere to keep the whole output means nothing may be dropped.
-        return 0
-    replacement = truncate(stdout, max_lines, spill_path)
-    if replacement is None:
-        return 0
+    raw_session = payload.get("session_id")
+    session_id = raw_session if isinstance(raw_session, str) else ""
 
     if _is_gemini_hook(payload):
-        print(json.dumps({"decision": "deny", "reason": replacement}))
+        content = response.get("llmContent")
+        if not isinstance(content, str):
+            return 0
+        replacement = _shrink(content, max_lines, session_id, "")
+        if replacement is not None:
+            print(json.dumps({"decision": "deny", "reason": replacement}))
         return 0
 
-    if isinstance(response, dict):
-        updated = dict(response)
-        updated["stdout"] = replacement
-    else:
-        updated = replacement
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PostToolUse",
-                    "updatedToolOutput": updated,
+    updated = dict(response)
+    changed = False
+    stdout_key = "stdout" if "stdout" in response else "output"
+    for key, stream in ((stdout_key, ""), ("stderr", "stderr")):
+        text = response.get(key)
+        if not isinstance(text, str):
+            continue
+        replacement = _shrink(text, max_lines, session_id, stream)
+        if replacement is not None:
+            updated[key] = replacement
+            changed = True
+    if changed:
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PostToolUse",
+                        "updatedToolOutput": updated,
+                    }
                 }
-            }
+            )
         )
-    )
     return 0
 
 

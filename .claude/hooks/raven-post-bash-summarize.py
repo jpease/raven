@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import sys
 from functools import lru_cache
@@ -26,7 +27,43 @@ _NOISY_COMMANDS = (
     r"docker",
     r"kubectl",
     r"aws",
+    r"mix\s+test",
+    r"rspec",
+    r"busted",
+    r"vitest",
+    r"jest",
+    r"just\s+(?:test|check)",
 )
+
+# Same value as HEAD_LINES in raven-post-bash-truncate.py: a result that hook
+# would not touch is never nudged either.
+NUDGE_MIN_LINES = 40
+
+# Runner -> tokens that count as its own quiet flag. `-s` is absent for pytest
+# because there it means --capture=no, which is noisier. Runners with an empty
+# set have no quiet flag (`go test` is handled separately in _is_quiet).
+QUIET_FLAGS: dict[str, frozenset[str]] = {
+    "pytest": frozenset({"-q", "-qq", "--quiet"}),
+    "cargo test": frozenset({"-q", "--quiet"}),
+    "npm test": frozenset({"-s", "--silent", "--loglevel=silent"}),
+    "pnpm test": frozenset({"-s", "--silent", "--loglevel=silent"}),
+    "go test": frozenset(),
+    "swift test": frozenset({"-q", "--quiet"}),
+    "xcodebuild": frozenset({"-quiet"}),
+    "docker": frozenset({"-q", "--quiet"}),
+    "vitest": frozenset({"--silent"}),
+    "jest": frozenset({"--silent"}),
+    "kubectl": frozenset(),
+    "aws": frozenset(),
+    "mix test": frozenset(),
+    "rspec": frozenset(),
+    "busted": frozenset(),
+    "just test": frozenset(),
+    "just check": frozenset(),
+}
+
+_SEPARATORS = frozenset({"&&", "||", ";", "|", "|&", "&", "(", ")"})
+_REDIRECT_CHARS = frozenset("<>&|")
 
 _NOISY_COMMAND = re.compile(r"\b(?:" + "|".join(_NOISY_COMMANDS) + r")\b")
 
@@ -64,6 +101,82 @@ def _extract_command(payload: dict) -> str:
     return tool_input.get("command") or payload.get("command") or ""
 
 
+def _is_redirect(token: str) -> bool:
+    return bool(token) and set(token) <= _REDIRECT_CHARS and ("<" in token or ">" in token)
+
+
+def _strip_redirections(tokens: list[str]) -> list[str]:
+    """Drop redirection operators, their targets, and a leading fd (`2` in `2>&1`)."""
+    kept: list[str] = []
+    skip = False
+    for index, token in enumerate(tokens):
+        if skip:
+            skip = False
+            continue
+        if _is_redirect(token):
+            skip = True
+            continue
+        if token.isdigit() and index + 1 < len(tokens) and _is_redirect(tokens[index + 1]):
+            continue
+        kept.append(token)
+    return kept
+
+
+def _segments(command: str) -> list[list[str]]:
+    """Simple commands of a shell line, split on control operators, redirections removed.
+
+    Quoted operators stay inside one token, so ``echo 'a && pytest'`` is a
+    single argument. Unbalanced quotes fall back to a regex split.
+    """
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        parts = re.split(r"\s*(?:&&|\|\||;|\|)\s*", command.strip())
+        return [part.split() for part in parts if part.split()]
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for token in tokens:
+        if token in _SEPARATORS:
+            segments.append(current)
+            current = []
+        else:
+            current.append(token)
+    segments.append(current)
+    return [cleaned for cleaned in (_strip_redirections(seg) for seg in segments) if cleaned]
+
+
+def _output_line_count(payload: dict) -> int | None:
+    """Lines of the command's output, or None when the payload carries none."""
+    response = payload.get("tool_response")
+    if isinstance(response, str):
+        return len(response.splitlines())
+    if not isinstance(response, dict):
+        return None
+    content = response.get("llmContent")
+    if isinstance(content, str):
+        return len(content.splitlines())
+    streams = [response[key] for key in ("stdout", "stderr") if isinstance(response.get(key), str)]
+    if not streams:
+        return None
+    return sum(len(text.splitlines()) for text in streams)
+
+
+def _runner_is_quiet(command: str) -> bool:
+    """True when the matched runner's own segment carries a quiet flag."""
+    for segment in _segments(command):
+        match = _NOISY_COMMAND.search(" ".join(segment))
+        if match is None:
+            continue
+        runner = re.sub(r"\s+", " ", match.group(0))
+        flags = {token for token in segment if token.startswith("-")}
+        if runner == "go test":
+            return not flags & {"-v", "-json"}
+        return bool(flags & QUIET_FLAGS.get(runner, frozenset()))
+    return False
+
+
 def _is_gemini_hook(payload: dict) -> bool:
     if "GEMINI_PROJECT_DIR" in os.environ:
         return True
@@ -72,6 +185,14 @@ def _is_gemini_hook(payload: dict) -> bool:
         return True
     tool = payload.get("tool_name")
     return tool in ("run_shell_command", "read_file", "write_file", "replace")
+
+
+def _needs_nudge(payload: dict, command: str) -> bool:
+    """Quiet flag first, RTK only if the output is still noisy."""
+    lines = _output_line_count(payload)
+    if lines is not None:
+        return lines > NUDGE_MIN_LINES
+    return not _runner_is_quiet(command)
 
 
 def main() -> int:
@@ -88,6 +209,7 @@ def main() -> int:
         _rtk_installed()
         and not command.lstrip().startswith("rtk ")
         and _NOISY_COMMAND.search(command)
+        and _needs_nudge(payload, command)
     ):
         hint = (
             f"Consider running noisy commands through RTK when exact raw output"

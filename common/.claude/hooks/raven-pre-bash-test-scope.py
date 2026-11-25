@@ -95,13 +95,59 @@ def _load_payload() -> dict | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _first_simple_command(command: str) -> list[str]:
-    """Tokens of the first simple command, past env assignments and wrappers."""
-    head = re.split(r"\s*(?:&&|\|\||;|\|)\s*", command.strip(), maxsplit=1)[0]
+_SEPARATORS = frozenset({"&&", "||", ";", "|", "|&", "&", "(", ")"})
+_REDIRECT_CHARS = frozenset("<>&|")
+
+
+def _is_redirect(token: str) -> bool:
+    return bool(token) and set(token) <= _REDIRECT_CHARS and ("<" in token or ">" in token)
+
+
+def _strip_redirections(tokens: list[str]) -> list[str]:
+    """Drop redirection operators, their targets, and a leading fd (`2` in `2>&1`)."""
+    kept: list[str] = []
+    skip = False
+    for index, token in enumerate(tokens):
+        if skip:
+            skip = False
+            continue
+        if _is_redirect(token):
+            skip = True
+            continue
+        if token.isdigit() and index + 1 < len(tokens) and _is_redirect(tokens[index + 1]):
+            continue
+        kept.append(token)
+    return kept
+
+
+def _segments(command: str) -> list[list[str]]:
+    """Simple commands of a shell line, split on control operators, redirections removed.
+
+    Quoted operators stay inside one token, so ``echo 'a && pytest'`` is a
+    single argument. Unbalanced quotes fall back to a regex split.
+    """
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
     try:
-        tokens = shlex.split(head)
+        tokens = list(lexer)
     except ValueError:
-        tokens = head.split()
+        parts = re.split(r"\s*(?:&&|\|\||;|\|)\s*", command.strip())
+        return [part.split() for part in parts if part.split()]
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for token in tokens:
+        if token in _SEPARATORS:
+            segments.append(current)
+            current = []
+        else:
+            current.append(token)
+    segments.append(current)
+    return [cleaned for cleaned in (_strip_redirections(seg) for seg in segments) if cleaned]
+
+
+def _normalize(tokens: list[str]) -> list[str]:
+    """Tokens past env assignments, wrappers, and ``python -m``."""
+    tokens = list(tokens)
     while tokens and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]):
         tokens.pop(0)
     while tokens and tokens[0] in _WRAPPERS:
@@ -118,11 +164,15 @@ def _first_simple_command(command: str) -> list[str]:
 
 def classify(command: str) -> str | None:
     """``"whole"``, ``"narrow"``, or None when this is not a test command."""
-    tokens = _first_simple_command(command)
-    for runner in _RUNNERS:
-        if tuple(tokens[: len(runner)]) == runner:
-            rest = tokens[len(runner) :]
-            break
+    for segment in _segments(command):
+        tokens = _normalize(segment)
+        for runner in _RUNNERS:
+            if tuple(tokens[: len(runner)]) == runner:
+                rest = tokens[len(runner) :]
+                break
+        else:
+            continue
+        break
     else:
         return None
     if any(

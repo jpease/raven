@@ -141,7 +141,13 @@ class EndToEndTests(RavenTestCase):
             "hook_event_name": "AfterTool",
             "tool_name": "run_shell_command",
             "tool_input": {"command": "pytest -q"},
-            "tool_response": {"output": "".join(f"out {i}\n" for i in range(300))},
+            "tool_response": {
+                "llmContent": "Output: "
+                + "".join(f"out {i}\n" for i in range(300))
+                + "Exit Code: 0",
+                "returnDisplay": "out",
+                "error": None,
+            },
         }
         result = self._run(hook, payload)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -149,6 +155,55 @@ class EndToEndTests(RavenTestCase):
         self.assertEqual(data["decision"], "deny")
         self.assertIn("Full output:", data["reason"])
         self.assertEqual(len(data["reason"].splitlines()), 51)
+
+    def test_gemini_empty_output_is_left_alone(self):
+        hook = self._install("[bash_output]\nmax_lines = 50\n")
+        payload = {
+            "session_id": "g",
+            "hook_event_name": "AfterTool",
+            "tool_name": "run_shell_command",
+            "tool_input": {"command": "true"},
+            "tool_response": {"llmContent": "Output: (empty)\nExit Code: 0"},
+        }
+        self.assertEqual(self._run(hook, payload).stdout, "")
+
+    def _spill_path(self, text: str) -> str:
+        line = next(line for line in text.splitlines() if "Full output:" in line)
+        return line.split("Full output: ", 1)[1].split(" -- ", 1)[0]
+
+    def test_stderr_only_is_truncated_with_its_own_spill(self):
+        hook = self._install("[bash_output]\nmax_lines = 50\n")
+        payload = self._payload(3, "cargo build")
+        payload["tool_response"]["stdout"] = ""
+        err = "".join(f"err {i}\n" for i in range(600))
+        payload["tool_response"]["stderr"] = err
+        result = self._run(hook, payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        updated = json.loads(result.stdout)["hookSpecificOutput"]["updatedToolOutput"]
+        self.assertEqual(updated["stdout"], "")
+        path = self._spill_path(updated["stderr"])
+        self.assertTrue(path.endswith("-stderr.log"), path)
+        self.assertEqual(Path(path).read_text(encoding="utf-8"), err)
+
+    def test_both_streams_get_their_own_budget_and_spill(self):
+        hook = self._install("[bash_output]\nmax_lines = 50\n")
+        payload = self._payload(300)
+        payload["tool_response"]["stderr"] = "".join(f"err {i}\n" for i in range(300))
+        result = self._run(hook, payload)
+        updated = json.loads(result.stdout)["hookSpecificOutput"]["updatedToolOutput"]
+        self.assertEqual(len(updated["stdout"].splitlines()), 51)
+        self.assertEqual(len(updated["stderr"].splitlines()), 51)
+        out_path = self._spill_path(updated["stdout"])
+        err_path = self._spill_path(updated["stderr"])
+        self.assertNotEqual(out_path, err_path)
+        self.assertFalse(out_path.endswith("-stderr.log"))
+        self.assertTrue(err_path.endswith("-stderr.log"))
+
+    def test_a_string_response_under_claude_emits_nothing(self):
+        hook = self._install("[bash_output]\nmax_lines = 10\n")
+        payload = self._payload(500)
+        payload["tool_response"] = "".join(f"out {i}\n" for i in range(500))
+        self.assertEqual(self._run(hook, payload).stdout, "")
 
     def test_default_limit_applies_without_a_section(self):
         hook = self._install("[skeleton]\n")
