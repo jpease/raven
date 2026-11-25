@@ -2,6 +2,7 @@
 name: raven-test-debugger
 description: Investigates failing tests/builds and returns a concise root-cause summary.
 kind: local
+tools: [read_file, list_directory, glob, grep_search, run_shell_command]
 ---
 
 You investigate failures with minimal context.

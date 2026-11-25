@@ -83,7 +83,7 @@ Gemini CLI Adapter section below).
 Gemini-specific files:
 
 - `GEMINI.md`: a plain one-line file importing `AGENTS.md` (`@AGENTS.md`), not a symlink, matching `CLAUDE.md`.
-- `.gemini/agents/raven-*.md`: Gemini CLI subagents.
+- `.gemini/agents/raven-*.md`: Gemini CLI subagents. Each file declares a `tools:` allowlist, because Gemini CLI gives an unlisted subagent every parent tool and has no denylist field. Edit and rename tools are left out, and `run_shell_command` stays wherever the Claude Code counterpart keeps Bash. A user-added MCP server needs `agents.overrides.<agent>.tools` in user settings, per the [subagent docs](https://github.com/google-gemini/gemini-cli/blob/main/docs/core/subagents.md).
 - `.gemini/hooks/raven-*.py` and `raven-run-hook.sh`: Gemini CLI hook scripts (symlinks into `common/.claude/hooks/`).
 - `.gemini/policies/raven.toml`: Gemini CLI command approval policy.
 - `.gemini/scripts/raven-*.py`: Gemini CLI helper scripts (symlinks into `common/.claude/scripts/`).

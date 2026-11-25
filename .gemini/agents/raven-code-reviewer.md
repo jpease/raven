@@ -2,6 +2,7 @@
 name: raven-code-reviewer
 description: Independently reviews a diff for correctness, regressions, test adequacy, and plan deviation.
 kind: local
+tools: [read_file, list_directory, glob, grep_search, run_shell_command, activate_skill, mcp_lsp_definition, mcp_lsp_references, mcp_lsp_hover, mcp_lsp_diagnostics, mcp_gitnexus_list_repos, mcp_gitnexus_query, mcp_gitnexus_context, mcp_gitnexus_impact, mcp_gitnexus_trace, mcp_gitnexus_detect_changes, mcp_codegraph_codegraph_explore, mcp_semgrep_*, list_mcp_resources, read_mcp_resource]
 ---
 
 You are a separate reviewer, not the author of this change. Your job is to find its defects; fixing them and approving the change belong to the caller.

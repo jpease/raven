@@ -315,12 +315,14 @@ class ReviewProseSkillTests(unittest.TestCase):
 
 CLAUDE_AGENTS = REPO_ROOT / "common" / ".claude" / "agents"
 CODEX_AGENTS = REPO_ROOT / "common" / ".codex" / "agents"
+GEMINI_AGENTS = REPO_ROOT / "common" / ".gemini" / "agents"
 
 
 class ProseReviewerAgentTests(unittest.TestCase):
     def test_both_adapters_ship_the_agent(self):
         self.assertTrue((CLAUDE_AGENTS / "raven-prose-reviewer.md").exists())
         self.assertTrue((CODEX_AGENTS / "raven-prose-reviewer.toml").exists())
+        self.assertTrue((GEMINI_AGENTS / "raven-prose-reviewer.md").exists())
 
     def test_agent_is_read_only(self):
         """It writes prose from an outline. It has no reason to run commands
@@ -331,11 +333,15 @@ class ProseReviewerAgentTests(unittest.TestCase):
         self.assertNotIn("Bash", claude)
         codex = (CODEX_AGENTS / "raven-prose-reviewer.toml").read_text(encoding="utf-8")
         self.assertIn('sandbox_mode = "read-only"', codex)
+        gemini = (GEMINI_AGENTS / "raven-prose-reviewer.md").read_text(encoding="utf-8")
+        self.assertIn("tools: [read_file]", gemini)
+        self.assertNotIn("run_shell_command", gemini)
 
     def test_both_adapters_carry_the_out_of_scope_contract(self):
         for path in [
             CLAUDE_AGENTS / "raven-prose-reviewer.md",
             CODEX_AGENTS / "raven-prose-reviewer.toml",
+            GEMINI_AGENTS / "raven-prose-reviewer.md",
         ]:
             with self.subTest(path=path.name):
                 self.assertIn("Out Of Scope Findings", path.read_text(encoding="utf-8"))

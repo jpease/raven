@@ -109,9 +109,13 @@ and [`docs/hooks/writing-hooks.md`](https://github.com/google-gemini/gemini-cli/
   (`"startup" | "resume" | "clear"`); `SessionEnd` adds `reason`.
 - **Tool-name matcher values:** discrete built-in names, not bundled categories — e.g.
   `read_file`, `run_shell_command`; MCP tools are `mcp_<server>_<tool>`. Matchers support
-  regex (`read_.*`). The exact write/edit built-in tool names weren't pinned down from the
-  hooks doc alone (`docs/reference/tools.md` has the authoritative list) — treat as a small
-  gap, not a blocker.
+  regex (`read_.*`). Verified 2026-11-24 against
+  [`docs/reference/tools.md`](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/tools.md)
+  and `packages/core/src/tools/definitions/base-declarations.ts`: edit tools are `write_file` and
+  `replace`; read and search tools are `read_file`, `list_directory`, `glob`, `grep_search`;
+  shell is `run_shell_command`; MCP tools are `mcp_<server>_<tool>`. `read_many_files` is listed
+  in `tools.md` but only runs for user `@path` expansion: `Config.createToolRegistry` in
+  `packages/core/src/config/config.ts` never registers it as a model tool.
 - **Output schema:** `decision` (`"allow" | "deny"`, alias `"block"`), `reason` (required to
   deny), `systemMessage`, `continue` (false ends the agent loop), `suppressOutput`,
   `stopReason`; plus `hookSpecificOutput.*` per event — `tool_input` override on `BeforeTool`,
@@ -261,7 +265,8 @@ anything in `settings.json`.** Source:
 - Locations: project `.gemini/agents/*.md`, user `~/.gemini/agents/*.md`.
 - Frontmatter: required `name` (slug), `description` (used for auto-delegation); optional
   `kind` (`local`/`remote`), `tools` (array, wildcards `*`/`mcp_*`/`mcp_<server>_*`; omitted =
-  inherits all parent tools), `mcpServers` (inline, isolated to the subagent), `model`
+  inherits all parent tools), `mcp_servers` (inline, isolated to the subagent; upstream's doc says `mcpServers`, but the strict
+  schema rejects it), `model`
   (default `inherit`), `temperature` (default `1`), `max_turns` (default `30`), `timeout_mins`
   (default `10`).
 - Invocation: automatic (main agent matches `description`) or explicit `@subagent_name ...` at
@@ -273,6 +278,16 @@ anything in `settings.json`.** Source:
   `modelConfigs.overrides` in `settings.json`; disable globally via
   `experimental.enableAgents: false`. Policy-engine rules can scope by `subagent` name (see
   §4).
+- Loader (verified 2026-11-24, `packages/core/src/agents/agentLoader.ts`): the frontmatter schema
+  is strict with no denylist key, so an unknown key fails the whole file. One invalid `tools`
+  entry (for example Claude-style `mcp__lsp__edit_file`) fails the whole agent.
+- Runtime (`packages/core/src/agents/local-executor.ts`): `tools` names not registered in the
+  parent registry are skipped without an error; `complete_task` is always added.
+  `agents.overrides.<name>.tools` in `settings.json` replaces the frontmatter list.
+- Subagent tool calls go through the same scheduler (`agent-scheduler.ts`), so project
+  `BeforeTool` hooks run for them.
+- Shell limit: there is no per-subagent shell restriction while the workspace policy tier is
+  disabled, so `run_shell_command` stays writable wherever it is granted.
 - A separate Agent2Agent (A2A) remote-subagent mechanism exists (`docs/core/remote-agents.md`,
   not read in this pass) — flag for follow-up only if a Raven template needs remote agents.
 
@@ -324,8 +339,7 @@ Source: [`docs/tools/mcp-server.md`](https://github.com/google-gemini/gemini-cli
 
 1. `--output-format json`/`stream-json` exact field names, once a working (non-legacy-tier)
    Gemini credential is available — relevant to #269.
-2. Exact write/edit built-in tool names for hook matchers (`docs/reference/tools.md` should
-   have them; not fetched here).
+2. Resolved 2026-11-24 — see §3 and §6.
 3. `trustedFolders.json`'s literal per-entry record shape.
 4. `GEMINI_PROJECT_DIR` correctness when Gemini CLI is invoked from outside the project root.
 5. A2A remote-subagent config, only if a template ends up needing it.
@@ -353,6 +367,12 @@ Source: [`docs/tools/mcp-server.md`](https://github.com/google-gemini/gemini-cli
 - <https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/headless.md>
 - <https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/tutorials/automation.md>
 - <https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md>
+- <https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/tools.md>
+- <https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/tools/definitions/base-declarations.ts>
+- <https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/tools/tool-names.ts>
+- <https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/agents/agentLoader.ts>
+- <https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/agents/local-executor.ts>
+- <https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/agents/agent-scheduler.ts>
 - <https://github.com/google-gemini/gemini-cli/issues/18186>
 - <https://github.com/google-gemini/gemini-cli/issues/15383>
 - <https://github.com/google-gemini/gemini-cli/issues/13125>
