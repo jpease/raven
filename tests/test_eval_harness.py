@@ -159,6 +159,45 @@ class FixtureTests(unittest.TestCase):
         self.assertTrue((root / ".raven" / "config.toml").is_file())
         self.assertTrue((root / "AGENTS.md").exists())
 
+    def _build_with_config(self, scenario, *, with_raven, config):
+        from eval import build_fixture
+
+        target = self.root / ("raven" if with_raven else "control")
+        build_fixture(scenario, target, with_raven=with_raven, raven_config=config)
+        return target
+
+    def test_raven_config_is_seeded_before_install(self):
+        config = REPO_ROOT / "evals" / "ablations" / "no-mcp.toml"
+        root = self._build_with_config(_by_name("fixed-cost"), with_raven=True, config=config)
+        self.assertTrue((root / "AGENTS.md").exists())
+        self.assertFalse((root / ".mcp.json").exists())
+        installed = (root / ".raven" / "config.toml").read_text(encoding="utf-8")
+        self.assertRegex(installed, r"(?m)^mcp = false$")
+
+    def test_control_arm_ignores_raven_config(self):
+        config = REPO_ROOT / "evals" / "ablations" / "no-mcp.toml"
+        root = self._build_with_config(_by_name("fixed-cost"), with_raven=False, config=config)
+        self.assertFalse((root / ".raven").exists())
+        self.assertFalse((root / "AGENTS.md").exists())
+
+    def test_failed_install_raises(self):
+        # A template mismatch makes `raven install` exit 2; running the trial
+        # anyway would make the Raven arm a second control arm.
+        config = self.root / "go.toml"
+        config.write_text('schema = 1\ntemplate = "go"\n', encoding="utf-8")
+        with self.assertRaises(subprocess.CalledProcessError):
+            self._build_with_config(_by_name("fixed-cost"), with_raven=True, config=config)
+
+    def test_every_ablation_config_targets_python(self):
+        from raven_lib.config import build_config, parse_simple_toml
+
+        paths = sorted((REPO_ROOT / "evals" / "ablations").glob("*.toml"))
+        self.assertEqual(len(paths), 7)
+        for path in paths:
+            with self.subTest(config=path.name):
+                raw = parse_simple_toml(path.read_text(encoding="utf-8"))
+                self.assertEqual(build_config(raw, exists=True).template, "python")
+
     def test_both_arms_get_identical_scenario_files(self):
         # Anything differing beyond the Raven install is a confound the results
         # could not separate out.
@@ -1070,10 +1109,18 @@ class CodexTrustTests(unittest.TestCase):
 
         root = self.scratch / "repo"
         root.mkdir()
-        self.assertIsNone(_agent_env("claude", self.scratch, root))
+        self.assertNotIn("CODEX_HOME", _agent_env("claude", self.scratch, root))
         env = _agent_env("codex", self.scratch, root)
         assert env is not None
         self.assertEqual(env["CODEX_HOME"], str(self.scratch / "codex-home"))
+
+    def test_claude_env_disables_claude_ai_connectors(self):
+        from eval import _agent_env
+
+        root = self.scratch / "repo"
+        root.mkdir()
+        env = _agent_env("claude", self.scratch, root)
+        self.assertEqual(env["ENABLE_CLAUDEAI_MCP_SERVERS"], "false")
 
 
 class GeminiTrustTests(unittest.TestCase):
@@ -2342,6 +2389,14 @@ class PublishedTrialsGuardTests(unittest.TestCase):
         self.assertIn("--out", stderr)
         self.assertIn("--trials 5", stderr)
         self.assertFalse((self.tmp / "out").exists())
+
+    def test_out_refuses_raven_config(self):
+        code, run, stderr = self._main(
+            "--trials", "5", "--out", str(self.tmp / "out"), "--raven-config", "x.toml"
+        )
+        self.assertEqual(code, 1)
+        run.assert_not_called()
+        self.assertIn("--raven-config", stderr)
 
     def test_out_accepts_the_minimum(self):
         code, run, _ = self._main("--trials", "5", "--out", str(self.tmp / "out"))

@@ -1,0 +1,5 @@
+schema = 1
+template = "python"
+
+[components.claude]
+settings = false

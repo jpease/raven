@@ -41,10 +41,11 @@ repository you invoke it from.
 Both commands run with the operator's own user-level config excluded.
 Without that, personal plugins and global MCP servers configured on whoever
 runs the eval leak into every trial, in both arms alike, and don't reproduce
-on a different machine or in CI. Claude gets `--setting-sources project`.
-Codex gets a private `$CODEX_HOME` per trial, holding one `config.toml` that
-trusts the fixture and a symlink to the real `auth.json` (a link, never a
-copy).
+on a different machine or in CI. Claude gets `--setting-sources project`
+and `ENABLE_CLAUDEAI_MCP_SERVERS=false`, since account connectors attach only
+to the arm configuring MCP. Codex gets a private `$CODEX_HOME` per trial,
+holding one `config.toml` that trusts the fixture and a symlink to the real
+`auth.json` (a link, never a copy).
 
 The private home exists because Codex loads a project's `.codex/`
 layer — hooks, rules, config, custom agents — only for a trusted project, and
@@ -58,6 +59,9 @@ and skipped, and the report could not tell. Those numbers measure the prose
 alone. Verified live with a SessionStart hook that touches a file: silent in
 an untrusted fixture, fired once the fixture was trusted through a private
 home.
+
+`--raven-config PATH` seeds the Raven arm's `.raven/config.toml` for the
+`evals/ablations/` runs; `--out` refuses it.
 
 This is not part of `just check` and never will be. It costs real model calls,
 it is not deterministic, and a gate that fails for reasons a commit cannot fix

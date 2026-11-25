@@ -231,8 +231,8 @@ def gemini_home(scratch: Path) -> Path:
     return home
 
 
-def _agent_env(agent: str, scratch: Path, root: Path) -> dict[str, str] | None:
-    """Environment for one agent run, or None to inherit the harness's own."""
+def _agent_env(agent: str, scratch: Path, root: Path) -> dict[str, str]:
+    """Environment for one agent run: the harness's own plus per-agent isolation."""
     if agent == "codex":
         env = dict(os.environ)
         env["CODEX_HOME"] = str(codex_home(scratch, root))
@@ -244,7 +244,12 @@ def _agent_env(agent: str, scratch: Path, root: Path) -> dict[str, str] | None:
         env["GEMINI_CLI_HOME"] = str(gemini_home(scratch))
         env["GEMINI_CLI_TRUSTED_FOLDERS_PATH"] = str(gemini_trust_store(scratch, root))
         return env
-    return None
+    # `--setting-sources project` keeps the operator's settings out, but not the
+    # claude.ai account connectors: they attach to whichever arm configures any
+    # MCP server (the Raven arm), so they would count against Raven.
+    env = dict(os.environ)
+    env["ENABLE_CLAUDEAI_MCP_SERVERS"] = "false"
+    return env
 
 
 def _claude_usage(transcript: str) -> tuple[int, int, float | None] | None:
@@ -416,7 +421,9 @@ def _shell(cwd: Path, command: str) -> None:
     )
 
 
-def build_fixture(scenario: Scenario, root: Path, *, with_raven: bool) -> None:
+def build_fixture(
+    scenario: Scenario, root: Path, *, with_raven: bool, raven_config: Path | None = None
+) -> None:
     """Write one arm's throwaway repository.
 
     Both arms get the identical fixture and the identical git history. The only
@@ -424,6 +431,11 @@ def build_fixture(scenario: Scenario, root: Path, *, with_raven: bool) -> None:
     `raven_files`, which hold the same text at the path each arm would look:
     anything else that differed would be a confound the results could not
     separate out.
+
+    `raven_config` is seeded as the Raven arm's `.raven/config.toml` before the
+    install, which honors an existing config; the control arm ignores it. A
+    failed install raises `subprocess.CalledProcessError`, since a trial run
+    on it would silently be a second control arm.
     """
     root.mkdir(parents=True, exist_ok=True)
     _shell(root, "git init -q")
@@ -443,12 +455,15 @@ def build_fixture(scenario: Scenario, root: Path, *, with_raven: bool) -> None:
         (root / ".gitignore").write_text(FIXTURE_GITIGNORE, encoding="utf-8")
 
     if with_raven:
+        if raven_config is not None:
+            (root / ".raven").mkdir(exist_ok=True)
+            shutil.copyfile(raven_config, root / ".raven" / "config.toml")
         subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts" / "raven.py"), "install", scenario.template],
             cwd=str(root),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
+            capture_output=True,
+            text=True,
+            check=True,
             env=_clean_git_env(),
         )
     arm_files = scenario.raven_files if with_raven else scenario.control_files
@@ -495,15 +510,19 @@ def run_one(
     with_raven: bool,
     trial: int,
     transcripts: Path | None = None,
+    raven_config: Path | None = None,
 ) -> TrialOutcome:
     """Build a fixture, run the agent in it once, and grade what it left behind."""
     arm = "raven" if with_raven else "control"
     with tempfile.TemporaryDirectory(prefix=f"raven-eval-{scenario.name}-") as tmp:
         root = Path(tmp) / "repo"
         try:
-            build_fixture(scenario, root, with_raven=with_raven)
+            build_fixture(scenario, root, with_raven=with_raven, raven_config=raven_config)
         except OSError as exc:
             return TrialOutcome(scenario.name, arm, trial, False, "fixture failed", str(exc))
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or "").strip() or f"exit {exc.returncode}"
+            return TrialOutcome(scenario.name, arm, trial, False, "raven install failed", detail)
 
         try:
             completed = subprocess.run(
@@ -569,7 +588,11 @@ def _apply_overhead_ceiling(
 
 
 def run(
-    scenarios: list[Scenario], agent: str, trials: int, transcripts: Path | None = None
+    scenarios: list[Scenario],
+    agent: str,
+    trials: int,
+    transcripts: Path | None = None,
+    raven_config: Path | None = None,
 ) -> list[TrialOutcome]:
     """Every scenario, both arms, ``trials`` times, reporting progress as it goes.
 
@@ -585,7 +608,14 @@ def run(
             _report(scenario, trial, control)
             if control.evidence == AGENT_ERROR:
                 return [*outcomes, control]
-            raven = run_one(scenario, agent, with_raven=True, trial=trial, transcripts=transcripts)
+            raven = run_one(
+                scenario,
+                agent,
+                with_raven=True,
+                trial=trial,
+                transcripts=transcripts,
+                raven_config=raven_config,
+            )
             raven = _apply_overhead_ceiling(scenario, agent, control, raven)
             _report(scenario, trial, raven)
             outcomes += [control, raven]
@@ -636,12 +666,21 @@ def _avg_calls(outcomes: list[TrialOutcome], scenario: str, arm: str) -> float |
     return round(sum(values) / len(values), 1) if values else None
 
 
-def render_markdown(outcomes: list[TrialOutcome], agent: str, trials: int, stamp: str) -> str:
+def render_markdown(
+    outcomes: list[TrialOutcome],
+    agent: str,
+    trials: int,
+    stamp: str,
+    raven_config: Path | None = None,
+) -> str:
     """The results table, written so a reader can tell a real difference from noise."""
+    config = f"`{raven_config}`" if raven_config is not None else "default config"
     lines = [
         f"# Raven behavioral evaluation -- {agent}",
         "",
         f"Run {stamp} against the local `{agent}` CLI, {trials} trial(s) per arm.",
+        "",
+        f"Raven arm config: {config}.",
         "",
         "Each scenario runs twice in identical throwaway repositories: `control`",
         "has no Raven installed, `raven` does. Only the difference between the two",
@@ -770,12 +809,23 @@ def main() -> int:
         default="an unrecorded date",
         help="date string for the report header; pass one for a reproducible file",
     )
+    parser.add_argument(
+        "--raven-config",
+        help="config.toml seeded into the Raven arm before install (ablations; not with --out)",
+    )
     args = parser.parse_args()
 
     if args.out and args.trials < MIN_PUBLISHED_TRIALS:
         print(
             f"error: --out publishes results and needs --trials {MIN_PUBLISHED_TRIALS} or more"
             f" (got {args.trials}). Drop --out to write a smaller run to evals/runs/.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if args.out and args.raven_config:
+        print(
+            "error: --raven-config runs are ablations and stay unpublished; drop --out.",
             file=sys.stderr,
         )
         return 1
@@ -801,7 +851,8 @@ def main() -> int:
 
     print(f"raven eval: {args.agent}, {len(scenarios)} scenario(s), {args.trials} trial(s) per arm")
     transcripts = Path(args.transcripts) if args.transcripts else None
-    outcomes = run(scenarios, args.agent, args.trials, transcripts)
+    raven_config = Path(args.raven_config) if args.raven_config else None
+    outcomes = run(scenarios, args.agent, args.trials, transcripts, raven_config)
     failed = next((o for o in outcomes if o.evidence == AGENT_ERROR), None)
     if failed is not None:
         print(
@@ -811,7 +862,7 @@ def main() -> int:
         )
         args.out = None
 
-    report = render_markdown(outcomes, args.agent, args.trials, args.stamp)
+    report = render_markdown(outcomes, args.agent, args.trials, args.stamp, raven_config)
     # A run costs real money and ~15 minutes of wall clock, so it always leaves
     # an artifact now. Without `--out` the report went to stdout only, where a
     # pipe (`| tail -40`) or a closed scrollback destroyed it and the run had to
