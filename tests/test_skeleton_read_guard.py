@@ -1,12 +1,17 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 from helpers import REPO_ROOT, RavenTestCase, load_script_module
 
 GUARD_SCRIPT = REPO_ROOT / "common" / ".claude" / "hooks" / "raven-skeleton-read-guard.py"
+
+
+RAVEN_CONFIG = REPO_ROOT / "common" / ".raven" / "git-hooks" / "lib" / "raven_config.py"
 
 
 def _module():
@@ -157,44 +162,51 @@ class ParseGateConfigTests(RavenTestCase):
         self.assertEqual(module.parse_gate_config(text), (True, 500))
 
 
-class GateConfigFileTests(RavenTestCase):
-    """`_gate_config()` reads .raven/config.toml relative to cwd; these drive it
-    through a real file (missing, unreadable, valid) rather than passing text
-    directly, unlike ParseGateConfigTests above.
+class _InstalledHookTestCase(RavenTestCase):
+    def _install(self, *, gemini: bool = False) -> Path:
+        """Copy the hook into an install layout under ``self.destination``."""
+        for adapter in (".claude", ".gemini") if gemini else (".claude",):
+            hooks = self.destination / adapter / "hooks"
+            hooks.mkdir(parents=True, exist_ok=True)
+            shutil.copy(GUARD_SCRIPT, hooks / GUARD_SCRIPT.name)
+        lib = self.destination / ".raven" / "git-hooks" / "lib"
+        lib.mkdir(parents=True, exist_ok=True)
+        shutil.copy(RAVEN_CONFIG, lib / RAVEN_CONFIG.name)
+        return self.destination / ".claude" / "hooks" / GUARD_SCRIPT.name
+
+
+class GateConfigFileTests(_InstalledHookTestCase):
+    """`_gate_config()` reads .raven/config.toml from the install root of the
+    installed hook copy (not the process cwd); these drive it through a real
+    file (missing, unreadable, valid) rather than passing text directly,
+    unlike ParseGateConfigTests above.
     """
 
-    def _with_cwd(self, func):
-        orig = os.getcwd()
-        os.chdir(self.destination)
-        try:
-            return func()
-        finally:
-            os.chdir(orig)
+    def _installed_module(self):
+        return load_script_module("raven_skeleton_read_guard_installed", self._install())
 
     def test_missing_config_yields_safe_default(self):
-        module = _module()
-        self.assertEqual(self._with_cwd(module._gate_config), (False, module.DEFAULT_THRESHOLD))
+        module = self._installed_module()
+        self.assertEqual(module._gate_config(), (False, module.DEFAULT_THRESHOLD))
 
     def test_valid_config_is_read(self):
-        module = _module()
-        (self.destination / ".raven").mkdir()
+        module = self._installed_module()
         (self.destination / ".raven" / "config.toml").write_text(
             "[skeleton]\nread_gate = true\nread_gate_threshold_lines = 42\n", encoding="utf-8"
         )
-        self.assertEqual(self._with_cwd(module._gate_config), (True, 42))
+        self.assertEqual(module._gate_config(), (True, 42))
 
     def test_unreadable_config_does_not_crash_and_yields_safe_default(self):
         # Pre-existing gap (issue #201): an unreadable-but-present config used
         # to propagate an uncaught OSError all the way out of the hook.
         # Fixed here to fail safe (gate off) like every other read failure in
         # this hook, rather than crashing the PreToolUse hook outright.
-        module = _module()
-        (self.destination / ".raven").mkdir()
+        module = self._installed_module()
         config = self.destination / ".raven" / "config.toml"
         config.write_text("[skeleton]\nread_gate = true\n", encoding="utf-8")
         config.chmod(0o000)
         try:
-            self.assertEqual(self._with_cwd(module._gate_config), (False, module.DEFAULT_THRESHOLD))
+            self.assertEqual(module._gate_config(), (False, module.DEFAULT_THRESHOLD))
         finally:
             config.chmod(0o644)
 
@@ -225,10 +237,25 @@ class IsSupportedTests(RavenTestCase):
                 self.assertFalse(module.is_supported(f"/repo/{name}"))
 
 
-class GuardHookEndToEndTests(RavenTestCase):
-    """Drive the hook as a subprocess with cwd at a temp project so it reads a
-    temp .raven/config.toml, matching how Claude invokes it.
+class GuardHookEndToEndTests(_InstalledHookTestCase):
+    """Drive the installed hook copy as a subprocess; the config comes from the
+    install root, independent of the process cwd.
     """
+
+    def _run_hook(self, payload, *, cwd=None, gemini=False) -> subprocess.CompletedProcess:
+        hook = self._install(gemini=gemini)
+        if gemini:
+            hook = self.destination / ".gemini" / "hooks" / GUARD_SCRIPT.name
+        env = {k: v for k, v in os.environ.items() if k != "GEMINI_PROJECT_DIR"}
+        return subprocess.run(
+            [sys.executable, str(hook)],
+            input=payload if isinstance(payload, str) else json.dumps(payload),
+            capture_output=True,
+            text=True,
+            cwd=cwd or self.destination,
+            env=env,
+            check=False,
+        )
 
     def _setup_project(self, *, gate_enabled: bool, lines: int, filename: str = "big.py"):
         (self.destination / ".raven").mkdir(parents=True, exist_ok=True)
@@ -239,15 +266,7 @@ class GuardHookEndToEndTests(RavenTestCase):
         return self.destination / filename
 
     def _run(self, file_path) -> subprocess.CompletedProcess:
-        payload = json.dumps({"tool_name": "Read", "tool_input": {"file_path": str(file_path)}})
-        return subprocess.run(
-            [sys.executable, str(GUARD_SCRIPT)],
-            input=payload,
-            capture_output=True,
-            text=True,
-            cwd=self.destination,
-            check=False,
-        )
+        return self._run_hook({"tool_name": "Read", "tool_input": {"file_path": str(file_path)}})
 
     @unittest.skipUnless(HAVE_SKELETON_BACKEND, "no skeleton backend (ast-grep/rg) on PATH")
     def test_denies_large_unbounded_read_when_enabled(self):
@@ -258,7 +277,9 @@ class GuardHookEndToEndTests(RavenTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         decision = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertIn("raven-skeleton", decision["permissionDecisionReason"].lower())
+        reason = decision["permissionDecisionReason"]
+        self.assertIn(".claude/scripts/raven-skeleton.py", reason)
+        self.assertIn("offset/limit", reason)
 
     @unittest.skipUnless(HAVE_SKELETON_BACKEND, "no skeleton backend (ast-grep/rg) on PATH")
     def test_denies_large_unbounded_read_for_gemini_payload(self):
@@ -270,18 +291,51 @@ class GuardHookEndToEndTests(RavenTestCase):
                 "tool_input": {"file_path": str(path)},
             }
         )
-        result = subprocess.run(
-            [sys.executable, str(GUARD_SCRIPT)],
-            input=payload,
-            capture_output=True,
-            text=True,
-            cwd=self.destination,
-            check=False,
-        )
+        result = self._run_hook(payload)
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads(result.stdout)
         self.assertEqual(data["decision"], "deny")
         self.assertIn("raven-skeleton", data["reason"].lower())
+
+    @unittest.skipUnless(HAVE_SKELETON_BACKEND, "no skeleton backend (ast-grep/rg) on PATH")
+    def test_denies_from_a_subdirectory_cwd(self):
+        path = self._setup_project(gate_enabled=True, lines=600)
+        sub = self.destination / "sub"
+        sub.mkdir()
+        result = self._run_hook(
+            {"tool_name": "Read", "tool_input": {"file_path": str(path)}}, cwd=sub
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        decision = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+
+    @unittest.skipUnless(HAVE_SKELETON_BACKEND, "no skeleton backend (ast-grep/rg) on PATH")
+    def test_resolves_relative_gemini_path_against_payload_cwd(self):
+        self._setup_project(gate_enabled=True, lines=600)
+        sub = self.destination / "sub"
+        sub.mkdir()
+        result = self._run_hook(self._gemini_payload("big.py"), cwd=sub, gemini=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["decision"], "deny")
+
+    @unittest.skipUnless(HAVE_SKELETON_BACKEND, "no skeleton backend (ast-grep/rg) on PATH")
+    def test_gemini_deny_names_gemini_helper_and_line_params(self):
+        path = self._setup_project(gate_enabled=True, lines=600)
+        result = self._run_hook(self._gemini_payload(str(path)), gemini=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        reason = json.loads(result.stdout)["reason"]
+        for expected in (".gemini/scripts/raven-skeleton.py", "start_line", "end_line"):
+            self.assertIn(expected, reason)
+        for unexpected in (".claude/", "offset"):
+            self.assertNotIn(unexpected, reason)
+
+    def _gemini_payload(self, file_path: str) -> dict:
+        return {
+            "hook_event_name": "BeforeTool",
+            "tool_name": "read_file",
+            "cwd": str(self.destination),
+            "tool_input": {"file_path": file_path},
+        }
 
     def test_allows_bounded_read_for_gemini_payload(self):
         path = self._setup_project(gate_enabled=True, lines=2000)
@@ -292,14 +346,7 @@ class GuardHookEndToEndTests(RavenTestCase):
                 "tool_input": {"file_path": str(path), "start_line": 1, "end_line": 50},
             }
         )
-        result = subprocess.run(
-            [sys.executable, str(GUARD_SCRIPT)],
-            input=payload,
-            capture_output=True,
-            text=True,
-            cwd=self.destination,
-            check=False,
-        )
+        result = self._run_hook(payload)
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "")
 
@@ -318,14 +365,7 @@ class GuardHookEndToEndTests(RavenTestCase):
         payload = json.dumps(
             {"tool_name": "Read", "tool_input": {"file_path": str(path), "offset": 1, "limit": 50}}
         )
-        result = subprocess.run(
-            [sys.executable, str(GUARD_SCRIPT)],
-            input=payload,
-            capture_output=True,
-            text=True,
-            cwd=self.destination,
-            check=False,
-        )
+        result = self._run_hook(payload)
         self.assertEqual(result.returncode, 0)
 
     def test_unrelated_table_does_not_gate_small_file(self):
@@ -344,14 +384,7 @@ class GuardHookEndToEndTests(RavenTestCase):
         self.assertEqual(result.stdout, "")
 
     def test_tolerates_null_tool_input(self):
-        result = subprocess.run(
-            [sys.executable, str(GUARD_SCRIPT)],
-            input=json.dumps({"tool_input": None}),
-            capture_output=True,
-            text=True,
-            cwd=self.destination,
-            check=False,
-        )
+        result = self._run_hook(json.dumps({"tool_input": None}))
         self.assertEqual(result.returncode, 0)
 
 

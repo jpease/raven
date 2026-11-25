@@ -2,7 +2,8 @@
 
 """Raven skeleton-first read gate (rung 2).
 
-A Claude Code ``PreToolUse`` hook for ``Read``. When enabled in
+A Claude Code ``PreToolUse`` hook for ``Read`` and a Gemini CLI ``BeforeTool``
+hook for ``read_file``. When enabled in
 ``.raven/config.toml``, it denies *unbounded* reads of large supported-language
 files and points the agent at the ``raven-skeleton`` helper so it fetches a
 symbol map and reads only the ranges it needs.
@@ -43,6 +44,11 @@ SUPPORTED_EXTENSIONS = {
 }
 
 
+def _project_root() -> Path:
+    """Install root of the adapter this script lives in (``<root>/.<adapter>/hooks/``)."""
+    return Path(__file__).resolve().parents[2]
+
+
 def _raven_config_module():
     """Import ``.raven/git-hooks/lib/raven_config.py`` for its quote-aware
     comment stripping and boolean parsing.
@@ -55,7 +61,7 @@ def _raven_config_module():
     mechanism ``load_prober`` in ``raven-capability-roster.py`` already uses
     to reach a sibling script.
     """
-    path = Path(__file__).resolve().parents[2] / ".raven" / "git-hooks" / "lib" / "raven_config.py"
+    path = _project_root() / ".raven" / "git-hooks" / "lib" / "raven_config.py"
     spec = importlib.util.spec_from_file_location(
         "raven_config_for_skeleton_guard",
         path,
@@ -166,7 +172,8 @@ def _line_count(path: str) -> int:
 
 
 def _gate_config() -> tuple[bool, int]:
-    """Read and parse the gate config, failing safe (gate off) on any read error.
+    """Read and parse the gate config from the install root's
+    ``.raven/config.toml`` (never the process cwd), failing safe (gate off) on any read error.
 
     Previously this had no ``try``/``except`` around ``read_text()`` at all: a
     present-but-unreadable config (e.g. bad permissions) propagated an
@@ -175,7 +182,7 @@ def _gate_config() -> tuple[bool, int]:
     so it is fixed here rather than preserved, matching the missing-file case
     just above it.
     """
-    config = Path(".raven/config.toml")
+    config = _project_root() / ".raven" / "config.toml"
     if not config.exists():
         return (False, DEFAULT_THRESHOLD)
     try:
@@ -183,6 +190,17 @@ def _gate_config() -> tuple[bool, int]:
     except OSError:
         return (False, DEFAULT_THRESHOLD)
     return parse_gate_config(text)
+
+
+def _resolve_target(path: str, payload: dict) -> str:
+    """Absolute form of ``path``: relative paths resolve against the payload
+    ``cwd`` (Gemini workspace dir) when set, else the install root.
+    """
+    if os.path.isabs(path):
+        return path
+    cwd = payload.get("cwd")
+    base = cwd if isinstance(cwd, str) and cwd else str(_project_root())
+    return os.path.join(base, path)
 
 
 def _load_payload() -> dict | None:
@@ -248,12 +266,13 @@ def main() -> int:
     path = tool_input.get("file_path") or tool_input.get("path") or ""
     if not path or not is_supported(path) or not is_unbounded_read(tool_input):
         return 0
-    if not os.path.isfile(path):
+    target = _resolve_target(path, payload)
+    if not os.path.isfile(target):
         return 0
 
     if not should_gate(
         tool_input,
-        _line_count(path),
+        _line_count(target),
         enabled=enabled,
         threshold=threshold,
         supported=True,
@@ -261,13 +280,21 @@ def main() -> int:
     ):
         return 0
 
-    return _deny(
-        f"Skeleton-first read gate: {path} is large. Get a symbol map first with the "
-        "raven-skeleton helper (.claude/scripts/raven-skeleton.py <file>), then Read only "
-        "the ranges you need, or pass offset/limit for a bounded read. See the "
-        "raven-skeleton skill.",
-        payload,
-    )
+    if _is_gemini_hook(payload):
+        message = (
+            f"Skeleton-first read gate: {path} is large. Get a symbol map first with the "
+            "raven-skeleton helper (.gemini/scripts/raven-skeleton.py <file>), then call "
+            "read_file with start_line/end_line for only the ranges you need. See the "
+            "raven-skeleton skill."
+        )
+    else:
+        message = (
+            f"Skeleton-first read gate: {path} is large. Get a symbol map first with the "
+            "raven-skeleton helper (.claude/scripts/raven-skeleton.py <file>), then Read only "
+            "the ranges you need, or pass offset/limit for a bounded read. See the "
+            "raven-skeleton skill."
+        )
+    return _deny(message, payload)
 
 
 if __name__ == "__main__":
