@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -58,6 +59,23 @@ class MatchTests(RavenTestCase):
                 self.assertIsNone(module.matches(path))
 
 
+class TargetPathTests(RavenTestCase):
+    def test_target_path_reads_uri_path_host_or_file_keys(self):
+        target = _module()._target_path
+
+        def mcp(uri):
+            return {"tool_name": "read_mcp_resource", "tool_input": {"uri": uri}}
+
+        self.assertEqual(target(mcp("file:///repo/.env")), "/repo/.env")
+        self.assertEqual(target(mcp("file:///r/%2Eenv?raw=1")), "/r/.env")
+        self.assertEqual(target(mcp("repo://x/secrets/a.json")), "/secrets/a.json")
+        self.assertEqual(target(mcp("config://.env")), ".env")
+        self.assertIsNone(target(mcp("")))
+        self.assertIsNone(target({"tool_name": "read_mcp_resource", "tool_input": {"uri": 3}}))
+        self.assertIsNone(target({"tool_name": "read_mcp_resource", "tool_input": {}}))
+        self.assertEqual(target({"tool_name": "read_file", "tool_input": {"path": "a"}}), "a")
+
+
 class EndToEndTests(RavenTestCase):
     def _run(self, file_path: str, cwd: str | None = None) -> str:
         payload = {
@@ -77,11 +95,16 @@ class EndToEndTests(RavenTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout
 
-    def _run_gemini(self, file_path: str, key: str = "file_path") -> str:
+    def _run_gemini(
+        self, file_path: str, key: str = "file_path", tool_name: str = "read_file"
+    ) -> str:
+        return self._run_gemini_input({key: file_path}, tool_name)
+
+    def _run_gemini_input(self, tool_input: dict, tool_name: str) -> str:
         payload = {
             "hook_event_name": "BeforeTool",
-            "tool_name": "read_file",
-            "tool_input": {key: file_path},
+            "tool_name": tool_name,
+            "tool_input": tool_input,
             "cwd": str(self.destination),
         }
         result = subprocess.run(
@@ -110,6 +133,26 @@ class EndToEndTests(RavenTestCase):
                 self.assertNotIn("hookSpecificOutput", output)
                 self.assertIn("`", output["reason"])
                 self.assertIn(path.split("/")[0] if "/" in path else path, output["reason"])
+
+    def test_gemini_mcp_resource_uris_are_checked_by_path(self):
+        for uri in (
+            "file:///r/.env",
+            "file:///r/%2Eenv",
+            "file:///r/.env?raw=1",
+            "config://.env",
+            "repo://x/secrets/a.json",
+        ):
+            with self.subTest(uri=uri):
+                output = json.loads(self._run_gemini(uri, "uri", "read_mcp_resource"))
+                self.assertEqual(output["decision"], "deny")
+                self.assertIn(uri, output["reason"])
+        for tool_input in ({"uri": "postgres://db/schema"}, {}, {"uri": ""}, {"uri": 5}):
+            with self.subTest(tool_input=tool_input):
+                self.assertEqual(self._run_gemini_input(tool_input, "read_mcp_resource"), "")
+
+    def test_gemini_mcp_prefixed_read_file_is_denied(self):
+        output = json.loads(self._run_gemini("secrets/x", "path", "mcp_fs_read_file"))
+        self.assertEqual(output["decision"], "deny")
 
     def test_gemini_ordinary_read_is_silent(self):
         self.assertEqual(self._run_gemini("src/app.py"), "")
@@ -198,3 +241,17 @@ class SettingsParityTests(RavenTestCase):
             any("raven-pre-read-secret-guard.py" in c for c in commands),
             commands,
         )
+
+    def test_the_hook_is_wired_on_gemini_read_tools(self):
+        settings = json.loads(
+            (REPO_ROOT / "common" / ".gemini" / "settings.json").read_text(encoding="utf-8")
+        )
+        matchers = [
+            group["matcher"]
+            for group in settings["hooks"]["BeforeTool"]
+            if any("raven-pre-read-secret-guard.py" in h["command"] for h in group["hooks"])
+        ]
+        self.assertEqual(len(matchers), 1)
+        for name in ("read_file", "read_mcp_resource", "mcp_fs_read_file"):
+            self.assertTrue(re.search(matchers[0], name), name)
+        self.assertFalse(re.search(matchers[0], "run_shell_command"))

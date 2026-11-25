@@ -20,9 +20,12 @@ covered). A hook is the one place that sees the *concrete path* a read is
 about, so it can refuse ``.env`` while saying nothing about a directory scan
 that might contain one.
 
-The hook covers Claude ``Read`` and Gemini ``read_file``. It does not cover
-Bash (``cat .env``), which belongs to ``raven-pre-bash-guard.py``, or Gemini
-``read_many_files``. Codex has no Read tool, so it is not wired there.
+The hook covers Claude ``Read``, Gemini ``read_file`` (and MCP tools whose name
+contains it), and Gemini ``read_mcp_resource``, whose ``uri`` path is checked.
+It does not cover Bash (``cat .env``), which belongs to
+``raven-pre-bash-guard.py``. Gemini's ``@path`` prompt syntax reads through
+``read_many_files`` without a ``BeforeTool`` event, so the user's own ``@``
+references are not guarded. Codex has no Read tool, so it is not wired there.
 
 ``[hooks] block_secret_reads = false`` in ``.raven/config.toml`` turns this off,
 the same shape ``block_gate_relaxation`` uses: a repository-level decision made
@@ -36,6 +39,7 @@ import importlib.util
 import json
 import os
 import sys
+import urllib.parse
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
@@ -149,17 +153,26 @@ def _deny(reason: str, payload: dict) -> int:
     return 0
 
 
+def _target_path(payload: dict) -> str | None:
+    """Return the path a read names; for ``read_mcp_resource``, the URI's path or host."""
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return None
+    if payload.get("tool_name") == "read_mcp_resource":
+        uri = tool_input.get("uri")
+        if not isinstance(uri, str) or not uri:
+            return None
+        split = urllib.parse.urlsplit(uri)
+        return urllib.parse.unquote(split.path) or split.netloc or None
+    return tool_input.get("file_path") or tool_input.get("path")
+
+
 def main() -> int:
     """Deny a Read whose target matches one of the ported secret rules."""
     payload = _load_payload()
     if payload is None:
         return 0
-    tool_input = payload.get("tool_input") or {}
-    file_path = (
-        (tool_input.get("file_path") or tool_input.get("path"))
-        if isinstance(tool_input, dict)
-        else None
-    )
+    file_path = _target_path(payload)
     if not isinstance(file_path, str) or not file_path:
         return 0
 
@@ -172,8 +185,13 @@ def main() -> int:
     if not _enabled(start):
         return 0
 
+    shown = (
+        payload.get("tool_input", {}).get("uri")
+        if payload.get("tool_name") == "read_mcp_resource"
+        else file_path
+    )
     return _deny(
-        f"{file_path} matches the secret-file rule `{rule}`. Raven blocks reading credential "
+        f"{shown} matches the secret-file rule `{rule}`. Raven blocks reading credential "
         "material into the transcript. Stop and tell the user which file was blocked; do not "
         "read it through another tool or command. If the file holds no secrets (an example or "
         "fixture), the user can rename it or set `block_secret_reads = false` under `[hooks]` "

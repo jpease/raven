@@ -81,7 +81,7 @@
             "type": "command"
           }
         ],
-        "matcher": "read_file"
+        "matcher": "read_file|read_mcp_resource"
       },
       {
         "hooks": [
