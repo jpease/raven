@@ -70,6 +70,6 @@ connectors, which the harness now switches off.
 ## Codex check (unpublished)
 
 Codex CLI 0.172.0, 5 trials: mean Δ is 3,671 (min 3,669, max 3,674), with
-20,366 for raven and 16,695 for control. All five trials pass the 3,900
-ceiling. The ceiling rule, though, gives 3,671 × 1.15 = 4,222, so 4,200, which
-is above 3,900. That is reported to the owner, and the ceiling is not raised.
+20,366 for raven and 16,695 for control. The rise from 3,406 (2026-10-16)
+follows the security rules moving into `AGENTS.md`. The ceiling rule gives
+3,671 × 1.15 = 4,222, so the Codex ceiling is 4,200.

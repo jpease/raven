@@ -225,13 +225,12 @@ arm of the same trial by over the ceiling for its agent, so guidance that grows
 past the budget shows up as a FAIL. Comparing the two arms keeps the agent
 CLI's own prompt out of the check, so a CLI update cannot trip it. The ceilings
 are `FIXED_COST_OVERHEAD_CEILINGS` in `evals/scenarios.py`: the latest measured
-difference plus about 15%, from `docs/evaluation/fixed-cost-attribution.md`
-(Claude) and `docs/evaluation/results-codex.md` (Codex).
+difference plus about 15%, from `docs/evaluation/fixed-cost-attribution.md`.
 
 | Agent | Ceiling | Measured difference (raven - control) |
 |---|---|---|
 | claude | 6,300 | 5,508 = 23,556 - 18,049 (mean of 5 `baseline` ablation trials, 2026-11-24) |
-| codex | 3,900 | 3,406 = 17,731 - 14,325 (mean of 5 trials, 2026-10-16) |
+| codex | 4,200 | 3,671 = 20,366 - 16,695 (mean of 5 trials, 2026-11-24) |
 
 Gemini has no measured figure, so it has no ceiling. Control arms are never
 failed by the ceiling. A raven trial fails when either arm of its trial reports
