@@ -159,3 +159,41 @@ class GeminiAgentToolAllowlistTests(unittest.TestCase):
             with self.subTest(agent=agent_name):
                 tools = gemini_tools(GEMINI_AGENTS_DIR / f"{agent_name}.md")
                 self.assertLessEqual(set(GEMINI_MCP_READ_TOOLS), set(tools))
+
+
+CODEX_AGENTS_DIR = REPO_ROOT / "common" / ".codex" / "agents"
+IGNORED_CODEX_ROLE_KEYS = ("sandbox_mode", "approval_policy", "model_provider")
+CODEX_SUBAGENT_DOCS = "https://developers.openai.com/codex/subagents"
+
+
+class CodexAgentRoleKeysTests(unittest.TestCase):
+    def _paths(self):
+        paths = sorted(CODEX_AGENTS_DIR.glob("raven-*.toml"))
+        self.assertTrue(paths)
+        return paths
+
+    def test_no_agent_sets_a_key_codex_ignores(self):
+        for path in self._paths():
+            lines = path.read_text(encoding="utf-8").splitlines()
+            with self.subTest(agent=path.stem):
+                for key in IGNORED_CODEX_ROLE_KEYS:
+                    pattern = re.compile(rf"^\s*{key}\s*=")
+                    self.assertFalse(
+                        any(pattern.match(line) for line in lines),
+                        f"{path.name} sets {key}, which Codex ignores in custom agents: {CODEX_SUBAGENT_DOCS}",
+                    )
+                self.assertFalse(
+                    any(re.match(r"^\s*\[mcp_servers", line) for line in lines),
+                    f"{path.name} sets mcp_servers, which Codex ignores in custom agents: {CODEX_SUBAGENT_DOCS}",
+                )
+
+    def test_only_prose_reviewer_disables_shell(self):
+        for path in self._paths():
+            lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
+            disabled = "shell_tool = false" in lines
+            with self.subTest(agent=path.stem):
+                if path.stem == "raven-prose-reviewer":
+                    self.assertIn("[features]", lines)
+                    self.assertEqual(lines[lines.index("[features]") + 1], "shell_tool = false")
+                else:
+                    self.assertFalse(disabled)

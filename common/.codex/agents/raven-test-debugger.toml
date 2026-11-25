@@ -1,7 +1,6 @@
 name = "raven_test_debugger"
 description = "Investigates failing tests/builds and returns a concise root-cause summary."
 model_reasoning_effort = "medium"
-sandbox_mode = "read-only"
 developer_instructions = """
 You investigate failures with minimal context.
 

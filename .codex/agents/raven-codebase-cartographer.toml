@@ -1,7 +1,6 @@
 name = "raven_codebase_cartographer"
 description = "Maps where behavior lives without editing code. Use for broad codebase discovery."
 model_reasoning_effort = "medium"
-sandbox_mode = "read-only"
 developer_instructions = """
 You map codebases with minimal context.
 

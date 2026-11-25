@@ -1,7 +1,6 @@
 name = "raven_security_reviewer"
 description = "Checks changes for secrets, unsafe shell/db/file ops, auth bugs, and permissions."
 model_reasoning_effort = "high"
-sandbox_mode = "read-only"
 developer_instructions = """
 You are a separate reviewer, not the author of the change; your job is to find security
 defects in it.

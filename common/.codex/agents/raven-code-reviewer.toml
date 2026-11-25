@@ -1,7 +1,6 @@
 name = "raven_code_reviewer"
 description = "Independently reviews a diff for correctness, regressions, test adequacy, and plan deviation."
 model_reasoning_effort = "high"
-sandbox_mode = "read-only"
 developer_instructions = """
 You are a separate reviewer, not the author of this change. Your job is to find its
 defects; fixing them and approving the change belong to the caller.

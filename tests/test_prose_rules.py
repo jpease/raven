@@ -325,14 +325,16 @@ class ProseReviewerAgentTests(unittest.TestCase):
         self.assertTrue((GEMINI_AGENTS / "raven-prose-reviewer.md").exists())
 
     def test_agent_is_read_only(self):
-        """It writes prose from an outline. It has no reason to run commands
-        or touch the filesystem.
+        """It writes prose from an outline and has no reason to run commands.
+        Codex cannot sandbox a single agent, so the agent drops its shell
+        instead.
         """
         claude = (CLAUDE_AGENTS / "raven-prose-reviewer.md").read_text(encoding="utf-8")
         self.assertIn("tools: Read", claude)
         self.assertNotIn("Bash", claude)
         codex = (CODEX_AGENTS / "raven-prose-reviewer.toml").read_text(encoding="utf-8")
-        self.assertIn('sandbox_mode = "read-only"', codex)
+        self.assertIn("shell_tool = false", codex)
+        self.assertNotIn("sandbox_mode", codex)
         gemini = (GEMINI_AGENTS / "raven-prose-reviewer.md").read_text(encoding="utf-8")
         self.assertIn("tools: [read_file]", gemini)
         self.assertNotIn("run_shell_command", gemini)

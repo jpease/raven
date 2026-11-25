@@ -46,7 +46,7 @@ harnesses behave differently for no stated reason.
 Codex-specific files:
 
 - `.codex/config.toml`: Codex project config, including subagent concurrency defaults and MCP servers. `agents.max_concurrent_threads_per_session` is pinned deliberately, so Raven's behavior stays stable across Codex releases instead of drifting silently if Codex changes its own default — not an oversight to "clean up" as redundant. It replaced `max_threads`, now a legacy alias that is reported to error under Codex's `multi_agent_v2`, and `max_depth`, which V2 ignores (both verified against the Codex config reference, 2026-09-02).
-- `.codex/agents/raven-*.toml`: Codex custom agents.
+- `.codex/agents/raven-*.toml`: Codex custom agents. A custom agent runs with the parent session's sandbox and approval settings, and its file cannot make it read-only. Raven's Codex reviewers avoid edits through their instructions and the `raven-pre-edit-guard` hook. `raven-prose-reviewer` also sets `features.shell_tool = false`. See the [Codex subagents docs](https://developers.openai.com/codex/subagents).
 - `.codex/hooks.json`: Codex hook wiring.
 - `.codex/hooks/raven-*.py`: Codex hook scripts.
 - `.codex/rules/raven.rules`: Codex command approval rules.
