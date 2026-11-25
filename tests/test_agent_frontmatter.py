@@ -119,10 +119,6 @@ class ReadOnlyAgentDisallowedToolsTests(unittest.TestCase):
                 )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 def gemini_tools(path):
     raw = frontmatter_fields(path)["tools"]
     match = re.fullmatch(r"\[(.*)\]", raw)
@@ -197,3 +193,7 @@ class CodexAgentRoleKeysTests(unittest.TestCase):
                     self.assertEqual(lines[lines.index("[features]") + 1], "shell_tool = false")
                 else:
                     self.assertFalse(disabled)
+
+
+if __name__ == "__main__":
+    unittest.main()
