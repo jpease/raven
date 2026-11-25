@@ -31,11 +31,44 @@ def _load_payload() -> dict | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _extract_path(payload: dict) -> str:
+_PATCH_HEADER = re.compile(r"^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$")
+
+
+def _patch_paths(text: str) -> list[str]:
+    """Every file a Codex ``apply_patch`` payload adds, updates, deletes, or moves to.
+
+    Headers are matched on the stripped line, as Codex's own parser does. An
+    add-hunk content line starts with ``+``, so it never matches. ``*** Environment
+    ID:`` names a remote executor, not a file, and is not captured.
+    """
+    paths: list[str] = []
+    for line in text.splitlines():
+        match = _PATCH_HEADER.match(line.strip())
+        if match is None:
+            continue
+        path = match.group(1).strip()
+        if path and path not in paths:
+            paths.append(path)
+    return paths
+
+
+def _extract_paths(payload: dict) -> list[str]:
     tool_input = payload.get("tool_input") or {}
     if not isinstance(tool_input, dict):
-        tool_input = {}
-    return tool_input.get("file_path") or tool_input.get("path") or payload.get("file_path") or ""
+        return []
+    command = tool_input.get("command")
+    if payload.get("tool_name") == "apply_patch" and isinstance(command, str):
+        return _patch_paths(command)
+    path = tool_input.get("file_path") or tool_input.get("path") or payload.get("file_path")
+    return [path] if path and isinstance(path, str) else []
+
+
+def _anchored(path: str, payload: dict) -> str:
+    """``path`` joined onto the payload ``cwd`` when it is relative and ``cwd`` is absolute."""
+    cwd = payload.get("cwd")
+    if isinstance(cwd, str) and os.path.isabs(cwd) and not os.path.isabs(path):
+        return os.path.join(cwd, path)
+    return path
 
 
 def _is_gemini_hook(payload: dict) -> bool:
@@ -241,8 +274,8 @@ def main() -> int:
     if payload is None:
         return 0
 
-    path = _extract_path(payload)
-    if not path:
+    paths = _extract_paths(payload)
+    if not paths:
         return 0
 
     # Collapse `..` traversal lexically (no filesystem access -- this must stay
@@ -251,19 +284,33 @@ def main() -> int:
     # POSIX input. os.path.normpath never introduces a leading "./" for a
     # plain relative path on a POSIX host, so it does not break the `(^|/)`
     # anchors below (verified: normpath("docs/credentials-design.md") ==
-    # "docs/credentials-design.md", normpath(".env") == ".env").
-    normalized = os.path.normpath(path.replace("\\", "/"))
+    # "docs/credentials-design.md", normpath(".env") == ".env"). The path is
+    # matched as written, not joined onto the session `cwd`, so a session
+    # directory such as `.../secrets/app` does not block every relative edit.
+    normalized = {path: os.path.normpath(path.replace("\\", "/")) for path in paths}
 
-    if any(re.search(pattern, normalized, re.IGNORECASE) for pattern in BLOCKED):
-        return _deny(f"Protected file path. Confirm intent before editing: {path}", payload)
+    blocked = [
+        path
+        for path, norm in normalized.items()
+        if any(re.search(pattern, norm, re.IGNORECASE) for pattern in BLOCKED)
+    ]
+    if blocked:
+        return _deny(
+            "Protected file path. Confirm intent before editing: " + ", ".join(blocked), payload
+        )
 
     patterns, decision = read_protected_paths()
     if patterns:
-        relative = relative_to_root(path, _project_root())
-        pattern = matching_protected_pattern(relative, patterns)
-        if pattern is not None:
+        matches: list[tuple[str, str]] = []
+        for path in paths:
+            relative = relative_to_root(_anchored(path, payload), _project_root())
+            pattern = matching_protected_pattern(relative, patterns)
+            if pattern is not None:
+                matches.append((relative, pattern))
+        if matches:
+            listing = "; ".join(f"{relative} matches `{pattern}`" for relative, pattern in matches)
             message = (
-                f"{relative} matches `{pattern}` in .raven/config.toml [edit_guard] "
+                f"{listing} in .raven/config.toml [edit_guard] "
                 "protected_paths. Pause and ask before editing it unless the user "
                 "already approved this change."
             )
@@ -273,9 +320,16 @@ def main() -> int:
                 _context(message, payload)
             return 0
 
-    if any(re.search(pattern, normalized, re.IGNORECASE) for pattern in CAUTION):
+    cautioned = [
+        path
+        for path, norm in normalized.items()
+        if any(re.search(pattern, norm, re.IGNORECASE) for pattern in CAUTION)
+    ]
+    if cautioned:
         _context(
-            f"High-churn or generated/protected path. Edit only when required: {path}", payload
+            "High-churn or generated/protected path. Edit only when required: "
+            + ", ".join(cautioned),
+            payload,
         )
 
     return 0

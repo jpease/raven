@@ -87,6 +87,26 @@ class EndToEndTests(RavenTestCase):
         (self.destination / ".raven" / "config.toml").write_text(config, encoding="utf-8")
         return hooks / HOOK.name
 
+    def _run_patch(
+        self, hook: Path, *paths: str, cwd: Path | None = None
+    ) -> subprocess.CompletedProcess:
+        headers = "".join(f"*** Update File: {path}\n@@\n-a\n+b\n" for path in paths)
+        payload = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "apply_patch",
+            "tool_input": {"command": f"*** Begin Patch\n{headers}*** End Patch"},
+        }
+        if cwd is not None:
+            payload["cwd"] = str(cwd)
+        return subprocess.run(
+            [sys.executable, str(hook)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            cwd=self.destination,
+            check=False,
+        )
+
     def _run(self, hook: Path, path: str) -> subprocess.CompletedProcess:
         payload = {
             "hook_event_name": "PreToolUse",
@@ -122,11 +142,29 @@ class EndToEndTests(RavenTestCase):
 
     def test_codex_gets_context_because_it_has_no_ask(self):
         hook = self._install(".codex", self.PROTECTED)
-        result = self._run(hook, "migrations/0001.py")
+        result = self._run_patch(hook, "migrations/0001.py")
         self.assertEqual(result.returncode, 0, result.stderr)
         output = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertNotIn("permissionDecision", output)
         self.assertIn("migrations/*", output["additionalContext"])
+
+    def test_codex_patch_lists_every_protected_path(self):
+        hook = self._install(".codex", self.PROTECTED)
+        result = self._run_patch(hook, "migrations/0001.py", "src/app.py", "migrations/0002.py")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertIn("migrations/0001.py", output["additionalContext"])
+        self.assertIn("migrations/0002.py", output["additionalContext"])
+        self.assertNotIn("src/app.py", output["additionalContext"])
+
+    def test_codex_patch_path_is_resolved_against_payload_cwd(self):
+        hook = self._install(".codex", self.PROTECTED)
+        sub = self.destination / "sub"
+        sub.mkdir()
+        result = self._run_patch(hook, "../migrations/0001.py", cwd=sub)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertIn("migrations/0001.py", output["additionalContext"])
 
     def test_gemini_gets_context_and_system_message_because_it_has_no_ask(self):
         hook = self._install(".gemini", self.PROTECTED)

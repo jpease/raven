@@ -903,7 +903,9 @@ class AgentHooksTests(RavenTestCase):
                 {
                     "hook_event_name": "PreToolUse",
                     "tool_name": "apply_patch",
-                    "tool_input": {"file_path": ".env"},
+                    "tool_input": {
+                        "command": "*** Begin Patch\n*** Add File: .env\n+X=1\n*** End Patch"
+                    },
                 },
             ),
         ]
@@ -1000,13 +1002,19 @@ def _claude_edit_payload(path: str) -> str:
     return json.dumps({"tool_input": {"file_path": path}})
 
 
-def _codex_edit_payload(path: str) -> str:
+def _codex_patch_payload(command: object) -> str:
     return json.dumps(
         {
             "hook_event_name": "PreToolUse",
             "tool_name": "apply_patch",
-            "tool_input": {"file_path": path},
+            "tool_input": {"command": command},
         }
+    )
+
+
+def _codex_edit_payload(path: str) -> str:
+    return _codex_patch_payload(
+        f"*** Begin Patch\n*** Update File: {path}\n@@\n-a\n+b\n*** End Patch"
     )
 
 
@@ -1053,6 +1061,94 @@ class CredentialsPathGuardTests(unittest.TestCase):
                 result = _run_edit_guard(EDIT_GUARD_CODEX, _codex_edit_payload(path))
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout, "")
+
+
+def _patch(*lines: str) -> str:
+    return "\n".join(["*** Begin Patch", *lines, "*** End Patch"])
+
+
+class CodexApplyPatchEditGuardTests(unittest.TestCase):
+    """Codex sends the patch text as ``tool_input.command``; the guard parses its headers."""
+
+    def _run(self, command: object) -> subprocess.CompletedProcess:
+        return _run_edit_guard(EDIT_GUARD_CODEX, _codex_patch_payload(command))
+
+    def _assert_denied(self, result: subprocess.CompletedProcess, *named: str) -> None:
+        self.assertEqual(result.returncode, 0, result.stderr)
+        decision = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        for path in named:
+            self.assertIn(path, decision["permissionDecisionReason"])
+
+    def test_multi_file_patch_is_denied_when_only_the_second_file_is_blocked(self):
+        result = self._run(
+            _patch(
+                "*** Update File: src/app.py", "@@", "-a", "+b", "*** Add File: config/.env", "+X=1"
+            )
+        )
+        self._assert_denied(result, "config/.env")
+        self.assertNotIn(
+            "src/app.py",
+            json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"],
+        )
+
+    def test_move_target_is_checked(self):
+        result = self._run(_patch("*** Update File: safe.txt", "*** Move to: .env.local"))
+        self._assert_denied(result, ".env.local")
+
+    def test_deleting_a_secret_is_denied(self):
+        result = self._run(_patch("*** Delete File: secrets/key.pem"))
+        self._assert_denied(result, "secrets/key.pem")
+
+    def test_header_inside_an_add_hunk_line_is_not_a_target(self):
+        result = self._run(_patch("*** Add File: notes.txt", "+*** Update File: .env"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+
+    def test_environment_id_is_not_a_path_but_hunks_are_still_checked(self):
+        allowed = self._run(
+            "*** Begin Patch\n*** Environment ID: .env\n*** Add File: a.txt\n+x\n*** End Patch"
+        )
+        self.assertEqual(allowed.returncode, 0, allowed.stderr)
+        self.assertEqual(allowed.stdout, "")
+        denied = self._run(
+            "*** Begin Patch\n*** Environment ID: remote\n*** Add File: .env\n+x\n*** End Patch"
+        )
+        self._assert_denied(denied, ".env")
+
+    def test_caution_paths_yield_a_single_context_object_naming_each(self):
+        result = self._run(
+            _patch(
+                "*** Update File: Cargo.lock",
+                "@@",
+                "-a",
+                "+b",
+                "*** Update File: web/package-lock.json",
+                "@@",
+                "-a",
+                "+b",
+            )
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertNotIn("permissionDecision", output)
+        self.assertIn("Cargo.lock", output["additionalContext"])
+        self.assertIn("web/package-lock.json", output["additionalContext"])
+
+    def test_non_string_command_is_ignored(self):
+        for command in (None, 123):
+            with self.subTest(command=command):
+                result = self._run(command)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+
+    def test_legacy_file_path_payload_is_still_denied(self):
+        payload = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "apply_patch",
+            "tool_input": {"file_path": ".env"},
+        }
+        self._assert_denied(_run_edit_guard(EDIT_GUARD_CODEX, json.dumps(payload)), ".env")
 
 
 # --- Codex hook launcher drift guard (issue #129) ------------------------
