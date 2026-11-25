@@ -106,24 +106,5 @@
         "matcher": "startup|resume|clear"
       }
     ]
-  },
-  "mcpServers": {
-    "lsp": {
-      "args": [
-        "--workspace",
-        ".",
-        "--lsp",
-        "pyright-langserver",
-        "--",
-        "--stdio"
-      ],
-      "command": "mcp-language-server"
-    },
-    "semgrep": {
-      "args": [
-        "mcp"
-      ],
-      "command": "semgrep"
-    }
   }
 }

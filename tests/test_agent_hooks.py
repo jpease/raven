@@ -1064,6 +1064,43 @@ class CredentialsPathGuardTests(unittest.TestCase):
                 self.assertEqual(result.stdout, "")
 
 
+CAUTION_MATCH_PATHS = [
+    "uv.lock",
+    "apps/web/yarn.lock",
+    "poetry.lock",
+    "go.sum",
+    "Gemfile.lock",
+    "mix.lock",
+    "Podfile.lock",
+    "MyApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+    "migrations/0001.sql",
+    "generated/schema.ts",
+]
+CAUTION_NON_MATCH_PATHS = [
+    "my-package-lock.json",
+    "notuv.lock",
+    "docs/uv.lock-guide.md",
+    "src/go.summary.ts",
+]
+
+
+class CautionTierTests(unittest.TestCase):
+    def test_lockfile_and_generated_paths_warn(self):
+        for path in CAUTION_MATCH_PATHS:
+            with self.subTest(path=path):
+                result = _run_edit_guard(EDIT_GUARD_CLAUDE, _claude_edit_payload(path))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+                self.assertIn("High-churn", context)
+
+    def test_prefix_lookalikes_do_not_warn(self):
+        for path in CAUTION_NON_MATCH_PATHS:
+            with self.subTest(path=path):
+                result = _run_edit_guard(EDIT_GUARD_CLAUDE, _claude_edit_payload(path))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+
+
 def _patch(*lines: str) -> str:
     return "\n".join(["*** Begin Patch", *lines, "*** End Patch"])
 

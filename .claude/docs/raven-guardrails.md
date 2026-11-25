@@ -21,7 +21,7 @@ Guardrails are checks and procedures that make agent work more reliable. Prefer 
 - `.claude/hooks/raven-pre-bash-test-scope.py` adds one advisory sentence when the session's first test command covers the whole suite, and says nothing afterwards.
 - `.claude/hooks/raven-post-bash-summarize.py` nudges noisy commands toward RTK when exact raw output is not required.
 - `.claude/hooks/raven-post-bash-truncate.py` (Claude Code and Gemini CLI) replaces a Bash result longer than `[bash_output] max_lines` with its head, its tail, and the path of a file holding all of it. A tool result is re-read every later turn, so this enforces the token pillar. Codex documents a `continue: false` replacement, but codex-cli 0.172.0 did not apply it in a live run, so Codex relies on its own `tool_output_token_limit`.
-- `.claude/hooks/raven-post-edit-format.py` runs cheap formatters when available.
+- `.claude/hooks/raven-post-edit-format.py` formats the edited file with ruff, prettier, swift-format, gofmt, rustfmt, mix format, stylua or rubocop when installed, each capped at 10 s and a whole call at 20 s.
 - `.claude/settings.json`'s `permissions.deny` block adds a native, host-enforced layer over the same blocked-tier surface as the bash and edit guards. See "Two-Layer Enforcement" below.
 - `.raven/git-hooks/lib/check-gate-relaxation.py` blocks a commit that stages a suppression naming no rule — a bare `# noqa`, `@ts-ignore`, `//nolint`, `#[allow(warnings)]`, `rubocop:disable all` — in the eight languages Raven ships gates for. See "Blanket Suppressions" below.
 

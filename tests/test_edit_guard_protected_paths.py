@@ -216,7 +216,7 @@ class EndToEndTests(RavenTestCase):
 
     def test_no_config_section_changes_nothing(self):
         hook = self._install(".claude", "[skeleton]\n")
-        self.assertEqual(self._run(hook, "migrations/0001.py").stdout, "")
+        self.assertEqual(self._run(hook, "src/app.py").stdout, "")
 
     def test_secret_paths_are_still_denied_ahead_of_the_list(self):
         hook = self._install(".claude", '[edit_guard]\nprotected_paths = ["*"]\n')

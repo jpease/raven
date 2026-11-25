@@ -211,11 +211,19 @@ class EditGuardBlockedPathsHaveNativeCoverageTests(unittest.TestCase):
 #
 # The caution list is warn-only in the hook -- a deny is not a warning.
 CAUTION_PATTERN_SAMPLES: dict[str, list[str]] = {
-    r"/migrations/": ["db/migrations/0001_init.sql"],
-    r"/generated/": ["src/generated/schema.ts"],
-    r"package-lock\.json$": ["package-lock.json"],
-    r"Cargo\.lock$": ["Cargo.lock"],
-    r"pnpm-lock\.yaml$": ["pnpm-lock.yaml"],
+    r"(^|/)migrations/": ["migrations/0001_init.sql", "db/migrations/0001_init.sql"],
+    r"(^|/)generated/": ["generated/schema.ts", "src/generated/schema.ts"],
+    r"(^|/)package-lock\.json$": ["package-lock.json", "apps/web/package-lock.json"],
+    r"(^|/)pnpm-lock\.yaml$": ["pnpm-lock.yaml", "apps/web/pnpm-lock.yaml"],
+    r"(^|/)yarn\.lock$": ["yarn.lock", "apps/web/yarn.lock"],
+    r"(^|/)Cargo\.lock$": ["Cargo.lock", "apps/web/Cargo.lock"],
+    r"(^|/)uv\.lock$": ["uv.lock", "apps/web/uv.lock"],
+    r"(^|/)poetry\.lock$": ["poetry.lock", "apps/web/poetry.lock"],
+    r"(^|/)go\.sum$": ["go.sum", "apps/web/go.sum"],
+    r"(^|/)Gemfile\.lock$": ["Gemfile.lock", "apps/web/Gemfile.lock"],
+    r"(^|/)mix\.lock$": ["mix.lock", "apps/web/mix.lock"],
+    r"(^|/)Package\.resolved$": ["Package.resolved", "apps/web/Package.resolved"],
+    r"(^|/)Podfile\.lock$": ["Podfile.lock", "apps/web/Podfile.lock"],
 }
 
 

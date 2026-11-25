@@ -239,11 +239,19 @@ BLOCKED = [
     r"(^|/)credentials?(\.|/|$)",
 ]
 CAUTION = [
-    r"/migrations/",
-    r"/generated/",
-    r"package-lock\.json$",
-    r"Cargo\.lock$",
-    r"pnpm-lock\.yaml$",
+    r"(^|/)migrations/",
+    r"(^|/)generated/",
+    r"(^|/)package-lock\.json$",
+    r"(^|/)pnpm-lock\.yaml$",
+    r"(^|/)yarn\.lock$",
+    r"(^|/)Cargo\.lock$",
+    r"(^|/)uv\.lock$",
+    r"(^|/)poetry\.lock$",
+    r"(^|/)go\.sum$",
+    r"(^|/)Gemfile\.lock$",
+    r"(^|/)mix\.lock$",
+    r"(^|/)Package\.resolved$",
+    r"(^|/)Podfile\.lock$",
 ]
 
 
