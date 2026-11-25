@@ -139,9 +139,10 @@ class CodexScriptUnificationTests(RavenTestCase):
         )
 
     def test_bash_truncator_has_no_codex_counterpart(self):
-        # Same classification, same reason in kind: Codex's PostToolUse hook
-        # cannot replace a tool result, so a `.codex/hooks/` copy would be a
-        # hook that never does anything.
+        # Codex documents a `continue: false` replacement, but codex-cli 0.172.0
+        # still showed the model the original result in a live capture, so a
+        # `.codex/hooks/` copy would be a hook that never does anything. Recorded
+        # in `.claude/docs/raven-agent-compatibility.md`; wire it when that changes.
         truncator = REPO_ROOT / "common" / ".codex" / "hooks" / "raven-post-bash-truncate.py"
         self.assertFalse(
             truncator.exists() or truncator.is_symlink(),

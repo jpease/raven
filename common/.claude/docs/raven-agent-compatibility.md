@@ -101,7 +101,7 @@ trees — all three are deliberate.
 |---|---|---|
 | **Byte-identical (unified)** | One real file under `common/.claude/`; the `.codex/` and `.gemini/` paths are template-internal symlinks to it. Nothing to keep in sync. | `scripts/raven-capability-roster.py`, `scripts/raven-review-prose.py`, `scripts/raven-session.py`, `scripts/raven-skeleton.py`, `scripts/raven-tool-check.py`, `hooks/raven-run-hook.sh` (Claude and Gemini), `hooks/raven-post-bash-summarize.py`, `hooks/raven-post-edit-format.py`, `hooks/raven-pre-bash-guard.py`, `hooks/raven-pre-bash-test-scope.py`, `hooks/raven-pre-edit-guard.py` (reads its adapter directory from its install path to pick `ask` on Claude and a context warning on Codex), `hooks/raven-session-checkpoint.py` (computes its own adapter directory at runtime, same pattern as `raven-tool-check.py`, instead of hardcoding one), `hooks/raven-post-bash-truncate.py` (Claude and Gemini), `hooks/raven-pre-read-secret-guard.py` (Claude and Gemini), `hooks/raven-skeleton-read-guard.py` (Claude and Gemini) |
 | **Schema-translated** | Same role, different file format required by the harness. Not comparable line-by-line. | `.claude/agents/raven-*.md` ↔ `.codex/agents/raven-*.toml` ↔ `.gemini/agents/raven-*.md`; `.claude/settings.json` ↔ `.codex/hooks.json` ↔ `.gemini/settings.json`; `.claude/skills` as a per-file copy of `.agents/skills` ↔ Codex reading `.agents/skills` directly ↔ Gemini reading `.agents/skills` directly; `CLAUDE.md` ↔ `GEMINI.md` |
-| **Intentionally asymmetric** | Exists for one harness only, because the underlying capability does not exist in the other. See Known Asymmetries below. | `hooks/raven-skeleton-read-guard.py`, `hooks/raven-pre-read-secret-guard.py` and `hooks/raven-post-bash-truncate.py` (Claude and Gemini only); `.codex/config.toml` (Codex-only) |
+| **Intentionally asymmetric** | Exists for one harness only, because the underlying capability does not exist in the other. See Known Asymmetries below. | `hooks/raven-skeleton-read-guard.py`, `hooks/raven-pre-read-secret-guard.py` and `hooks/raven-post-bash-truncate.py` (Claude and Gemini only; see Known Asymmetries); `.codex/config.toml` (Codex-only) |
 
 ### How the unified files stay unified
 
@@ -179,15 +179,20 @@ Recorded here so audits don't re-flag them:
 
 - **`raven-post-bash-truncate.py`** (the Bash result truncator, wired to the `Bash` matcher
   under `PostToolUse` in `.claude/settings.json` and the `run_shell_command` matcher under
-  `AfterTool` in `.gemini/settings.json`) has no Codex counterpart for the same kind of
-  reason: it too is byte-identical across `.claude/hooks/` and `.gemini/hooks/`. Claude
-  Code's `PostToolUse` hook can replace a tool result through
-  `hookSpecificOutput.updatedToolOutput`; Gemini CLI's `AfterTool` hook has the equivalent
-  mechanism (`decision: "deny"` + `reason`, or `tailToolCallRequest`,
-  `docs/research/gemini-cli-adapter.md` §3); Codex's `PostToolUse` can only block a turn or
-  add feedback, with no field that swaps the result (verified against the Codex hooks
-  reference, 2026-09-02). Codex bounds tool output through its own
-  `tool_output_token_limit` config key instead. Asserted the same way as the read guard.
+  `AfterTool` in `.gemini/settings.json`) has no Codex counterpart, because Codex did not
+  apply a replacement when tried. Claude Code replaces a result through
+  `hookSpecificOutput.updatedToolOutput`; Gemini CLI through `decision: "deny"` + `reason`
+  (`docs/research/gemini-cli-adapter.md` §3). The Codex hooks reference
+  (<https://developers.openai.com/codex/hooks>, read 2026-11-24) says a `PostToolUse` hook
+  printing `{"continue": false, "stopReason": ..., "reason": ...}` replaces the result and
+  lets the turn continue.
+
+  Live capture on codex-cli 0.172.0 (2026-11-24, scratch trusted
+  project, `max_lines = 50`, command printing 400 lines): the hook fired, its run showed
+  `Stopped`, it wrote the spill file, and the turn continued, but the model still received
+  the original 400-line result with no `[raven: ... omitted ...]` marker. Revisit when a newer
+  Codex applies the replacement; until then Codex bounds tool output through its own
+  `tool_output_token_limit`. Asserted the same way as the read guard.
 
 ## Maintenance Rules
 
