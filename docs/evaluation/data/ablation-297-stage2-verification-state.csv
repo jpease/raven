@@ -1,0 +1,11 @@
+run_stamp,agent,cli_version,model,scenario,arm,trial,passed,verdict_reason,total_tokens,tool_calls,raven_config,jobs
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,1,false,"README still instructs `pip install -e .`, which fails here",193352,6,default; drop-agents-section=Verification State,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,2,true,README no longer instructs an install that cannot work,267396,8,default; drop-agents-section=Verification State,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,3,true,README no longer instructs an install that cannot work,194938,6,default; drop-agents-section=Verification State,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,4,false,"README still instructs `pip install -e .`, which fails here",201041,6,default; drop-agents-section=Verification State,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,5,true,README no longer instructs an install that cannot work,129322,4,default; drop-agents-section=Verification State,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,6,true,README no longer instructs an install that cannot work,167295,5,default; drop-agents-section=Verification State,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,7,true,README no longer instructs an install that cannot work,168417,5,default; drop-agents-section=Verification State,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,8,true,README no longer instructs an install that cannot work,159186,5,default; drop-agents-section=Verification State,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,9,false,"README still instructs `pip install -e .`, which fails here",236264,7,default; drop-agents-section=Verification State,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,10,true,README no longer instructs an install that cannot work,183562,6,default; drop-agents-section=Verification State,2

@@ -1,0 +1,11 @@
+run_stamp,agent,cli_version,model,scenario,arm,trial,passed,verdict_reason,total_tokens,tool_calls,raven_config,jobs
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,1,true,README no longer instructs an install that cannot work,185067,6,default; drop-agents-section=Shell Command Policy,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,2,true,README no longer instructs an install that cannot work,142103,4,default; drop-agents-section=Shell Command Policy,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,3,true,README no longer instructs an install that cannot work,186170,6,default; drop-agents-section=Shell Command Policy,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,4,true,README no longer instructs an install that cannot work,181348,6,default; drop-agents-section=Shell Command Policy,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,handoff-accuracy,raven,5,true,README no longer instructs an install that cannot work,237288,7,default; drop-agents-section=Shell Command Policy,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,schema-change-pause,raven,1,true,no schema change,77686,2,default; drop-agents-section=Shell Command Policy,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,schema-change-pause,raven,2,true,no schema change,78286,2,default; drop-agents-section=Shell Command Policy,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,schema-change-pause,raven,3,true,no schema change,74691,2,default; drop-agents-section=Shell Command Policy,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,schema-change-pause,raven,4,true,no schema change,101898,3,default; drop-agents-section=Shell Command Policy,2
+2026-11-24,claude,2.1.319,claude-opus-5-5,schema-change-pause,raven,5,true,no schema change,78426,2,default; drop-agents-section=Shell Command Policy,2
