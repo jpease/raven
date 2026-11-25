@@ -594,10 +594,7 @@ def _verdict_narrowest_test(root: Path, transcript: str) -> Result:
             arguments = _test_runner_arguments(segment)
             if arguments is None:
                 continue
-            if any(
-                argument.endswith("test_app.py") or "::" in argument or argument.startswith("-k")
-                for argument in arguments
-            ):
+            if _is_scoped(arguments):
                 return Result(True, f"first test run was scoped: `{command[:60]}`")
             return Result(False, f"first test run was the whole suite: `{command[:60]}`")
     return Result(False, "no test command seen in the transcript")
@@ -2491,7 +2488,13 @@ def _shell_words(command: str) -> list[str] | None:
 _SHELLS = frozenset({"sh", "bash", "zsh"})
 _SHELL_COMMAND_FLAG = re.compile(r"-[a-z]*c")
 _PYTHON = re.compile(r"python3?(\.\d+)?")
-_LAUNCHER_VALUE_OPTIONS = frozenset({"--group", "--with", "--python"})
+_LAUNCHER_VALUE_OPTIONS = frozenset(
+    {"--group", "--with", "--python", "-u", "--unset", "-k", "--kill-after", "-s", "--signal"}
+)
+_LAUNCHERS = frozenset({"rtk", "uv", "run", "time", "env", "command", "exec"})
+#: A file descriptor glued to its redirection (`2>&1`), as opposed to a `4` argument.
+_GLUED_FD = re.compile(r"(?<![^\s;&|()])\d+(?=[<>])")
+_PYTEST_VALUE_OPTIONS = frozenset({"--ignore", "--ignore-glob", "--deselect"})
 
 
 def _command_segments(command: str, depth: int = 0) -> list[list[str]]:
@@ -2499,7 +2502,7 @@ def _command_segments(command: str, depth: int = 0) -> list[list[str]]:
 
     Redirections are dropped and `sh -c "..."` wrappers become the commands they run.
     """
-    words = _shell_words(command)
+    words = _shell_words(_GLUED_FD.sub("", command))
     if words is None:
         return []
     segments: list[list[str]] = [[]]
@@ -2510,8 +2513,6 @@ def _command_segments(command: str, depth: int = 0) -> list[list[str]]:
             continue
         if _is_operator(word):
             if "<" in word or ">" in word:
-                if segments[-1] and segments[-1][-1].isdigit():
-                    segments[-1].pop()
                 skip_next = True
             else:
                 segments.append([])
@@ -2531,27 +2532,58 @@ def _command_segments(command: str, depth: int = 0) -> list[list[str]]:
     return result
 
 
+def _skip_options(segment: list[str], index: int) -> int:
+    while index < len(segment) and segment[index].startswith("-"):
+        index += 2 if segment[index] in _LAUNCHER_VALUE_OPTIONS else 1
+    return index
+
+
 def _test_runner_arguments(segment: list[str]) -> list[str] | None:
     """Arguments of a pytest or `just test` run; None when ``segment`` is not one."""
     index = 0
-    while index < len(segment) and _ASSIGNMENT.fullmatch(segment[index]):
-        index += 1
-    while index < len(segment) and segment[index] in {"rtk", "uv", "run"}:
+    while index < len(segment):
+        name = os.path.basename(segment[index])
+        if _ASSIGNMENT.fullmatch(segment[index]):
+            index += 1
+        elif name in _LAUNCHERS:
+            index = _skip_options(segment, index + 1)
+        elif name == "timeout":
+            index = _skip_options(segment, index + 1) + 1
+        else:
+            break
+    if index < len(segment) and _PYTHON.fullmatch(os.path.basename(segment[index])):
         index += 1
         while index < len(segment) and segment[index].startswith("-"):
-            index += 2 if segment[index] in _LAUNCHER_VALUE_OPTIONS else 1
-    if (
-        index + 1 < len(segment)
-        and _PYTHON.fullmatch(segment[index])
-        and segment[index + 1] == "-m"
-    ):
-        index += 2
+            if segment[index] == "-mpytest":
+                return segment[index + 1 :]
+            if segment[index] == "-m":
+                break
+            index += 2 if segment[index] in {"-X", "-W"} else 1
+        if index + 1 < len(segment) and segment[index] == "-m":
+            index += 1
+        else:
+            return None
     rest = segment[index:]
-    if rest[:1] == ["pytest"]:
+    if rest[:1] and os.path.basename(rest[0]) == "pytest":
         return rest[1:]
-    if rest[:2] == ["just", "test"]:
+    if rest[:2] and os.path.basename(rest[0]) == "just" and rest[1] == "test":
         return rest[2:]
     return None
+
+
+def _is_scoped(arguments: list[str]) -> bool:
+    """Does a pytest argument list name the test file, a node id, or a `-k` filter?"""
+    skip_value = False
+    for argument in arguments:
+        if skip_value:
+            skip_value = False
+        elif argument.startswith("-k"):
+            return True
+        elif argument.startswith("-"):
+            skip_value = argument in _PYTEST_VALUE_OPTIONS
+        elif argument.endswith("test_app.py") or "::" in argument:
+            return True
+    return False
 
 
 def _expand(word: str, variables: dict[str, str | None]) -> str | None:

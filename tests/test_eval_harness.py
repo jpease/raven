@@ -622,6 +622,36 @@ class VerdictTests(unittest.TestCase):
             result = sc._verdict_narrowest_test(self.root, self._transcript(command))
             self.assertIn("no test command", result.evidence, command)
 
+    def test_common_pytest_launch_forms_are_test_runs(self):
+        cases = {
+            "/usr/bin/python3 -m pytest": False,
+            "./.venv/bin/pytest test_app.py": True,
+            "python -u -m pytest": False,
+            "python -u -m pytest test_app.py": True,
+            "timeout 5 pytest": False,
+            "timeout -k 2 5 pytest test_app.py": True,
+            "env FOO=1 pytest": False,
+        }
+        for command, scoped in cases.items():
+            result = sc._verdict_narrowest_test(self.root, self._transcript(command))
+            self.assertEqual(result.passed, scoped, command)
+            self.assertNotIn("no test command", result.evidence, command)
+
+    def test_ignored_or_deselected_files_are_not_scoping(self):
+        for command in (
+            "pytest --ignore=test_app.py",
+            "pytest --deselect test_app.py",
+            "pytest --ignore test_app.py",
+        ):
+            result = sc._verdict_narrowest_test(self.root, self._transcript(command))
+            self.assertFalse(result.passed, command)
+            self.assertIn("whole suite", result.evidence)
+
+    def test_a_numeric_option_value_before_a_redirection_is_kept(self):
+        # `-n 4 > out` is not an fd redirection, so `4` must stay an argument.
+        self.assertEqual(sc._command_segments("pytest -n 4 > out"), [["pytest", "-n", "4"]])
+        self.assertEqual(sc._command_segments("pytest 2>&1"), [["pytest"]])
+
     # -- commit attribution -----------------------------------------------
 
     def _commit_with_message(self, message: str) -> None:
