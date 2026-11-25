@@ -701,9 +701,9 @@
       "sourceSha256": "9f00542deba41864863dd3adb90a76e741ba16b758d85a09b6b4e120a763b8c1"
     },
     ".gemini/settings.json": {
-      "installedSha256": "77c9cc4958230c7eacbe73390df98105c84da1f8c61b9088f6a42e8f696bf82a",
+      "installedSha256": "836385c89e34a70ef2037e8aa015605d8a8d7f2f61e3bf7fd4fceb54638769f9",
       "kind": "file",
-      "sourceSha256": "77c9cc4958230c7eacbe73390df98105c84da1f8c61b9088f6a42e8f696bf82a"
+      "sourceSha256": "8a2e344e7ce41e6bfc8918def3abfb25db80620bb516394365f091f5695b9ba7"
     },
     ".mcp.json": {
       "installedSha256": "5e62b5a61f5709dfcd9c9a4a1d5a0cfc9c23f5a8d6535af1f0e18121cb42bc68",
@@ -781,8 +781,8 @@
     "pyright",
     "pytest"
   ],
-  "ravenVersion": "6d663fdc63da-dirty",
+  "ravenVersion": "e11aa312dde7",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-11-25T04:01:27.348645+00:00"
+  "updatedAt": "2026-11-25T04:01:53.880027+00:00"
 }
