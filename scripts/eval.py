@@ -10,7 +10,8 @@ logged in; this script never handles a key.
     python scripts/eval.py --agent claude --trials 3
     python scripts/eval.py --agent codex --scenario gate-relaxation
     python scripts/eval.py --agent gemini --scenario fixed-cost
-    python scripts/eval.py --agent claude --trials 5 --out docs/evaluation/
+    python scripts/eval.py --agent claude --trials 15 --out docs/evaluation/
+    python scripts/eval.py --agent claude --regression
 
 Every scenario runs twice per trial in identical throwaway repositories: one
 with Raven installed, one without. The number worth reading is the difference
@@ -55,8 +56,10 @@ TIMEOUT_SECONDS = 600
 
 #: Fewest trials per arm a run written with `--out` may use. `--out` writes the
 #: committed results; below this a result is an anecdote, so it stays in
-#: `evals/runs/`.
-MIN_PUBLISHED_TRIALS = 5
+#: `evals/runs/`. 15 is the n at which a one-sided Fisher exact test at
+#: alpha 0.05 detects a 25%-to-75% pass-rate gap with power 0.80; the
+#: calculation is in `docs/evaluation/scenario-separation.md`.
+MIN_PUBLISHED_TRIALS = 15
 
 #: Written into every fixture that does not ship its own. Any real Python
 #: repository ignores these; a fixture that did not handed the Raven arm
@@ -796,8 +799,16 @@ def main() -> int:
     parser.add_argument("--trials", type=int, default=1, help="runs per arm (default 1)")
     parser.add_argument("--scenario", action="append", help="run only these (repeatable)")
     parser.add_argument(
+        "--regression",
+        action="store_true",
+        help="run the regression-only scenarios, which the default set leaves out",
+    )
+    parser.add_argument(
         "--out",
-        help=f"directory for the published results file; needs --trials >= {MIN_PUBLISHED_TRIALS}",
+        help=(
+            "directory for results-<agent>.md, or a .md file path, for a published run;"
+            f" needs --trials >= {MIN_PUBLISHED_TRIALS}"
+        ),
     )
     parser.add_argument("--json", action="store_true", help="also print raw outcomes as JSON")
     parser.add_argument(
@@ -834,16 +845,26 @@ def main() -> int:
         print(f"error: `{args.agent}` is not on PATH.", file=sys.stderr)
         return 1
 
-    scenarios = list(SCENARIOS)
     if args.scenario:
         wanted = set(args.scenario)
-        scenarios = [s for s in scenarios if s.name in wanted]
+        scenarios = [s for s in SCENARIOS if s.name in wanted]
         unknown = wanted - {s.name for s in SCENARIOS}
         if unknown:
             print(f"error: unknown scenario(s): {', '.join(sorted(unknown))}", file=sys.stderr)
             return 1
+    else:
+        scenarios = [s for s in SCENARIOS if s.regression_only == args.regression]
     if not scenarios:
         print("error: no scenarios selected.", file=sys.stderr)
+        return 1
+    regression = [s.name for s in scenarios if s.regression_only]
+    if args.out and regression:
+        print(
+            f"error: {', '.join(regression)} {'is' if len(regression) == 1 else 'are'}"
+            " regression-only: both arms pass, so a published effect run leaves"
+            " them out. Drop --out to run them.",
+            file=sys.stderr,
+        )
         return 1
     if args.trials < 1:
         print("error: --trials must be at least 1.", file=sys.stderr)
@@ -869,7 +890,10 @@ def main() -> int:
     # be repeated to recover the numbers. Defaulting to a timestamped file under
     # `evals/runs/` keeps the explicit `--out` behavior (stable filename, for
     # the committed reports) and makes silent loss impossible.
-    if args.out:
+    if args.out and args.out.endswith(".md"):
+        out_dir = Path(args.out).parent
+        name = Path(args.out).name
+    elif args.out:
         out_dir = Path(args.out)
         name = f"results-{args.agent}.md"
     else:

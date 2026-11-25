@@ -59,10 +59,18 @@ def _by_name(name):
     return next(s for s in SCENARIOS if s.name == name)
 
 
+#: Both arms passed every published trial; `docs/evaluation/scenario-separation.md`.
+_REGRESSION_ONLY = {"test-deletion", "destructive-command", "bounded-read", "unneeded-dependency"}
+
+
 class ScenarioShapeTests(unittest.TestCase):
     def test_every_scenario_has_a_unique_name(self):
         names = [s.name for s in SCENARIOS]
         self.assertEqual(len(names), len(set(names)))
+
+    def test_the_regression_only_set_is_the_four_that_never_separated(self):
+        marked = {s.name for s in SCENARIOS if s.regression_only}
+        self.assertEqual(marked, _REGRESSION_ONLY)
 
     def test_every_scenario_declares_what_it_measures(self):
         for scenario in SCENARIOS:
@@ -429,13 +437,12 @@ class VerdictTests(unittest.TestCase):
         result = sc._verdict_gate_relaxation(self.root, "")
         self.assertTrue(result.passed, result.evidence)
 
-    @unittest.skipUnless(shutil.which("ruff"), "needs ruff on PATH")
     def test_the_fixture_fails_ruff_and_the_annotated_fix_clears_it(self):
         # The scenario is only fair if ruff fails as given and a fix exists
-        # that keeps every rule switched on.
+        # that keeps every rule switched on. ruff is in the dev group.
         def ruff():
             return subprocess.run(
-                ["ruff", "check", "--no-cache", "--quiet", "."],
+                [sys.executable, "-m", "ruff", "check", "--no-cache", "--quiet", "."],
                 cwd=self.root,
                 capture_output=True,
                 text=True,
@@ -2687,23 +2694,23 @@ class PublishedTrialsGuardTests(unittest.TestCase):
         return code, run, stderr.getvalue()
 
     def test_out_refuses_one_trial_below_the_minimum_before_running(self):
-        code, run, stderr = self._main("--trials", "4", "--out", str(self.tmp / "out"))
+        code, run, stderr = self._main("--trials", "14", "--out", str(self.tmp / "out"))
         self.assertEqual(code, 1)
         run.assert_not_called()
         self.assertIn("--out", stderr)
-        self.assertIn("--trials 5", stderr)
+        self.assertIn("--trials 15", stderr)
         self.assertFalse((self.tmp / "out").exists())
 
     def test_out_refuses_raven_config(self):
         code, run, stderr = self._main(
-            "--trials", "5", "--out", str(self.tmp / "out"), "--raven-config", "x.toml"
+            "--trials", "15", "--out", str(self.tmp / "out"), "--raven-config", "x.toml"
         )
         self.assertEqual(code, 1)
         run.assert_not_called()
         self.assertIn("--raven-config", stderr)
 
     def test_out_accepts_the_minimum(self):
-        code, run, _ = self._main("--trials", "5", "--out", str(self.tmp / "out"))
+        code, run, _ = self._main("--trials", "15", "--out", str(self.tmp / "out"))
         self.assertEqual(code, 0)
         run.assert_called_once()
         self.assertTrue((self.tmp / "out" / "results-claude.md").is_file())
@@ -2714,6 +2721,37 @@ class PublishedTrialsGuardTests(unittest.TestCase):
         run.assert_called_once()
         self.assertTrue(any((self.tmp / "evals" / "runs").glob("results-claude-*.md")))
 
+    def test_out_with_an_md_path_writes_that_file(self):
+        # Effect runs publish beside results-<agent>.md without replacing it.
+        target = self.tmp / "out" / "effect-claude.md"
+        code, _, _ = self._main("--trials", "15", "--out", str(target))
+        self.assertEqual(code, 0)
+        self.assertTrue(target.is_file())
+        self.assertFalse((self.tmp / "out" / "results-claude.md").exists())
+
+    def test_the_default_set_leaves_regression_only_scenarios_out(self):
+        _, run, _ = self._main("--trials", "1")
+        names = {s.name for s in run.call_args[0][0]}
+        self.assertIn("handoff-accuracy", names)
+        self.assertFalse(names & _REGRESSION_ONLY)
+
+    def test_the_regression_flag_runs_only_regression_only_scenarios(self):
+        _, run, _ = self._main("--trials", "1", "--regression")
+        self.assertEqual({s.name for s in run.call_args[0][0]}, _REGRESSION_ONLY)
+
+    def test_a_regression_only_scenario_still_runs_by_name(self):
+        code, run, _ = self._main("--trials", "1", "--scenario", "bounded-read")
+        self.assertEqual(code, 0)
+        self.assertEqual([s.name for s in run.call_args[0][0]], ["bounded-read"])
+
+    def test_out_refuses_a_regression_only_scenario_before_running(self):
+        code, run, stderr = self._main(
+            "--trials", "15", "--scenario", "bounded-read", "--out", str(self.tmp / "out")
+        )
+        self.assertEqual(code, 1)
+        run.assert_not_called()
+        self.assertIn("bounded-read is regression-only", stderr)
+
     def test_an_agent_error_publishes_nothing_and_exits_2(self):
         import eval as harness
 
@@ -2721,7 +2759,7 @@ class PublishedTrialsGuardTests(unittest.TestCase):
             "gate-relaxation", "control", 1, False, harness.AGENT_ERROR, "usage limit"
         )
         code, _, stderr = self._main(
-            "--trials", "5", "--out", str(self.tmp / "out"), outcomes=[errored]
+            "--trials", "15", "--out", str(self.tmp / "out"), outcomes=[errored]
         )
         self.assertEqual(code, 2)
         self.assertIn("usage limit", stderr)

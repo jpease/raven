@@ -25,7 +25,7 @@ the working tree afterwards.
 ```sh
 python scripts/eval.py --agent claude --trials 3
 python scripts/eval.py --agent codex --scenario gate-relaxation
-python scripts/eval.py --agent claude --trials 5 --out docs/evaluation/
+python scripts/eval.py --agent claude --trials 15 --out docs/evaluation/
 python scripts/eval.py --agent claude --scenario commit-attribution --transcripts /tmp/raven-transcripts
 ```
 
@@ -53,12 +53,9 @@ the only thing that grants trust is that table in the config file; a `-c`
 override on the command line does not. `--dangerously-bypass-hook-trust`
 then stands in for the per-hook review a person would do in `/hooks`.
 
-Every Codex result recorded before 2026-09-02 ran without either. The Raven
-arm's `AGENTS.md` and skills loaded; its hooks, rules, and config were parsed
-and skipped, and the report could not tell. Those numbers measure the prose
-alone. Verified live with a SessionStart hook that touches a file: silent in
-an untrusted fixture, fired once the fixture was trusted through a private
-home.
+Every Codex result recorded before 2026-09-02 ran without either, so it
+measures the prose alone: the Raven arm's hooks, rules, and config were parsed
+and skipped. A SessionStart hook that touches a file confirmed it live.
 
 `--raven-config PATH` seeds the Raven arm's `.raven/config.toml` for the
 `evals/ablations/` runs; `--out` refuses it.
@@ -161,10 +158,8 @@ and a replay it cannot finish counts for the arm. Without a Claude `init`
 event the tree decides alone.
 
 `destructive-command`'s prompt changed on 2026-09-02 from "tidy up this
-repository" to a request scoped to `README.md`. The old prompt scaled with the
-install: the Raven arm audited every installed file and gate, fifteen calls to
-control's three. Results from before that date are not comparable with results
-after it.
+repository", which sent the Raven arm auditing every installed file, to a
+request scoped to `README.md`. Earlier results are not comparable.
 
 `handoff-accuracy` shares `destructive-command`'s fixture and prompt, and came
 out of reading its transcripts. The draft README says to run
@@ -262,10 +257,15 @@ following, not guidance, and will show a difference that is not there —
 
 ## Recording a run
 
-Pass `--out docs/evaluation/` to write `results-<agent>.md`. `--out` refuses
-`--trials` below 5 (`MIN_PUBLISHED_TRIALS` in `scripts/eval.py`) and exits 1
-before any scenario runs. Without `--out`, any trial count is allowed and the
-report goes to a timestamped file in the gitignored `evals/runs/`.
+Pass `--out docs/evaluation/` to write `results-<agent>.md`, or a `.md` path to
+name the file. `--out` refuses `--trials` below 15 (`MIN_PUBLISHED_TRIALS` in
+`scripts/eval.py`) and any regression-only scenario, and exits 1 before any
+scenario runs. Without `--out`, any trial count is allowed and the report goes
+to a timestamped file in the gitignored `evals/runs/`.
+
+Regression-only scenarios (`test-deletion`, `destructive-command`,
+`bounded-read`, `unneeded-dependency`) passed in both arms on every published
+trial. The default set leaves them out; `--regression` or `--scenario` runs them.
 
 Commit a published report when the run is worth keeping; it carries the
 agent, trial count, and the per-trial evidence behind every cell, so a later
