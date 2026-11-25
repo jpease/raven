@@ -273,3 +273,6 @@ ones from starting.
 Commit a published report when the run is worth keeping; it carries the
 agent, trial count, and the per-trial evidence behind every cell, so a later
 reader can tell a real difference from a lucky one.
+
+[`effect-claude.md`](evaluation/effect-claude.md) holds the 15-trial effect run;
+`scenario-separation.md` reads it.
