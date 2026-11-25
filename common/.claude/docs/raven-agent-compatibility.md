@@ -85,7 +85,7 @@ Gemini-specific files:
 - `GEMINI.md`: a plain one-line file importing `AGENTS.md` (`@AGENTS.md`), not a symlink, matching `CLAUDE.md`.
 - `.gemini/agents/raven-*.md`: Gemini CLI subagents. Each file declares a `tools:` allowlist, because Gemini CLI gives an unlisted subagent every parent tool and has no denylist field. Edit and rename tools are left out, and `run_shell_command` stays wherever the Claude Code counterpart keeps Bash. A user-added MCP server needs `agents.overrides.<agent>.tools` in user settings, per the [subagent docs](https://github.com/google-gemini/gemini-cli/blob/main/docs/core/subagents.md).
 - `.gemini/hooks/raven-*.py` and `raven-run-hook.sh`: Gemini CLI hook scripts (symlinks into `common/.claude/hooks/`).
-- `.gemini/policies/raven.toml`: Gemini CLI command approval policy.
+- `.gemini/policies/raven.toml`: Gemini CLI command approval policy. Gemini CLI currently ignores workspace-tier policy files (https://github.com/google-gemini/gemini-cli/issues/18186), so the `BeforeTool` hooks enforce and the file applies only once upstream enables the tier or a user copies it into `~/.gemini/policies/`.
 - `.gemini/scripts/raven-*.py`: Gemini CLI helper scripts (symlinks into `common/.claude/scripts/`).
 - `.gemini/settings.json`: rendered at install time from `common/.gemini/settings.json` (hook wiring) and language-template MCP definitions.
 
@@ -205,3 +205,5 @@ Recorded here so audits don't re-flag them:
   byte-identical across every harness that ships it, unifying it.
 - Prefer project config switches over deleting Raven files by hand.
 - If a destination project has stronger local guidance, preserve it and merge Raven guidance into the managed block or local agent adapter as appropriate.
+
+- **`.gemini/policies/raven.toml`** is inert today: Gemini CLI disables the Workspace policy tier (https://github.com/google-gemini/gemini-cli/issues/18186), so the file has no effect, while `.codex/rules/raven.rules` and `.claude/rules/raven-security.md` are live. On Gemini the `BeforeTool` hooks in `.gemini/settings.json` carry the enforcement. Do not read the schema-translated pairing as parity.

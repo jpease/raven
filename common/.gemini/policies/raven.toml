@@ -1,7 +1,10 @@
 # RAVEN command approval policy for Gemini CLI.
 #
-# Complements hook-based guardrails; hooks remain the stronger enforcement
-# layer for contextual checks.
+# Gemini CLI currently ignores workspace-tier .gemini/policies/*.toml files
+# (https://github.com/google-gemini/gemini-cli/issues/18186).
+# Raven ships this file so it applies once upstream enables the tier. Until
+# then the BeforeTool hooks in .gemini/settings.json are the active
+# enforcement. To apply these rules now, copy them into ~/.gemini/policies/.
 
 [[rule]]
 toolName = "run_shell_command"

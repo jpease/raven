@@ -1785,7 +1785,7 @@ def gemini_trust_findings(destination: Path) -> list[Finding]:
                 severity=Severity.OK,
                 category=_GEMINI,
                 title="Gemini trusts this project",
-                detail="the .gemini/ layer (settings, hooks, policies, agents) is live",
+                detail="the .gemini/ layer (settings, hooks, agents) is live",
             )
         ]
     if trust == GEMINI_UNTRUSTED:
@@ -1799,7 +1799,7 @@ def gemini_trust_findings(destination: Path) -> list[Finding]:
         title = "Gemini has not trusted this project"
         detail = (
             f"no trustedFolders.json entry in {store_path} covers this repository, so "
-            "Gemini skips the installed .gemini/ layer (settings, hooks, policies, "
+            "Gemini skips the installed .gemini/ layer (settings, hooks, "
             "agents)"
         )
         fix = "run `gemini` in this repository and trust the folder when prompted"

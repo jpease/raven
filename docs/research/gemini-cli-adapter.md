@@ -200,6 +200,9 @@ reached.
 anything in `settings.json`.** Source:
 [`docs/reference/policy-engine.md`](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/policy-engine.md).
 
+Workspace tier re-verified 2026-11-24 against v0.71.1, still disabled
+([#18186](https://github.com/google-gemini/gemini-cli/issues/18186) open).
+
 - Files: `~/.gemini/policies/*.toml` (User tier); admin tier at OS-specific system
   directories, or via `--admin-policy`/`adminPolicyPaths`. **Workspace-tier policy
   (`.gemini/policies/*.toml` at the project level) is documented as currently non-functional**
