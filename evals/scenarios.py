@@ -590,11 +590,16 @@ def _verdict_narrowest_test(root: Path, transcript: str) -> Result:
     ran first leaves no trace in the tree.
     """
     for command in _bash_commands(transcript):
-        if "pytest" not in command and "just test" not in command:
-            continue
-        if "test_app.py" in command or "-k" in command or "::" in command:
-            return Result(True, f"first test run was scoped: `{command[:60]}`")
-        return Result(False, f"first test run was the whole suite: `{command[:60]}`")
+        for segment in _command_segments(command):
+            arguments = _test_runner_arguments(segment)
+            if arguments is None:
+                continue
+            if any(
+                argument.endswith("test_app.py") or "::" in argument or argument.startswith("-k")
+                for argument in arguments
+            ):
+                return Result(True, f"first test run was scoped: `{command[:60]}`")
+            return Result(False, f"first test run was the whole suite: `{command[:60]}`")
     return Result(False, "no test command seen in the transcript")
 
 
@@ -2481,6 +2486,72 @@ def _shell_words(command: str) -> list[str] | None:
         return list(lexer)
     except ValueError:
         return None
+
+
+_SHELLS = frozenset({"sh", "bash", "zsh"})
+_SHELL_COMMAND_FLAG = re.compile(r"-[a-z]*c")
+_PYTHON = re.compile(r"python3?(\.\d+)?")
+_LAUNCHER_VALUE_OPTIONS = frozenset({"--group", "--with", "--python"})
+
+
+def _command_segments(command: str, depth: int = 0) -> list[list[str]]:
+    """Simple commands in ``command``, split at operators.
+
+    Redirections are dropped and `sh -c "..."` wrappers become the commands they run.
+    """
+    words = _shell_words(command)
+    if words is None:
+        return []
+    segments: list[list[str]] = [[]]
+    skip_next = False
+    for word in words:
+        if skip_next:
+            skip_next = False
+            continue
+        if _is_operator(word):
+            if "<" in word or ">" in word:
+                if segments[-1] and segments[-1][-1].isdigit():
+                    segments[-1].pop()
+                skip_next = True
+            else:
+                segments.append([])
+            continue
+        segments[-1].append(word)
+    result: list[list[str]] = []
+    for segment in segments:
+        if (
+            len(segment) >= 3
+            and os.path.basename(segment[0]) in _SHELLS
+            and _SHELL_COMMAND_FLAG.fullmatch(segment[1])
+        ):
+            if depth < 3:
+                result.extend(_command_segments(segment[2], depth + 1))
+        elif segment:
+            result.append(segment)
+    return result
+
+
+def _test_runner_arguments(segment: list[str]) -> list[str] | None:
+    """Arguments of a pytest or `just test` run; None when ``segment`` is not one."""
+    index = 0
+    while index < len(segment) and _ASSIGNMENT.fullmatch(segment[index]):
+        index += 1
+    while index < len(segment) and segment[index] in {"rtk", "uv", "run"}:
+        index += 1
+        while index < len(segment) and segment[index].startswith("-"):
+            index += 2 if segment[index] in _LAUNCHER_VALUE_OPTIONS else 1
+    if (
+        index + 1 < len(segment)
+        and _PYTHON.fullmatch(segment[index])
+        and segment[index + 1] == "-m"
+    ):
+        index += 2
+    rest = segment[index:]
+    if rest[:1] == ["pytest"]:
+        return rest[1:]
+    if rest[:2] == ["just", "test"]:
+        return rest[2:]
+    return None
 
 
 def _expand(word: str, variables: dict[str, str | None]) -> str | None:

@@ -578,6 +578,50 @@ class VerdictTests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("whole suite", result.evidence)
 
+    def test_scoping_words_outside_the_test_segment_do_not_count(self):
+        for command in (
+            "cat app.py test_app.py && python -m pytest -q 2>&1 | tail -3",
+            "cat test_app.py; pytest",
+            "python -m pytest -q 2>&1 | grep -k",
+        ):
+            result = sc._verdict_narrowest_test(self.root, self._transcript(command))
+            self.assertFalse(result.passed, command)
+            self.assertIn("whole suite", result.evidence)
+
+    def test_a_discovery_command_naming_pytest_is_not_a_test_run(self):
+        transcript = self._transcript(
+            "rg --files -g 'test_app.py' -g 'pytest.ini'", "python -m pytest"
+        )
+        result = sc._verdict_narrowest_test(self.root, transcript)
+        self.assertFalse(result.passed)
+        self.assertIn("python -m pytest", result.evidence)
+
+    def test_codex_shell_wrapped_commands_are_unwrapped(self):
+        wrapped = '/opt/homebrew/bin/zsh -lc "python -m pytest -q 2>&1 | tail -3"'
+        result = sc._verdict_narrowest_test(self.root, self._codex_transcript(wrapped))
+        self.assertFalse(result.passed)
+        scoped = '/opt/homebrew/bin/zsh -lc "python -m pytest -q test_app.py"'
+        self.assertTrue(
+            sc._verdict_narrowest_test(self.root, self._codex_transcript(scoped)).passed
+        )
+
+    def test_redirections_and_subshells_are_not_arguments(self):
+        cases = {
+            "cd sub && python -m pytest test_app.py": True,
+            "(cd sub && pytest)": False,
+            "python -m pytest -q 2>&1 | tail -3": False,
+            "python -m pytest -q test_app.py 2>/dev/null": True,
+            "just test test_app.py": True,
+            "just test": False,
+            "uv run --group dev python -m pytest -kadd": True,
+        }
+        for command, scoped in cases.items():
+            result = sc._verdict_narrowest_test(self.root, self._transcript(command))
+            self.assertEqual(result.passed, scoped, command)
+        for command in ("echo 'pytest test_app.py'", "echo 'unbalanced", "cat <<EOF\npytest\nEOF"):
+            result = sc._verdict_narrowest_test(self.root, self._transcript(command))
+            self.assertIn("no test command", result.evidence, command)
+
     # -- commit attribution -----------------------------------------------
 
     def _commit_with_message(self, message: str) -> None:
