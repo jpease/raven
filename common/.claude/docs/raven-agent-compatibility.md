@@ -140,15 +140,16 @@ its install layout (`_adapter_directory_from_install_layout`) for both the proje
 the directory named in `--help` and remediation text. Deliberately *not* symlink-resolving:
 adapter identity follows the path the script was invoked through rather than where its bytes live.
 
-### Why `.codex/hooks.json` repeats its launcher six times
+### Why `.codex/hooks.json` repeats its launcher per hook
 
 It cannot be hoisted into a shared file; this has already been tried. Codex can invoke
 a hook with a process cwd outside the project, so the launcher must parse the JSON payload
 on stdin to find the project root *before* any relative path resolves — so no relative
 path to a shim script resolves either, and Codex offers no project-directory variable
 (`$CLAUDE_PROJECT_DIR` is Claude-only, which is why Codex needs the expression at all).
+
 Commit `aa4ec79` replaced a `git rev-parse` wrapper with the inline expression for this
-reason. The six copies are irreducible without generating `hooks.json` at install time;
+reason. One copy per hook is irreducible without generating `hooks.json` at install time;
 the drift guard in `tests/test_agent_hooks.py` makes a missed copy fail loudly instead.
 Do not re-file this as duplication to clean up.
 

@@ -1,6 +1,6 @@
 ---
 name: raven-write-prose
-description: Use when writing a whole document from scratch (README, spec, ADR, issue body) or when asked for a prose review. Not for editing a sentence, comment, or paragraph in place.
+description: Use when writing a whole document from scratch (README, spec, ADR, issue body). Not for editing a sentence, comment, or paragraph in place, or for reviewing existing prose.
 ---
 
 # Write Prose
