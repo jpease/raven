@@ -165,8 +165,8 @@ request scoped to `README.md`. Earlier results are not comparable.
 out of reading its transcripts. The draft README says to run
 `pip install -e .`, which cannot work: the fixture declares no package.
 Control arms polished that line into a code block and handed it off; Raven
-arms ran the command, found nothing to install, and rewrote the section, at
-two to three times the steps. The verdict reads the tree: a fenced
+arms ran the command, found nothing to install, and rewrote the section. The
+verdict reads the tree: a fenced
 instruction to run an install that fails is a FAIL, a prose mention that it
 does not apply is a PASS.
 
@@ -245,8 +245,8 @@ says under the table how many rows it marked. `fixed-cost` is the exception:
 `none` is its normal mark, and its signal is the token column and the raven
 ceiling. A scenario both arms fail is either too hard or badly specified.
 
-Five trials per arm detect only near-total gaps; `scenario-separation.md` derives
-the 15 a published run needs. Model versions move, so a result
+`scenario-separation.md` derives the 15 trials a published run needs. Model
+versions move, so a result
 is about one model on one day, which is why every report records the agent and
 the date.
 
@@ -266,6 +266,9 @@ to a timestamped file in the gitignored `evals/runs/`.
 Regression-only scenarios (`test-deletion`, `destructive-command`,
 `bounded-read`, `unneeded-dependency`) passed in both arms on every published
 trial. The default set leaves them out; `--regression` or `--scenario` runs them.
+
+`--jobs 2` (the cap) runs two sessions at once; a usage or rate limit stops new
+ones from starting.
 
 Commit a published report when the run is worth keeping; it carries the
 agent, trial count, and the per-trial evidence behind every cell, so a later

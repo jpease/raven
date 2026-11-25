@@ -2744,6 +2744,19 @@ class PublishedTrialsGuardTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual([s.name for s in run.call_args[0][0]], ["bounded-read"])
 
+    def test_jobs_above_the_cap_is_refused_before_running(self):
+        for jobs in ("3", "0"):
+            with self.subTest(jobs=jobs):
+                code, run, stderr = self._main("--trials", "1", "--jobs", jobs)
+                self.assertEqual(code, 1)
+                run.assert_not_called()
+                self.assertIn("--jobs must be 1 to 2", stderr)
+
+    def test_jobs_reaches_the_runner(self):
+        code, run, _ = self._main("--trials", "1", "--jobs", "2")
+        self.assertEqual(code, 0)
+        self.assertEqual(run.call_args[0][5], 2)
+
     def test_out_refuses_a_regression_only_scenario_before_running(self):
         code, run, stderr = self._main(
             "--trials", "15", "--scenario", "bounded-read", "--out", str(self.tmp / "out")
@@ -2817,6 +2830,80 @@ class AgentErrorTests(unittest.TestCase):
             outcomes = run(scenarios, "claude", 3)
         self.assertEqual([(o.arm, o.evidence) for o in outcomes], [("control", AGENT_ERROR)])
         self.assertEqual(outcomes[0].error, "usage limit")
+
+
+class ParallelRunTests(unittest.TestCase):
+    """`run(..., jobs=2)` with a fake `claude`: order, transcripts, and stopping."""
+
+    def setUp(self):
+        self.bin_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.bin_dir, ignore_errors=True)
+        self.state = self.bin_dir / "state"
+        self.state.mkdir()
+        claude = self.bin_dir / "claude"
+        claude.write_text(
+            f'#!/bin/sh\nexec "{sys.executable}" "{self.bin_dir / "claude_impl.py"}" "$@"\n',
+            encoding="utf-8",
+        )
+        # Control sleeps longer than raven, so units finish out of order. Each
+        # session counts the sessions running beside it into peak.log.
+        (self.bin_dir / "claude_impl.py").write_text(
+            "import json, os, pathlib, time\n"
+            f"state = pathlib.Path({str(self.state)!r})\n"
+            'raven = pathlib.Path("AGENTS.md").exists()\n'
+            'mark = state / f"running-{os.getpid()}"\n'
+            "mark.touch()\n"
+            'with open(state / "peak.log", "a") as log:\n'
+            '    log.write(f"{len(list(state.glob(\'running-*\')))}\\n")\n'
+            "time.sleep(0.05 if raven else 0.6)\n"
+            "mark.unlink()\n"
+            'if os.environ.get("FAKE_LIMIT"):\n'
+            '    print(json.dumps({"type": "result", "is_error": True, "result": "rate limit"}))\n'
+            "else:\n"
+            '    usage = {"input_tokens": 100, "output_tokens": 0}\n'
+            '    print(json.dumps({"type": "result", "is_error": False, "result": "OK",'
+            ' "usage": usage}))\n',
+            encoding="utf-8",
+        )
+        claude.chmod(0o755)
+
+    def _run(self, scenarios, trials, *, transcripts=None, limit=False):
+        from eval import run
+
+        env = {"PATH": f"{self.bin_dir}:{os.environ.get('PATH', '')}"}
+        if limit:
+            env["FAKE_LIMIT"] = "1"
+        with mock.patch.dict(os.environ, env), redirect_stdout(io.StringIO()):
+            return run(scenarios, "claude", trials, transcripts, None, 2)
+
+    def test_outcomes_keep_scenario_trial_arm_order_and_transcripts_do_not_collide(self):
+        transcripts = self.bin_dir / "transcripts"
+        scenarios = [_by_name("fixed-cost"), _by_name("commit-attribution")]
+        outcomes = self._run(scenarios, 2, transcripts=transcripts)
+        expected = [
+            (scenario.name, trial, arm)
+            for scenario in scenarios
+            for trial in (1, 2)
+            for arm in ("control", "raven")
+        ]
+        self.assertEqual([(o.scenario, o.trial, o.arm) for o in outcomes], expected)
+        saved = sorted(path.name for path in transcripts.iterdir())
+        self.assertEqual(saved, sorted(f"{s}-{a}-{t}.jsonl" for s, t, a in expected))
+
+    def test_no_more_than_two_sessions_run_at_once(self):
+        self._run([_by_name("fixed-cost")], 3)
+        peaks = [int(line) for line in (self.state / "peak.log").read_text().split()]
+        self.assertEqual(len(peaks), 6)
+        self.assertLessEqual(max(peaks), 2)
+
+    def test_a_rate_limit_stops_scheduling_and_lets_in_flight_units_finish(self):
+        from eval import AGENT_ERROR
+
+        outcomes = self._run([_by_name("fixed-cost")], 3, limit=True)
+        # Units 1 and 2 were in flight together; the four after them never start.
+        self.assertEqual([(o.trial, o.arm) for o in outcomes], [(1, "control"), (1, "raven")])
+        self.assertTrue(all(o.evidence == AGENT_ERROR for o in outcomes))
+        self.assertEqual(len((self.state / "peak.log").read_text().split()), 2)
 
 
 class FixedCostCeilingTests(unittest.TestCase):

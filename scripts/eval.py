@@ -32,7 +32,9 @@ import subprocess
 import sys
 import tempfile
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
+from itertools import islice
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -60,6 +62,12 @@ TIMEOUT_SECONDS = 600
 #: alpha 0.05 detects a 25%-to-75% pass-rate gap with power 0.80; the
 #: calculation is in `docs/evaluation/scenario-separation.md`.
 MIN_PUBLISHED_TRIALS = 15
+
+#: Most agent sessions `--jobs` may run at once. The owner approved 2: every
+#: session draws on the same subscription's rate limits, and more parallel
+#: sessions reach them sooner. Token counts are per session, so parallelism
+#: leaves them unchanged.
+MAX_JOBS = 2
 
 #: Written into every fixture that does not ship its own. Any real Python
 #: repository ignores these; a fixture that did not handed the Raven arm
@@ -596,35 +604,68 @@ def run(
     trials: int,
     transcripts: Path | None = None,
     raven_config: Path | None = None,
+    jobs: int = 1,
 ) -> list[TrialOutcome]:
     """Every scenario, both arms, ``trials`` times, reporting progress as it goes.
 
-    Stops at the first agent error: a usage limit or outage fails every later
-    trial the same way, and each one still costs a session to find out.
+    Each (scenario, trial, arm) unit is one agent session in its own temp
+    fixture, run on a pool of ``jobs`` workers. The returned list is in
+    scenario, trial, arm order whatever order the units finished in, and a
+    raven unit is reported once its control has finished, so the overhead
+    ceiling can compare the two.
+
+    The first agent error stops scheduling: a usage limit or outage fails every
+    later unit the same way, and each one still costs a session to find out.
+    Units already in flight finish; the rest never start.
     """
-    outcomes: list[TrialOutcome] = []
-    for scenario in scenarios:
-        for trial in range(1, trials + 1):
-            control = run_one(
-                scenario, agent, with_raven=False, trial=trial, transcripts=transcripts
-            )
-            _report(scenario, trial, control)
-            if control.evidence == AGENT_ERROR:
-                return [*outcomes, control]
-            raven = run_one(
-                scenario,
-                agent,
-                with_raven=True,
-                trial=trial,
-                transcripts=transcripts,
-                raven_config=raven_config,
-            )
-            raven = _apply_overhead_ceiling(scenario, agent, control, raven)
-            _report(scenario, trial, raven)
-            outcomes += [control, raven]
-            if raven.evidence == AGENT_ERROR:
-                return outcomes
-    return outcomes
+    units = [
+        (scenario, trial, with_raven)
+        for scenario in scenarios
+        for trial in range(1, trials + 1)
+        for with_raven in (False, True)
+    ]
+
+    def work(index: int) -> TrialOutcome:
+        scenario, trial, with_raven = units[index]
+        return run_one(
+            scenario,
+            agent,
+            with_raven=with_raven,
+            trial=trial,
+            transcripts=transcripts,
+            raven_config=raven_config if with_raven else None,
+        )
+
+    done: dict[int, TrialOutcome] = {}
+    held: dict[int, TrialOutcome] = {}
+
+    def finish(index: int, outcome: TrialOutcome) -> None:
+        scenario, trial, with_raven = units[index]
+        if with_raven:
+            control = done.get(index - 1)
+            if control is None:
+                held[index] = outcome
+                return
+            outcome = _apply_overhead_ceiling(scenario, agent, control, outcome)
+        done[index] = outcome
+        _report(scenario, trial, outcome)
+        if index + 1 in held:
+            finish(index + 1, held.pop(index + 1))
+
+    queue = iter(range(len(units)))
+    stopped = False
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        in_flight = {pool.submit(work, index): index for index in islice(queue, jobs)}
+        while in_flight:
+            finished, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+            for future in sorted(finished, key=in_flight.__getitem__):
+                outcome = future.result()
+                stopped = stopped or outcome.evidence == AGENT_ERROR
+                finish(in_flight.pop(future), outcome)
+            if not stopped:
+                for index in islice(queue, len(finished)):
+                    in_flight[pool.submit(work, index)] = index
+    return [done[index] for index in sorted(done)]
 
 
 def _report(scenario: Scenario, trial: int, outcome: TrialOutcome) -> None:
@@ -799,6 +840,12 @@ def main() -> int:
     parser.add_argument("--trials", type=int, default=1, help="runs per arm (default 1)")
     parser.add_argument("--scenario", action="append", help="run only these (repeatable)")
     parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help=f"agent sessions to run at once (default 1, at most {MAX_JOBS})",
+    )
+    parser.add_argument(
         "--regression",
         action="store_true",
         help="run the regression-only scenarios, which the default set leaves out",
@@ -841,6 +888,10 @@ def main() -> int:
         )
         return 1
 
+    if not 1 <= args.jobs <= MAX_JOBS:
+        print(f"error: --jobs must be 1 to {MAX_JOBS} (got {args.jobs}).", file=sys.stderr)
+        return 1
+
     if shutil.which(args.agent) is None:
         print(f"error: `{args.agent}` is not on PATH.", file=sys.stderr)
         return 1
@@ -870,15 +921,20 @@ def main() -> int:
         print("error: --trials must be at least 1.", file=sys.stderr)
         return 1
 
-    print(f"raven eval: {args.agent}, {len(scenarios)} scenario(s), {args.trials} trial(s) per arm")
+    print(
+        f"raven eval: {args.agent}, {len(scenarios)} scenario(s), {args.trials} trial(s) per arm,"
+        f" {args.jobs} at a time"
+    )
     transcripts = Path(args.transcripts) if args.transcripts else None
     raven_config = Path(args.raven_config) if args.raven_config else None
-    outcomes = run(scenarios, args.agent, args.trials, transcripts, raven_config)
+    outcomes = run(scenarios, args.agent, args.trials, transcripts, raven_config, args.jobs)
     failed = next((o for o in outcomes if o.evidence == AGENT_ERROR), None)
     if failed is not None:
+        pending = len(scenarios) * args.trials * 2 - len(outcomes)
         print(
             f"error: the {args.agent} CLI failed before acting ({failed.error}); the run "
-            "stopped there and nothing was published. Fix the CLI and rerun.",
+            f"stopped there with {pending} trial run(s) pending and nothing was published."
+            " Fix the CLI and rerun.",
             file=sys.stderr,
         )
         args.out = None
