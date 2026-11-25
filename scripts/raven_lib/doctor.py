@@ -1185,17 +1185,24 @@ def _inert_vendored_hook_findings(
                 continue
             if resolved == hook.resolve():
                 stale.append(hook.name)
+        elif link.is_file():
+            # Raven installs a shim script rather than a symlink now; a leftover
+            # shim is just as inert and just as misleading under a hook manager.
+            text = _read_text_or_none(link)
+            if text is not None and is_raven_shim_text(text):
+                stale.append(hook.name)
     if stale:
         findings.append(
             Finding(
                 id="doctor.hooks.inert_symlink",
                 severity=Severity.WARN,
                 category=_HOOKS,
-                title=f"{len(stale)} Raven hook symlink(s) in .git/hooks/ never run",
+                title=f"{len(stale)} leftover Raven hook(s) in .git/hooks/ never run",
                 detail=(
-                    f"{', '.join(stale)} still link into .raven/git-hooks/, but {manager} owns "
-                    "the effective hooks directory, so git never reads them. Anyone inspecting "
-                    "these files sees behavior that is not what runs on commit."
+                    f"{', '.join(stale)} still run .raven/git-hooks/ (a symlink or a Raven "
+                    f"shim), but {manager} owns the effective hooks directory, so git never "
+                    "reads them. Anyone inspecting these files sees behavior that is not what "
+                    "runs on commit."
                 ),
                 fix=f"remove .git/hooks/{stale[0]} (and the others listed) to leave one answer",
             )

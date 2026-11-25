@@ -1279,6 +1279,27 @@ class DoctorHookIntegrityTests(RavenTestCase):
         ids = {f.id for f in hook_integrity_findings(self.destination)}
         self.assertNotIn("doctor.hooks.inert_symlink", ids)
 
+    def test_a_leftover_shim_under_a_hook_manager_warns(self):
+        """Raven installs shim scripts, not symlinks; a leftover shim is just as inert."""
+        from raven_lib.git_hooks import hook_shim_text
+
+        self._with_hook_manager()
+        hooks_dir = self.destination / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        (hooks_dir / "pre-commit").write_text(hook_shim_text("pre-commit"), encoding="utf-8")
+        findings = hook_integrity_findings(self.destination)
+        stale = next(f for f in findings if f.id == "doctor.hooks.inert_symlink")
+        self.assertEqual(stale.severity, Severity.WARN)
+        self.assertIn("pre-commit", stale.detail)
+
+    def test_a_foreign_hook_file_under_a_hook_manager_is_not_flagged(self):
+        self._with_hook_manager()
+        hooks_dir = self.destination / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        (hooks_dir / "pre-commit").write_text("#!/bin/sh\nexec make lint\n", encoding="utf-8")
+        ids = {f.id for f in hook_integrity_findings(self.destination)}
+        self.assertNotIn("doctor.hooks.inert_symlink", ids)
+
     def test_ok_when_hook_correctly_symlinked(self):
         self._git_init()
         hook_src = self._write_hook("pre-commit")
