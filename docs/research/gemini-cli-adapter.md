@@ -126,12 +126,12 @@ and [`docs/hooks/writing-hooks.md`](https://github.com/google-gemini/gemini-cli/
   the rejection/replacement reason), anything else is a non-fatal warning and the CLI
   continues.
 - **Can `AfterTool` replace the tool's output entirely?** Yes — closer to Claude Code's
-  `updatedToolOutput` than to Codex, whose documented `continue: false` replacement was not
-  applied on codex-cli 0.172.0 (see `.claude/docs/raven-agent-compatibility.md`). `decision: "deny"` +
+  `updatedToolOutput` than to Codex, whose documented `continue: false` replacement reaches the model only
+  for direct calls, not under Code Mode (see `.claude/docs/raven-agent-compatibility.md`). `decision: "deny"` +
   `reason` replaces the result text sent to the model; `tailToolCallRequest` replaces it with
   another tool call's result outright. This answers the acceptance-criteria question that
   motivated `raven-post-bash-truncate.py`'s status: Gemini CLI has a real
-  counterpart mechanism, and Codex's is documented but unobserved.
+  counterpart mechanism, and Codex's is documented but bypassed by Code Mode.
 - Live run: registering a `SessionStart` hook in a trusted scratch project produced `Hook
   registry initialized with 1 hook entries`, `Expanding hook command: ... (cwd: <project
   dir>)`, and `Hook execution for SessionStart: 1 hooks executed successfully` in debug

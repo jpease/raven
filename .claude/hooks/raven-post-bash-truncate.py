@@ -20,9 +20,9 @@ tool's output shape. Gemini's AfterTool ``tool_response`` is
 string; the hook replaces it with ``decision: "deny"`` plus the shrunk text
 as ``reason`` (https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/reference.md).
 Codex documents a replacement through ``{"continue": false, "reason": ...}``
-(https://developers.openai.com/codex/hooks), but a live run on codex-cli 0.172.0
-showed the model still receiving the original output, so this file has no
-``.codex/hooks/`` counterpart (recorded in
+(https://developers.openai.com/codex/hooks), but under its default Code Mode the
+model's shell call is nested in a script that receives the original output, so
+this file has no ``.codex/hooks/`` counterpart (recorded in
 ``.claude/docs/raven-agent-compatibility.md``). A command already routed
 through RTK is left alone -- it is compressed once, on purpose.
 

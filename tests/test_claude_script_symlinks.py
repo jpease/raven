@@ -139,10 +139,10 @@ class CodexScriptUnificationTests(RavenTestCase):
         )
 
     def test_bash_truncator_has_no_codex_counterpart(self):
-        # Codex documents a `continue: false` replacement, but codex-cli 0.172.0
-        # still showed the model the original result in a live capture, so a
-        # `.codex/hooks/` copy would be a hook that never does anything. Recorded
-        # in `.claude/docs/raven-agent-compatibility.md`; wire it when that changes.
+        # Codex applies a `continue: false` replacement only to direct Bash calls.
+        # Its default Code Mode nests the call in a script that receives the
+        # original result, so a `.codex/hooks/` copy would do nothing by default.
+        # Recorded in `.claude/docs/raven-agent-compatibility.md`.
         truncator = REPO_ROOT / "common" / ".codex" / "hooks" / "raven-post-bash-truncate.py"
         self.assertFalse(
             truncator.exists() or truncator.is_symlink(),

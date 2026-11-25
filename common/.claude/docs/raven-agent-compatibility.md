@@ -179,20 +179,41 @@ Recorded here so audits don't re-flag them:
 
 - **`raven-post-bash-truncate.py`** (the Bash result truncator, wired to the `Bash` matcher
   under `PostToolUse` in `.claude/settings.json` and the `run_shell_command` matcher under
-  `AfterTool` in `.gemini/settings.json`) has no Codex counterpart, because Codex did not
-  apply a replacement when tried. Claude Code replaces a result through
-  `hookSpecificOutput.updatedToolOutput`; Gemini CLI through `decision: "deny"` + `reason`
-  (`docs/research/gemini-cli-adapter.md` §3). The Codex hooks reference
-  (<https://developers.openai.com/codex/hooks>, read 2026-11-24) says a `PostToolUse` hook
-  printing `{"continue": false, "stopReason": ..., "reason": ...}` replaces the result and
-  lets the turn continue.
+  `AfterTool` in `.gemini/settings.json`) has no Codex counterpart. Claude Code replaces a
+  result through `hookSpecificOutput.updatedToolOutput`; Gemini CLI through
+  `decision: "deny"` + `reason` (`docs/research/gemini-cli-adapter.md` §3). The Codex hooks
+  reference (<https://developers.openai.com/codex/hooks>, read 2026-11-24) says a `PostToolUse`
+  hook printing `{"continue": false, "stopReason": ..., "reason": ...}` replaces the result.
 
-  Live capture on codex-cli 0.172.0 (2026-11-24, scratch trusted
-  project, `max_lines = 50`, command printing 400 lines): the hook fired, its run showed
-  `Stopped`, it wrote the spill file, and the turn continued, but the model still received
-  the original 400-line result with no `[raven: ... omitted ...]` marker. Revisit when a newer
-  Codex applies the replacement; until then Codex bounds tool output through its own
-  `tool_output_token_limit`. Asserted the same way as the read guard.
+  Cause of the earlier miss (2026-11-24). A capture on codex-cli 0.172.0 saw the hook fire and
+  the turn continue while the model still received all 400 lines, and recorded "not applied".
+  The setup was at fault. Every model in the current catalog declares
+  `tool_mode: "code_mode_only"`, so the model never calls `exec_command` directly. It writes a
+  JavaScript `exec` cell that calls `tools.exec_command(...)`. The hook still fires on that
+  nested call, but Codex returns the original result to the script
+  (`PostToolUseFeedbackOutput::code_mode_result` returns `self.original`, in
+  `codex-rs/core/src/tools/registry.rs`, near line 391).
+
+  Source evidence, identical across rust-v0.172.0, main and rust-v0.174.0-alpha.1.
+  `parse_post_tool_use` (`codex-rs/hooks/src/engine/output_parser.rs`, near line 207) accepts
+  `continue: false` plus `reason`. `events/post_tool_use.rs` (near lines 217-231) turns them
+  into a feedback message: `reason`, else `stopReason`. `registry.rs` (near lines 1085-1100)
+  swaps the model-visible `to_response_item` for that text, or returns an error for
+  `decision: "block"`. Both `exec_command` and the other shell paths report
+  `tool_name: "Bash"` (`handlers/unified_exec.rs`, `HookToolName::bash()`).
+
+  Live captures (one session each, a `seq 1 400` command, a scratch hook keeping 40 lines).
+  The first used an isolated `CODEX_HOME`, `--dangerously-bypass-hook-trust`,
+  `web_search=disabled` and a catalog copy setting `tool_mode: "direct"`. Both codex-cli 0.172.0
+  (stable) and 0.174.0-alpha.5 delivered the replacement: the model reported 40 lines and the
+  rollout's `function_call_output` held only the hook's text. With the default catalog
+  (`code_mode_only`) the same run on 0.174.0-alpha.5 gave the model all 400 lines through the
+  `exec` cell.
+
+  Conclusion: Raven does not wire the truncator on Codex. Default Code Mode returns the
+  original output to the script, so a Codex hook would do nothing for current models. Codex
+  relies on its own `tool_output_token_limit`. Revisit if Codex stops defaulting to Code Mode
+  or applies the replacement to nested calls. Asserted the same way as the read guard.
 
 ## Maintenance Rules
 

@@ -186,9 +186,9 @@
       "sourceSha256": "0a45826237817077b16e2c53a4bd208eae29e4f46ad3694a8a4e6c1958be5182"
     },
     ".claude/docs/raven-agent-compatibility.md": {
-      "installedSha256": "d97f7c2f91c5f17281cb3c621a3b47ec44af6aa262ccd6cc426e0756823148fe",
+      "installedSha256": "8e7cba4b73343dd4113727d9666a016ca94c31aa0ca7183a55cbb20cccaa9af6",
       "kind": "file",
-      "sourceSha256": "d97f7c2f91c5f17281cb3c621a3b47ec44af6aa262ccd6cc426e0756823148fe"
+      "sourceSha256": "8e7cba4b73343dd4113727d9666a016ca94c31aa0ca7183a55cbb20cccaa9af6"
     },
     ".claude/docs/raven-antipatterns.md": {
       "installedSha256": "adc7b66f5f5d8a8ae50055a740aecf8c7ca9d276089e6b92ac3f0fe8a0b907f1",
@@ -206,9 +206,9 @@
       "sourceSha256": "806f1224309120784649d7029e47e83f6c46e993f504bfe5afe5171d95f8be0e"
     },
     ".claude/docs/raven-guardrails.md": {
-      "installedSha256": "e57daa5ead520b06efe77880a11f9c15c62bcf5a29099a0b3e92ed044df41ba0",
+      "installedSha256": "02d9a2a0ca606bd62a641cb24a87fc9ddee12f4074941e4648cbaffa8f788dd8",
       "kind": "file",
-      "sourceSha256": "e57daa5ead520b06efe77880a11f9c15c62bcf5a29099a0b3e92ed044df41ba0"
+      "sourceSha256": "02d9a2a0ca606bd62a641cb24a87fc9ddee12f4074941e4648cbaffa8f788dd8"
     },
     ".claude/docs/raven-lsp-mcp.md": {
       "installedSha256": "d31c3fb28e331cfbbac3af36f1d14ce707ac52becb4e2e64e5d08389a0179eea",
@@ -236,9 +236,9 @@
       "sourceSha256": "89dce95d326a4108ae27ff4fa206cae6d875fc8ea87f894d190efed23d9de3a0"
     },
     ".claude/docs/raven-tool-assessment.md": {
-      "installedSha256": "58e4a1260e8ecbff54caa202a7d8b174b854c12a8607753ec3be77d1ebe5a9d9",
+      "installedSha256": "d938a50a841dfdc5efaa1b2afdf68ce3326eeefa023e9239842c6f3739abca54",
       "kind": "file",
-      "sourceSha256": "58e4a1260e8ecbff54caa202a7d8b174b854c12a8607753ec3be77d1ebe5a9d9"
+      "sourceSha256": "d938a50a841dfdc5efaa1b2afdf68ce3326eeefa023e9239842c6f3739abca54"
     },
     ".claude/hooks/raven-post-bash-summarize.py": {
       "installedSha256": "1688094527be92b595d0963c4661947e43b4f00f2c63ae4f39cc86e7e29c7b74",
@@ -246,9 +246,9 @@
       "sourceSha256": "1688094527be92b595d0963c4661947e43b4f00f2c63ae4f39cc86e7e29c7b74"
     },
     ".claude/hooks/raven-post-bash-truncate.py": {
-      "installedSha256": "018e08911f5e7dcddab0dc46c20f02b0b1fef9125b33fbfd4194167e40942d62",
+      "installedSha256": "1acffee08399c1924702265e3adec38649377ab4ad563e3027cc10c76370d962",
       "kind": "file",
-      "sourceSha256": "018e08911f5e7dcddab0dc46c20f02b0b1fef9125b33fbfd4194167e40942d62"
+      "sourceSha256": "1acffee08399c1924702265e3adec38649377ab4ad563e3027cc10c76370d962"
     },
     ".claude/hooks/raven-post-edit-format.py": {
       "installedSha256": "ae1da410e5e7f865ce705ff7a18cb92223311b82ae170943f9ec304e24b39779",
@@ -276,14 +276,14 @@
       "sourceSha256": "ca986fb8fcc88742202cd74f58fa5ca427123d64b45be55c845fd8c085b75589"
     },
     ".claude/hooks/raven-run-hook.sh": {
-      "installedSha256": "a813e2f2a2923f2a64efa4bbd804fd40298ed5d3e3a591fae6de32157fcca02c",
+      "installedSha256": "4b26179464a140f45c146a5909d60ec9fb54232db33d33b5f8514222119f21b2",
       "kind": "file",
-      "sourceSha256": "a813e2f2a2923f2a64efa4bbd804fd40298ed5d3e3a591fae6de32157fcca02c"
+      "sourceSha256": "4b26179464a140f45c146a5909d60ec9fb54232db33d33b5f8514222119f21b2"
     },
     ".claude/hooks/raven-session-checkpoint.py": {
-      "installedSha256": "b2f29e6f35cc2119c234f502c68ed0bc6a31ff1f1cf4e8d0711a375b3c16b5a2",
+      "installedSha256": "196b8fe81ff88137468582eda8a04ee447b286fe35d8382928a0d0827819b623",
       "kind": "file",
-      "sourceSha256": "b2f29e6f35cc2119c234f502c68ed0bc6a31ff1f1cf4e8d0711a375b3c16b5a2"
+      "sourceSha256": "196b8fe81ff88137468582eda8a04ee447b286fe35d8382928a0d0827819b623"
     },
     ".claude/hooks/raven-skeleton-read-guard.py": {
       "installedSha256": "5b996b2dbc396a0ff15237d7c2c299dd5bc5c259d90ec732c49da967fbafe54b",
@@ -556,9 +556,9 @@
       "sourceSha256": "588e23d720d586aeed9502be7d276d8129640399a70bb66413e8e7372296e32d"
     },
     ".codex/hooks/raven-session-checkpoint.py": {
-      "installedSha256": "b2f29e6f35cc2119c234f502c68ed0bc6a31ff1f1cf4e8d0711a375b3c16b5a2",
+      "installedSha256": "196b8fe81ff88137468582eda8a04ee447b286fe35d8382928a0d0827819b623",
       "kind": "file",
-      "sourceSha256": "b2f29e6f35cc2119c234f502c68ed0bc6a31ff1f1cf4e8d0711a375b3c16b5a2"
+      "sourceSha256": "196b8fe81ff88137468582eda8a04ee447b286fe35d8382928a0d0827819b623"
     },
     ".codex/rules/raven.rules": {
       "installedSha256": "0a40762439633bde8c21750aad9c218585c91fad8db98fc3805d4c0224fc1270",
@@ -626,9 +626,9 @@
       "sourceSha256": "1688094527be92b595d0963c4661947e43b4f00f2c63ae4f39cc86e7e29c7b74"
     },
     ".gemini/hooks/raven-post-bash-truncate.py": {
-      "installedSha256": "018e08911f5e7dcddab0dc46c20f02b0b1fef9125b33fbfd4194167e40942d62",
+      "installedSha256": "1acffee08399c1924702265e3adec38649377ab4ad563e3027cc10c76370d962",
       "kind": "file",
-      "sourceSha256": "018e08911f5e7dcddab0dc46c20f02b0b1fef9125b33fbfd4194167e40942d62"
+      "sourceSha256": "1acffee08399c1924702265e3adec38649377ab4ad563e3027cc10c76370d962"
     },
     ".gemini/hooks/raven-post-edit-format.py": {
       "installedSha256": "ae1da410e5e7f865ce705ff7a18cb92223311b82ae170943f9ec304e24b39779",
@@ -656,14 +656,14 @@
       "sourceSha256": "ca986fb8fcc88742202cd74f58fa5ca427123d64b45be55c845fd8c085b75589"
     },
     ".gemini/hooks/raven-run-hook.sh": {
-      "installedSha256": "a813e2f2a2923f2a64efa4bbd804fd40298ed5d3e3a591fae6de32157fcca02c",
+      "installedSha256": "4b26179464a140f45c146a5909d60ec9fb54232db33d33b5f8514222119f21b2",
       "kind": "file",
-      "sourceSha256": "a813e2f2a2923f2a64efa4bbd804fd40298ed5d3e3a591fae6de32157fcca02c"
+      "sourceSha256": "4b26179464a140f45c146a5909d60ec9fb54232db33d33b5f8514222119f21b2"
     },
     ".gemini/hooks/raven-session-checkpoint.py": {
-      "installedSha256": "b2f29e6f35cc2119c234f502c68ed0bc6a31ff1f1cf4e8d0711a375b3c16b5a2",
+      "installedSha256": "196b8fe81ff88137468582eda8a04ee447b286fe35d8382928a0d0827819b623",
       "kind": "file",
-      "sourceSha256": "b2f29e6f35cc2119c234f502c68ed0bc6a31ff1f1cf4e8d0711a375b3c16b5a2"
+      "sourceSha256": "196b8fe81ff88137468582eda8a04ee447b286fe35d8382928a0d0827819b623"
     },
     ".gemini/hooks/raven-skeleton-read-guard.py": {
       "installedSha256": "5b996b2dbc396a0ff15237d7c2c299dd5bc5c259d90ec732c49da967fbafe54b",
@@ -781,8 +781,8 @@
     "pyright",
     "pytest"
   ],
-  "ravenVersion": "e11aa312dde7",
+  "ravenVersion": "8ca46108f009-dirty",
   "schema": 1,
   "template": "python",
-  "updatedAt": "2026-11-25T04:01:53.880027+00:00"
+  "updatedAt": "2026-11-25T04:46:49.740311+00:00"
 }
