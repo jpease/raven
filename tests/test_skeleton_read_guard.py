@@ -319,6 +319,36 @@ class GuardHookEndToEndTests(_InstalledHookTestCase):
         self.assertEqual(json.loads(result.stdout)["decision"], "deny")
 
     @unittest.skipUnless(HAVE_SKELETON_BACKEND, "no skeleton backend (ast-grep/rg) on PATH")
+    def test_relative_gemini_path_prefers_payload_cwd_over_install_root(self):
+        # Root holds a small big.py; only the payload cwd's copy is large, so
+        # resolving against the install root would fail open.
+        self._setup_project(gate_enabled=True, lines=10)
+        workspace = self.destination / "workspace"
+        workspace.mkdir()
+        (workspace / "big.py").write_text(
+            "".join(f"x{i} = {i}\n" for i in range(600)), encoding="utf-8"
+        )
+        payload = self._gemini_payload("big.py")
+        payload["cwd"] = str(workspace)
+        result = self._run_hook(payload, gemini=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["decision"], "deny")
+
+    @unittest.skipUnless(HAVE_SKELETON_BACKEND, "no skeleton backend (ast-grep/rg) on PATH")
+    def test_relative_gemini_path_without_payload_cwd_resolves_against_install_root(self):
+        # The process cwd holds a small big.py; only the install root's copy is
+        # large, so resolving against the process cwd would fail open.
+        self._setup_project(gate_enabled=True, lines=600)
+        sub = self.destination / "sub"
+        sub.mkdir()
+        (sub / "big.py").write_text("x = 1\n", encoding="utf-8")
+        payload = self._gemini_payload("big.py")
+        del payload["cwd"]
+        result = self._run_hook(payload, cwd=sub, gemini=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["decision"], "deny")
+
+    @unittest.skipUnless(HAVE_SKELETON_BACKEND, "no skeleton backend (ast-grep/rg) on PATH")
     def test_gemini_deny_names_gemini_helper_and_line_params(self):
         path = self._setup_project(gate_enabled=True, lines=600)
         result = self._run_hook(self._gemini_payload(str(path)), gemini=True)
