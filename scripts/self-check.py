@@ -921,7 +921,9 @@ def main() -> int:
     # under the same interpreter/environment self-check.py itself is running
     # under, rather than resolving a possibly-different bare python/python3 on
     # PATH that might lack pytest or the dev dependencies (issue #168).
-    run("unit tests", [sys.executable, "-m", "pytest", "tests"])
+    # `-n 4` matches `just test`: the suite is subprocess-bound, so 4 xdist workers
+    # cut the wall time by more than half.
+    run("unit tests", [sys.executable, "-m", "pytest", "-n", "4", "tests"])
     print("RAVEN self-check passed")
     return 0
 

@@ -116,7 +116,18 @@ class GitRepoTestCase(unittest.TestCase):
 
     def _git(self, *args: str) -> str:
         return subprocess.run(
-            ["git", "-c", "user.email=t@example.com", "-c", "user.name=T", *args],
+            # A developer's global commit.gpgsign=true would spawn gpg per commit,
+            # which fails intermittently when parallel xdist workers share one agent.
+            [
+                "git",
+                "-c",
+                "user.email=t@example.com",
+                "-c",
+                "user.name=T",
+                "-c",
+                "commit.gpgsign=false",
+                *args,
+            ],
             cwd=self.repo,
             capture_output=True,
             text=True,

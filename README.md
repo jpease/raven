@@ -174,13 +174,16 @@ Raven-managed paths use `raven-*` wherever possible.
 ## Developing Raven
 
 Raven's runtime (`scripts/raven.py` + `scripts/raven_lib/`) is stdlib-only, so
-*using* Raven needs no dependencies. Developing Raven needs `pytest`, plus
-[`uv`](https://docs.astral.sh/uv/) to run it reproducibly:
+*using* Raven needs no dependencies. Developing Raven needs `pytest` and `pytest-xdist`,
+plus [`uv`](https://docs.astral.sh/uv/) to run them reproducibly:
 
 ```sh
 just test                             # uv run --group dev python -m pytest, via the justfile
 uv run --group dev python scripts/self-check.py
 ```
+
+The suite runs on 4 xdist workers; for a one-off serial run, use
+`uv run --group dev python -m pytest -p no:xdist`.
 
 `just test` and `just check` resolve their own `uv`-managed dev environment
 by default (see `[dependency-groups]` in `pyproject.toml` and the committed

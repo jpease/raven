@@ -52,6 +52,10 @@ class CheckStagedHygieneTests(unittest.TestCase):
                 "user.email=hygiene-test@example.com",
                 "-c",
                 "user.name=Hygiene Test",
+                # A developer's global commit.gpgsign=true would spawn gpg per commit,
+                # which fails intermittently when parallel xdist workers share one agent.
+                "-c",
+                "commit.gpgsign=false",
                 *args,
             ],
             capture_output=True,

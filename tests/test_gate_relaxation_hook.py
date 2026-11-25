@@ -131,6 +131,11 @@ class GateRelaxationHookTests(unittest.TestCase):
             ["git", "-C", str(self.repo), "config", "user.email", "t@example.com"], check=True
         )
         subprocess.run(["git", "-C", str(self.repo), "config", "user.name", "Test"], check=True)
+        # A developer's global commit.gpgsign=true would spawn gpg per commit,
+        # which fails intermittently when parallel xdist workers share one agent.
+        subprocess.run(
+            ["git", "-C", str(self.repo), "config", "commit.gpgsign", "false"], check=True
+        )
         # The checker resolves the repo root from its own __file__, the way
         # every other shipped hook lib does, so it has to be installed at the
         # offset a real install uses or it would scan this checkout instead.

@@ -20,6 +20,10 @@ from helpers import (
 )
 from raven_lib.git_hooks import HookLinkAction, hook_link_action
 
+# A developer's global commit.gpgsign=true would spawn gpg per commit, which
+# fails intermittently when parallel xdist workers share one gpg-agent.
+_NO_GPG_SIGN = ["-c", "commit.gpgsign=false"]
+
 
 class GitHookInstallerTests(unittest.TestCase):
     def setUp(self):
@@ -108,6 +112,7 @@ class GitHookInstallerTests(unittest.TestCase):
                 "user.email=raven@example.com",
                 "-c",
                 "user.name=Raven Test",
+                *_NO_GPG_SIGN,
                 "commit",
                 "--allow-empty",
                 "-m",
@@ -235,6 +240,7 @@ class GitHookInstallerTests(unittest.TestCase):
                 "user.email=raven@example.com",
                 "-c",
                 "user.name=Raven Test",
+                *_NO_GPG_SIGN,
                 "commit",
                 "--allow-empty",
                 "-m",
@@ -889,6 +895,7 @@ class GitHookInstallerTests(unittest.TestCase):
                 "user.email=raven@example.com",
                 "-c",
                 "user.name=Raven Test",
+                *_NO_GPG_SIGN,
                 *args,
             ],
             capture_output=True,
@@ -1409,6 +1416,7 @@ class GitHookInstallerTests(unittest.TestCase):
                 "user.email=raven@example.com",
                 "-c",
                 "user.name=Raven Test",
+                *_NO_GPG_SIGN,
                 "commit",
                 "--allow-empty",
                 "-m",
@@ -1451,6 +1459,7 @@ class GitHookInstallerTests(unittest.TestCase):
                 "user.email=raven@example.com",
                 "-c",
                 "user.name=Raven Test",
+                *_NO_GPG_SIGN,
                 "commit",
                 "--allow-empty",
                 "-m",
@@ -1503,6 +1512,7 @@ class GitHookInstallerTests(unittest.TestCase):
                 "user.email=raven@example.com",
                 "-c",
                 "user.name=Raven Test",
+                *_NO_GPG_SIGN,
                 "commit",
                 "--allow-empty",
                 "-m",
@@ -1546,6 +1556,7 @@ class GitHookInstallerTests(unittest.TestCase):
                 "user.email=raven@example.com",
                 "-c",
                 "user.name=Raven Test",
+                *_NO_GPG_SIGN,
                 "commit",
                 "--allow-empty",
                 "-m",

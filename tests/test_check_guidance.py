@@ -37,6 +37,10 @@ def _git(repo: Path, *args: str) -> str:
             "user.email=guidance-test@example.com",
             "-c",
             "user.name=Guidance Test",
+            # A developer's global commit.gpgsign=true would spawn gpg per commit,
+            # which fails intermittently when parallel xdist workers share one agent.
+            "-c",
+            "commit.gpgsign=false",
             *args,
         ],
         capture_output=True,

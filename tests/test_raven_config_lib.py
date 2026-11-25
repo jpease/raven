@@ -239,6 +239,10 @@ class ResolveRepoRootTests(RavenTestCase):
                 "user.email=raven@example.com",
                 "-c",
                 "user.name=Raven Test",
+                # A developer's global commit.gpgsign=true would spawn gpg per commit,
+                # which fails intermittently when parallel xdist workers share one agent.
+                "-c",
+                "commit.gpgsign=false",
                 "commit",
                 "--allow-empty",
                 "-m",

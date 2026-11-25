@@ -760,7 +760,19 @@ class VerdictTests(unittest.TestCase):
         self._write("f.txt", "x\n")
         subprocess.run("git add -A", cwd=str(self.root), shell=True, check=False)
         subprocess.run(
-            ["git", "-C", str(self.root), "commit", "-q", "-m", message],
+            # A developer's global commit.gpgsign=true would spawn gpg per commit,
+            # and check=False would hide a signing failure as a missing commit.
+            [
+                "git",
+                "-C",
+                str(self.root),
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                message,
+            ],
             check=False,
             stdout=subprocess.DEVNULL,
         )
@@ -1524,7 +1536,8 @@ class HandoffAccuracyVerdictTests(unittest.TestCase):
 
 def _fixture_git(root, *args):
     env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, env=env)
+    command = ["git", "-C", str(root), "-c", "commit.gpgsign=false", *args]
+    subprocess.run(command, check=True, capture_output=True, env=env)
 
 
 class _BuiltFixtureTests(unittest.TestCase):

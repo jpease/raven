@@ -28,13 +28,17 @@ PYTHON := env_var_or_default("RAVEN_PYTHON", "uv run --group dev python")
 
 set positional-arguments
 
-# Run the test suite
+# The suite is subprocess-bound, so `test` runs it on 4 pytest-xdist workers
+# (capped, never `-n auto`: the machine is shared). For a one-off serial run:
+#   uv run --group dev python -m pytest -p no:xdist
+
+# Run the test suite on 4 xdist workers
 test: (_test PYTHON)
 
 _test python:
     #!/usr/bin/env sh
-    if ! $1 -c 'import pytest' >/dev/null 2>&1; then
-        echo "error: no pytest available via '$1'." >&2
+    if ! $1 -c 'import pytest, xdist' >/dev/null 2>&1; then
+        echo "error: no pytest and pytest-xdist available via '$1'." >&2
         if command -v uv >/dev/null 2>&1; then
             echo "Bootstrap the default dev environment and rerun: uv sync --group dev && just test" >&2
         else
@@ -48,7 +52,7 @@ _test python:
         echo "  then: just PYTHON='python' test   (or RAVEN_PYTHON=python just test)" >&2
         exit 1
     fi
-    $1 -m pytest
+    $1 -m pytest -n 4
 
 # Run lint checks
 lint:

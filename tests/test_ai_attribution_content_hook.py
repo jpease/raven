@@ -37,6 +37,11 @@ class AiAttributionContentHookTests(unittest.TestCase):
             ["git", "-C", str(self.repo), "config", "user.email", "t@example.com"], check=True
         )
         subprocess.run(["git", "-C", str(self.repo), "config", "user.name", "Test"], check=True)
+        # A developer's global commit.gpgsign=true would spawn gpg per commit,
+        # which fails intermittently when parallel xdist workers share one agent.
+        subprocess.run(
+            ["git", "-C", str(self.repo), "config", "commit.gpgsign", "false"], check=True
+        )
         # _repo_root() (issue #202) is install-layout-derived from this
         # script's own __file__, not the process cwd -- so every subprocess
         # invocation below must run a copy of the hook (and its
